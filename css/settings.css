@@ -1,5 +1,20 @@
 /* --- 设置与个人资料样式 --- */
 
+.home-preset-card { padding: 16px; }
+.home-preset-card h2 { margin: 0 0 10px; font-size: 17px; }
+.home-preset-card p { margin: 8px 0 12px; font-size: 13px; line-height: 1.65; color: #666; overflow-wrap: anywhere; }
+.home-preset-card > label { display: block; margin-bottom: 8px; font-size: 14px; }
+.home-preset-card > input[type="text"] { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; font: inherit; }
+.home-preset-card .home-preset-option { display: flex; align-items: center; gap: 8px; line-height: 1.5; }
+.home-preset-option input { flex-shrink: 0; }
+.home-preset-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.home-preset-actions .btn { flex: 1 1 130px; min-width: 0; }
+.home-preset-actions .btn-primary { color: #fff; }
+.home-preset-actions .btn-neutral { color: #2a3032; }
+.home-preset-card .home-preset-hint { font-size: 12px; margin-bottom: 0; }
+.home-preset-card #home-preset-status:empty { display: none; }
+.home-preset-actions button:disabled { opacity: .55; cursor: wait; }
+
 #chat-settings-screen, #group-settings-screen, #customize-screen {
     background-color: #f2f2f2;
 }

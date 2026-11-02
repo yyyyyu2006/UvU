@@ -120,6 +120,7 @@ const init = async () => {
     try { setupWorldBookApp(); } catch(e) { console.error("setupWorldBookApp failed:", e); }
     try { setupGroupChatSystem(); } catch(e) { console.error("setupGroupChatSystem failed:", e); }
     try { setupCustomizeApp(); } catch(e) { console.error("setupCustomizeApp failed:", e); }
+    if (typeof setupHomePresets === 'function') { try { setupHomePresets(); } catch(e) { console.error("setupHomePresets failed:", e); } }
     try { setupTutorialApp(); } catch(e) { console.error("setupTutorialApp failed:", e); }
     
     try { checkForUpdates(); } catch(e) { console.error("checkForUpdates failed:", e); }

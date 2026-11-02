@@ -674,7 +674,24 @@
     </div>
 
     <div id="customize-screen" class="screen">
-        <header class="app-header"><button class="back-btn" data-target="home-screen">‹</button><div class="title-container"><h1 class="title">个性化设置</h1></div><div class="placeholder"></div></header><main class="content" style="padding: 16px;"><form id="customize-form"></form></main>
+        <header class="app-header"><button class="back-btn" data-target="home-screen">‹</button><div class="title-container"><h1 class="title">个性化设置</h1></div><div class="placeholder"></div></header>
+        <main class="content" style="padding: 16px;">
+            <section class="kkt-group home-preset-card" aria-labelledby="home-preset-title">
+                <h2 id="home-preset-title">主页预设</h2>
+                <p>分享主页分页布局、图标、壁纸和小组件（含图片、文字及组件代码）。不会导出聊天记录、角色卡或 API 设置。</p>
+                <label for="home-preset-name">预设名称</label>
+                <input id="home-preset-name" type="text" maxlength="80" placeholder="例如：奶油色桌面" autocomplete="off">
+                <label class="home-preset-option"><input id="home-preset-include-appearance" type="checkbox" checked> 同时导出当前字体、字号和全局 CSS</label>
+                <div class="home-preset-actions">
+                    <button id="home-preset-export-btn" type="button" class="btn btn-primary">导出主页预设</button>
+                    <button id="home-preset-import-btn" type="button" class="btn btn-neutral">导入主页预设</button>
+                </div>
+                <input id="home-preset-import-input" type="file" accept=".json,application/json" hidden>
+                <p class="home-preset-hint">导入前会显示预设信息并确认替换。上传的本地图片会随文件保存；网络图片仍需原链接可用。小组件内容会一同分享，请先检查其中的个人信息。</p>
+                <p id="home-preset-status" role="status" aria-live="polite"></p>
+            </section>
+            <form id="customize-form"></form>
+        </main>
     </div>
 
     <div id="search-history-screen" class="screen">
@@ -2753,6 +2770,7 @@
 <script src="js/modules/settings_api.js"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js"></script> <!-- 个性化与外观设置 -->
+<script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
 <script src="js/modules/sticker.js"></script>   <!-- 表情包管理系统 -->
