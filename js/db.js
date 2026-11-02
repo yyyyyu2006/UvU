@@ -164,7 +164,7 @@ const globalSettingKeys = [
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
     'workshopSettings', 'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder',
     'homeLayoutPages', 'widgetTemplates', 'addedWidgets', 'backupReminderSettings',
-    'stUnlocked'
+    'stUnlocked', 'memoryApiSettings'
 ];
 
 

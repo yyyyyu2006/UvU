@@ -75,7 +75,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
     try {
         const memoryArchiveId = chat.activeArchiveId;
         if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
-        if (chat.activeArchiveId !== memoryArchiveId) return;
+        if (chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         let systemPrompt, requestBody;
         if (chatType === 'private') {
             systemPrompt = generatePrivateSystemPrompt(chat);
@@ -555,13 +555,13 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         if (!isBackground) showApiError(error);
         else console.error("Background Auto-Reply Error:", error);
     } finally {
-        if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
-        if (!isBackground) {
+        if (!isBackground && currentChatId === chatId && currentChatType === chatType) {
             isGenerating = false;
             getReplyBtn.disabled = false;
             regenerateBtn.disabled = false;
             typingIndicator.style.display = 'none';
         }
+        if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
     }
 }
 

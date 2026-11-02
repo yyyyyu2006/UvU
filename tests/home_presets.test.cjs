@@ -21,6 +21,7 @@ function fixture() {
         fontUrl: '', fontSizeScale: 1.1, globalCss: '#home-screen { color: pink; }',
         characters: [{ id: 'private-person', history: ['private-history'] }],
         apiSettings: { key: 'SECRET_API_KEY', url: 'https://api.example.com' },
+        memoryApiSettings: { key: 'SECRET_MEMORY_API_KEY', url: 'https://private-memory.example.com' },
         apiPresets: [{ key: 'SECRET_PRESET_KEY' }], fontPresets: []
     };
     const nodes = new Map();
@@ -66,7 +67,7 @@ test('export includes visible layout, images, variables and templates; excludes 
     assert.equal(preset.settings.widgetTemplates.length, 1);
     assert.equal(preset.settings.appearance.fontSizeScale, 1.1);
     const json = JSON.stringify(preset);
-    for (const secret of ['SECRET_', 'private-person', 'private-history', 'unused', 'apiSettings']) assert.equal(json.includes(secret), false);
+    for (const secret of ['SECRET_', 'private-memory.example.com', 'memoryApiSettings', 'private-person', 'private-history', 'unused', 'apiSettings']) assert.equal(json.includes(secret), false);
 });
 
 test('export can omit font, size and global CSS', async () => {

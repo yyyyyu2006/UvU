@@ -678,6 +678,7 @@ function exitMultiSelectMode() {
     });
     selectedMessageIds.clear();
     currentMultiSelectMode = 'delete';
+    if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(currentChatId, currentChatType);
 }
 
 function toggleMessageSelection(messageId) {

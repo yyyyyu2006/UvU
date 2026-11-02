@@ -379,7 +379,7 @@ async function handleExport() {
         // 6. Settings
         if (selectedModules.settings) {
             const settingsKeys = [
-                'apiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode', 
+                'apiSettings', 'memoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
                 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 
                 'fontSizeScale', 'savedKeyboardHeight', 'statusBarPresets', 'globalSendSound', 
                 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 
@@ -558,7 +558,7 @@ async function handleImport(event) {
             // 6. Settings
             if (selectedModules.settings) {
                 const settingsKeys = [
-                    'apiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode', 
+                    'apiSettings', 'memoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
                     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 
                     'fontSizeScale', 'savedKeyboardHeight', 'statusBarPresets', 'globalSendSound', 
                     'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 

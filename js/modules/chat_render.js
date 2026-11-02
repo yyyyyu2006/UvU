@@ -29,7 +29,7 @@ function createQuotedMessageElement(quote, chat) {
     return element;
 }
 
-function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
+function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuildLoadedPages = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
     const oldScrollHeight = messageArea.scrollHeight;
@@ -38,8 +38,8 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     // 确保 MESSAGES_PER_PAGE 存在
     const pageSize = (typeof MESSAGES_PER_PAGE !== 'undefined') ? MESSAGES_PER_PAGE : 20;
 
-    const end = totalMessages - (currentPage - 1) * pageSize;
-    const start = Math.max(0, end - pageSize);
+    const end = rebuildLoadedPages ? totalMessages : totalMessages - (currentPage - 1) * pageSize;
+    const start = Math.max(0, end - (rebuildLoadedPages ? currentPage : 1) * pageSize);
     const messagesToRender = chat.history.slice(start, end);
     if (!isLoadMore) messageArea.innerHTML = '';
     const fragment = document.createDocumentFragment();
@@ -54,7 +54,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         notice.textContent = `本页 ${hiddenCount} 条已总结楼层已折叠 · 点击查看原文`;
         notice.addEventListener('click', () => {
             autoMemoryShowOriginal.add(autoMemoryKey(chat, currentChatType));
-            renderMessages(false, false);
+            renderMessages(false, false, true);
         });
         fragment.appendChild(notice);
     }
@@ -126,7 +126,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
             
             for (let i = currentIndexInHistory - 1; i >= 0; i--) {
                 const candidate = chat.history[i];
-                if (!invisibleRegex.test(candidate.content)) {
+                if (!memoryCovered.has(candidate.id) && !invisibleRegex.test(candidate.content)) {
                     prevMsg = candidate;
                     break;
                 }

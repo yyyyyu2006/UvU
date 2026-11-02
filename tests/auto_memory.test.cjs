@@ -83,14 +83,14 @@ test('big summary replaces children, and deleting it restores children without d
     assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 4);
 });
 
-test('recursive big summaries preserve provenance across reload and recover from source editing', async () => {
+test('big summaries keep separate levels, persist and recover from source editing', async () => {
     const f = fixture(20);
     await f.run(); await f.run(); await f.run();
     const snapshot = JSON.parse(JSON.stringify(f.chat));
     const second = fixture();
     Object.assign(second.chat, snapshot);
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.size, 12);
-    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 1);
+    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 2);
     second.chat.history[0].content = '已修正的事件';
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.has('m0'), false);
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.size, 8);
@@ -232,4 +232,133 @@ test('manual runs respect recent retention, and each check has at most two API c
     assert.equal((await f.run({ force: true })).count, 2);
     assert.equal(f.context.getAutoMemoryState(f.chat).covered.has('m199'), false);
     assert.equal(f.requests.length, 3);
+});
+
+test('150 summarized floors resume at floor 151 after reload, without repeating originals', async () => {
+    const f = fixture(320, { batchSize: 150, threshold: 150, keepRecent: 20, mergeThreshold: 6 });
+    assert.equal((await f.run()).count, 1);
+    assert.deepEqual(ids(f.context.getAutoMemoryPlan(f.chat).batch).slice(0, 2), ['m150', 'm151']);
+    const reloaded = fixture(); Object.assign(reloaded.chat, JSON.parse(JSON.stringify(f.chat)));
+    assert.equal((await reloaded.run()).count, 1);
+    const request = JSON.stringify(reloaded.requests[0].body);
+    assert.ok(request.includes('原楼层150'));
+    assert.ok(!request.includes('原楼层149'));
+    assert.equal(reloaded.context.getAutoMemoryState(reloaded.chat).covered.size, 300);
+    assert.equal(reloaded.requests.length, 1);
+    assert.equal((await reloaded.run()).count, 0);
+});
+
+test('manual run never bypasses six-summary merge threshold; existing big summary is not a small one', async () => {
+    const f = fixture(30, { keepRecent: 0, batchSize: 1, threshold: 1, mergeThreshold: 6, mergeBatchSize: 6 });
+    for (let i = 0; i < 5; i++) { assert.equal((await f.run({ force: true })).count, 1); }
+    assert.equal(f.requests.length, 5);
+    assert.equal((await f.run({ force: true })).count, 2);
+    assert.equal(f.chat.memoryJournals.filter(j => j.autoMemory.kind === 'merged').length, 1);
+    for (let i = 0; i < 5; i++) await f.run({ force: true });
+    assert.equal(f.chat.memoryJournals.filter(j => j.autoMemory.kind === 'merged').length, 1);
+    const plan = f.context.getAutoMemoryPlan(f.chat, true);
+    assert.equal(plan.state.active.length, 6);
+    assert.equal(plan.merge.length, 0);
+    await f.run({ force: true });
+    assert.equal(f.chat.memoryJournals.filter(j => j.autoMemory.kind === 'merged').length, 2);
+});
+
+test('higher-level compression waits for the same number of big summaries', async () => {
+    const f = fixture(10, { keepRecent: 0, batchSize: 1, threshold: 1 });
+    await f.run(); await f.run(); await f.run();
+    assert.equal(f.context.getAutoMemoryState(f.chat).active.length, 2);
+    await f.run();
+    assert.equal(f.context.getAutoMemoryPlan(f.chat).merge.length, 2);
+    await f.run();
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 5);
+    const state = f.context.getAutoMemoryState(f.chat);
+    assert.equal(state.active.filter(j => j.autoMemory.kind === 'merged').length, 1);
+});
+
+test('specified 1–700 range processes every floor in seven parts, skips completed range on rerun', async () => {
+    const f = fixture(720, { enabled: false, keepRecent: 100, mergeThreshold: 6, mergeBatchSize: 6 });
+    const plan = f.context.planAutoMemoryRange(f.chat, 1, 700, 7);
+    assert.deepEqual(Array.from(plan.batches, b => b.length), [100, 100, 100, 100, 100, 100, 100]);
+    const result = await f.run({ range: { start: 1, end: 700, parts: 7 } });
+    assert.equal(result.completedParts, 7);
+    assert.equal(result.count, 8);
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 700);
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.has('m700'), false);
+    const summaryCalls = f.requests.filter(req => !JSON.stringify(req.body).includes('专业的档案记录员'));
+    assert.equal(summaryCalls.length, 7);
+    for (let i = 0; i < 7; i++) {
+        const body = JSON.stringify(summaryCalls[i].body);
+        assert.ok(body.includes('原楼层' + (i * 100)));
+        if (i > 0) assert.ok(!body.includes('原楼层' + (i * 100 - 1)));
+    }
+    assert.equal((await f.run({ range: { start: 1, end: 700, parts: 7 } })).count, 0);
+    assert.equal(f.requests.length, 8);
+});
+
+test('range failure preserves completed parts and resumes without repeating billed successful sources', async () => {
+    const f = fixture(30, { mergeEnabled: false }); let calls = 0;
+    f.context.fetchAiResponse = async () => { if (++calls === 2) throw new Error('API Error: 503'); return '<title>A</title><content>完整记忆</content>'; };
+    const first = await f.run({ range: { start: 1, end: 30, parts: 3 } });
+    assert.equal(first.completedParts, 1); assert.ok(first.error);
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 10);
+    const received = [];
+    f.context.fetchAiResponse = async (config, body) => { received.push(JSON.stringify(body)); return '<title>A</title><content>完整记忆</content>'; };
+    const next = await f.run({ range: { start: 1, end: 30, parts: 2 } });
+    assert.equal(next.completedParts, 2); assert.equal(next.skipped, 10);
+    assert.ok(received.every(body => !body.includes('原楼层9')));
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 30);
+});
+
+test('invalid range rejected before API and recent retention does not silently omit explicit range', async () => {
+    const f = fixture(10, { keepRecent: 20, mergeEnabled: false });
+    for (const range of [{ start: 0, end: 10, parts: 2 }, { start: 1, end: 11, parts: 2 }, { start: 2, end: 1, parts: 1 }, { start: 1, end: 10, parts: 0 }]) assert.ok((await f.run({ range })).error);
+    assert.equal(f.requests.length, 0);
+    await f.run({ range: { start: 1, end: 10, parts: 2 } });
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 10);
+});
+
+test('stopping a range aborts the request and leaves pending floors uncovered', async () => {
+    const f = fixture(10); let signal;
+    f.context.fetchAiResponse = (config, body, headers, endpoint, stream, options) => new Promise((resolve, reject) => {
+        signal = options.signal; signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+    const task = f.run({ range: { start: 1, end: 10, parts: 2 } });
+    vm.runInContext("const ctl = autoMemoryControls.get('private:alice:a1'); ctl.cancelled = true; ctl.controller.abort();", f.context);
+    const result = await task;
+    assert.equal(result.cancelled, true); assert.equal(signal.aborted, true);
+    assert.equal(f.chat.memoryJournals.length, 0);
+});
+
+test('independent memory API never falls back to primary and can use Gemini', async () => {
+    const f = fixture(10, { apiSource: 'memory' });
+    assert.ok((await f.run()).error); assert.equal(f.requests.length, 0);
+    f.context.db.memoryApiSettings = { provider: 'gemini', url: 'https://memory.test', key: 'fake-memory-key', model: 'memory-model' };
+    const result = await f.run({ force: true });
+    assert.equal(result.count, 1); assert.equal(f.requests[0].config.provider, 'gemini');
+    assert.ok(f.requests[0].endpoint.startsWith('https://memory.test/'));
+});
+
+test('zero context limit sends no raw messages', () => {
+    const f = fixture(); f.chat.maxMemory = 0;
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 0);
+});
+
+test('range retry can finish a failed merge even when every source floor was already saved', async () => {
+    const f = fixture(12, { mergeThreshold: 6, mergeBatchSize: 6 });
+    const original = f.context.fetchAiResponse;
+    let calls = 0;
+    f.context.fetchAiResponse = async (...args) => {
+        if (++calls === 7) throw new Error('network failure');
+        return original(...args);
+    };
+    const range = { start: 1, end: 12, parts: 6 };
+    assert.ok((await f.run({ range })).error);
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 12);
+    assert.equal(f.chat.memoryJournals.length, 6);
+    f.context.fetchAiResponse = original;
+    const result = await f.run({ range });
+    assert.equal(result.count, 1);
+    assert.equal(result.completedParts, 0);
+    assert.equal(f.chat.memoryJournals.at(-1).autoMemory.kind, 'merged');
+    assert.equal((await f.run({ range })).count, 0);
 });
