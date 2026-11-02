@@ -163,3 +163,97 @@ test('AI quote context uses the correct private/group speaker and keeps brackete
     assert.equal(context.formatQuotedUserMessage(message, chat, 'private'), '[我引用“阿晴：选哪个？”并回复：选[第二个]吧]');
     assert.equal(context.formatQuotedUserMessage(message, { me: { nickname: '群里的我' } }, 'group'), '[群里的我引用“阿晴：选哪个？”并回复：选[第二个]吧]');
 });
+
+function gestureFixture({ withdrawn = false, horizontalScroller = false } = {}) {
+    const state = fixture();
+    const listeners = new Map();
+    const timers = new Map();
+    const classList = () => {
+        const names = new Set();
+        return { contains: name => names.has(name), add: (...items) => items.forEach(name => names.add(name)),
+            remove: (...items) => items.forEach(name => names.delete(name)),
+            toggle(name, enabled) { if (enabled) names.add(name); else names.delete(name); } };
+    };
+    const style = { setProperty() {}, removeProperty() {} };
+    const row = { classList: classList(), style };
+    const wrapper = { dataset: { id: 'gesture' }, classList: classList(), style,
+        querySelector: () => row };
+    if (withdrawn) wrapper.classList.add('system-notification');
+    const target = { parentElement: wrapper, scrollWidth: horizontalScroller ? 200 : 100, clientWidth: 100,
+        closest: selector => selector === '.message-wrapper[data-id]' ? wrapper : null };
+    const area = { dataset: {}, closest: () => ({ classList: { contains: () => true } }),
+        addEventListener(type, handler, options) { listeners.set(type, { handler, options }); } };
+    state.context.window.getSelection = () => ({ toString: () => '' });
+    state.context.document.addEventListener = () => {};
+    state.context.getComputedStyle = () => ({ overflowX: horizontalScroller ? 'auto' : 'visible' });
+    state.context.longPressTimer = null;
+    state.context.removeContextMenu = () => {};
+    state.context.setTimeout = (callback, delay) => { const id = timers.size + 1; timers.set(id, { callback, delay }); return id; };
+    state.context.clearTimeout = id => timers.delete(id);
+    state.chat.history.push({ id: 'gesture', role: 'assistant', content: '[阿晴的消息：手机手势]', isWithdrawn: withdrawn });
+    state.context.setupMessageReplyGestures(area);
+    function touch(type, x, y = 100, cancelable = true) {
+        const point = { identifier: 1, clientX: x, clientY: y };
+        const event = { target, touches: type === 'touchend' || type === 'touchcancel' ? [] : [point],
+            changedTouches: [point], cancelable, defaultPrevented: false,
+            preventDefault() { assert.equal(this.cancelable, true); this.defaultPrevented = true; } };
+        listeners.get(type).handler(event);
+        return event;
+    }
+    return { ...state, listeners, timers, touch };
+}
+
+test('mobile touchstart remains active so the browser cannot mark the whole gesture passive', () => {
+    const { listeners } = gestureFixture();
+    assert.equal(listeners.get('touchstart').options.passive, false);
+    assert.equal(listeners.get('touchmove').options.passive, false);
+});
+
+test('a non-cancelable mobile move still reaches quote on touchend', () => {
+    const { context, touch } = gestureFixture();
+    touch('touchstart', 220);
+    touch('touchmove', 190, 102, false);
+    touch('touchmove', 140, 103, false);
+    touch('touchend', 140, 103);
+    assert.equal(context.currentQuoteInfo?.id, 'gesture');
+});
+
+test('a fast swipe can complete from end coordinates when move events are coalesced', () => {
+    const { context, touch } = gestureFixture();
+    touch('touchstart', 220);
+    touch('touchend', 140, 103);
+    assert.equal(context.currentQuoteInfo?.id, 'gesture');
+});
+
+test('browser touchcancel clears the gesture instead of quoting after scrolling takes over', () => {
+    const { context, touch } = gestureFixture();
+    touch('touchstart', 220);
+    touch('touchmove', 140, 103, false);
+    touch('touchcancel', 140, 103);
+    touch('touchend', 140, 103);
+    assert.equal(context.currentQuoteInfo, null);
+});
+
+test('vertical movement and nested horizontal scrolling retain native behavior', () => {
+    for (const horizontalScroller of [false, true]) {
+        const { context, touch } = gestureFixture({ horizontalScroller });
+        touch('touchstart', 220);
+        const movement = touch('touchmove', horizontalScroller ? 140 : 215, horizontalScroller ? 100 : 30);
+        touch('touchend', horizontalScroller ? 140 : 215, horizontalScroller ? 100 : 30);
+        assert.equal(movement.defaultPrevented, false);
+        assert.equal(context.currentQuoteInfo, null);
+    }
+});
+
+test('withdrawn messages keep long-press actions but cannot be swiped into a quote', () => {
+    const { context, timers, touch } = gestureFixture({ withdrawn: true });
+    let longPressed = false;
+    context.handleMessageLongPress = () => { longPressed = true; };
+    touch('touchstart', 220);
+    [...timers.values()].find(timer => timer.delay === 400).callback();
+    assert.equal(longPressed, true);
+    touch('touchstart', 220);
+    touch('touchmove', 140);
+    touch('touchend', 140);
+    assert.equal(context.currentQuoteInfo, null);
+});

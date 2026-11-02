@@ -1537,6 +1537,16 @@
 
 /* 引用预览栏 */
 /* 左滑回复只移动当前消息行；纵向滚动仍交给浏览器。 */
+.message-bubble:not(.html-bubble),
+.message-wrapper .message-avatar,
+.image-bubble,
+.voice-bubble {
+    /* 在手指落下前声明方向，避免手机浏览器抢走横向手势。 */
+    touch-action: pan-y pinch-zoom;
+    -webkit-user-drag: none;
+}
+/* 富文本内可能自带横向滚动容器，继续使用原生滚动规则。 */
+.message-bubble:has(.bubble-content > *) { touch-action: auto; }
 .message-wrapper.message-reply-swiping { position: relative; }
 .message-reply-swipe-row {
     transform: translateX(var(--reply-swipe-offset, 0px));

@@ -214,7 +214,8 @@ function setupMessageReplyGestures(area) {
             reset();
             handleMessageLongPress(wrapper, touch.clientX, touch.clientY);
         }, 400);
-    }, { passive: true });
+    // 移动端先注册可取消的触摸序列；否则部分浏览器会提前交给原生滚动。
+    }, { passive: false });
     area.addEventListener('touchmove', event => {
         if (!gesture) return;
         if (event.touches.length !== 1 || !sameChat(gesture) || isInMultiSelectMode) { reset(); return; }
@@ -229,8 +230,9 @@ function setupMessageReplyGestures(area) {
             gesture.axis = gesture.quotable && gesture.dx < 0 && horizontal > vertical * 1.3 ? 'horizontal' : 'scroll';
         }
         if (gesture.axis !== 'horizontal') return;
-        if (!event.cancelable) { reset(); return; }
-        event.preventDefault();
+        // 某些 WebView 会提供不可取消的 move，但仍会正常发送 end。
+        // 继续跟踪坐标；原生滚动真正接管时会由 touchcancel 取消本次引用。
+        if (event.cancelable) event.preventDefault();
         gesture.row.classList.add('message-reply-swipe-row', 'message-reply-dragging');
         gesture.wrapper.classList.add('message-reply-swiping');
         gesture.row.style.setProperty('--reply-swipe-offset', `${Math.max(-84, Math.min(0, gesture.dx))}px`);
@@ -246,7 +248,9 @@ function setupMessageReplyGestures(area) {
         if (!touch) return;
         const dx = touch.clientX - state.x;
         const dy = touch.clientY - state.y;
-        const horizontal = state.axis === 'horizontal';
+        // 快速滑动时浏览器可能合并/省略 move，松手坐标仍应能完成方向判定。
+        const horizontal = state.quotable && state.axis !== 'scroll' && dx < -12 &&
+            Math.abs(dx) > Math.abs(dy) * 1.3;
         const reply = state.quotable && horizontal && dx <= -THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.3 &&
             !isInMultiSelectMode && sameChat(state);
         reset();
