@@ -151,6 +151,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
     const existingLoadBtn = document.getElementById('load-more-btn');
     if (existingLoadBtn) existingLoadBtn.remove();
     messageArea.prepend(fragment);
+    if (isInMultiSelectMode && typeof updateMessageSelectionUI === 'function') updateMessageSelectionUI();
     
     if (totalMessages > currentPage * pageSize) {
         const loadMoreButton = document.createElement('button');

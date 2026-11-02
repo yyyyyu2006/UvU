@@ -3,9 +3,9 @@
 let currentMultiSelectMode = 'delete'; // 'delete' or 'capture'
 let isAddingMessageMode = false;
 let addingAfterMessageId = null;
+let messageSelectionScope = null;
 
 function handleMessageLongPress(messageWrapper, x, y) {
-    if (isInMultiSelectMode) return;
     clearTimeout(longPressTimer);
     // 清除可能存在的文本选择，防止干扰菜单点击
     if (window.getSelection) {
@@ -15,6 +15,12 @@ function handleMessageLongPress(messageWrapper, x, y) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    if (isInMultiSelectMode) {
+        if (!isCurrentMessageSelection(chat)) return;
+        createContextMenu([{ label: '选到这里', action: () => selectMessagesTo(messageId) }], x, y);
+        triggerHapticFeedback('medium');
+        return;
+    }
 
     const isImageRecognitionMsg = message.parts && message.parts.some(p => p.type === 'image');
     const isVoiceMessage = /\[.*?的语音：.*?\]/.test(message.content);
@@ -62,6 +68,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
         }
     });
 
+    menuItems.push({label: '多选', action: () => enterMultiSelectMode(messageId)});
     menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
     menuItems.push({label: '从这里创建分支', action: () => createBranchArchiveAtMessage(messageId)});
 
@@ -187,7 +194,7 @@ function setupMessageReplyGestures(area) {
     };
     area.addEventListener('touchstart', event => {
         reset();
-        if (event.touches.length !== 1 || isInMultiSelectMode) return;
+        if (event.touches.length !== 1) return;
         const target = event.target;
         if (target.closest('a, button, input, textarea, select, video, audio, iframe, [contenteditable]')) return;
         const wrapper = target.closest('.message-wrapper[data-id]');
@@ -195,7 +202,7 @@ function setupMessageReplyGestures(area) {
         const message = getChat()?.history?.find(item => item.id === wrapper.dataset.id);
         if (!message) return;
         // 撤回/系统消息仍可长按删除或调试，只限制它们的左滑引用。
-        let quotable = canQuoteMessage(message) && !wrapper.classList.contains('system-notification') &&
+        let quotable = !isInMultiSelectMode && canQuoteMessage(message) && !wrapper.classList.contains('system-notification') &&
             !target.closest('.html-bubble, .quoted-message');
         // 已选中文字时让用户继续系统复制操作。
         if (window.getSelection()?.toString()) return;
@@ -218,7 +225,7 @@ function setupMessageReplyGestures(area) {
     }, { passive: false });
     area.addEventListener('touchmove', event => {
         if (!gesture) return;
-        if (event.touches.length !== 1 || !sameChat(gesture) || isInMultiSelectMode) { reset(); return; }
+        if (event.touches.length !== 1 || !sameChat(gesture)) { reset(); return; }
         const touch = Array.from(event.touches).find(item => item.identifier === gesture.touchId);
         if (!touch) { reset(); return; }
         gesture.dx = touch.clientX - gesture.x;
@@ -640,8 +647,14 @@ function cancelMessageEdit() {
 }
 
 function enterMultiSelectMode(initialMessageId, mode = 'delete') {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) return;
+    removeContextMenu();
     isInMultiSelectMode = true;
     currentMultiSelectMode = mode;
+    messageSelectionScope = { chatId: chat.id, type: currentChatType, archiveId: chat.activeArchiveId, anchorId: null };
+    multiSelectBar.classList.remove('visible');
+    document.getElementById('capture-mode-bar').classList.remove('visible');
     
     chatRoomHeaderDefault.style.display = 'none';
     chatRoomHeaderSelect.style.display = 'flex';
@@ -660,9 +673,11 @@ function enterMultiSelectMode(initialMessageId, mode = 'delete') {
     if (initialMessageId) {
         toggleMessageSelection(initialMessageId);
     }
+    updateMessageSelectionUI();
 }
 
 function exitMultiSelectMode() {
+    removeContextMenu();
     isInMultiSelectMode = false;
     chatRoomHeaderDefault.style.display = 'flex';
     chatRoomHeaderSelect.style.display = 'none';
@@ -675,26 +690,71 @@ function exitMultiSelectMode() {
     selectedMessageIds.forEach(id => {
         const el = messageArea.querySelector(`.message-wrapper[data-id="${id}"]`);
         if (el) el.classList.remove('multi-select-selected');
+        if (el) el.removeAttribute('aria-selected');
     });
     selectedMessageIds.clear();
+    messageSelectionScope = null;
     currentMultiSelectMode = 'delete';
     if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(currentChatId, currentChatType);
 }
 
 function toggleMessageSelection(messageId) {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(chat)) return;
     const el = messageArea.querySelector(`.message-wrapper[data-id="${messageId}"]`);
     if (!el) return;
     if (selectedMessageIds.has(messageId)) {
         selectedMessageIds.delete(messageId);
         el.classList.remove('multi-select-selected');
+        if (messageSelectionScope.anchorId === messageId) messageSelectionScope.anchorId = [...selectedMessageIds].at(-1) || null;
     } else {
         selectedMessageIds.add(messageId);
         el.classList.add('multi-select-selected');
+        messageSelectionScope.anchorId = messageId;
     }
-    
+    updateMessageSelectionUI();
+}
+
+function isCurrentMessageSelection(chat) {
+    return Boolean(isInMultiSelectMode && chat && messageSelectionScope &&
+        messageSelectionScope.chatId === chat.id && messageSelectionScope.type === currentChatType &&
+        messageSelectionScope.archiveId === chat.activeArchiveId);
+}
+
+function getMessageRangeIds(history, anchorId, targetId, selectableIds) {
+    const start = history.findIndex(message => message.id === anchorId);
+    const end = history.findIndex(message => message.id === targetId);
+    if (start < 0 || end < 0) return [];
+    return history.slice(Math.min(start, end), Math.max(start, end) + 1)
+        .filter(message => selectableIds.has(message.id)).map(message => message.id);
+}
+
+function selectMessagesTo(messageId) {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(chat)) return;
+    const rows = [...messageArea.querySelectorAll('.message-wrapper[data-id]')];
+    const selectable = new Set(rows.map(row => row.dataset.id));
+    if (!selectable.has(messageId)) return;
+    const anchor = messageSelectionScope.anchorId || messageId;
+    const ids = getMessageRangeIds(chat.history, anchor, messageId, selectable);
+    if (!ids.length) { showToast('起点消息已改变，请重新勾选起点'); return; }
+    ids.forEach(id => selectedMessageIds.add(id));
+    if (!messageSelectionScope.anchorId) messageSelectionScope.anchorId = messageId;
+    updateMessageSelectionUI();
+}
+
+function updateMessageSelectionUI() {
+    for (const row of messageArea.querySelectorAll('.message-wrapper[data-id]')) {
+        row.classList.toggle('multi-select-selected', selectedMessageIds.has(row.dataset.id));
+        row.setAttribute('aria-selected', String(selectedMessageIds.has(row.dataset.id)));
+    }
     if (currentMultiSelectMode === 'delete') {
         selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
         deleteSelectedBtn.disabled = selectedMessageIds.size === 0;
+        const share = document.getElementById('share-selected-btn');
+        if (share) share.disabled = selectedMessageIds.size === 0;
+        const capture = document.getElementById('capture-selected-btn');
+        if (capture) capture.disabled = selectedMessageIds.size === 0;
     } else if (currentMultiSelectMode === 'capture') {
         document.getElementById('capture-select-count').textContent = `已选择 ${selectedMessageIds.size} 项`;
         // 截图模式下，即使没选也可以生成（虽然没意义，但保持逻辑简单），或者禁用
@@ -702,7 +762,48 @@ function toggleMessageSelection(messageId) {
     }
 }
 
+function buildSelectedChatText(chat, type, ids) {
+    const title = type === 'group' ? chat.name : (chat.remarkName || chat.realName || '聊天');
+    const records = chat.history.filter(message => ids.has(message.id)).map(message => {
+        const sender = message.role === 'user' ? (type === 'group' ? chat.me?.nickname : chat.myName) || '我'
+            : type === 'group' ? (chat.members || []).find(member => member.id === message.senderId)?.groupNickname ||
+                (chat.members || []).find(member => member.id === message.senderId)?.realName || '群成员' : chat.remarkName || chat.realName || '对方';
+        const date = new Date(message.timestamp);
+        const time = Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '';
+        const quoted = !message.isWithdrawn && message.quote ? `引用 ${message.quote.senderName || ''}：${message.quote.content || ''}\n` : '';
+        return `${sender}${time ? ' · ' + time : ''}\n${quoted}${message.isWithdrawn ? '[消息已撤回]' : getQuoteMessageContent(message)}`;
+    });
+    return `${title} · 聊天记录\n共 ${records.length} 条消息\n\n${records.join('\n\n')}`;
+}
+
+async function shareSelectedMessages() {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(chat) || !selectedMessageIds.size) return;
+    const text = buildSelectedChatText(chat, currentChatType, selectedMessageIds);
+    const title = `${currentChatType === 'group' ? chat.name : chat.remarkName || chat.realName || '聊天'}-聊天记录`;
+    const name = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) + '.txt';
+    const file = new File(['\ufeff' + text], name, { type: 'text/plain;charset=utf-8' });
+    const download = () => {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        showToast('聊天记录已下载，可将文本文件分享给其他人');
+    };
+    try {
+        if (typeof navigator.share !== 'function') { download(); return; }
+        if (navigator.canShare?.({ files: [file] })) await navigator.share({ title, files: [file] });
+        else await navigator.share({ title, text });
+        showToast('已提交到系统分享面板');
+    } catch (error) {
+        if (error.name === 'AbortError') return;
+        download();
+    }
+}
+
 async function generateCapture() {
+    const selectionChat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(selectionChat)) return;
     if (selectedMessageIds.size === 0) return showToast('请至少选择一条消息');
     
     showToast('正在生成截图，请稍候...', 3000);
@@ -804,6 +905,7 @@ async function deleteSelectedMessages() {
     if (selectedMessageIds.size === 0) return;
     const deletedCount = selectedMessageIds.size;
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(chat)) return;
     chat.history = chat.history.filter(m => !selectedMessageIds.has(m.id));
 
     if (currentChatType === 'private') {

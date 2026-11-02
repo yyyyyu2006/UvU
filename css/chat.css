@@ -1981,6 +1981,19 @@
 
 #multi-select-bar.visible { display: flex; }
 
+#multi-select-bar { gap: 8px; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
+#multi-select-bar #select-count { flex: 1; min-width: 0; font-size: 12px; }
+#multi-select-bar .btn { width: auto; flex-shrink: 0; padding: 8px 10px !important; font-size: 13px; }
+#chat-room-screen.multi-select-active .message-wrapper[data-id] { position: relative; padding-left: 26px; }
+#chat-room-screen.multi-select-active .message-wrapper[data-id]::before {
+    content: ''; position: absolute; left: 2px; top: 12px; width: 18px; height: 18px;
+    border: 1.5px solid #aaa; border-radius: 50%; box-sizing: border-box; pointer-events: none;
+}
+#chat-room-screen.multi-select-active .message-wrapper.multi-select-selected[data-id]::before {
+    content: '✓'; background: var(--primary-color); border-color: var(--primary-color);
+    color: white; font-size: 13px; line-height: 16px; text-align: center;
+}
+
 #capture-mode-bar {
     position: absolute;
     bottom: 0;

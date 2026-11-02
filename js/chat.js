@@ -362,7 +362,7 @@ function setupChatRoom() {
     regenerateBtn.addEventListener('click', handleRegenerate);
     
     messageArea.addEventListener('click', (e) => {
-        if (isDebugMode) {
+        if (isDebugMode && !isInMultiSelectMode) {
             const messageWrapper = e.target.closest('.message-wrapper');
             if (messageWrapper) {
                 startDebugEdit(messageWrapper.dataset.id);
@@ -428,7 +428,7 @@ function setupChatRoom() {
     
     messageArea.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (e.target.id === 'load-more-btn' || isInMultiSelectMode) return;
+        if (e.target.id === 'load-more-btn') return;
         const messageWrapper = e.target.closest('.message-wrapper');
         if (!messageWrapper) return;
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
@@ -480,6 +480,8 @@ function setupChatRoom() {
 
     document.getElementById('cancel-multi-select-btn').addEventListener('click', exitMultiSelectMode);
     document.getElementById('delete-selected-btn').addEventListener('click', deleteSelectedMessages);
+    document.getElementById('share-selected-btn').addEventListener('click', shareSelectedMessages);
+    document.getElementById('capture-selected-btn').addEventListener('click', generateCapture);
     document.getElementById('generate-capture-btn').addEventListener('click', generateCapture);
     document.getElementById('close-capture-modal-btn').addEventListener('click', () => {
         document.getElementById('capture-result-modal').classList.remove('visible');

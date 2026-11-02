@@ -222,6 +222,8 @@ const chatRoomHtml = `
 
         
         <div id="multi-select-bar"><span id="select-count">已选择 0 项</span>
+            <button class="btn btn-secondary" id="share-selected-btn" disabled>分享记录</button>
+            <button class="btn btn-secondary" id="capture-selected-btn" disabled>截图</button>
             <button class="btn btn-danger" id="delete-selected-btn" style="width: auto; padding: 8px 16px;">删除已选
             </button>
         </div>
