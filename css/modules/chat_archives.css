@@ -1,0 +1,81 @@
+.chat-archive-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10020;
+    display: none;
+    background: rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(3px);
+}
+
+.chat-archive-overlay.visible { display: flex; }
+
+.chat-archive-panel {
+    width: min(100%, 520px);
+    height: 100%;
+    margin: 0 auto;
+    overflow-y: auto;
+    background: var(--background-color, #f7f7f8);
+    color: var(--text-color, #222);
+}
+
+.archive-panel-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 64px 1fr 64px;
+    align-items: center;
+    min-height: 54px;
+    padding: env(safe-area-inset-top) 10px 0;
+    background: rgba(255, 255, 255, 0.94);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.archive-panel-header h2 { margin: 0; text-align: center; font-size: 17px; }
+.archive-panel-header button { border: 0; background: none; color: var(--primary-color, #d7899b); font-size: 15px; }
+.archive-panel-header button:first-child { text-align: left; font-size: 30px; }
+.archive-panel-header button:last-child { text-align: right; }
+
+.archive-help {
+    margin: 14px 16px 6px;
+    color: #888;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.chat-archive-list { padding: 8px 14px 28px; }
+
+.chat-archive-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+    padding: 14px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.035);
+}
+
+.chat-archive-card.active { border-color: var(--primary-color, #d7899b); }
+.archive-card-main { min-width: 0; flex: 1; }
+.archive-name-row { display: flex; align-items: center; gap: 7px; }
+.archive-name-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.archive-active-tag {
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--primary-color, #d7899b);
+    color: #fff;
+    font-size: 10px;
+}
+
+.archive-meta, .archive-origin { margin-top: 5px; color: #999; font-size: 11px; }
+.archive-actions { display: flex; flex-direction: column; gap: 5px; }
+.archive-actions button { border: 0; background: none; color: var(--primary-color, #d7899b); font-size: 12px; }
+.archive-actions button.danger { color: #e45b63; }
+
+@media (prefers-color-scheme: dark) {
+    .chat-archive-panel { background: #171719; color: #eee; }
+    .archive-panel-header, .chat-archive-card { background: rgba(35, 35, 38, 0.96); }
+}

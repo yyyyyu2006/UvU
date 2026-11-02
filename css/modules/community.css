@@ -1,0 +1,68 @@
+.community-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    padding-bottom: 15vh;
+}
+
+.community-search-layout {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.community-logo {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #8e8e93;
+    text-shadow: 0 -1px 1px rgba(0,0,0,0.1), 0 1px 1px rgba(255,255,255,0.8);
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+    font-family: "Poppins", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.community-search-box-wrapper {
+    width: 100%;
+    padding: 0 15px;
+    margin-bottom: 12px;
+}
+
+.community-search-input-container {
+    display: flex;
+    align-items: center;
+    background-color: #f5f5f5;
+    height: 44px;
+    border-radius: 22px;
+    padding: 0 16px;
+    transition: all 0.3s ease;
+}
+
+.community-search-input-container:focus-within {
+    background-color: #eee;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.community-search-icon {
+    margin-right: 10px;
+    color: #8e8e93;
+}
+
+.community-search-input-container input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-size: 15px;
+    color: #333;
+}
+
+.community-recent-search {
+    font-size: 13px;
+    color: #999;
+    margin: 0;
+}

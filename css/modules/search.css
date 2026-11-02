@@ -1,0 +1,373 @@
+/* --- 搜索聊天记录界面 --- */
+#search-history-screen {
+    background-color: #fff; /* 详情页白色背景 */
+    display: none;
+    flex-direction: column;
+    height: 100%;
+}
+
+#search-history-screen.active {
+    display: flex;
+}
+
+/* 搜索顶部栏 */
+.search-header {
+    padding: 15px;
+    padding-top: max(10px, env(safe-area-inset-top));
+    background: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    z-index: 10;
+}
+
+.search-input-wrapper {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-input-wrapper svg {
+    position: absolute;
+    left: 12px;
+    color: #999;
+}
+
+#search-history-input {
+    width: 100%;
+    padding: 10px 10px 10px 36px;
+    border-radius: 20px;
+    border: 1px solid rgba(0,0,0,0.05);
+    background: rgba(0,0,0,0.03);
+    font-size: 14px;
+    outline: none;
+    transition: all 0.3s;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+#search-history-input:focus {
+    background: #fff;
+    border-color: var(--primary-color, #a5c1d6);
+    box-shadow: 0 0 0 3px rgba(165, 193, 214, 0.1);
+}
+
+.search-cancel-btn {
+    font-size: 14px;
+    color: #666;
+    background: none;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+/* 筛选栏 */
+.search-filter-bar {
+    padding: 10px 15px;
+    background: #fff;
+    border-bottom: 1px solid rgba(0,0,0,0.03);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.search-scope-select {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: #666;
+    padding: 5px 10px;
+    background: rgba(0,0,0,0.03);
+    border-radius: 15px;
+    cursor: pointer;
+}
+
+.search-scope-select.active {
+    background: rgba(0,0,0,0.05);
+    color: #333;
+    font-weight: 500;
+}
+
+.search-option-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kkt-switch-small {
+    transform: scale(0.8);
+}
+
+/* 内容区域 */
+.search-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background: #fff;
+}
+
+/* 统计头图 */
+.search-stat-header {
+    text-align: center;
+    padding: 20px 0;
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 10px;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-stat-header strong {
+    color: #b71c1c; /* 使用深红 */
+    font-size: 18px;
+    margin: 0 4px;
+    font-weight: normal;
+}
+
+/* 结果列表 - 分组模式 */
+.search-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.search-group-item {
+    background: #fff;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.search-group-item:active {
+    background: #fafafa;
+}
+
+.search-group-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.search-group-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-group-name {
+    font-size: 15px;
+    color: #333;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-group-count {
+    font-size: 12px;
+    color: #fff;
+    background: #b71c1c; /* 统一红色 */
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.search-group-preview {
+    font-size: 13px;
+    color: #888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+/* 结果列表 - 详情模式 (重构核心 - 剧本式) */
+.search-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.search-back-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 5px;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-detail-title {
+    font-size: 18px;
+    color: #333;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-result-list {
+    display: flex;
+    flex-direction: column;
+    padding: 0 10px;
+}
+
+.search-result-item {
+    display: block; /* 垂直排列 */
+    padding: 10px 4px; /* 增加左右留白，类似诗集页面 */
+    border-bottom: 1px solid rgba(0,0,0,0.02); /* 几乎不可见的分割线 */
+    position: relative;
+    transition: background 0.2s;
+}
+
+/* 去除左侧装饰线 */
+.search-result-item::before {
+    display: none;
+}
+
+.search-result-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.search-result-name {
+    font-size: 12px;
+    font-weight: bold;
+    color: #555; /* 稍微淡一点的黑色 */
+    padding-left: 0;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+    letter-spacing: 1px; /* 增加字距，增加精致感 */
+    position: relative;
+}
+
+/* 名字后面的小圆点装饰 */
+.search-result-name::after {
+    content: '·';
+    position: absolute;
+    right: -10px;
+    color: #ccc;
+    font-weight: normal;
+}
+
+.search-result-time {
+    font-size: 10px;
+    color: #999;
+    font-style: italic;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-result-content {
+    font-size: 14px;
+    line-height: 1.9;
+    color: #444;
+    
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+    text-align: justify;
+    word-break: break-all;
+    white-space: pre-wrap;
+}
+
+.keyword-highlight {
+    color: #b71c1c; /* 深红色朱批风格 */
+    font-weight: bold;
+    background: transparent;
+    padding: 0 1px;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+    font-size: 1.25em; /* 增大字号 */
+    line-height: 1; /* 防止撑开太多行高 */
+    vertical-align: baseline;
+}
+
+/* 范围选择模态框 */
+.scope-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+.scope-modal.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.scope-modal-content {
+    background: #fff;
+    width: 100%;
+    max-height: 70vh;
+    border-radius: 20px 20px 0 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 0.3s;
+}
+
+.scope-modal.visible .scope-modal-content {
+    transform: translateY(0);
+}
+
+.scope-list {
+    overflow-y: auto;
+    margin-top: 15px;
+}
+
+.scope-item {
+    padding: 12px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.scope-item:last-child {
+    border-bottom: none;
+}
+
+.scope-item.selected {
+    background: rgba(0,0,0,0.02);
+    color: #b71c1c;
+}
+
+.scope-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* 占位符 */
+.search-placeholder {
+    text-align: center;
+    color: #ccc;
+    margin-top: 80px;
+    font-size: 14px;
+    font-family: "Songti SC", "Noto Serif SC", "SimSun", "Times New Roman", serif;
+}
+
+.search-placeholder svg {
+    margin-bottom: 15px;
+    opacity: 0.3;
+}

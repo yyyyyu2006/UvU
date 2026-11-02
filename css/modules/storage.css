@@ -1,0 +1,245 @@
+/* css/modules/storage.css */
+.storage-page-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-color, #f5f5f5);
+}
+
+.storage-content-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.storage-content-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ios6-grouped-card {
+  background-color: #ffffff;
+  border: 1px solid #abafb5;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.storage-group-title {
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: #495057;
+  background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);
+  border-bottom: 1px solid #dee2e6;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.storage-select-all-btn {
+  background: none;
+  border: none;
+  color: #228be6;
+  font-size: 0.85rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+}
+.storage-select-all-btn:active {
+  opacity: 0.7;
+}
+
+.storage-card {
+  margin-bottom: 16px;
+}
+
+.storage-content {
+  padding: 16px;
+}
+
+.storage-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.storage-total-label {
+  font-size: 1rem;
+  color: #495057;
+  font-weight: bold;
+}
+
+.storage-total-value {
+  font-size: 1.5rem;
+  color: #212529;
+  font-weight: bold;
+}
+
+.storage-bar-container {
+  height: 12px;
+  background-color: #e9ecef;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.storage-bar {
+  height: 100%;
+  display: flex;
+  width: 100%;
+}
+
+.storage-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.storage-segment.chats { background-color: #4dabf7; }
+.storage-segment.contacts { background-color: #51cf66; }
+.storage-segment.worldbooks { background-color: #fcc419; }
+.storage-segment.personas { background-color: #ff922b; }
+.storage-segment.other { background-color: #ff6b6b; }
+.storage-segment.wallpapers { background-color: #cc5de8; }
+.storage-segment.fonts { background-color: #845ef7; }
+.storage-segment.settings { background-color: #adb5bd; }
+
+.storage-legend {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.storage-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.storage-legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.storage-legend-color.chats { background-color: #4dabf7; }
+.storage-legend-color.contacts { background-color: #51cf66; }
+.storage-legend-color.worldbooks { background-color: #fcc419; }
+.storage-legend-color.personas { background-color: #ff922b; }
+.storage-legend-color.other { background-color: #ff6b6b; }
+.storage-legend-color.wallpapers { background-color: #cc5de8; }
+.storage-legend-color.fonts { background-color: #845ef7; }
+.storage-legend-color.settings { background-color: #adb5bd; }
+
+.storage-legend-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.storage-legend-name {
+  font-size: 0.85rem;
+  color: #495057;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.storage-legend-size {
+  font-size: 0.75rem;
+  color: #868e96;
+}
+
+.storage-setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e9ecef;
+}
+.storage-setting-item:last-child {
+  border-bottom: none;
+}
+
+.storage-setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.storage-setting-name {
+  font-size: 1rem;
+  color: #212529;
+  font-weight: 500;
+}
+
+.storage-setting-desc {
+  font-size: 0.8rem;
+  color: #868e96;
+}
+
+.storage-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.storage-action-btn {
+  width: 100%;
+  font-size: 1.1rem;
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+}
+
+.storage-export-btn {
+  background: linear-gradient(to bottom, #4dabf7 0%, #228be6 100%);
+  color: white;
+  box-shadow: 0 2px 4px rgba(34, 139, 230, 0.3);
+}
+.storage-export-btn:active {
+  background: linear-gradient(to bottom, #228be6 0%, #1c7ed6 100%);
+}
+
+.storage-import-btn {
+  background: linear-gradient(to bottom, #ffffff 0%, #f1f3f5 100%);
+  color: #495057;
+  border: 1px solid #ced4da;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.storage-import-btn:active {
+  background: linear-gradient(to bottom, #f1f3f5 0%, #e9ecef 100%);
+}
+
+.storage-action-btn:disabled, .storage-action-btn.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.storage-hidden-input {
+  display: none;
+}
+
+.storage-clean-cache-btn {
+  background: linear-gradient(to bottom, #ffffff 0%, #f1f3f5 100%);
+  color: #e03131;
+  border: 1px solid #ced4da;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  margin-top: 16px;
+}
+.storage-clean-cache-btn:active {
+  background: linear-gradient(to bottom, #f1f3f5 0%, #e9ecef 100%);
+}

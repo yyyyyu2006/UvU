@@ -1,0 +1,418 @@
+/* 绘图工坊 (Drawing Workshop) 样式 */
+
+#drawing-workshop-screen.active {
+    background-color: #f5f5f5;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#drawing-workshop-screen .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+#drawing-workshop-screen .content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.workshop-tabs {
+    display: flex;
+    gap: 10px;
+    flex: 1;
+    justify-content: center;
+}
+
+.workshop-tab {
+    background: none;
+    border: none;
+    font-size: 16px;
+    font-weight: bold;
+    color: #999;
+    padding: 5px 10px;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.workshop-tab.active {
+    color: var(--primary-color, #007bff);
+    border-bottom: 2px solid var(--primary-color, #007bff);
+}
+
+.workshop-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.workshop-tab-content.active {
+    display: block;
+}
+
+.workshop-section {
+    background: #fff;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.workshop-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid #eee;
+}
+
+.workshop-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: bold;
+    font-size: 15px;
+    color: #333;
+}
+
+.workshop-section-body {
+    padding: 15px;
+}
+
+.workshop-section-body .kkt-group {
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.workshop-section-body .kkt-item {
+    padding: 10px 0;
+    border-bottom: 1px solid #f9f9f9;
+}
+
+.workshop-section-body .kkt-item:last-child {
+    border-bottom: none;
+}
+
+/* 覆盖 kkt-item 内部样式以适应工坊 */
+.workshop-section-body .kkt-item-label {
+    font-size: 14px;
+    color: #333;
+}
+
+.workshop-section-body input[type="number"],
+.workshop-section-body input[type="text"],
+.workshop-section-body input[type="password"],
+.workshop-section-body select,
+.workshop-section-body textarea {
+    font-family: inherit;
+    font-size: 14px;
+    color: #333;
+    box-sizing: border-box;
+}
+
+.workshop-section-body textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.workshop-section-body input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: #eee;
+    border-radius: 2px;
+    outline: none;
+}
+
+.workshop-section-body input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary-color, #007bff);
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 小组件工坊样式 */
+.widget-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.widget-tab-content.active {
+    display: block;
+}
+
+.widget-market-card {
+    position: relative;
+    background: #fff;
+    border-radius: 20px;
+    padding: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.03);
+    user-select: none;
+}
+
+.widget-market-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+}
+
+.widget-card-actions {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    z-index: 5;
+    border-radius: 20px;
+    pointer-events: none; /* 默认不可点击 */
+}
+
+/* 仅在 active 状态下显示并可交互 */
+.widget-market-card.active .widget-card-actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.widget-card-btn {
+    width: 80%;
+    background: #fff;
+    border: 1px solid #eee;
+    color: #333;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px 0;
+    border-radius: 10px;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.widget-card-btn:hover {
+    background: var(--primary-color, #007bff);
+    color: #fff;
+    border-color: var(--primary-color, #007bff);
+    transform: scale(1.05);
+}
+
+.widget-card-btn.danger:hover {
+    background: #ff4d4f;
+    border-color: #ff4d4f;
+}
+
+/* 画廊布局 */
+.widget-gallery-section {
+    margin-bottom: 25px;
+}
+
+.widget-gallery-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding: 0 5px;
+}
+
+.widget-gallery-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.widget-gallery-title::before {
+    content: '';
+    width: 4px;
+    height: 16px;
+    background: var(--primary-color, #007bff);
+    border-radius: 2px;
+}
+
+.widget-gallery-scroll {
+    display: flex;
+    gap: 15px;
+    overflow-x: auto;
+    padding: 5px 5px 15px 5px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none; /* Firefox */
+}
+
+.widget-gallery-scroll::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+}
+
+.widget-gallery-scroll .widget-market-card {
+    flex: 0 0 160px;
+    scroll-snap-align: start;
+}
+
+/* 真实比例预览容器 */
+.widget-preview-canvas {
+    width: 100%;
+    background-color: #fdfdfd;
+    background-image: 
+        linear-gradient(45deg, #f5f5f5 25%, transparent 25%), 
+        linear-gradient(-45deg, #f5f5f5 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #f5f5f5 75%), 
+        linear-gradient(-45deg, transparent 75%, #f5f5f5 75%);
+    background-size: 10px 10px;
+    background-position: 0 0, 0 5px, 5px 5px, 5px 0;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(0,0,0,0.05);
+}
+
+.widget-true-scale-wrapper {
+    transform-origin: center;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* 修复 4x2 被压缩的问题 */
+}
+
+/* 新建卡片样式 */
+.widget-create-card {
+    border: 2px dashed #ddd;
+    background: transparent;
+    box-shadow: none;
+    justify-content: center;
+    align-items: center;
+    min-height: 140px;
+}
+
+.widget-create-card:hover {
+    border-color: var(--primary-color);
+    background: rgba(0, 123, 255, 0.02);
+}
+
+.widget-create-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    color: #999;
+    transition: all 0.3s;
+}
+
+.widget-create-card:hover .widget-create-icon {
+    background: var(--primary-color);
+    color: #fff;
+    transform: scale(1.1);
+}
+
+/* 尺寸筛选导航 */
+.widget-size-nav {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding: 5px;
+    scrollbar-width: none;
+}
+
+.widget-size-nav::-webkit-scrollbar {
+    display: none;
+}
+
+.size-nav-item {
+    padding: 6px 16px;
+    background: #fff;
+    border-radius: 20px;
+    font-size: 13px;
+    color: #666;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #eee;
+}
+
+.size-nav-item.active {
+    background: var(--primary-color, #007bff);
+    color: #fff;
+    border-color: var(--primary-color, #007bff);
+    box-shadow: 0 4px 10px rgba(0,123,255,0.2);
+}
+
+/* 多选模式样式 */
+.widget-market-card.multi-select-mode .widget-card-actions {
+    display: none;
+}
+
+.widget-market-card .widget-checkbox {
+    display: none;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+    background: rgba(255,255,255,0.8);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.widget-market-card.multi-select-mode .widget-checkbox {
+    display: block;
+}
+
+.widget-market-card.selected {
+    border: 2px solid var(--primary-color, #007bff);
+}
+
+.widget-market-card.selected .widget-checkbox {
+    background: var(--primary-color, #007bff);
+    border-color: var(--primary-color, #007bff);
+}
+
+.widget-market-card.selected .widget-checkbox::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 7px;
+    width: 4px;
+    height: 8px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}

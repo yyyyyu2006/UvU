@@ -1,0 +1,363 @@
+/* --- 控制台 3.0 样式 (Edge 风格全屏) --- */
+
+/* CSS 变量定义，方便主题切换 */
+:root {
+    /* 默认深色主题 */
+    --console-bg-main: #1E1E1E;
+    --console-bg-tab-bar: #000000;
+    --console-bg-tab-active: #1E1E1E;
+    --console-bg-toolbar: #1E1E1E;
+    --console-border-color: #333333;
+    --console-text-main: #CCCCCC;
+    --console-text-tab: #FFFFFF;
+    --console-text-muted: #858585;
+    --console-btn-bg-hover: rgba(255, 255, 255, 0.1);
+    --console-btn-border: #444444;
+    --console-btn-border-hover: #666666;
+    --console-filter-bg: #2D2D2D;
+    --console-filter-active: #4D4D4D;
+    --console-item-border: #2A2A2A;
+    --console-item-hover: #2A2D2E;
+    --console-scrollbar-track: #1E1E1E;
+    --console-scrollbar-thumb: #424242;
+    --console-scrollbar-thumb-hover: #4F4F4F;
+    
+    /* 日志级别颜色 (深色) */
+    --console-warn-bg: rgba(206, 145, 120, 0.05);
+    --console-warn-border: #ce9178;
+    --console-warn-text: #ce9178;
+    --console-error-bg: rgba(244, 71, 71, 0.08);
+    --console-error-border: #f44747;
+    --console-error-text: #f44747;
+}
+
+/* 亮色主题变量 */
+.light-theme {
+    --console-bg-main: #FFFFFF;
+    --console-bg-tab-bar: #E5E5E5;
+    --console-bg-tab-active: #FFFFFF;
+    --console-bg-toolbar: #F3F3F3;
+    --console-border-color: #E0E0E0;
+    --console-text-main: #333333;
+    --console-text-tab: #111111;
+    --console-text-muted: #666666;
+    --console-btn-bg-hover: rgba(0, 0, 0, 0.05);
+    --console-btn-border: #CCCCCC;
+    --console-btn-border-hover: #999999;
+    --console-filter-bg: #E0E0E0;
+    --console-filter-active: #FFFFFF;
+    --console-item-border: #F0F0F0;
+    --console-item-hover: #F9F9F9;
+    --console-scrollbar-track: #F3F3F3;
+    --console-scrollbar-thumb: #C1C1C1;
+    --console-scrollbar-thumb-hover: #A8A8A8;
+    
+    /* 日志级别颜色 (亮色) */
+    --console-warn-bg: rgba(255, 165, 0, 0.1);
+    --console-warn-border: #D97706;
+    --console-warn-text: #B45309;
+    --console-error-bg: rgba(255, 0, 0, 0.05);
+    --console-error-border: #DC2626;
+    --console-error-text: #B91C1C;
+}
+
+#console-screen {
+    background-color: var(--console-bg-main);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 9999;
+    display: none;
+    flex-direction: column;
+}
+
+#console-screen.active {
+    display: flex;
+}
+
+/* 隐藏默认的 header */
+#console-screen > .app-header {
+    display: none;
+}
+
+.edge-console-container {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    background-color: var(--console-bg-main);
+    animation: consoleFadeIn 0.3s ease;
+}
+
+@keyframes consoleFadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+/* Edge 风格标签栏 */
+.edge-tab-bar {
+    height: calc(40px + env(safe-area-inset-top));
+    background-color: var(--console-bg-tab-bar);
+    display: flex;
+    align-items: flex-end;
+    padding: env(safe-area-inset-top) 8px 0 8px;
+    flex-shrink: 0;
+    position: relative;
+    transition: background-color 0.3s;
+}
+
+.edge-tab {
+    height: 32px;
+    background-color: var(--console-bg-tab-active);
+    border-radius: 8px 8px 0 0;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    color: var(--console-text-tab);
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    position: relative;
+    min-width: 120px;
+    max-width: 200px;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* 标签两侧的圆角过渡效果 */
+.edge-tab::before, .edge-tab::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: 8px;
+    height: 8px;
+    transition: background 0.3s;
+}
+.edge-tab::before {
+    left: -8px;
+    background: radial-gradient(circle at 0 0, transparent 8px, var(--console-bg-tab-active) 8px);
+}
+.edge-tab::after {
+    right: -8px;
+    background: radial-gradient(circle at 100% 0, transparent 8px, var(--console-bg-tab-active) 8px);
+}
+
+.edge-window-controls {
+    position: absolute;
+    right: 0;
+    top: env(safe-area-inset-top);
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.edge-control-btn {
+    background: transparent;
+    border: none;
+    color: var(--console-text-tab);
+    width: 46px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.2s, color 0.3s;
+}
+
+.edge-control-btn:hover {
+    background-color: var(--console-btn-bg-hover);
+}
+
+.edge-control-btn.close-btn:hover {
+    background-color: #E81123; /* Windows 经典的关闭红 */
+    color: #FFFFFF;
+}
+
+/* Edge 风格工具栏 */
+.edge-toolbar {
+    height: 44px;
+    background-color: var(--console-bg-toolbar);
+    border-bottom: 1px solid var(--console-border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    flex-shrink: 0;
+    transition: background-color 0.3s, border-color 0.3s;
+}
+
+.edge-toolbar-left, .edge-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.console-filters {
+    display: flex;
+    gap: 4px;
+    background: var(--console-filter-bg);
+    padding: 2px;
+    border-radius: 6px;
+    transition: background-color 0.3s;
+}
+
+.console-filter-btn {
+    background: transparent;
+    border: none;
+    color: var(--console-text-muted);
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.console-filter-btn:hover {
+    background: var(--console-btn-bg-hover);
+    color: var(--console-text-main);
+}
+
+.console-filter-btn.active {
+    background: var(--console-filter-active);
+    color: var(--console-text-main);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.edge-action-btn {
+    background: transparent;
+    border: 1px solid var(--console-btn-border);
+    color: var(--console-text-main);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+.edge-action-btn:hover {
+    background: var(--console-btn-bg-hover);
+    border-color: var(--console-btn-border-hover);
+}
+
+/* 日志容器 */
+#console-log-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--console-text-main);
+    background-color: var(--console-bg-main);
+    scroll-behavior: smooth;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* 自定义滚动条 */
+#console-log-container::-webkit-scrollbar {
+    width: 10px;
+}
+#console-log-container::-webkit-scrollbar-track {
+    background: var(--console-scrollbar-track);
+}
+#console-log-container::-webkit-scrollbar-thumb {
+    background: var(--console-scrollbar-thumb);
+    border: 2px solid var(--console-scrollbar-track);
+    border-radius: 5px;
+}
+#console-log-container::-webkit-scrollbar-thumb:hover {
+    background: var(--console-scrollbar-thumb-hover);
+}
+
+/* 单条日志样式 */
+.console-log-item {
+    margin-bottom: 4px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--console-item-border);
+    position: relative;
+    transition: background-color 0.2s, border-color 0.3s;
+}
+
+.console-log-item:hover {
+    background-color: var(--console-item-hover);
+}
+
+.console-msg-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0; /* 防止 flex 子项溢出 */
+}
+
+.console-msg {
+    flex: 1;
+    word-break: break-all; /* 强制换行，防止移动端溢出 */
+    white-space: pre-wrap; /* 保留空格和换行 */
+}
+
+.console-time {
+    color: var(--console-text-muted);
+    font-size: 11px;
+    align-self: flex-start;
+    margin-top: 2px;
+    user-select: none;
+}
+
+/* 移动端优化：复制按钮常驻但半透明，点击区域变大 */
+.console-item-copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--console-text-muted);
+    cursor: pointer;
+    padding: 8px; /* 增大点击区域 */
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5; /* 移动端常驻半透明 */
+    transition: all 0.2s;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+.console-log-item:hover .console-item-copy-btn {
+    opacity: 1;
+    background: var(--console-btn-bg-hover);
+    color: var(--console-text-main);
+}
+
+.console-item-copy-btn:active {
+    background: var(--console-btn-bg-hover);
+}
+
+/* 日志级别颜色 */
+.console-log-item.log .console-msg { color: var(--console-text-main); }
+.console-log-item.warn { background-color: var(--console-warn-bg); border-left: 3px solid var(--console-warn-border); }
+.console-log-item.warn .console-msg { color: var(--console-warn-text); }
+.console-log-item.error { background-color: var(--console-error-bg); border-left: 3px solid var(--console-error-border); }
+.console-log-item.error .console-msg { color: var(--console-error-text); }
+
+/* 移动端适配调整 */
+@media (max-width: 768px) {
+    .edge-tab {
+        min-width: auto;
+        padding: 0 12px;
+    }
+    .edge-btn-text {
+        display: none; /* 手机端隐藏文字，只留图标 */
+    }
+    .console-log-item {
+        padding: 8px 4px;
+    }
+    #console-log-container {
+        font-size: 12px; /* 手机端字体稍微调小 */
+    }
+}
