@@ -114,7 +114,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         if (provider === 'gemini') {
             let lastMsgTimeForAI = 0;
             let lastTimeMarkerForAI = 0;
-            const contents = historySlice.map(msg => {
+            let contents = historySlice.map(msg => {
                 const role = msg.role === 'assistant' ? 'model' : 'user';
                 
                 let prefix = '';
