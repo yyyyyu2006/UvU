@@ -314,7 +314,9 @@ function startQuoteReply(messageId) {
     previewBar.setAttribute('aria-hidden', 'false');
     previewBar.classList.add('visible');
     
-    messageInput.focus({ preventScroll: true });
+    // 与手动点输入框保持一致：允许移动端把输入框移到软键盘上方。
+    // 必须同步聚焦，延迟到计时器后会让 iOS 丢失唤起键盘的用户手势。
+    messageInput.focus();
 }
 
 function cancelQuoteReply() {

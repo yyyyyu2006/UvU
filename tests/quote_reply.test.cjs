@@ -17,7 +17,11 @@ function fixture() {
         db: { characters: [chat], groups: [], apiSettings: {} },
         currentChatId: 'alice', currentChatType: 'private', currentQuoteInfo: null,
         isInMultiSelectMode: false, isGenerating: false,
-        messageInput: { value: '已经写好的草稿', focus() { this.focused = true; }, dispatchEvent() {} },
+        messageInput: { value: '已经写好的草稿', focus(options) {
+            this.focused = true;
+            this.focusOptions = options;
+            this.previewVisibleAtFocus = classes.has('visible');
+        }, dispatchEvent() {} },
         document: { getElementById: id => id === 'reply-preview-bar' ? preview : null },
         addMessageBubble() {}, triggerHapticFeedback() {}, saveData: async () => {}, renderChatList() {}
     });
@@ -46,6 +50,16 @@ test('self messages use the user display name and retain only the reply text for
     assert.equal(context.currentQuoteInfo.senderId, 'user_me');
     assert.equal(context.currentQuoteInfo.content, '这是新的回复');
     assert.equal(name.textContent, '回复 我的备注');
+});
+
+test('quote focuses synchronously after preview layout and permits native keyboard scrolling', () => {
+    const { context, chat } = fixture();
+    chat.history.push({ id: 'keyboard', role: 'assistant', content: '[阿晴的消息：键盘测试]' });
+    context.startQuoteReply('keyboard');
+    assert.equal(context.messageInput.focused, true);
+    assert.equal(context.messageInput.previewVisibleAtFocus, true);
+    assert.notEqual(context.messageInput.focusOptions?.preventScroll, true);
+    assert.equal(context.messageInput.value, '已经写好的草稿');
 });
 
 test('group quote resolves the sender and remains usable if a member was removed', () => {
