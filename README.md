@@ -84,6 +84,14 @@ node --test tests/home_presets.test.cjs tests/quote_reply.test.cjs
 node --test tests/home_presets.test.cjs
 ```
 
+## 自动记忆与大总结
+
+聊天 → 日记（群聊为“总结”）→ **自动记忆 / 大总结设置**。默认关闭自动整理。可配置保留楼层、旧楼层阈值、每批条数、目标字数、大总结阈值与篇幅，以及主 / 副 API 和完整自定义提示词。提示词留空时沿用原有日记与合并精简规则。
+
+成功保存的记忆会替代来源原文进入后续上下文，大总结替代下层摘要，完整聊天记录仍保留，可显示原楼层或暂停记忆恢复原文。详见 [使用与恢复说明](docs/auto-memory.md)。
+
+开发验证：`node --test --test-isolation=none tests/*.test.cjs`。
+
 官方说明：
 
 - https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site

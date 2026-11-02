@@ -73,6 +73,9 @@ async function getAiReply(chatId, chatType, isBackground = false) {
     }
 
     try {
+        const memoryArchiveId = chat.activeArchiveId;
+        if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
+        if (chat.activeArchiveId !== memoryArchiveId) return;
         let systemPrompt, requestBody;
         if (chatType === 'private') {
             systemPrompt = generatePrivateSystemPrompt(chat);
@@ -85,7 +88,8 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             }
         }
 
-        let historySlice = chat.history.slice(-chat.maxMemory);
+        let historySlice = typeof getAutoMemoryContextHistory === 'function'
+            ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
         
         // 使用工具函数进行过滤（包含深度克隆、屏蔽过滤、双语修正、状态栏剔除）
         historySlice = filterHistoryForAI(chat, historySlice);
@@ -551,6 +555,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         if (!isBackground) showApiError(error);
         else console.error("Background Auto-Reply Error:", error);
     } finally {
+        if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
         if (!isBackground) {
             isGenerating = false;
             getReplyBtn.disabled = false;

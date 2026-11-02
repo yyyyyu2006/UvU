@@ -1,5 +1,28 @@
 /* --- 记忆日记 (Memory Journal) 样式 --- */
 
+.auto-memory-entry { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; }
+.auto-memory-entry .btn { flex: 1; min-width: 130px; white-space: normal; color: #444; }
+#auto-memory-modal { z-index: 2100; padding: 14px; box-sizing: border-box; }
+#auto-memory-modal .auto-memory-dialog { width: 100%; max-width: 560px; max-height: 88dvh; overflow-y: auto; box-sizing: border-box; padding: 20px; color: #333; background: #fff; overscroll-behavior: contain; }
+.auto-memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.auto-memory-heading h2 { margin: 0; font-size: 18px; }
+#auto-memory-close { border: 0; background: transparent; color: #444; font-size: 22px; min-width: 40px; min-height: 40px; }
+#auto-memory-form label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; font-size: 13px; }
+#auto-memory-form .auto-memory-check { flex-direction: row; align-items: center; gap: 8px; }
+#auto-memory-form input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; }
+#auto-memory-form input[type=number], #auto-memory-form select, #auto-memory-form textarea { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #ddd; border-radius: 8px; padding: 9px; background: #fafafa; color: #333; font: inherit; font-size: 16px; }
+#auto-memory-form textarea { resize: vertical; }
+#auto-memory-form fieldset { border: 1px solid #e8e4e0; border-radius: 10px; margin: 16px 0; padding: 8px 12px; min-width: 0; }
+#auto-memory-form legend { font-size: 14px; padding: 0 6px; }
+.auto-memory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.auto-memory-help { font-size: 12px; line-height: 1.65; color: #666; margin: 10px 0; }
+#auto-memory-status { font-size: 13px; line-height: 1.6; padding: 10px; background: #f6f3ef; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#auto-memory-status.memory-error { color: #9b332d; }
+.auto-memory-actions { display: flex; gap: 8px; margin-top: 18px; }
+.auto-memory-actions .btn { flex: 1; white-space: normal; color: #333; }
+.auto-memory-fold-notice { display: block; margin: 12px auto; padding: 8px 12px; border: 1px solid #ddd; border-radius: 14px; font-size: 12px; background: #f8f6f3; color: #666; max-width: 95%; }
+.auto-memory-badge { font-size: 11px; color: #705b45; margin-top: 6px; }
+
 #memory-journal-screen .content {
     padding: 15px;
     background-color: #f9f9f9;

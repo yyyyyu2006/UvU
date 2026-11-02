@@ -126,6 +126,7 @@ const init = async () => {
     try { checkForUpdates(); } catch(e) { console.error("checkForUpdates failed:", e); }
     try { setupPeekFeature(); } catch(e) { console.error("setupPeekFeature failed:", e); }
     try { setupMemoryJournalScreen(); } catch(e) { console.error("setupMemoryJournalScreen failed:", e); }
+    try { setupAutoMemory(); } catch(e) { console.error("setupAutoMemory failed:", e); }
     try { setupDeleteHistoryChunk(); } catch(e) { console.error("setupDeleteHistoryChunk failed:", e); }
     try { setupStorageAnalysisScreen(); } catch(e) { console.error("setupStorageAnalysisScreen failed:", e); }
     try { setupCleanImageCache(); } catch(e) { console.error("setupCleanImageCache failed:", e); }

@@ -88,14 +88,14 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
         }
         systemPrompt += `</参考资料>\n\n`;
 
-        const favoritedJournals = (chat.memoryJournals || []).filter(j => j.isFavorited).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
+        const favoritedJournals = getContextMemoryJournals(chat).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
         if (favoritedJournals) {
             systemPrompt += `<剧情记忆>\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n</剧情记忆>\n\n`;
         }
         
         // --- 注入最近聊天记录 ---
         const maxMemory = chat.maxMemory || 20;
-        let recentHistory = chat.history.slice(-maxMemory);
+        let recentHistory = getAutoMemoryContextHistory(chat, maxMemory);
         if (typeof filterHistoryForAI === 'function') {
             recentHistory = filterHistoryForAI(chat, recentHistory);
         }
@@ -166,8 +166,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
         }
 
         systemPrompt += `<memoir>\n`
-            const favoritedJournals = (chat.memoryJournals || [])
-            .filter(j => j.isFavorited)
+            const favoritedJournals = getContextMemoryJournals(chat)
             .map(j => `标题：${j.title}\n内容：${j.content}`)
             .join('\n\n---\n\n');
 
@@ -178,7 +177,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
 
         // --- 注入最近聊天记录 ---
         const maxMemory = chat.maxMemory || 20;
-        let recentHistory = chat.history.slice(-maxMemory);
+        let recentHistory = getAutoMemoryContextHistory(chat, maxMemory);
         
         // 使用通用过滤函数
         if (typeof filterHistoryForAI === 'function') {
@@ -544,8 +543,7 @@ async function generateCallSummary(chat, callContext) {
     const worldBooksGuidelines = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
 
     // 获取回忆日记
-    const favoritedJournals = (chat.memoryJournals || [])
-        .filter(j => j.isFavorited)
+    const favoritedJournals = getContextMemoryJournals(chat)
         .map(j => `标题：${j.title}\n内容：${j.content}`)
         .join('\n\n---\n\n');
 

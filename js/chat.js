@@ -597,6 +597,7 @@ function openChatRoom(chatId, type) {
 
     updateCustomBubbleStyle(chatId, chat.customBubbleCss, chat.useCustomBubbleCss);
     renderMessages(false, true);
+    if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, type);
     switchScreen('chat-room-screen');
     
     requestAnimationFrame(() => {
@@ -685,6 +686,7 @@ async function sendMessage() {
         message.senderId = 'user_me';
     }
     chat.history.push(message);
+    if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chat.id, currentChatType);
     addMessageBubble(message, currentChatId, currentChatType);
     // 在异步保存前清空本次引用，避免保存期间新选中的引用被旧发送操作取消。
     if (currentQuoteInfo === quoteInfo || !quoteInfo) cancelQuoteReply();

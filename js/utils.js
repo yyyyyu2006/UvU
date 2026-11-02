@@ -759,7 +759,7 @@ function buildChatApiRequest(apiConfig, messages, options = {}) {
 }
 
 // 通用 AI 响应获取函数 (支持流式和非流式自动切换)
-async function fetchAiResponse(settings, requestBody, headers, endpoint, forceStream = false) {
+async function fetchAiResponse(settings, requestBody, headers, endpoint, forceStream = false, fetchOptions = {}) {
     const { provider } = settings;
     const streamEnabled = forceStream || settings.streamEnabled;
 
@@ -778,7 +778,8 @@ async function fetchAiResponse(settings, requestBody, headers, endpoint, forceSt
     const response = await fetch(endpoint, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: fetchOptions.signal
     });
 
     if (!response.ok) {

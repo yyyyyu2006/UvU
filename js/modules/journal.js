@@ -48,6 +48,7 @@ function setupMemoryJournalScreen() {
 
                 chat.memoryJournals = chat.memoryJournals.filter(j => !selectedJournalIds.has(j.id));
                 await saveData();
+                renderMessages(false, false);
                 toggleMultiSelectMode(false);
                 renderJournalList();
                 showToast('已批量删除');
@@ -123,24 +124,7 @@ function setupMemoryJournalScreen() {
         const combinedContent = selectedJournals.map(j => `【${j.title}】\n${j.content}`).join('\n\n---\n\n');
 
         // 4. 构建 Prompt
-        let summaryPrompt = `你是一个专业的档案记录员。请将以下多篇日记合并整理成一篇连贯、精简的“回忆录”。\n\n`;
-
-        summaryPrompt += `【核心要求】\n`;
-        summaryPrompt += `1. **体现时间进程**：正文内容必须按时间顺序组织，并明确指出时间点。**格式规范：**请严格按照“x年x月x日，发生了[事件]”的格式进行叙述，确保时间线清晰。\n`;
-        summaryPrompt += `2. **客观平实**：使用第三人称视角，客观陈述事实。**绝对禁止使用强烈的情绪词汇**（如“极度愤怒”、“痛彻心扉”、“欣喜若狂”等），保持冷静、克制的叙述风格。\n`;
-        summaryPrompt += `3. **抓取重点**：识别对话中的核心事件、重要话题转折、关键决策或信息。忽略无关的闲聊和琐碎细节。\n`;
-        summaryPrompt += `4. **关键原话摘录（重要）**：\n`;
-        summaryPrompt += `    - 仅当出现具有**极高情感价值**（如表白、郑重承诺、极具感染力的情感宣泄）或**重大剧情价值**（如揭示核心秘密、决定性瞬间）的对话时，请**直接引用角色的原话**。\n`;
-        summaryPrompt += `    - **引用格式**：使用引号包裹原话，例如：${chat.realName}说：“我永远不会离开你。”\n`;
-        summaryPrompt += `    - **严格控制数量**：只摘录最闪光、最不可替代的那几句。如果聊天记录平淡无奇或全是日常琐事，**请不要摘录任何原话**，以免破坏摘要的精简性。\n`;
-        summaryPrompt += `5. **无升华**：不要进行价值升华、感悟或总结性评价，仅记录发生了什么。\n\n`;
-
-        summaryPrompt += `你的输出必须使用XML标签包裹，包含以下两个部分：\n`;
-        summaryPrompt += `<title>一个概括性的标题，例如“1月上旬·关于旅行的筹备与出发”</title>\n`;
-        summaryPrompt += `<content>合并后的正文内容</content>\n\n`;
-
-        summaryPrompt += `请严格按照上述XML标签格式输出，不要输出任何其他多余的文字。\n\n`;
-        summaryPrompt += `待合并的日记内容如下：\n\n${combinedContent}`;
+        const summaryPrompt = buildJournalMergePrompt(chat, combinedContent);
 
         showToast('正在合并精简，请稍候...');
         
@@ -344,6 +328,7 @@ function setupMemoryJournalScreen() {
             if (confirm('确定要删除这篇日记吗？')) {
                 chat.memoryJournals = chat.memoryJournals.filter(j => j.id !== journalId);
                 await saveData();
+                renderMessages(false, false);
                 renderJournalList();
                 showToast('日记已删除');
             }
@@ -397,6 +382,7 @@ function setupMemoryJournalScreen() {
             journal.title = titleEl.textContent.trim();
             journal.content = contentEl.textContent.trim();
             await saveData();
+            renderMessages(false, false);
 
             titleEl.isContentEditable = false;
             contentEl.isContentEditable = false;
@@ -421,6 +407,7 @@ function setupMemoryJournalScreen() {
 }
 
 function renderJournalList() {
+    if (typeof renderAutoMemoryStatus === 'function') renderAutoMemoryStatus();
     const container = document.getElementById('journal-list-container');
     const placeholder = document.getElementById('no-journals-placeholder');
     container.innerHTML = '';
@@ -468,6 +455,7 @@ function renderJournalList() {
     if (placeholder) placeholder.style.display = 'none';
 
     const sortedJournals = [...journals].sort((a, b) => a.createdAt - b.createdAt);
+    const memoryState = typeof getAutoMemoryState === 'function' ? getAutoMemoryState(chat) : null;
 
     sortedJournals.forEach(journal => {
         const card = document.createElement('li');
@@ -480,7 +468,7 @@ function renderJournalList() {
         card.innerHTML = `
             <div class="journal-checkbox"></div>
             <div class="journal-card-header">
-                <div class="journal-card-title">${journal.title}</div>
+                <div class="journal-card-title"></div>
             </div>
             <div class="journal-card-actions">
                 <button class="action-icon-btn favorite-journal-btn" title="收藏">
@@ -499,6 +487,18 @@ function renderJournalList() {
             </div>
         `;
 
+        card.querySelector('.journal-card-title').textContent = journal.title;
+        if (journal.autoMemory) {
+            const badge = document.createElement('div');
+            badge.className = 'auto-memory-badge';
+            badge.textContent = !memoryState?.validIds.has(journal.id) ? '来源变化或未提交 · 原楼层已恢复'
+                : memoryState.consumed.has(journal.id) ? '已纳入上层大总结 · 保留原摘要供查看'
+                : !getAutoMemorySettings(chat).useMemory ? '记忆注入已暂停 · 使用原楼层' : '自动注入上下文 · 原楼层可恢复';
+            card.querySelector('.journal-card-header').after(badge);
+            const favorite = card.querySelector('.favorite-journal-btn');
+            favorite.disabled = true;
+            favorite.title = '自动记忆无需收藏；可在自动记忆设置中暂停注入';
+        }
         if (journal.isFavorited) {
             card.querySelector('.favorite-journal-btn').classList.add('favorited');
         }
@@ -507,64 +507,7 @@ function renderJournalList() {
     });
 }
 
-async function generateJournal(start, end, includeFavorited = false) {
-    showToast('正在生成日记，请稍候...');
-    
-    // 显示列表占位卡片
-    const container = document.getElementById('journal-list-container');
-    const placeholder = document.getElementById('no-journals-placeholder');
-    if (placeholder) placeholder.style.display = 'none';
-
-    const loadingCard = document.createElement('li');
-    loadingCard.className = 'journal-card generating';
-    loadingCard.id = 'journal-generating-card';
-    loadingCard.innerHTML = `
-        <div class="spinner"></div>
-        <div class="text">正在${currentChatType === 'group' ? '总结群聊' : '编织回忆'}...</div>
-    `;
-    
-    if (container.firstChild) {
-        container.insertBefore(loadingCard, container.firstChild);
-    } else {
-        container.appendChild(loadingCard);
-    }
-    container.scrollTop = 0;
-
-    isGenerating = true; 
-    generatingChatId = currentChatId;
-
-    try {
-        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-        if (!chat) {
-            throw new Error("未找到当前聊天。");
-        }
-
-        const startIndex = start - 1;
-        const endIndex = end;
-        
-        if (startIndex < 0 || endIndex > chat.history.length || startIndex >= endIndex) {
-            throw new Error("无效的消息范围。");
-        }
-
-        // ...
-        let messagesToSummarize = chat.history.slice(startIndex, endIndex);
-        
-        // 1. 保持原样：第三个参数设为 true，确保你想要的“高权重”隐藏消息能被读进来
-        messagesToSummarize = filterHistoryForAI(chat, messagesToSummarize, true);
-
-        // 2. 【新增】精准剔除 thinking 消息
-        // 你的 chat_ai.js 中生成的思考消息带有 isThinking: true 属性
-        // 即使它们包含在上下文里，我们也在生成日记前把它们扔掉
-        messagesToSummarize = messagesToSummarize.filter(m => !m.isThinking);
-
-        // 3. 【可选保险】防止只有标签没有属性的情况（针对旧历史记录）
-        // 如果你担心以前的历史记录里有 thinking 标签但没有 isThinking 属性，可以加一步正则清洗
-        messagesToSummarize.forEach(m => {
-            if (m.content && typeof m.content === 'string') {
-               m.content = m.content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
-            }
-        });
-
+function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeFavorited = false) {
         let worldBooksContent = '';
         let summaryPrompt = '';
         let favoritedJournalsPrompt = '';
@@ -581,7 +524,7 @@ async function generateJournal(start, end, includeFavorited = false) {
             }
         }
 
-        if (currentChatType === 'group') {
+        if (chatType === 'group') {
             // 群聊逻辑
             const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
             const worldBooksBefore = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
@@ -751,6 +694,92 @@ async function generateJournal(start, end, includeFavorited = false) {
             })()}\n---`;
             }
         }
+
+    return summaryPrompt;
+}
+
+function buildJournalMergePrompt(chat, combinedContent) {
+        let summaryPrompt = `你是一个专业的档案记录员。请将以下多篇日记合并整理成一篇连贯、精简的“回忆录”。\n\n`;
+
+        summaryPrompt += `【核心要求】\n`;
+        summaryPrompt += `1. **体现时间进程**：正文内容必须按时间顺序组织，并明确指出时间点。**格式规范：**请严格按照“x年x月x日，发生了[事件]”的格式进行叙述，确保时间线清晰。\n`;
+        summaryPrompt += `2. **客观平实**：使用第三人称视角，客观陈述事实。**绝对禁止使用强烈的情绪词汇**（如“极度愤怒”、“痛彻心扉”、“欣喜若狂”等），保持冷静、克制的叙述风格。\n`;
+        summaryPrompt += `3. **抓取重点**：识别对话中的核心事件、重要话题转折、关键决策或信息。忽略无关的闲聊和琐碎细节。\n`;
+        summaryPrompt += `4. **关键原话摘录（重要）**：\n`;
+        summaryPrompt += `    - 仅当出现具有**极高情感价值**（如表白、郑重承诺、极具感染力的情感宣泄）或**重大剧情价值**（如揭示核心秘密、决定性瞬间）的对话时，请**直接引用角色的原话**。\n`;
+        summaryPrompt += `    - **引用格式**：使用引号包裹原话，例如：${chat.realName}说：“我永远不会离开你。”\n`;
+        summaryPrompt += `    - **严格控制数量**：只摘录最闪光、最不可替代的那几句。如果聊天记录平淡无奇或全是日常琐事，**请不要摘录任何原话**，以免破坏摘要的精简性。\n`;
+        summaryPrompt += `5. **无升华**：不要进行价值升华、感悟或总结性评价，仅记录发生了什么。\n\n`;
+
+        summaryPrompt += `你的输出必须使用XML标签包裹，包含以下两个部分：\n`;
+        summaryPrompt += `<title>一个概括性的标题，例如“1月上旬·关于旅行的筹备与出发”</title>\n`;
+        summaryPrompt += `<content>合并后的正文内容</content>\n\n`;
+
+        summaryPrompt += `请严格按照上述XML标签格式输出，不要输出任何其他多余的文字。\n\n`;
+        summaryPrompt += `待合并的日记内容如下：\n\n${combinedContent}`;
+
+    return summaryPrompt;
+}
+
+async function generateJournal(start, end, includeFavorited = false) {
+    showToast('正在生成日记，请稍候...');
+
+    // 显示列表占位卡片
+    const container = document.getElementById('journal-list-container');
+    const placeholder = document.getElementById('no-journals-placeholder');
+    if (placeholder) placeholder.style.display = 'none';
+
+    const loadingCard = document.createElement('li');
+    loadingCard.className = 'journal-card generating';
+    loadingCard.id = 'journal-generating-card';
+    loadingCard.innerHTML = `
+        <div class="spinner"></div>
+        <div class="text">正在${currentChatType === 'group' ? '总结群聊' : '编织回忆'}...</div>
+    `;
+
+    if (container.firstChild) {
+        container.insertBefore(loadingCard, container.firstChild);
+    } else {
+        container.appendChild(loadingCard);
+    }
+    container.scrollTop = 0;
+
+    isGenerating = true;
+    generatingChatId = currentChatId;
+
+    try {
+        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+        if (!chat) {
+            throw new Error("未找到当前聊天。");
+        }
+
+        const startIndex = start - 1;
+        const endIndex = end;
+
+        if (startIndex < 0 || endIndex > chat.history.length || startIndex >= endIndex) {
+            throw new Error("无效的消息范围。");
+        }
+
+        // ...
+        let messagesToSummarize = chat.history.slice(startIndex, endIndex);
+
+        // 1. 保持原样：第三个参数设为 true，确保你想要的“高权重”隐藏消息能被读进来
+        messagesToSummarize = filterHistoryForAI(chat, messagesToSummarize, true);
+
+        // 2. 【新增】精准剔除 thinking 消息
+        // 你的 chat_ai.js 中生成的思考消息带有 isThinking: true 属性
+        // 即使它们包含在上下文里，我们也在生成日记前把它们扔掉
+        messagesToSummarize = messagesToSummarize.filter(m => !m.isThinking);
+
+        // 3. 【可选保险】防止只有标签没有属性的情况（针对旧历史记录）
+        // 如果你担心以前的历史记录里有 thinking 标签但没有 isThinking 属性，可以加一步正则清洗
+        messagesToSummarize.forEach(m => {
+            if (m.content && typeof m.content === 'string') {
+               m.content = m.content.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+            }
+        });
+
+        const summaryPrompt = buildJournalSummaryPrompt(chat, currentChatType, messagesToSummarize, includeFavorited);
 
         const apiConfig = resolveAuxiliaryApiConfig('journal');
         let { url, key, model } = apiConfig;

@@ -1328,8 +1328,7 @@ function generateGroupSystemPrompt(group) {
         prompt += `${worldBooksBefore}\n\n`;
     }
 
-    const favoritedJournals = (group.memoryJournals || [])
-        .filter(j => j.isFavorited)
+    const favoritedJournals = getContextMemoryJournals(group)
         .map(j => `标题：${j.title}\n内容：${j.content}`)
         .join('\n\n---\n\n');
 

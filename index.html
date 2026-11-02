@@ -36,7 +36,7 @@
     <link rel="stylesheet" href="css/modules/moments.css">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
-    <link rel="stylesheet" href="css/modules/journal.css">
+    <link rel="stylesheet" href="css/modules/journal.css?v=20261102-memory">
     <link rel="stylesheet" href="css/modules/chat_archives.css">
     <link rel="stylesheet" href="css/modules/steps.css">
     <link rel="stylesheet" href="css/modules/more.css">
@@ -1581,6 +1581,10 @@
             </div>
         </header>
         <main class="content">
+            <div class="auto-memory-entry">
+                <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn">自动记忆 / 大总结设置</button>
+                <button type="button" class="btn btn-secondary" id="auto-memory-show-original">显示 / 折叠原楼层</button>
+            </div>
             <ul class="list-container" id="journal-list-container">
                 <!-- Journal cards will be rendered here -->
             </ul>
@@ -2741,7 +2745,7 @@
 -->
 
 <!-- [1. 基础层] -->
-<script src="js/utils.js"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
+<script src="js/utils.js?v=20261102-memory"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
 <script src="js/db.js"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
@@ -2749,16 +2753,16 @@
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js"></script>
 <script src="js/modules/character_import.js"></script>
-<script src="js/modules/chat_render.js"></script>
+<script src="js/modules/chat_render.js?v=20261102-memory"></script>
 <script src="js/modules/chat_archives.js"></script>
     <script src="js/modules/chat_ai_airdrop.js"></script>
-    <script src="js/modules/chat_ai_prompt.js"></script>
-    <script src="js/modules/chat_ai_call.js"></script>
-    <script src="js/modules/chat_ai.js"></script>
+    <script src="js/modules/chat_ai_prompt.js?v=20261102-memory"></script>
+    <script src="js/modules/chat_ai_call.js?v=20261102-memory"></script>
+    <script src="js/modules/chat_ai.js?v=20261102-memory"></script>
 <script src="js/modules/chat_features.js"></script>
 <script src="js/modules/chat_ops.js?v=20261102-quote-keyboard"></script>
-<script src="js/chat.js"></script>     <!-- 聊天核心入口 -->
-<script src="js/group_chat.js"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
+<script src="js/chat.js?v=20261102-memory"></script>     <!-- 聊天核心入口 -->
+<script src="js/group_chat.js?v=20261102-memory"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js"></script> <!-- 聊天室HTML注入 -->
 <script src="js/modules/chat_settings_html.js"></script> <!-- 聊天设置HTML注入 -->
@@ -2776,7 +2780,44 @@
 <script src="js/modules/sticker.js"></script>   <!-- 表情包管理系统 -->
 <script src="js/modules/worldbook.js"></script> <!-- 世界书设定集 -->
 <script src="js/modules/peek.js"></script>      <!-- 偷看手机(相册/短信等) -->
-<script src="js/modules/journal.js"></script>   <!-- 回忆日记生成 -->
+<div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
+    <div class="modal-window auto-memory-dialog">
+        <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
+        <p class="auto-memory-help">设置仅对当前聊天的当前存档生效。总结成功并保存后，旧楼层由记忆替代进入 AI 上下文，原聊天记录仍保留。</p>
+        <p id="auto-memory-status" role="status" aria-live="polite"></p>
+        <form id="auto-memory-form">
+            <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
+            <label class="auto-memory-check"><input name="useMemory" type="checkbox"> 使用自动记忆，替代已总结原文进入上下文</label>
+            <label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 聊天界面折叠已总结楼层</label>
+            <p class="auto-memory-help">关闭“使用自动记忆”可恢复原文进入上下文（仍受原有上下文条数限制）；关闭自动整理仅停止后续调用。</p>
+            <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 设置中“回忆日记”的路由</option><option value="primary">主 API</option><option value="secondary">副 API（须在 API 应用中配置）</option></select></label>
+            <fieldset><legend>楼层记忆</legend><div class="auto-memory-grid">
+                <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
+                <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
+                <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
+                <label>总结目标字数<input name="targetLength" type="number" min="50" max="20000" required></label>
+            </div><p class="auto-memory-help">一条有效用户或角色消息算一楼；思考、撤回和手动禁用消息不计。先保留最近楼层，剩余未总结旧楼层达到阈值才触发；按时间从旧到新整理。</p></fieldset>
+            <fieldset><legend>大总结</legend>
+                <label class="auto-memory-check"><input name="mergeEnabled" type="checkbox"> 自动进一步压缩已有记忆</label>
+                <div class="auto-memory-grid">
+                    <label>生效记忆达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
+                    <label>每次最多合并几篇<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
+                    <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
+                </div><p class="auto-memory-help">大总结会替代其来源小总结，避免重复注入；已有大总结也可参与下一次压缩。旧条目保留可查，删除大总结可恢复下层记忆。</p>
+            </fieldset>
+            <label>补充总结要求<textarea name="requirements" rows="3" placeholder="例如：保留承诺、关系变化、时间地点与未完成事项。"></textarea></label>
+            <details><summary>自定义总结提示词（留空沿用原有提示词）</summary>
+                <label>楼层总结提示词<textarea name="summaryPrompt" rows="6" placeholder="留空沿用现有日记风格、角色设定和世界书；填写后以这里的规则为准。聊天资料自动附加。"></textarea></label>
+                <label>大总结提示词<textarea name="mergePrompt" rows="6" placeholder="留空沿用现有“合并精简”提示词；填写后以这里的规则为准。已有记忆自动附加。"></textarea></label>
+            </details>
+            <p class="auto-memory-help">在发送消息、请求回复及回复结束时检查条件。每次检查最多一次楼层总结和一次大总结；失败保留原文并冷却一分钟。页面关闭后不会运行。目标字数通过提示词约束，最终输出取决于模型。</p>
+            <div class="auto-memory-actions"><button type="button" class="btn btn-secondary" id="auto-memory-run">保存并立即整理一批</button><button type="submit" class="btn btn-primary">保存设置</button></div>
+            <p class="auto-memory-help">“立即整理”忽略触发阈值，仍保留最近楼层，并使用所选 API。默认关闭自动整理。</p>
+        </form>
+    </div>
+</div>
+<script src="js/modules/journal.js?v=20261102-memory"></script>   <!-- 回忆日记生成 -->
+<script src="js/modules/auto_memory.js?v=20261102-memory"></script>
 <script src="js/modules/storage_html.js"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
@@ -2806,6 +2847,6 @@
 <script src="js/modules/reader_view.js"></script> <!-- 阅读器视图逻辑 -->
 
 <!-- [4. 程序入口] -->
-<script src="js/main.js"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261102-memory"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

@@ -91,7 +91,7 @@ function generatePrivateSystemPrompt(character) {
         }
         prompt += `</参考资料>\n\n`;
 
-        const favoritedJournals = (character.memoryJournals || []).filter(j => j.isFavorited).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
+        const favoritedJournals = getContextMemoryJournals(character).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
         if (favoritedJournals) {
             prompt += `<剧情记忆>\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n</剧情记忆>\n\n`;
         }
@@ -155,8 +155,7 @@ function generatePrivateSystemPrompt(character) {
     }
 
     prompt += `<memoir>\n`
-        const favoritedJournals = (character.memoryJournals || [])
-        .filter(j => j.isFavorited)
+        const favoritedJournals = getContextMemoryJournals(character)
         .map(j => `标题：${j.title}\n内容：${j.content}`)
         .join('\n\n---\n\n');
 
@@ -392,8 +391,7 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
         });
     }
 
-    const favoritedJournals = (chat.memoryJournals || [])
-        .filter(j => j.isFavorited)
+    const favoritedJournals = getContextMemoryJournals(chat)
         .map(j => `标题：${j.title}\n内容：${j.content}`)
         .join('\n\n---\n\n');
     let memoryText = '';
@@ -412,7 +410,8 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
     breakdown.baseSystem = Math.max(0, totalSystemTokens - breakdown.worldBook - breakdown.charPersona - breakdown.userPersona - breakdown.memory);
 
     // 5. 聊天记录
-    let historySlice = chat.history.slice(-chat.maxMemory);
+    let historySlice = getAutoMemoryContextHistory(chat);
+    historySlice = filterHistoryForAI(chat, historySlice);
     historySlice = historySlice.filter(m => !m.isContextDisabled);
     
     let historyText = '';

@@ -43,6 +43,21 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     const messagesToRender = chat.history.slice(start, end);
     if (!isLoadMore) messageArea.innerHTML = '';
     const fragment = document.createDocumentFragment();
+    const memorySettings = typeof getAutoMemorySettings === 'function' ? getAutoMemorySettings(chat) : null;
+    const memoryCovered = memorySettings?.useMemory && memorySettings.hideSummarized &&
+        !autoMemoryShowOriginal.has(autoMemoryKey(chat, currentChatType)) ? getAutoMemoryState(chat).covered : new Set();
+    const hiddenCount = messagesToRender.filter(message => memoryCovered.has(message.id)).length;
+    if (hiddenCount) {
+        const notice = document.createElement('button');
+        notice.type = 'button';
+        notice.className = 'auto-memory-fold-notice';
+        notice.textContent = `本页 ${hiddenCount} 条已总结楼层已折叠 · 点击查看原文`;
+        notice.addEventListener('click', () => {
+            autoMemoryShowOriginal.add(autoMemoryKey(chat, currentChatType));
+            renderMessages(false, false);
+        });
+        fragment.appendChild(notice);
+    }
     
     let lastMsgTime = 0;
     
@@ -51,6 +66,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     }
 
     messagesToRender.forEach((msg, index) => {
+        if (memoryCovered.has(msg.id)) return;
         const currentMsgTime = msg.timestamp;
         const timeDiff = currentMsgTime - lastMsgTime;
         const isSameDay = new Date(currentMsgTime).toDateString() === new Date(lastMsgTime).toDateString();
