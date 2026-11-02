@@ -137,62 +137,191 @@ function startDebugEdit(messageId) {
     textarea.focus();
 }
 
+function getQuoteMessageContent(message) {
+    const content = typeof message.content === 'string' ? message.content : '';
+    if (message.parts?.some(part => part.type === 'image')) return '[图片]';
+    if (/\[.*?(?:发送的|的)表情包[：:]/.test(content)) return '[表情包]';
+    if (/\[.*?的语音[：:]/.test(content)) return '[语音]';
+    if (/\[.*?发来的(?:照片\/视频|照片|视频)[：:]/.test(content)) return '[照片/视频]';
+    if (message.type === 'red-packet') return '[红包]';
+    if (message.type === 'forwarded-chat') return '[聊天记录]';
+    const match = content.match(/^\[.*?的消息[：:]([\s\S]*)\]$/);
+    if (match) return match[1];
+    const reply = content.match(/^\[.*?引用[“"]([\s\S]*?)[”"]并回复[：:]([\s\S]*)\]$/);
+    return reply ? reply[2] : content;
+}
+
+function canQuoteMessage(message) {
+    return Boolean(message && ['user', 'assistant'].includes(message.role) &&
+        !message.isWithdrawn && !message.isThinking && !message.isStatusUpdate &&
+        !/^\s*(?:<thinking>|\[system(?:-display)?:)/.test(message.content || ''));
+}
+
+// 先锁定方向再接管手势，保留纵向滚动、双指缩放和组件内部的横向滚动。
+function setupMessageReplyGestures(area) {
+    if (!area || area.dataset.replyGesturesBound) return;
+    area.dataset.replyGesturesBound = 'true';
+    const THRESHOLD = 56;
+    let gesture = null;
+    let suppressClickUntil = 0;
+    const getChat = () => currentChatType === 'private'
+        ? db.characters.find(item => item.id === currentChatId)
+        : db.groups.find(item => item.id === currentChatId);
+    const sameChat = state => state.chatId === currentChatId && state.chatType === currentChatType &&
+        state.archiveId === getChat()?.activeArchiveId &&
+        Boolean(area.closest('.screen')?.classList.contains('active'));
+    const reset = () => {
+        clearTimeout(longPressTimer);
+        if (!gesture) return;
+        const { row, wrapper } = gesture;
+        row.style.setProperty('--reply-swipe-offset', '0px');
+        row.classList.remove('message-reply-dragging');
+        wrapper.classList.remove('message-reply-ready');
+        setTimeout(() => {
+            if (gesture?.row === row) return;
+            row.classList.remove('message-reply-swipe-row');
+            row.style.removeProperty('--reply-swipe-offset');
+            wrapper.classList.remove('message-reply-swiping');
+        }, 180);
+        gesture = null;
+    };
+    area.addEventListener('touchstart', event => {
+        reset();
+        if (event.touches.length !== 1 || isInMultiSelectMode) return;
+        const target = event.target;
+        if (target.closest('a, button, input, textarea, select, video, audio, iframe, [contenteditable]')) return;
+        const wrapper = target.closest('.message-wrapper[data-id]');
+        if (!wrapper) return;
+        const message = getChat()?.history?.find(item => item.id === wrapper.dataset.id);
+        if (!message) return;
+        // 撤回/系统消息仍可长按删除或调试，只限制它们的左滑引用。
+        let quotable = canQuoteMessage(message) && !wrapper.classList.contains('system-notification') &&
+            !target.closest('.html-bubble, .quoted-message');
+        // 已选中文字时让用户继续系统复制操作。
+        if (window.getSelection()?.toString()) return;
+        for (let element = target; element && element !== wrapper; element = element.parentElement) {
+            if (element.scrollWidth > element.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(element).overflowX)) quotable = false;
+        }
+        const touch = event.touches[0];
+        gesture = { wrapper, row: wrapper.querySelector('.message-bubble-row') || wrapper,
+            id: message.id, touchId: touch.identifier, x: touch.clientX, y: touch.clientY,
+            dx: 0, dy: 0, axis: '', chatId: currentChatId, chatType: currentChatType,
+            archiveId: getChat()?.activeArchiveId, ready: false, quotable };
+        const state = gesture;
+        longPressTimer = setTimeout(() => {
+            if (gesture !== state || !sameChat(state)) return;
+            suppressClickUntil = Date.now() + 500;
+            reset();
+            handleMessageLongPress(wrapper, touch.clientX, touch.clientY);
+        }, 400);
+    }, { passive: true });
+    area.addEventListener('touchmove', event => {
+        if (!gesture) return;
+        if (event.touches.length !== 1 || !sameChat(gesture) || isInMultiSelectMode) { reset(); return; }
+        const touch = Array.from(event.touches).find(item => item.identifier === gesture.touchId);
+        if (!touch) { reset(); return; }
+        gesture.dx = touch.clientX - gesture.x;
+        gesture.dy = touch.clientY - gesture.y;
+        const horizontal = Math.abs(gesture.dx);
+        const vertical = Math.abs(gesture.dy);
+        if (horizontal > 6 || vertical > 6) clearTimeout(longPressTimer);
+        if (!gesture.axis && Math.max(horizontal, vertical) >= 12) {
+            gesture.axis = gesture.quotable && gesture.dx < 0 && horizontal > vertical * 1.3 ? 'horizontal' : 'scroll';
+        }
+        if (gesture.axis !== 'horizontal') return;
+        if (!event.cancelable) { reset(); return; }
+        event.preventDefault();
+        gesture.row.classList.add('message-reply-swipe-row', 'message-reply-dragging');
+        gesture.wrapper.classList.add('message-reply-swiping');
+        gesture.row.style.setProperty('--reply-swipe-offset', `${Math.max(-84, Math.min(0, gesture.dx))}px`);
+        const ready = gesture.dx <= -THRESHOLD && horizontal > vertical * 1.3;
+        gesture.wrapper.classList.toggle('message-reply-ready', ready);
+        if (ready && !gesture.ready) triggerHapticFeedback('light');
+        gesture.ready = ready;
+    }, { passive: false });
+    area.addEventListener('touchend', event => {
+        if (!gesture) return;
+        const state = gesture;
+        const touch = Array.from(event.changedTouches).find(item => item.identifier === state.touchId);
+        if (!touch) return;
+        const dx = touch.clientX - state.x;
+        const dy = touch.clientY - state.y;
+        const horizontal = state.axis === 'horizontal';
+        const reply = state.quotable && horizontal && dx <= -THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.3 &&
+            !isInMultiSelectMode && sameChat(state);
+        reset();
+        if (horizontal) {
+            if (event.cancelable) event.preventDefault();
+            suppressClickUntil = Date.now() + 500;
+        }
+        if (reply) {
+            removeContextMenu();
+            startQuoteReply(state.id);
+        }
+    }, { passive: false });
+    area.addEventListener('touchcancel', reset, { passive: true });
+    area.addEventListener('click', event => {
+        if (Date.now() >= suppressClickUntil) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }, true);
+    // 在页面切换或进入后台时释放拖拽状态，避免旧会话的消息触发引用。
+    document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
+}
+
 function startQuoteReply(messageId) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-    const message = chat.history.find(m => m.id === messageId);
-    if (!message) return;
+    const message = chat?.history?.find(m => m.id === messageId);
+    if (!canQuoteMessage(message) || isInMultiSelectMode) return;
 
     let senderName = '';
     let senderId = '';
     if (message.role === 'user') {
         senderName = (currentChatType === 'private')
             ? ((chat.myRemarkName && chat.myRemarkName.trim()) || chat.myName || 'User')
-            : chat.me.nickname;
+            : (chat.me?.nickname || '我');
         senderId = 'user_me';
     } else { 
         if (currentChatType === 'private') {
-            senderName = chat.remarkName;
+            senderName = chat.remarkName || chat.realName || '对方';
             senderId = chat.id;
         } else {
-            const sender = chat.members.find(m => m.id === message.senderId);
+            const sender = (chat.members || []).find(m => m.id === message.senderId);
             senderName = sender ? sender.groupNickname : '未知成员';
-            senderId = sender ? sender.id : 'unknown';
+            senderId = sender ? sender.id : (message.senderId || 'unknown');
         }
-    }
-    
-    let previewContent = message.content;
-    const textMatch = message.content.match(/\[.*?的消息：([\s\S]+?)\]/);
-    if (textMatch) {
-        previewContent = textMatch[1];
-    } else if (/\[.*?的表情包：.*?\]/.test(message.content)) {
-        previewContent = '[表情包]';
-    } else if (/\[.*?的语音：.*?\]/.test(message.content)) {
-        previewContent = '[语音]';
-    } else if (/\[.*?发来的照片\/视频：.*?\]/.test(message.content)) {
-        previewContent = '[照片/视频]';
-    } else if (message.parts && message.parts.some(p => p.type === 'image')) {
-        previewContent = '[图片]';
     }
     
     currentQuoteInfo = {
         id: message.id,
         senderId: senderId,
         senderName: senderName,
-        content: previewContent.substring(0, 100) 
+        content: getQuoteMessageContent(message),
+        timestamp: message.timestamp,
+        chatId: currentChatId,
+        chatType: currentChatType,
+        archiveId: chat.activeArchiveId
     };
 
     const previewBar = document.getElementById('reply-preview-bar');
     previewBar.querySelector('.reply-preview-name').textContent = `回复 ${senderName}`;
     previewBar.querySelector('.reply-preview-text').textContent = currentQuoteInfo.content;
+    previewBar.querySelector('.reply-preview-text').title = currentQuoteInfo.content;
+    previewBar.setAttribute('aria-hidden', 'false');
     previewBar.classList.add('visible');
     
-    messageInput.focus();
+    messageInput.focus({ preventScroll: true });
 }
 
 function cancelQuoteReply() {
     currentQuoteInfo = null;
     const previewBar = document.getElementById('reply-preview-bar');
+    if (!previewBar) return;
     previewBar.classList.remove('visible');
+    previewBar.setAttribute('aria-hidden', 'true');
+    previewBar.querySelector('.reply-preview-name').textContent = '';
+    previewBar.querySelector('.reply-preview-text').textContent = '';
+    previewBar.querySelector('.reply-preview-text').removeAttribute('title');
 }
 
 function startAddNewMessage(messageId) {

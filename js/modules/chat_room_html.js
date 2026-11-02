@@ -49,12 +49,12 @@ const chatRoomHtml = `
         </div>
 
         <div class="chat-input-wrapper">
-            <div id="reply-preview-bar">
-                <div class="reply-preview-content">
+            <div id="reply-preview-bar" role="region" aria-label="正在引用的消息" aria-hidden="true">
+                <div class="reply-preview-content" aria-live="polite">
                     <span class="reply-preview-name"></span>
                     <p class="reply-preview-text"></p>
                 </div>
-                <button id="cancel-reply-btn">×</button>
+                <button id="cancel-reply-btn" type="button" aria-label="取消引用" title="取消引用">×</button>
             </div>
             <div class="message-input-area" id="message-input-default">
                 <button id="toggle-expansion-btn" class="icon-btn circle-bg">

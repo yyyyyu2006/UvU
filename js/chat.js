@@ -335,8 +335,15 @@ function setupChatRoom() {
         }, 50);
     });
     messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !isGenerating) sendMessage();
+        if (e.key === 'Enter' && !e.isComposing && !isGenerating) sendMessage();
     });
+    const updateSendButton = () => {
+        const hasText = Boolean(messageInput.value.trim());
+        document.getElementById('send-message-btn').style.display = hasText ? 'inline-flex' : 'none';
+        getReplyBtn.style.display = hasText ? 'none' : 'inline-flex';
+    };
+    messageInput.addEventListener('input', updateSendButton);
+    updateSendButton();
 
     // 监听输入框聚焦事件：自动收起底部面板，避免与键盘冲突
     messageInput.addEventListener('focus', () => {
@@ -426,17 +433,7 @@ function setupChatRoom() {
         if (!messageWrapper) return;
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
     });
-    messageArea.addEventListener('touchstart', (e) => {
-        if (e.target.id === 'load-more-btn') return;
-        const messageWrapper = e.target.closest('.message-wrapper');
-        if (!messageWrapper) return;
-        longPressTimer = setTimeout(() => {
-            const touch = e.touches[0];
-            handleMessageLongPress(messageWrapper, touch.clientX, touch.clientY);
-        }, 400);
-    });
-    messageArea.addEventListener('touchend', () => clearTimeout(longPressTimer));
-    messageArea.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+    setupMessageReplyGestures(messageArea);
     
     const messageEditForm = document.getElementById('message-edit-form');
     if(messageEditForm) {
@@ -493,6 +490,8 @@ function setupChatRoom() {
 function openChatRoom(chatId, type) {
     const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
+
+    cancelQuoteReply();
 
     // 迁移旧的私聊数据 (仅群聊)
     if (type === 'group' && chat.privateSessions && typeof migratePrivateSessionsToHistory === 'function') {
@@ -608,10 +607,13 @@ function openChatRoom(chatId, type) {
 async function sendMessage() {
     const text = messageInput.value.trim();
     if (!text || isGenerating) return;
-    messageInput.value = ''; 
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
 
     if (!chat) return;
+    const quoteInfo = currentQuoteInfo?.chatId === currentChatId && currentQuoteInfo.chatType === currentChatType &&
+        currentQuoteInfo.archiveId === chat.activeArchiveId ? currentQuoteInfo : null;
+    messageInput.value = '';
+    messageInput.dispatchEvent(new Event('input', { bubbles: true }));
     if (!chat.history) chat.history = [];
 
     if (db.apiSettings && db.apiSettings.timePerceptionEnabled) {
@@ -669,11 +671,13 @@ async function sendMessage() {
         timestamp: Date.now()
     };
 
-    if (currentQuoteInfo) {
+    if (quoteInfo) {
         message.quote = {
-            messageId: currentQuoteInfo.id,
-            senderId: currentQuoteInfo.senderId, 
-            content: currentQuoteInfo.content
+            messageId: quoteInfo.id,
+            senderId: quoteInfo.senderId,
+            senderName: quoteInfo.senderName,
+            content: quoteInfo.content,
+            timestamp: quoteInfo.timestamp
         };
     }
 
@@ -682,6 +686,8 @@ async function sendMessage() {
     }
     chat.history.push(message);
     addMessageBubble(message, currentChatId, currentChatType);
+    // 在异步保存前清空本次引用，避免保存期间新选中的引用被旧发送操作取消。
+    if (currentQuoteInfo === quoteInfo || !quoteInfo) cancelQuoteReply();
     triggerHapticFeedback('success');
 
     if (chat.history.length > 0 && chat.history.length % 300 === 0) {
@@ -691,9 +697,6 @@ async function sendMessage() {
     await saveData();
     renderChatList();
 
-    if (currentQuoteInfo) {
-        cancelQuoteReply();
-    }
 }
 
 // 备份提示

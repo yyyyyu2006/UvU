@@ -1536,9 +1536,35 @@
 }
 
 /* 引用预览栏 */
+/* 左滑回复只移动当前消息行；纵向滚动仍交给浏览器。 */
+.message-wrapper.message-reply-swiping { position: relative; }
+.message-reply-swipe-row {
+    transform: translateX(var(--reply-swipe-offset, 0px));
+    transition: transform .18s ease-out;
+    will-change: transform;
+}
+.message-reply-swipe-row.message-reply-dragging { transition: none; user-select: none; -webkit-user-select: none; }
+.message-wrapper.message-reply-swiping::after {
+    content: '↩';
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(128, 128, 128, .13);
+    color: #888;
+    font-size: 20px;
+    pointer-events: none;
+}
+.message-wrapper.message-reply-ready::after { background: var(--primary-color, #607d8b); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .message-reply-swipe-row { transition: none; } }
+
 #reply-preview-bar {
     display: none;
-    padding: 8px 12px;
+    padding: 10px 14px;
     background-color: rgba(240, 240, 240, 0.9);
     backdrop-filter: blur(10px);
     border-top: 1px solid #eee;
@@ -1554,6 +1580,7 @@
 
 .reply-preview-content {
     flex-grow: 1;
+    min-width: 0;
     overflow: hidden;
     border-left: 3px solid var(--primary-color);
     padding-left: 8px;
@@ -1562,7 +1589,7 @@
 .reply-preview-name {
     font-size: 13px;
     font-weight: 600;
-    color: var(--primary-color);
+    color: #526879;
     display: block;
 }
 
@@ -1581,7 +1608,10 @@
     font-size: 20px;
     color: #999;
     cursor: pointer;
-    padding: 5px;
+    padding: 8px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-shrink: 0;
     line-height: 1;
 }
 

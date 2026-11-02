@@ -3,6 +3,12 @@
 const HUMAN_RUN_PROMPT = `<角色活人运转>\n## [PSYCHOLOGY: HEXACO-SCHEMA-ACT]\n> Personality: HEXACO-driven, dynamic traits, inner conflicts required \n> Filter: schema-bias drives emotion; no pure reaction allowed \n> Attachment: secure/insecure logic must govern intimacy  \n> If-Then Behavior: situation-dependent activation of traits only  \n---\n    ## [VITALITY]\n+inconsistency +emoflux +splitmotifs +microreact +minddrift\n---\n## [TRAJECTORY-COHERENCE]\n> Role maintains an identity narrative = coherent over time  \n> No mood/goal switch without contradiction resolution \n> Every action must protect or challenge self-concept  \n> Interrupts = inner conflict or narrative clash  \n> Output = filtered through “who I am” logic\n</角色活人运转>`;
 
 // AI 交互逻辑
+function formatQuotedUserMessage(message, chat, chatType) {
+    const name = chatType === 'group' ? (chat.me?.nickname || '我') : (chat.myName || '我');
+    const quotedName = message.quote.senderName ? `${message.quote.senderName}：` : '';
+    return `[${name}引用“${quotedName}${message.quote.content}”并回复：${getQuoteMessageContent(message)}]`;
+}
+
 async function getAiReply(chatId, chatType, isBackground = false) {
     if (isGenerating && !isBackground) return; 
     
@@ -142,6 +148,12 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                     }).filter(p => p);
                 } else {
                     parts = [{text: msg.content}];
+                }
+
+                // Gemini 同样需要看到引用对象，不能只发送回复正文。
+                if (msg.role === 'user' && msg.quote) {
+                    parts = parts.filter(part => !Object.prototype.hasOwnProperty.call(part, 'text'));
+                    parts.unshift({ text: formatQuotedUserMessage(msg, chat, chatType) });
                 }
 
                 if (prefix) {
@@ -295,10 +307,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                }
 
                if (msg.role === 'user' && msg.quote) {
-                   const replyTextMatch = msg.content.match(/\[.*?的消息：([\s\S]+?)\]/);
-                   const replyText = replyTextMatch ? replyTextMatch[1] : msg.content;
-                   
-                   content = `${prefix}[${chat.myName}引用“${msg.quote.content}”并回复：${replyText}]`;
+                   content = prefix + formatQuotedUserMessage(msg, chat, chatType);
                    pushOrMergeMessage('user', content);
 
                } else {
