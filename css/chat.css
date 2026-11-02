@@ -415,6 +415,7 @@
 #chat-room-screen.multi-select-active .content {
     padding-bottom: 70px;
 }
+#chat-room-screen.multi-select-active .message-area { padding-bottom: 58px; scroll-padding-bottom: 58px; }
 
 /* 消息区域 */
 .message-area {
@@ -1986,8 +1987,10 @@
 #multi-select-bar .btn { width: auto; flex-shrink: 0; margin: 0; height: 36px; line-height: 20px; align-self: center; padding: 8px 10px !important; font-size: 13px; }
 #chat-room-screen.multi-select-active .message-wrapper[data-id],
 #chat-room-screen.multi-select-active .message-wrapper[data-id] * { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.select-message-range-btn { align-self: center; margin: 5px 0; padding: 6px 12px; min-height: 32px; border: 1px solid #b8ccd9; border-radius: 16px; background: var(--white, #fff); color: #46708d; font-size: 12px; cursor: pointer; }
-.select-message-range-btn[hidden] { display: none; }
+#select-to-here-btn { position: absolute; left: 12px; bottom: calc(var(--selection-toolbar-height, 66px) + 12px); z-index: 21; display: inline-flex; align-items: center; gap: 7px; width: auto; min-height: 38px; margin: 0; padding: 8px 14px; border: 1px solid rgba(92, 109, 128, .1); border-radius: 22px; background: rgba(255, 255, 255, .96); color: #526779; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); font-size: 13px; font-weight: 600; line-height: 20px; cursor: pointer; touch-action: manipulation; }
+#select-to-here-btn [data-range-direction] { font-size: 18px; line-height: 20px; }
+#select-to-here-btn:active { background: #eef3f7; }
+#select-to-here-btn[hidden], #chat-room-screen:not(.multi-select-active) #select-to-here-btn { display: none; }
 .message-forward-overlay { position: fixed; inset: 0; z-index: 20000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.4); }
 .message-forward-dialog { width: min(440px, 100%); max-height: 85vh; max-height: 85dvh; display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: var(--white, #fff); color: #333; box-sizing: border-box; overflow: hidden; }
 .message-forward-header { display: flex; gap: 12px; justify-content: space-between; align-items: center; }

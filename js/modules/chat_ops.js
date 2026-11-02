@@ -694,7 +694,8 @@ function exitMultiSelectMode() {
     });
     selectedMessageIds.clear();
     messageSelectionScope = null;
-    messageArea.querySelectorAll('.select-message-range-btn').forEach(button => button.remove());
+    const rangeShortcut = document.getElementById('select-to-here-btn');
+    if (rangeShortcut) rangeShortcut.hidden = true;
     currentMultiSelectMode = 'delete';
     if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(currentChatId, currentChatType);
 }
@@ -748,19 +749,6 @@ function updateMessageSelectionUI() {
     for (const row of messageArea.querySelectorAll('.message-wrapper[data-id]')) {
         row.classList.toggle('multi-select-selected', selectedMessageIds.has(row.dataset.id));
         row.setAttribute('aria-selected', String(selectedMessageIds.has(row.dataset.id)));
-        if (row.querySelector && row.appendChild) {
-            let button = row.querySelector('.select-message-range-btn');
-            const visible = isInMultiSelectMode && selectedMessageIds.size > 0 && !selectedMessageIds.has(row.dataset.id);
-            if (visible && !button) {
-                button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'select-message-range-btn';
-                button.textContent = '选到这里';
-                button.setAttribute('aria-label', '从已选起点选到这条消息');
-                row.appendChild(button);
-            }
-            if (button) button.hidden = !visible;
-        }
     }
     if (currentMultiSelectMode === 'delete') {
         selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
@@ -773,6 +761,75 @@ function updateMessageSelectionUI() {
         document.getElementById('capture-select-count').textContent = `已选择 ${selectedMessageIds.size} 项`;
         // 截图模式下，即使没选也可以生成（虽然没意义，但保持逻辑简单），或者禁用
         // document.getElementById('generate-capture-btn').disabled = selectedMessageIds.size === 0;
+    }
+    updateMessageRangeShortcut();
+}
+
+// 优先选择画面内完整可见的消息，超长气泡才使用部分可见的消息。
+function getMessageRangeShortcutTarget(history, anchorId, selectedIds, rows, viewport) {
+    const indices = new Map(history.map((message, index) => [message.id, index]));
+    const anchor = indices.get(anchorId);
+    if (anchor === undefined) return null;
+    const visible = rows.filter(row => indices.has(row.id) && row.bottom > viewport.top && row.top < viewport.bottom);
+    const complete = visible.filter(row => row.top >= viewport.top && row.bottom <= viewport.bottom);
+    const candidates = (complete.length ? complete : visible).filter(row => !selectedIds.has(row.id));
+    let target = null;
+    for (const row of candidates) {
+        const distance = indices.get(row.id) - anchor;
+        if (!target || Math.abs(distance) > Math.abs(target.distance)) target = { id: row.id, distance };
+    }
+    return target ? { id: target.id, direction: target.distance < 0 ? 'up' : 'down' } : null;
+}
+
+function updateMessageRangeShortcut() {
+    const button = document.getElementById('select-to-here-btn');
+    if (!button) return;
+    const chat = currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isCurrentMessageSelection(chat) || !selectedMessageIds.size || !messageArea.getBoundingClientRect) {
+        button.hidden = true;
+        return;
+    }
+    const toolbar = currentMultiSelectMode === 'capture' ? document.getElementById('capture-mode-bar') : multiSelectBar;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const height = toolbarRect.height;
+    chatRoomScreen.style.setProperty('--selection-toolbar-height', height + 'px');
+    const area = messageArea.getBoundingClientRect();
+    const rows = [...messageArea.querySelectorAll('.message-wrapper[data-id]')].map(row => {
+        const rect = row.getBoundingClientRect();
+        return { id: row.dataset.id, top: rect.top, bottom: rect.bottom };
+    });
+    // 为左下角悬浮按钮留出操作区，不把按钮遮住的消息当作端点。
+    const target = getMessageRangeShortcutTarget(chat.history, messageSelectionScope.anchorId, selectedMessageIds, rows, { top: area.top, bottom: Math.min(area.bottom, toolbarRect.top) - 48 });
+    button.hidden = !target;
+    if (!target) { delete button.dataset.targetId; return; }
+    button.dataset.targetId = target.id;
+    button.querySelector('[data-range-direction]').textContent = target.direction === 'up' ? '↑' : '↓';
+    const label = '从已选起点选择到当前画面' + (target.direction === 'up' ? '最上方' : '最下方') + '的完整消息';
+    button.setAttribute('aria-label', label);
+    button.title = label;
+}
+
+function setupMessageRangeShortcut() {
+    const button = document.getElementById('select-to-here-btn');
+    if (!button || button.dataset.bound) return;
+    button.dataset.bound = 'true';
+    let scheduled = false;
+    const refresh = () => {
+        if (!isInMultiSelectMode || scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => { scheduled = false; updateMessageRangeShortcut(); });
+    };
+    button.addEventListener('click', () => {
+        // 点击时重新读取位置，避免快速滚动后使用旧端点。
+        updateMessageRangeShortcut();
+        if (!button.hidden && button.dataset.targetId) selectMessagesTo(button.dataset.targetId);
+    });
+    chatRoomScreen.addEventListener('scroll', refresh, true);
+    chatRoomScreen.addEventListener('load', refresh, true);
+    window.addEventListener('resize', refresh);
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(refresh);
+        [messageArea, multiSelectBar, document.getElementById('capture-mode-bar')].forEach(element => observer.observe(element));
     }
 }
 
@@ -840,7 +897,6 @@ async function generateCapture() {
         if (originalEl) {
             const clone = originalEl.cloneNode(true);
             clone.classList.remove('multi-select-selected');
-            clone.querySelectorAll('.select-message-range-btn').forEach(button => button.remove());
             clone.style.marginBottom = '15px';
             
             // 处理一些可能在截图时显示不正常的元素

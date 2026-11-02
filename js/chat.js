@@ -362,12 +362,6 @@ function setupChatRoom() {
     regenerateBtn.addEventListener('click', handleRegenerate);
     
     messageArea.addEventListener('click', (e) => {
-        const rangeButton = e.target.closest('.select-message-range-btn');
-        if (isInMultiSelectMode && rangeButton) {
-            e.preventDefault();
-            selectMessagesTo(rangeButton.closest('.message-wrapper').dataset.id);
-            return;
-        }
         if (isDebugMode && !isInMultiSelectMode) {
             const messageWrapper = e.target.closest('.message-wrapper');
             if (messageWrapper) {
@@ -440,6 +434,7 @@ function setupChatRoom() {
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
     });
     setupMessageReplyGestures(messageArea);
+    setupMessageRangeShortcut();
     
     const messageEditForm = document.getElementById('message-edit-form');
     if(messageEditForm) {

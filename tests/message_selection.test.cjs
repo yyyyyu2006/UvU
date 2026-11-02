@@ -93,3 +93,23 @@ test('sharing opens internal recipient picker and retains selection until sendin
     assert.equal(opened[0][1], 'private'); assert.deepEqual([...opened[0][2]], ['m0']);
     assert.equal(f.downloads.length, 0); assert.equal(f.c.selectedMessageIds.size, 1);
 });
+
+test('floating range endpoint follows visible bounds and arrow direction in both directions', () => {
+    const f = fixture(), rows = f.rows.map((row, i) => ({ id: row.dataset.id, top: i * 50, bottom: i * 50 + 40 }));
+    const target = (anchor, selected, top, bottom) => f.c.getMessageRangeShortcutTarget(f.chat.history, anchor, new Set(selected), rows, { top, bottom });
+    assert.equal(JSON.stringify(target('m7', ['m7'], 52, 245)), JSON.stringify({ id: 'm2', direction: 'up' }));
+    assert.equal(JSON.stringify(target('m0', ['m0'], 52, 245)), JSON.stringify({ id: 'm4', direction: 'down' }));
+    assert.equal(target('m0', ['m0', 'm2', 'm3', 'm4'], 52, 245), null);
+    assert.equal(target('deleted', [], 0, 400), null);
+    assert.equal(target('m0', ['m0'], 500, 600), null);
+});
+
+test('floating shortcut handles tall media, excludes hidden or missing rows, and respects selected rows', () => {
+    const f = fixture();
+    const target = f.c.getMessageRangeShortcutTarget(f.chat.history, 'm7', new Set(['m7']),
+        [{ id: 'hidden-system', top: 30, bottom: 40 }, { id: 'm2', top: -100, bottom: 900 }], { top: 0, bottom: 400 });
+    assert.equal(target.id, 'm2'); assert.equal(target.direction, 'up');
+    const selected = f.c.getMessageRangeShortcutTarget(f.chat.history, 'm7', new Set(['m7', 'm1']),
+        [{ id: 'm1', top: 10, bottom: 50 }, { id: 'm2', top: 60, bottom: 100 }], { top: 0, bottom: 400 });
+    assert.equal(selected.id, 'm2');
+});

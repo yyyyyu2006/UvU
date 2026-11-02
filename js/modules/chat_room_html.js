@@ -221,6 +221,7 @@ const chatRoomHtml = `
         <div id="music-screen" class="screen"></div>
 
         
+        <button type="button" id="select-to-here-btn" hidden><span data-range-direction aria-hidden="true">↑</span><span>选择到这里</span></button>
         <div id="multi-select-bar"><span id="select-count">已选择 0 项</span>
             <button class="btn btn-secondary" id="share-selected-btn" disabled>分享记录</button>
             <button class="btn btn-secondary" id="capture-selected-btn" disabled>截图</button>
