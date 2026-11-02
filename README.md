@@ -112,3 +112,7 @@ node --test tests/home_presets.test.cjs
 
 - https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
 - https://docs.github.com/en/repositories/working-with-files/managing-files/adding-a-file-to-a-repository
+
+## 文档导入、世界书进阶设置与表情联想
+
+新增人设 DOCX/TXT 导入、世界书 DOCX/TXT/酒馆 JSON 导入、关键词/深度/顺序/概率设置，以及长文本展开查找替换。表情支持文档内图片和链接清单导入、输入联想、视觉 API 图片说明。入口、示例与兼容范围见 [使用说明](docs/document-import.md)。

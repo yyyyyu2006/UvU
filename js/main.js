@@ -117,7 +117,7 @@ const init = async () => {
     try { setupCommunityModule(); } catch(e) { console.error("setupCommunityModule failed:", e); }
     
     // 错误处理包裹的模块初始化
-    try { setupWorldBookApp(); } catch(e) { console.error("setupWorldBookApp failed:", e); }
+    try { await setupWorldBookApp(); } catch(e) { console.error("setupWorldBookApp failed:", e); }
     try { setupGroupChatSystem(); } catch(e) { console.error("setupGroupChatSystem failed:", e); }
     try { setupCustomizeApp(); } catch(e) { console.error("setupCustomizeApp failed:", e); }
     if (typeof setupHomePresets === 'function') { try { setupHomePresets(); } catch(e) { console.error("setupHomePresets failed:", e); } }
@@ -221,6 +221,9 @@ async function checkAutoReply() {
 document.addEventListener('DOMContentLoaded', () => {
     initDatabase();
     init().then(() => {
+        setupWorldBookDocumentTools();
+        setupStickerAssist();
+        setupExpandedEditors();
         if (window.KeepAliveManager) {
             window.KeepAliveManager.init(Boolean(db.apiSettings && db.apiSettings.keepAliveEnabled));
         }
@@ -236,6 +239,7 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
+        if (e.target.closest?.('.feature-dialog')) return;
         const now = Date.now();
         const gap = now - globalRescueLastClickTime;
         

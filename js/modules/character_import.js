@@ -61,12 +61,15 @@ async function handleCharacterImport(file) {
     showToast('正在解析角色卡...');
     try {
         let result;
-        if (file.name.endsWith('.png')) {
+        if (/\.(docx|txt)$/i.test(file.name)) {
+            const document = await readImportDocument(file);
+            result = { data: { name: file.name.replace(/\.[^.]+$/, ''), description: document.text }, avatar: null };
+        } else if (file.name.toLowerCase().endsWith('.png')) {
             result = await parseCharPng(file);
-        } else if (file.name.endsWith('.json')) {
+        } else if (file.name.toLowerCase().endsWith('.json')) {
             result = await parseCharJson(file);
         } else {
-            throw new Error('不支持的文件格式。请选择 .png 或 .json 文件。');
+            throw new Error('不支持的文件格式。请选择 PNG、JSON、DOCX 或 TXT 文件。');
         }
 
         if (result) {
@@ -237,58 +240,14 @@ async function createCharacterFromData(data, avatar) {
             });
         }
 
-        charData.character_book.entries.forEach(entry => {
-            const name = entry.comment;
-            const content = entry.content;
-            if (name && content) {
-                // 策略：内容相同则复用，内容不同则重命名导入
-                const exactMatch = db.worldBooks.find(wb => wb.name.toLowerCase() === name.toLowerCase() && wb.content === content);
-                if (exactMatch) {
-                    if (!importedWorldBookIds.includes(exactMatch.id)) importedWorldBookIds.push(exactMatch.id);
-                } else {
-                    // 检查是否已经导入过重命名版本
-                    const renamedName = `${name} (${categoryName})`;
-                    const renamedMatch = db.worldBooks.find(wb => wb.name.toLowerCase() === renamedName.toLowerCase() && wb.content === content);
-                    
-                    if (renamedMatch) {
-                        if (!importedWorldBookIds.includes(renamedMatch.id)) importedWorldBookIds.push(renamedMatch.id);
-                    } else {
-                        // 需要新建
-                        let newBookName = name;
-                        const nameConflict = db.worldBooks.find(wb => wb.name.toLowerCase() === name.toLowerCase());
-                        if (nameConflict) {
-                            newBookName = renamedName;
-                            // 二次冲突检查
-                            if (db.worldBooks.some(wb => wb.name.toLowerCase() === newBookName.toLowerCase())) {
-                                newBookName = `${newBookName}_${Math.random().toString(36).substr(2, 4)}`;
-                            }
-                        }
-                        
-                        let entryDepth = 100;
-                        if (entry.insertion_order !== undefined) {
-                            entryDepth = parseInt(entry.insertion_order);
-                        } else if (entry.depth !== undefined) {
-                            entryDepth = parseInt(entry.depth);
-                        } else if (entry.extensions && entry.extensions.depth !== undefined) {
-                            entryDepth = parseInt(entry.extensions.depth);
-                        }
-
-                        const newBook = {
-                            id: `wb_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                            parentId: folderId,
-                            type: 'entry',
-                            name: newBookName,
-                            content: content,
-                            position: 'after',
-                            category: categoryName,
-                            depth: isNaN(entryDepth) ? 100 : entryDepth
-                        };
-                        db.worldBooks.push(newBook);
-                        importedWorldBookIds.push(newBook.id);
-                    }
-                }
-            }
+        const imported = importWorldBookJson(charData.character_book, folderId);
+        imported.books.forEach(book => {
+            const equivalent = db.worldBooks.find(w => w.type === 'entry' && w.name === book.name && w.content === book.content && w.position === book.position && JSON.stringify(w.rules) === JSON.stringify(book.rules));
+            if (equivalent) { importedWorldBookIds.push(equivalent.id); return; }
+            if (db.worldBooks.some(w => w.name === book.name)) book.name += ' (' + categoryName + ')';
+            db.worldBooks.push(book); importedWorldBookIds.push(book.id);
         });
+        if (imported.warnings.length) showToast('部分酒馆插入位置暂不支持，对应条目已停用，请到世界书确认');
     }
     else {
         const worldInfo = charData.world_info || charData.wi || '';

@@ -294,7 +294,8 @@ async function setupWorldBookApp() {
         const content = worldBookContentInput.value.trim();
         const category = document.getElementById('world-book-category').value.trim();
         const position = document.querySelector('input[name="world-book-position"]:checked').value;
-        const depth = parseInt(document.getElementById('world-book-depth').value) || 100;
+        const depth = Number(document.getElementById('world-book-depth').value);
+        const rules = editWorldBookForm.worldBookRules;
         const currentFolderId = wbPathStack[wbPathStack.length - 1].id;
 
         if (!name || !content) return showToast('名称和内容不能为空');
@@ -307,6 +308,7 @@ async function setupWorldBookApp() {
                 book.position = position;
                 book.category = category;
                 book.depth = depth;
+                if (rules) book.rules = rules;
             }
         } else {
             db.worldBooks.push({
@@ -317,7 +319,8 @@ async function setupWorldBookApp() {
                 content, 
                 position, 
                 category,
-                depth
+                depth,
+                ...(rules ? { rules } : {})
             });
         }
         await saveData();
@@ -423,8 +426,9 @@ function renderWorldBookList() {
 
         card.innerHTML = `
             <div class="wb-icon-wrapper">${iconHTML}</div>
-            <div class="wb-item-name">${item.name}</div>
+            <div class="wb-item-name"></div>
         `;
+        card.querySelector('.wb-item-name').textContent = item.name;
         
         container.appendChild(card);
     });
@@ -447,7 +451,7 @@ function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix)
         }
         acc[category].push(book);
         return acc;
-    }, {});
+    }, Object.create(null));
 
     const sortedCategories = Object.keys(groupedBooks).sort((a, b) => {
         if (a === '未分类') return 1;
@@ -465,7 +469,7 @@ function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix)
         groupEl.innerHTML = `
             <div class="world-book-category-header">
                 <input type="checkbox" class="category-checkbox" ${allInCategorySelected ? 'checked' : ''}>
-                <span class="category-name">${category}</span>
+                <span class="category-name">${escapeWorldBookHtml(category)}</span>
                 <span class="category-arrow">▼</span>
             </div>
             <ul class="world-book-items-list">
@@ -474,7 +478,7 @@ function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix)
                     return `
                         <li class="world-book-select-item">
                             <input type="checkbox" class="item-checkbox" id="${idPrefix}-${book.id}" value="${book.id}" ${isChecked ? 'checked' : ''}>
-                            <label for="${idPrefix}-${book.id}">${book.name}</label>
+                            <label for="${idPrefix}-${book.id}">${escapeWorldBookHtml(book.name)}</label>
                         </li>
                     `;
                 }).join('')}
@@ -602,7 +606,7 @@ function renderWorldBookSelectorList() {
 
         row.innerHTML = `
             <div class="wb-selector-icon">${iconSvg}</div>
-            <div class="wb-selector-name">${item.name}</div>
+            <div class="wb-selector-name">${escapeWorldBookHtml(item.name)}</div>
             ${rightContent}
         `;
 

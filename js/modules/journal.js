@@ -508,6 +508,9 @@ function renderJournalList() {
 }
 
 function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeFavorited = false) {
+        const boundIds = [...(chat.worldBookIds || []), ...(chat.journalStyleSettings?.customWorldBookIds || [])];
+        const activeIds = typeof buildWorldBookPlan === 'function' ? new Set(buildWorldBookPlan({ ...chat, worldBookIds: [...new Set(boundIds)] }, messagesToSummarize).map(w => w.id)) : null;
+        const worldBookSource = activeIds ? db.worldBooks.filter(w => !w.rules || activeIds.has(w.id)) : db.worldBooks;
         let worldBooksContent = '';
         let summaryPrompt = '';
         let favoritedJournalsPrompt = '';
@@ -526,10 +529,10 @@ function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeF
 
         if (chatType === 'group') {
             // 群聊逻辑
-            const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksBefore = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksAfter = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && (wb.position === 'after' || !wb.position))).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksGuidelines = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
+            const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksBefore = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksAfter = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && (wb.position === 'after' || !wb.position))).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksGuidelines = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
             
             worldBooksContent = [
                 ...worldBooksLimitBreak.map(wb => wb.content),
@@ -587,10 +590,10 @@ function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeF
             migrateJournalSettings(chat);
 
             // 1. 自动获取通用世界书 (Context)
-            const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksBefore = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksAfter = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && (wb.position === 'after' || !wb.position))).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
-            const worldBooksGuidelines = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
+            const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksBefore = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksAfter = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && (wb.position === 'after' || !wb.position))).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
+            const worldBooksGuidelines = (chat.worldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
             
             worldBooksContent = [
                 ...worldBooksLimitBreak.map(wb => wb.content),
@@ -667,7 +670,7 @@ function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeF
 
                 // 如果是自定义风格，注入额外要求
                 if (styleSettings.mode === 'custom') {
-                    const customWorldBooks = (styleSettings.customWorldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id)).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
+                    const customWorldBooks = (styleSettings.customWorldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id)).filter(Boolean).sort((a, b) => (a.rules?.order ?? (a.depth || 100)) - (b.rules?.order ?? (b.depth || 100)));
                     const customStyleContent = customWorldBooks.map(wb => wb.content).join('\n\n');
                     
                     if (customStyleContent) {

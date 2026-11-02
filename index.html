@@ -541,6 +541,7 @@
                                     <label><input type="checkbox" data-secondary-route="journal"> 日记 / 记忆总结</label>
                                     <label><input type="checkbox" data-secondary-route="peek"> 偷看手机</label>
                                     <label><input type="checkbox" data-secondary-route="shop"> 商城生成</label>
+                                    <label><input type="checkbox" data-secondary-route="imageRecognition"> 表情图片识别</label>
                                     <label><input type="checkbox" data-secondary-route="batteryReminder"> 低电量提醒</label>
                                 </div>
                             </div>
@@ -2412,7 +2413,7 @@
 <div id="sound-presets-modal" class="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);justify-content:center;align-items:center;z-index:9999;"><div class="modal-window" style="max-width:520px;background:var(--panel-bg,#fff);padding:14px;border-radius:10px;box-shadow:0 12px 36px rgba(10,10,20,0.12);"><h3 style="margin:0 0 10px 0;font-size:16px;">管理提示音预设</h3><div id="sound-presets-list" style="max-height:340px; overflow:auto; margin-bottom:12px;"></div><div style="display:flex;gap:8px;justify-content:flex-end;"><button type="button" id="sound-close-modal" class="btn btn-primary" style="padding:8px 12px;border-radius:8px;">关闭</button></div></div></div>
 <input type="file" id="import-data-input" accept=".ee" style="display: none;">
 <div id="storage-screen" class="screen"></div>
-<input type="file" id="character-card-input" accept="image/png,application/json" style="display: none;">
+<input type="file" id="character-card-input" accept="image/png,application/json,.docx,.txt" style="display: none;">
     <!-- Widget Add Modal (Bottom Sheet Style) -->
     <div id="widget-add-modal" class="modal-overlay bottom-sheet-overlay" style="z-index: 10000;">
         <div class="bottom-sheet-window">
@@ -2752,18 +2753,24 @@
 <script src="js/ui.js"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js"></script>
-<script src="js/modules/character_import.js"></script>
-<script src="js/modules/chat_render.js?v=20261102-audit-fix"></script>
-<script src="js/modules/chat_archives.js"></script>
+<script src="js/modules/worldbook_rules.js?v=20261103-documents"></script>
+<script src="js/modules/document_import.js?v=20261103-documents"></script>
+<script src="js/modules/text_editor.js?v=20261103-documents"></script>
+<script src="js/modules/worldbook_editor.js?v=20261103-documents"></script>
+<script src="js/modules/sticker_assist.js?v=20261103-documents"></script>
+<link rel="stylesheet" href="css/modules/document_features.css?v=20261103-documents">
+<script src="js/modules/character_import.js?v=20261103-documents"></script>
+<script src="js/modules/chat_render.js?v=20261103-documents"></script>
+<script src="js/modules/chat_archives.js?v=20261103-documents"></script>
     <script src="js/modules/chat_ai_airdrop.js"></script>
-    <script src="js/modules/chat_ai_prompt.js?v=20261102-memory2"></script>
-    <script src="js/modules/chat_ai_call.js?v=20261102-memory2"></script>
-    <script src="js/modules/chat_ai.js?v=20261102-audit-fix"></script>
+    <script src="js/modules/chat_ai_prompt.js?v=20261103-documents"></script>
+    <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
+    <script src="js/modules/chat_ai.js?v=20261103-documents"></script>
 <script src="js/modules/chat_features.js?v=20261102-audit-fix"></script>
-<script src="js/modules/chat_ops.js?v=20261102-audit-fix"></script>
+<script src="js/modules/chat_ops.js?v=20261103-documents"></script>
 <script src="js/modules/message_forward.js?v=20261102-forward"></script>
-<script src="js/chat.js?v=20261102-range-float"></script>     <!-- 聊天核心入口 -->
-<script src="js/group_chat.js?v=20261102-memory2"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
+<script src="js/chat.js?v=20261103-documents"></script>     <!-- 聊天核心入口 -->
+<script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261102-range-float"></script> <!-- 聊天室HTML注入 -->
 <script src="js/modules/chat_settings_html.js"></script> <!-- 聊天设置HTML注入 -->
@@ -2772,14 +2779,14 @@
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
 <script src="js/modules/settings_chat.js"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
-<script src="js/modules/settings_api.js"></script> <!-- API 设置与预设 -->
+<script src="js/modules/settings_api.js?v=20261103-documents"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
-<script src="js/modules/sticker.js"></script>   <!-- 表情包管理系统 -->
-<script src="js/modules/worldbook.js"></script> <!-- 世界书设定集 -->
+<script src="js/modules/sticker.js?v=20261103-documents"></script>   <!-- 表情包管理系统 -->
+<script src="js/modules/worldbook.js?v=20261103-documents"></script> <!-- 世界书设定集 -->
 <script src="js/modules/peek.js"></script>      <!-- 偷看手机(相册/短信等) -->
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
     <div class="modal-window auto-memory-dialog">
@@ -2835,7 +2842,7 @@
         </fieldset>
     </div>
 </div>
-<script src="js/modules/journal.js?v=20261102-memory2"></script>   <!-- 回忆日记生成 -->
+<script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/auto_memory.js?v=20261102-audit-fix"></script>
 <script src="js/modules/storage_html.js"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261102-audit-fix"></script>   <!-- 存储空间分析图表 -->
@@ -2866,6 +2873,6 @@
 <script src="js/modules/reader_view.js"></script> <!-- 阅读器视图逻辑 -->
 
 <!-- [4. 程序入口] -->
-<script src="js/main.js?v=20261102-memory2"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261103-documents"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

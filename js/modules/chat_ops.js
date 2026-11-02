@@ -659,6 +659,7 @@ function cancelMessageEdit() {
 }
 
 function enterMultiSelectMode(initialMessageId, mode = 'delete') {
+    if (typeof window.clearStickerSuggestions === 'function') window.clearStickerSuggestions();
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat) return;
     removeContextMenu();

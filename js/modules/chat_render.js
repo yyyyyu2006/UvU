@@ -867,7 +867,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                 stickerSrc = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; 
             }
         }
-        bubbleElement.innerHTML = `<img src="${stickerSrc}" alt="表情包">`;
+        const stickerImage = document.createElement('img'); stickerImage.src = stickerSrc; stickerImage.alt = '表情包'; bubbleElement.appendChild(stickerImage);
     } else if (privateGiftMatch || groupGiftMatch) {
         const match = privateGiftMatch || groupGiftMatch;
         bubbleElement = document.createElement('div');

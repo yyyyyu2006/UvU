@@ -216,8 +216,11 @@ async function setupStickerSystem() {
         const previewImg = stickerPreview.querySelector('img');
         const data = previewImg ? previewImg.src : null;
         if (!name || !data) return showToast('请填写完整');
+        if (typeof validStickerImage === 'function' && !validStickerImage(data)) return showToast('请选择有效图片或 HTTP(S) 图片链接');
         
-        const stickerData = { name, data, group, lastUsedTime: Date.now() };
+        const stickerData = { name, data, group, lastUsedTime: Date.now(),
+            keywords: typeof worldBookKeys === 'function' ? worldBookKeys(document.getElementById('sticker-keywords')?.value) : [],
+            description: document.getElementById('sticker-description')?.value.trim() || '' };
         
         if (id) {
             const index = db.myStickers.findIndex(s => s.id === id);
@@ -234,7 +237,8 @@ async function setupStickerSystem() {
     });
     
     stickerUrlInput.addEventListener('input', (e) => {
-        stickerPreview.innerHTML = `<img src="${e.target.value}" alt="预览">`;
+        stickerPreview.replaceChildren();
+        const image = document.createElement('img'); image.src = e.target.value; image.alt = '预览'; stickerPreview.appendChild(image);
         stickerFileUpload.value = '';
     });
     stickerFileUpload.addEventListener('change', async (e) => {
@@ -333,7 +337,13 @@ function renderStickerGrid() {
             }
         }
         
-        item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span style="font-size:10px; margin-top:4px; color:#888; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100%; text-align:center;">${sticker.name}</span>`;
+        const image = document.createElement('img'); image.src = sticker.data; image.alt = sticker.name;
+        const label = document.createElement('span'); label.textContent = sticker.name;
+        label.style.cssText = 'font-size:10px;margin-top:4px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;text-align:center';
+        item.append(image, label);
+        if (!isStickerManageMode) {
+            const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'sticker-edit-shortcut'; edit.dataset.stickerId = sticker.id; edit.textContent = '编辑'; item.appendChild(edit);
+        }
 
         item.addEventListener('click', () => {
             if (isStickerManageMode) {
@@ -365,12 +375,14 @@ function handleStickerLongPress(stickerId) {
 }
 
 async function sendSticker(sticker) {
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) return;
+    const chatId = currentChatId, chatType = currentChatType;
     const dbSticker = db.myStickers.find(s => s.id === sticker.id);
     if (dbSticker) {
         dbSticker.lastUsedTime = Date.now();
     }
 
-    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
     
     const messageContentForAI = `[${myName}发送的表情包：${sticker.name}]`;
@@ -378,7 +390,8 @@ async function sendSticker(sticker) {
         id: `msg_${Date.now()}`,
         role: 'user',
         content: messageContentForAI,
-        parts: [{type: 'text', text: messageContentForAI}],
+        parts: [{type: 'text', text: messageContentForAI + (sticker.description ? '\n[表情画面说明：' + sticker.description + ']' : '')}],
+        stickerDescription: sticker.description || '',
         timestamp: Date.now(),
         stickerData: sticker.data 
     };
@@ -388,7 +401,11 @@ async function sendSticker(sticker) {
     chat.history.push(message);
     addMessageBubble(message, currentChatId, currentChatType);
     
-    await saveData(); 
+    try { await saveData(); } catch (error) {
+        const index = chat.history.indexOf(message); if (index >= 0) chat.history.splice(index, 1);
+        if (currentChatId === chatId && currentChatType === chatType) renderMessages();
+        throw error;
+    }
     renderChatList();
     
     showPanel('none');

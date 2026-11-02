@@ -189,6 +189,7 @@ function getDefaultSecondaryApiRoutes() {
         journal: false,
         peek: false,
         shop: false,
+        imageRecognition: false,
         batteryReminder: false
     };
 }

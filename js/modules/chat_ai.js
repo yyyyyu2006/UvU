@@ -80,31 +80,25 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         const requestIsCurrent = () => chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
             (chatType === 'private' ? db.characters : db.groups).includes(chat);
         let systemPrompt, requestBody;
+        let historySlice = typeof getAutoMemoryContextHistory === 'function'
+            ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
+        historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
+        const worldBookPlan = typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, historySlice) : undefined;
         if (chatType === 'private') {
-            systemPrompt = generatePrivateSystemPrompt(chat);
+            systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
         } else {
             // generateGroupSystemPrompt 应该在 group_chat.js 中定义
             if (typeof generateGroupSystemPrompt === 'function') {
-                systemPrompt = generateGroupSystemPrompt(chat);
+                systemPrompt = generateGroupSystemPrompt(chat, worldBookPlan);
             } else {
                 systemPrompt = "Group chat system prompt not available.";
             }
         }
 
-        let historySlice = typeof getAutoMemoryContextHistory === 'function'
-            ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
+        if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
         
-        // 使用工具函数进行过滤（包含深度克隆、屏蔽过滤、双语修正、状态栏剔除）
-        historySlice = filterHistoryForAI(chat, historySlice);
-        // 【新增】过滤掉不应进入上下文的消息（如思考过程、被撤回的消息标记等）
-        historySlice = historySlice.filter(m => !m.isContextDisabled);
-        
-        // 【双重保险】再次过滤掉内容匹配 <thinking> 的消息，防止 isContextDisabled 属性丢失
-        historySlice = historySlice.filter(m => {
-            if (m.isThinking) return false;
-            if (m.content && typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')) return false;
-            return true;
-        });
+        const lastContextMessage = historySlice[historySlice.length - 1];
+        if (worldBookPlan) historySlice = insertDepthWorldBooks(historySlice, worldBookPlan);
 
         // 检查系统提示词中是否包含聊天记录占位符
         const hasHistoryPlaceholder = systemPrompt.includes('【动态插入: 聊天记录】');
@@ -119,6 +113,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             let lastTimeMarkerForAI = 0;
             let contents = historySlice.map(msg => {
                 const role = msg.role === 'assistant' ? 'model' : 'user';
+                if (msg.worldBookInjection) return Object.defineProperty({ role, parts: [{ text: msg.role === 'system' ? '[system]\n' + msg.content : msg.content }] }, 'worldBookInjection', { value: true });
                 
                 let prefix = '';
                 const currentMsgTime = msg.timestamp;
@@ -177,14 +172,14 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             // 【新增】将最新一轮的 user 消息用 <user_input> 框起来
             let lastUserEndIndex = -1;
             for (let i = contents.length - 1; i >= 0; i--) {
-                if (contents[i].role === 'user') {
+                if (contents[i].role === 'user' && !contents[i].worldBookInjection) {
                     lastUserEndIndex = i;
                     break;
                 }
             }
             if (lastUserEndIndex !== -1) {
                 let firstUserStartIndex = lastUserEndIndex;
-                while (firstUserStartIndex > 0 && contents[firstUserStartIndex - 1].role === 'user') {
+                while (firstUserStartIndex > 0 && contents[firstUserStartIndex - 1].role === 'user' && !contents[firstUserStartIndex - 1].worldBookInjection) {
                     firstUserStartIndex--;
                 }
                 
@@ -208,7 +203,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                     role: 'user',
                     parts: [{ text: `[系统通知：距离上次互动已有一段时间。请以${chat.realName}的身份主动发起新话题，或自然地延续之前的对话。]` }]
                 });
-            } else if (historySlice.length > 0 && historySlice[historySlice.length - 1].role === 'assistant') {
+            } else if (lastContextMessage?.role === 'assistant') {
                 contents.push({
                     role: 'user',
                     parts: [{ text: `[系统通知：我暂未回复，${chat.realName}再次主动发送了消息]` }]
@@ -227,7 +222,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                     // 找到最后一条用户消息
                     let lastUserIndex = -1;
                     for (let i = contents.length - 1; i >= 0; i--) {
-                        if (contents[i].role === 'user') {
+                        if (contents[i].role === 'user' && !contents[i].worldBookInjection) {
                             lastUserIndex = i;
                             break;
                         }
@@ -242,7 +237,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                 }
 
                 historyContents.forEach(c => {
-                    const roleName = c.role === 'model' ? chat.realName : chat.myName;
+                    const roleName = c.worldBookInjection && c.parts[0]?.text?.startsWith('[system]') ? 'system' : (c.role === 'model' ? chat.realName : chat.myName);
                     const text = c.parts.map(p => p.text || '').join('');
                     historyTextForPlaceholder += `${roleName}: ${text}\n`;
                 });
@@ -269,7 +264,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             
             const pushOrMergeMessage = (role, content) => {
                 const lastMessage = messages[messages.length - 1];
-                if (lastMessage && lastMessage.role === role && role !== 'system') {
+                if (lastMessage && !lastMessage.worldBookInjection && lastMessage.role === role && role !== 'system') {
                     if (typeof lastMessage.content === 'string' && typeof content === 'string') {
                         lastMessage.content += '\n' + content;
                     } else {
@@ -300,6 +295,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             let lastTimeMarkerForAI = 0;
             
             historySlice.forEach(msg => {
+               if (msg.worldBookInjection) { messages.push(Object.defineProperty({ role: msg.role, content: msg.content }, 'worldBookInjection', { value: true })); return; }
                let content;
                let prefix = '';
                
@@ -342,7 +338,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             // 【新增】将最新一轮的 user 消息用 <user_input> 框起来
             let lastUserIndex = -1;
             for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === 'user') {
+                if (messages[i].role === 'user' && !messages[i].worldBookInjection) {
                     lastUserIndex = i;
                     break;
                 }
@@ -364,7 +360,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                 // 找到最后一条用户消息的索引
                 let lastUserIndex = -1;
                 for (let i = messages.length - 1; i >= 0; i--) {
-                    if (messages[i].role === 'user') {
+                    if (messages[i].role === 'user' && !messages[i].worldBookInjection) {
                         lastUserIndex = i;
                         break;
                     }
@@ -374,7 +370,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
                 const endIndex = lastUserIndex !== -1 ? lastUserIndex : messages.length;
                 for (let i = 1; i < endIndex; i++) {
                     const msg = messages[i];
-                    const roleName = msg.role === 'assistant' ? chat.realName : chat.myName;
+                    const roleName = msg.worldBookInjection && msg.role === 'system' ? 'system' : (msg.role === 'assistant' ? chat.realName : chat.myName);
                     let text = '';
                     if (typeof msg.content === 'string') {
                         text = msg.content;
@@ -407,7 +403,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             // 1. 如果是后台消息，先插入系统通知（作为任务输入）
             if (isBackground) {
                 pushOrMergeMessage('user', `[系统通知：我已有一段时间没有和你互动了，请以${chat.realName}的身份主动地延续之前的对话或发起新话题，或对时间流逝做出反应。]`);
-            } else if (historySlice.length > 0 && historySlice[historySlice.length - 1].role === 'assistant') {
+            } else if (lastContextMessage?.role === 'assistant') {
                 pushOrMergeMessage('user', `[系统通知：我暂未回复，${chat.realName}再次主动发送了消息]`);
             }
 

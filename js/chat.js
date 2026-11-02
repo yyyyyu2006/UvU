@@ -491,6 +491,7 @@ function setupChatRoom() {
 }
 
 function openChatRoom(chatId, type) {
+    if (typeof window.clearStickerSuggestions === 'function') window.clearStickerSuggestions();
     const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
 

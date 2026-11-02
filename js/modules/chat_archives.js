@@ -102,6 +102,7 @@ function syncAllActiveArchives() {
 }
 
 function applyArchiveData(chat, archive) {
+    if (typeof window.clearStickerSuggestions === 'function') window.clearStickerSuggestions();
     Object.keys(chat).forEach(key => {
         if (!CHAT_ARCHIVE_META_KEYS.has(key)) delete chat[key];
     });
