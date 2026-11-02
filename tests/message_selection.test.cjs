@@ -22,7 +22,7 @@ function fixture() {
         currentChatId: chat.id, currentChatType: 'private', isInMultiSelectMode: false, selectedMessageIds: new Set(), longPressTimer: null, isDebugMode: false,
         chatRoomHeaderDefault: element('default'), chatRoomHeaderSelect: element('select'), multiSelectBar: element('bar'), chatRoomScreen: element('screen'),
         selectCount: element('count'), deleteSelectedBtn: element('delete'),
-        messageArea: { querySelector: selector => rows.find(row => selector.includes('"' + row.dataset.id + '"')), querySelectorAll: () => rows },
+        messageArea: { querySelector: selector => rows.find(row => selector.includes('"' + row.dataset.id + '"')), querySelectorAll: selector => selector === '.select-message-range-btn' ? [] : rows },
         document: { getElementById: element, querySelector: () => element('input'), body: { appendChild() {} }, createElement: () => ({ click() { downloads.push(this.download); }, remove() {} }) },
         File, navigator: {}, URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} }, setTimeout: () => 0, clearTimeout() {},
         createContextMenu: items => menu.push(items), removeContextMenu() {}, triggerHapticFeedback() {}, showToast: message => toasts.push(message),
@@ -85,11 +85,11 @@ test('transcript preserves order, names and quotes while labeling media and with
     assert.match(f.c.buildSelectedChatText(group, 'group', new Set(['m0', 'm1'])), /群里的我[\s\S]*阿晴同学/);
 });
 
-test('native sharing cancellation keeps selection; unsupported browser downloads text', async () => {
-    const f = fixture(); f.c.enterMultiSelectMode('m0'); const shared = [];
-    f.c.navigator.canShare = () => true; f.c.navigator.share = async data => shared.push(data);
-    await f.c.shareSelectedMessages(); assert.equal(shared.length, 1); assert.match(await shared[0].files[0].text(), /正文0/);
-    f.c.navigator.share = async () => { const error = new Error(); error.name = 'AbortError'; throw error; };
-    await f.c.shareSelectedMessages(); assert.equal(f.downloads.length, 0); assert.equal(f.c.selectedMessageIds.size, 1);
-    delete f.c.navigator.share; await f.c.shareSelectedMessages(); assert.equal(f.downloads.length, 1); assert.match(f.downloads[0], /\.txt$/);
+test('sharing opens internal recipient picker and retains selection until sending', async () => {
+    const f = fixture(); f.c.enterMultiSelectMode('m0'); const opened = [];
+    f.c.openMessageForwardPicker = (...args) => opened.push(args);
+    await f.c.shareSelectedMessages();
+    assert.equal(opened.length, 1); assert.equal(opened[0][0], f.chat);
+    assert.equal(opened[0][1], 'private'); assert.deepEqual([...opened[0][2]], ['m0']);
+    assert.equal(f.downloads.length, 0); assert.equal(f.c.selectedMessageIds.size, 1);
 });

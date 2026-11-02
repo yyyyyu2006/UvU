@@ -205,7 +205,7 @@ function setupMessageReplyGestures(area) {
         let quotable = !isInMultiSelectMode && canQuoteMessage(message) && !wrapper.classList.contains('system-notification') &&
             !target.closest('.html-bubble, .quoted-message');
         // 已选中文字时让用户继续系统复制操作。
-        if (window.getSelection()?.toString()) return;
+        if (!isInMultiSelectMode && window.getSelection()?.toString()) return;
         for (let element = target; element && element !== wrapper; element = element.parentElement) {
             if (element.scrollWidth > element.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(element).overflowX)) quotable = false;
         }
@@ -694,6 +694,7 @@ function exitMultiSelectMode() {
     });
     selectedMessageIds.clear();
     messageSelectionScope = null;
+    messageArea.querySelectorAll('.select-message-range-btn').forEach(button => button.remove());
     currentMultiSelectMode = 'delete';
     if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(currentChatId, currentChatType);
 }
@@ -747,6 +748,19 @@ function updateMessageSelectionUI() {
     for (const row of messageArea.querySelectorAll('.message-wrapper[data-id]')) {
         row.classList.toggle('multi-select-selected', selectedMessageIds.has(row.dataset.id));
         row.setAttribute('aria-selected', String(selectedMessageIds.has(row.dataset.id)));
+        if (row.querySelector && row.appendChild) {
+            let button = row.querySelector('.select-message-range-btn');
+            const visible = isInMultiSelectMode && selectedMessageIds.size > 0 && !selectedMessageIds.has(row.dataset.id);
+            if (visible && !button) {
+                button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'select-message-range-btn';
+                button.textContent = '选到这里';
+                button.setAttribute('aria-label', '从已选起点选到这条消息');
+                row.appendChild(button);
+            }
+            if (button) button.hidden = !visible;
+        }
     }
     if (currentMultiSelectMode === 'delete') {
         selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
@@ -779,26 +793,7 @@ function buildSelectedChatText(chat, type, ids) {
 async function shareSelectedMessages() {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!isCurrentMessageSelection(chat) || !selectedMessageIds.size) return;
-    const text = buildSelectedChatText(chat, currentChatType, selectedMessageIds);
-    const title = `${currentChatType === 'group' ? chat.name : chat.remarkName || chat.realName || '聊天'}-聊天记录`;
-    const name = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 80) + '.txt';
-    const file = new File(['\ufeff' + text], name, { type: 'text/plain;charset=utf-8' });
-    const download = () => {
-        const url = URL.createObjectURL(file);
-        const link = document.createElement('a');
-        link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        showToast('聊天记录已下载，可将文本文件分享给其他人');
-    };
-    try {
-        if (typeof navigator.share !== 'function') { download(); return; }
-        if (navigator.canShare?.({ files: [file] })) await navigator.share({ title, files: [file] });
-        else await navigator.share({ title, text });
-        showToast('已提交到系统分享面板');
-    } catch (error) {
-        if (error.name === 'AbortError') return;
-        download();
-    }
+    openMessageForwardPicker(chat, currentChatType, new Set(selectedMessageIds));
 }
 
 async function generateCapture() {
@@ -845,6 +840,7 @@ async function generateCapture() {
         if (originalEl) {
             const clone = originalEl.cloneNode(true);
             clone.classList.remove('multi-select-selected');
+            clone.querySelectorAll('.select-message-range-btn').forEach(button => button.remove());
             clone.style.marginBottom = '15px';
             
             // 处理一些可能在截图时显示不正常的元素

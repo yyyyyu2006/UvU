@@ -182,6 +182,9 @@ function loadMoreMessages() {
 
 function createMessageBubbleElement(message, isContinuous = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (message.type === 'forwarded-chat' && message.forwardedChat && !message.isWithdrawn) {
+        return createMessageForwardElement(message, chat, currentChatType, isContinuous);
+    }
     // 这里需要把 isThinking 从 message 里解构出来
     let {role, content, timestamp, id, transferStatus, giftStatus, stickerData, senderId, quote, isWithdrawn, originalContent, isStatusUpdate, isThinking} = message;
     
