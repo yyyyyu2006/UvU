@@ -186,6 +186,7 @@ function buildAutoMemoryPrompt(chat, type, sources, kind, settings) {
             if (!message.content && message.parts?.length) {
                 message.content = message.parts.map(part => part.type === 'text' ? part.text : '[图片/附件]').join('\n');
             }
+            if (message.quote && typeof memoryMessageContent === 'function') message.content = memoryMessageContent(message);
         });
         data = filtered.map(message => `[${new Date(message.timestamp || 0).toISOString()} | ${message.role} | ${message.senderId || ''}]\n${message.content}`).join('\n\n');
         original = custom ? '' : buildJournalSummaryPrompt(chat, type, filtered, false);

@@ -41,7 +41,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
     let menuItems = [];
 
     if (!isWithdrawn) {
-        if (!isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage) {
+        if (message.type !== 'forwarded-chat' && !isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage) {
             menuItems.push({label: '编辑', action: () => startMessageEdit(messageId)});
         }
         
@@ -376,6 +376,11 @@ function startAddNewMessage(messageId) {
 }
 
 function startMessageEdit(messageId) {
+    const currentChat = currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (currentChat?.history.find(message => message.id === messageId)?.type === 'forwarded-chat') {
+        showToast('合并记录保留原始内容，请编辑原消息后重新转发');
+        return;
+    }
     exitMultiSelectMode();
     editingMessageId = messageId;
     isRawEditMode = false;
@@ -491,6 +496,12 @@ async function saveMessageEdit() {
             cancelMessageEdit();
             return;
         }
+        // 调试源码编辑转发卡片时转为普通文本，避免卡片快照与正文分离。
+        if (chat.history[messageIndex].type === 'forwarded-chat') {
+            if (!isRawEditMode) { cancelMessageEdit(); return; }
+            delete chat.history[messageIndex].type;
+            delete chat.history[messageIndex].forwardedChat;
+        }
 
         if (isRawEditMode) {
             const quoteRegex = /^\[(.*?)引用[“"]([\s\S]*?)[”"]并回复：([\s\S]*?)\]$/;
@@ -553,6 +564,7 @@ async function saveMessageEdit() {
             }
         }
 
+        const editedMessage = chat.history[messageIndex];
         const timestampInput = document.getElementById('message-edit-timestamp');
         if (timestampInput && timestampInput.value) {
             if (timestampInput.value !== timestampInput.dataset.originalValue) {
@@ -580,7 +592,7 @@ async function saveMessageEdit() {
                     }
 
                     const regex = new RegExp(pattern, flags);
-                    const match = regex.exec(chat.history[messageIndex].content);
+                    const match = regex.exec(editedMessage.content);
                     
                     if (match) {
                         const rawStatus = match[0];
@@ -593,14 +605,14 @@ async function saveMessageEdit() {
                         }
                         chat.statusPanel.currentStatusHtml = html;
                         
-                        chat.history[messageIndex].isStatusUpdate = true;
-                        chat.history[messageIndex].statusSnapshot = {
+                        editedMessage.isStatusUpdate = true;
+                        editedMessage.statusSnapshot = {
                             regex: pattern,
                             replacePattern: chat.statusPanel.replacePattern
                         };
                     } else {
-                        chat.history[messageIndex].isStatusUpdate = false;
-                        delete chat.history[messageIndex].statusSnapshot;
+                        editedMessage.isStatusUpdate = false;
+                        delete editedMessage.statusSnapshot;
                     }
                 } catch (e) {
                     console.error("编辑时解析状态栏错误:", e);
@@ -652,7 +664,7 @@ function enterMultiSelectMode(initialMessageId, mode = 'delete') {
     removeContextMenu();
     isInMultiSelectMode = true;
     currentMultiSelectMode = mode;
-    messageSelectionScope = { chatId: chat.id, type: currentChatType, archiveId: chat.activeArchiveId, anchorId: null };
+    messageSelectionScope = { chatId: chat.id, type: currentChatType, archiveId: chat.activeArchiveId, anchorId: null, direction: 'down' };
     multiSelectBar.classList.remove('visible');
     document.getElementById('capture-mode-bar').classList.remove('visible');
     
@@ -713,6 +725,7 @@ function toggleMessageSelection(messageId) {
         selectedMessageIds.add(messageId);
         el.classList.add('multi-select-selected');
         messageSelectionScope.anchorId = messageId;
+        messageSelectionScope.direction = 'down';
     }
     updateMessageSelectionUI();
 }
@@ -772,7 +785,12 @@ function getMessageRangeShortcutTarget(history, anchorId, selectedIds, rows, vie
     if (anchor === undefined) return null;
     const visible = rows.filter(row => indices.has(row.id) && row.bottom > viewport.top && row.top < viewport.bottom);
     const complete = visible.filter(row => row.top >= viewport.top && row.bottom <= viewport.bottom);
-    const candidates = (complete.length ? complete : visible).filter(row => !selectedIds.has(row.id));
+    const anchorRow = visible.find(row => row.id === anchorId);
+    const direction = anchorRow ? (viewport.direction || 'down')
+        : visible.every(row => indices.get(row.id) < anchor) ? 'up'
+        : visible.every(row => indices.get(row.id) > anchor) ? 'down' : (viewport.direction || 'down');
+    const candidates = (complete.length ? complete : visible).filter(row => !selectedIds.has(row.id) &&
+        (direction === 'up' ? indices.get(row.id) < anchor : indices.get(row.id) > anchor));
     let target = null;
     for (const row of candidates) {
         const distance = indices.get(row.id) - anchor;
@@ -799,7 +817,7 @@ function updateMessageRangeShortcut() {
         return { id: row.dataset.id, top: rect.top, bottom: rect.bottom };
     });
     // 为左下角悬浮按钮留出操作区，不把按钮遮住的消息当作端点。
-    const target = getMessageRangeShortcutTarget(chat.history, messageSelectionScope.anchorId, selectedMessageIds, rows, { top: area.top, bottom: Math.min(area.bottom, toolbarRect.top) - 48 });
+    const target = getMessageRangeShortcutTarget(chat.history, messageSelectionScope.anchorId, selectedMessageIds, rows, { top: area.top, bottom: Math.min(area.bottom, toolbarRect.top) - 48, direction: messageSelectionScope.direction });
     button.hidden = !target;
     if (!target) { delete button.dataset.targetId; return; }
     button.dataset.targetId = target.id;
@@ -814,16 +832,42 @@ function setupMessageRangeShortcut() {
     if (!button || button.dataset.bound) return;
     button.dataset.bound = 'true';
     let scheduled = false;
+    let pressedTarget = null;
     const refresh = () => {
         if (!isInMultiSelectMode || scheduled) return;
         scheduled = true;
         requestAnimationFrame(() => { scheduled = false; updateMessageRangeShortcut(); });
     };
-    button.addEventListener('click', () => {
-        // 点击时重新读取位置，避免快速滚动后使用旧端点。
+    button.addEventListener('pointerdown', () => {
         updateMessageRangeShortcut();
-        if (!button.hidden && button.dataset.targetId) selectMessagesTo(button.dataset.targetId);
+        pressedTarget = button.hidden ? null : { id: button.dataset.targetId, scope: messageSelectionScope };
     });
+    button.addEventListener('pointercancel', () => { pressedTarget = null; });
+    button.addEventListener('click', () => {
+        const pressed = pressedTarget; pressedTarget = null;
+        if (pressed) {
+            if (pressed.scope === messageSelectionScope) selectMessagesTo(pressed.id);
+        } else {
+            updateMessageRangeShortcut();
+            if (!button.hidden && button.dataset.targetId) selectMessagesTo(button.dataset.targetId);
+        }
+    });
+    // 只让用户的滚动手势改变方向，输入栏收起或图片加载造成的位移不改变意图。
+    let touchY = null;
+    messageArea.addEventListener('touchstart', event => { touchY = event.touches.length === 1 ? event.touches[0].clientY : null; }, { passive: true });
+    messageArea.addEventListener('touchmove', event => {
+        if (!messageSelectionScope || touchY === null || event.touches.length !== 1) return;
+        const nextY = event.touches[0].clientY;
+        if (Math.abs(nextY - touchY) >= 8) {
+            messageSelectionScope.direction = nextY < touchY ? 'down' : 'up';
+            touchY = nextY; refresh();
+        }
+    }, { passive: true });
+    messageArea.addEventListener('wheel', event => {
+        if (messageSelectionScope && Math.abs(event.deltaY) > 1) {
+            messageSelectionScope.direction = event.deltaY > 0 ? 'down' : 'up'; refresh();
+        }
+    }, { passive: true });
     chatRoomScreen.addEventListener('scroll', refresh, true);
     chatRoomScreen.addEventListener('load', refresh, true);
     window.addEventListener('resize', refresh);
@@ -958,13 +1002,30 @@ async function deleteSelectedMessages() {
     const deletedCount = selectedMessageIds.size;
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!isCurrentMessageSelection(chat)) return;
-    chat.history = chat.history.filter(m => !selectedMessageIds.has(m.id));
+    const archiveId = chat.activeArchiveId;
+    const originalHistory = chat.history;
+    const nextHistory = originalHistory.filter(m => !selectedMessageIds.has(m.id));
+    chat.history = nextHistory;
 
     if (currentChatType === 'private') {
         recalculateChatStatus(chat);
     }
 
-    await saveData();
+    try {
+        await saveData();
+    } catch (error) {
+        const ids = new Set(originalHistory.map(message => message.id));
+        const restored = originalHistory.concat(nextHistory.filter(message => !ids.has(message.id)));
+        if (chat.activeArchiveId === archiveId && chat.history === nextHistory) {
+            chat.history = restored;
+            if (currentChatType === 'private') recalculateChatStatus(chat);
+        }
+        const stored = chat.archives?.find(archive => archive.id === archiveId);
+        if (stored?.data) stored.data.history = restored;
+        showToast('删除未保存，消息已恢复，请重试');
+        return;
+    }
+    if (chat.activeArchiveId !== archiveId || !isCurrentMessageSelection(chat)) return;
     currentPage = 1;
     renderMessages(false, true);
     renderChatList();
@@ -1279,7 +1340,7 @@ function recalculateChatStatus(chat) {
     
     if (!chat.realName) return; // 简单判断，群聊通常没有单人的 realName 用于状态更新（群聊逻辑不同）
 
-    const updateStatusRegex = new RegExp(`\\[${chat.realName}更新状态为：(.*?)\\]`);
+    const updateStatusRegex = new RegExp(`\\[${escapeMessageRegex(chat.realName)}更新状态为：(.*?)\\]`);
     let foundStatus = '在线'; // 默认状态
 
     // 倒序遍历历史记录

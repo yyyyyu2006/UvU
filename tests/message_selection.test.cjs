@@ -113,3 +113,25 @@ test('floating shortcut handles tall media, excludes hidden or missing rows, and
         [{ id: 'm1', top: 10, bottom: 50 }, { id: 'm2', top: 60, bottom: 100 }], { top: 0, bottom: 400 });
     assert.equal(selected.id, 'm2');
 });
+
+test('visible anchor defaults downward even when there are more messages above it', () => {
+    const f = fixture(), rows = f.rows.map((row, i) => ({ id: row.dataset.id, top: i * 50, bottom: i * 50 + 40 }));
+    const target = direction => f.c.getMessageRangeShortcutTarget(f.chat.history, 'm5', new Set(['m5']), rows, { top: 0, bottom: 400, direction });
+    assert.equal(target().id, 'm7'); assert.equal(target().direction, 'down');
+    assert.equal(target('up').id, 'm0'); assert.equal(target('up').direction, 'up');
+});
+
+test('requested direction never falls back to selecting the opposite side', () => {
+    const f = fixture(), rows = f.rows.map((row, i) => ({ id: row.dataset.id, top: i * 50, bottom: i * 50 + 40 }));
+    assert.equal(f.c.getMessageRangeShortcutTarget(f.chat.history, 'm5', new Set(['m5','m6','m7']), rows, { top: 0, bottom: 400, direction: 'down' }), null);
+});
+
+test('failed deletion restores history and synchronized archive without clearing selection', async () => {
+    const f = fixture(); f.chat.archives = [{ id: 'archive1', data: {} }];
+    f.c.enterMultiSelectMode('m1'); f.c.selectMessagesTo('m4');
+    f.c.saveData = async () => { f.chat.archives[0].data.history = JSON.parse(JSON.stringify(f.chat.history)); throw new Error('quota'); };
+    await f.c.deleteSelectedMessages();
+    assert.equal(f.chat.history.length, 8); assert.equal(f.chat.archives[0].data.history.length, 8);
+    assert.equal(f.c.selectedMessageIds.size, 4); assert.equal(f.c.isInMultiSelectMode, true);
+    assert.match(f.toasts.at(-1), /恢复/);
+});

@@ -28,6 +28,19 @@ function fixture(count = 12, settings = {}) {
 }
 const ids = items => Array.from(items, item => item.id);
 
+test('default and custom memory inputs include quoted facts without changing original messages', () => {
+    const f = fixture(1); f.chat.history[0].content = '[我的消息：就按这个地址办]';
+    f.chat.history[0].quote = { senderName: '晴', content: '地址是星河路77号', messageId: 'outside-batch' };
+    const before = JSON.stringify(f.chat.history);
+    for (const summaryPrompt of ['', '提取事实']) {
+        const settings = { ...f.context.getAutoMemorySettings(f.chat), summaryPrompt };
+        const prompt = f.context.buildAutoMemoryPrompt(f.chat, 'private', f.chat.history, 'summary', settings);
+        assert.match(JSON.stringify(prompt), /星河路77号/);
+        assert.match(JSON.stringify(prompt), /就按这个地址办/);
+    }
+    assert.equal(JSON.stringify(f.chat.history), before);
+});
+
 test('threshold counts eligible old floors after preserving recent floors, skips special messages', () => {
     const { context: c, chat } = fixture(6);
     assert.deepEqual(ids(c.getAutoMemoryPlan(chat).batch), ['m0', 'm1', 'm2', 'm3']);

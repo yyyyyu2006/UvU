@@ -1,4 +1,14 @@
 // --- 工具函数库 (js/utils.js) ---
+function escapeMessageRegex(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 只扩展送给记忆整理的事实资料，不改变原有提示词模板。
+function memoryMessageContent(message) {
+    const content = String(message.content || '');
+    if (!message.quote || message.isWithdrawn) return content;
+    return `引用 ${message.quote.senderName || ''}：${message.quote.content || ''}\n${content}`;
+}
 
 // 电池状态更新
 async function updateBatteryStatus() {
@@ -830,61 +840,43 @@ async function fetchAiResponse(settings, requestBody, headers, endpoint, forceSt
 }
 
 async function readStreamResponse(response, provider) {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullResponse = "";
-    let accumulatedChunk = "";
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        accumulatedChunk += decoder.decode(value, { stream: true });
-
-        if (provider !== 'gemini') {
-            // OpenAI / Standard SSE logic
-            const parts = accumulatedChunk.split("\n\n");
-            accumulatedChunk = parts.pop();
-            for (const part of parts) {
-                if (part.startsWith("data: ")) {
-                    const data = part.substring(6);
-                    if (data.trim() !== "[DONE]") {
-                        try {
-                            const json = JSON.parse(data);
-                            fullResponse += json.choices[0].delta?.content || "";
-                        } catch (e) {}
-                    }
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    let buffer = '', fullResponse = '';
+    const consume = event => {
+        const data = event.split(/\r\n|\r|\n/).filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).replace(/^ /, '')).join('\n');
+        if (!data || data.trim() === '[DONE]') return;
+        try {
+            const json = JSON.parse(data);
+            fullResponse += provider === 'gemini'
+                ? (json.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')
+                : json.choices?.[0]?.delta?.content || '';
+        } catch (error) { console.warn('忽略无法解析的流式事件'); }
+    };
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+            if (provider !== 'gemini') {
+                let separator;
+                while ((separator = /\r\n\r\n|\n\n|\r\r/.exec(buffer))) {
+                    consume(buffer.slice(0, separator.index));
+                    buffer = buffer.slice(separator.index + separator[0].length);
                 }
             }
+            if (done) break;
         }
-    }
-
-    // Handle remaining chunk for OpenAI
-    if (provider !== 'gemini' && accumulatedChunk && accumulatedChunk.trim().length > 0) {
-         if (accumulatedChunk.startsWith("data: ")) {
-             const data = accumulatedChunk.substring(6);
-             if (data.trim() !== "[DONE]") {
-                 try {
-                     const json = JSON.parse(data);
-                     fullResponse += json.choices[0].delta?.content || "";
-                 } catch (e) {}
-             }
-         }
-    }
-
-    // Gemini logic (accumulate all and parse at the end)
-    if (provider === 'gemini') {
-        try {
-            // 尝试解析为 JSON 数组
-            const parsedStream = JSON.parse(accumulatedChunk);
-            if (Array.isArray(parsedStream)) {
-                fullResponse = parsedStream.map(item => item.candidates?.[0]?.content?.parts?.[0]?.text || "").join('');
+        if (provider === 'gemini') {
+            if (buffer.trimStart().startsWith('data:')) {
+                buffer.split(/\r?\n\r?\n/).forEach(consume);
+            } else {
+                const data = JSON.parse(buffer);
+                fullResponse = (Array.isArray(data) ? data : [data]).map(item =>
+                    (item.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')).join('');
             }
-        } catch (e) {
-            console.error("Gemini stream parsing failed", e);
-        }
-    }
-
-    return fullResponse;
+        } else if (buffer.trim()) consume(buffer);
+        return fullResponse;
+    } finally { reader.releaseLock?.(); }
 }
 
 // --- 图片查看器 ---

@@ -76,6 +76,9 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         const memoryArchiveId = chat.activeArchiveId;
         if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
         if (chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
+        const requestHistory = chat.history;
+        const requestIsCurrent = () => chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
+            (chatType === 'private' ? db.characters : db.groups).includes(chat);
         let systemPrompt, requestBody;
         if (chatType === 'private') {
             systemPrompt = generatePrivateSystemPrompt(chat);
@@ -500,7 +503,9 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         logText += "============================================";
         console.log(logText);
 
-        const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:streamGenerateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;
+        const endpoint = (provider === 'gemini')
+            ? `${url}/v1beta/models/${model}:${streamEnabled ? 'streamGenerateContent' : 'generateContent'}?key=${getRandomValue(key)}`
+            : url.endsWith('/chat/completions') ? url : `${url}${url.endsWith('/v1') ? '' : '/v1'}/chat/completions`;
         const headers = (provider === 'gemini') ? {'Content-Type': 'application/json'} : {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`
@@ -517,21 +522,20 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         }
         
         if (streamEnabled) {
-            await processStream(response, chat, provider, chatId, chatType, isBackground);
+            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent);
         } else {
             let result;
             try {
                 result = await response.json();
                 console.log('【API完整响应数据】:', result);
             } catch (e) {
-                const text = await response.text();
-                console.error("Failed to parse JSON:", text);
-                throw new Error(`API返回了非JSON格式数据 (可能是网页HTML)。请检查API地址是否正确。原始内容开头: ${text.substring(0, 50)}...`);
+                throw new Error('API返回了无法解析的JSON数据，请检查API地址及响应格式。');
             }
 
             let fullResponse = "";
             if (provider === 'gemini') {
-                fullResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                fullResponse = (Array.isArray(result) ? result : [result]).map(item =>
+                    (item.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')).join('');
             } else {
                 fullResponse = result.choices[0].message.content;
             }
@@ -548,6 +552,8 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             // ===================================
             
             
+            if (!requestIsCurrent()) return;
+            if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground);
         }
 
@@ -565,39 +571,10 @@ async function getAiReply(chatId, chatType, isBackground = false) {
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false) {
-    const reader = response.body.getReader(), decoder = new TextDecoder();
-    let fullResponse = "", accumulatedChunk = "";
-    for (; ;) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        accumulatedChunk += decoder.decode(value, {stream: true});
-        if (apiType === "openai" || apiType === "deepseek" || apiType === "claude" || apiType === "newapi") {
-            const parts = accumulatedChunk.split("\n\n");
-            accumulatedChunk = parts.pop();
-            for (const part of parts) {
-                if (part.startsWith("data: ")) {
-                    const data = part.substring(6);
-                    if (data.trim() !== "[DONE]") {
-                        try {
-                            fullResponse += JSON.parse(data).choices[0].delta?.content || "";
-                        } catch (e) { 
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if (apiType === "gemini") {
-        try {
-            const parsedStream = JSON.parse(accumulatedChunk);
-            fullResponse = parsedStream.map(item => item.candidates?.[0]?.content?.parts?.[0]?.text || "").join('');
-        } catch (e) {
-            console.error("Error parsing Gemini stream:", e, "Chunk:", accumulatedChunk);
-            if (!isBackground) showToast("解析Gemini响应失败");
-            return;
-        }
-    }
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true) {
+    let fullResponse = await readStreamResponse(response, apiType);
+    if (!requestIsCurrent()) return;
+    if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
     // === 【补丁：补全流式输出时丢失的开头标签】 ===
         // === 【补丁：补全流式输出时丢失的开头标签】 ===
     // 无论前台后台，只要是CoT开启且被预填吃掉了开头，都要补回来
@@ -615,6 +592,9 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
 }
 
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false) {
+    const replyArchiveId = chat.activeArchiveId;
+    let replyHistory = chat.history;
+    const replyIsCurrent = () => chat.activeArchiveId === replyArchiveId && chat.history === replyHistory;
     const rawResponse = fullResponse;
     if (fullResponse) {
         // 1. 移除 [incipere] 标签
@@ -654,6 +634,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
             if (idsToRemove.size > 0) {
                 chat.history = chat.history.filter(m => !idsToRemove.has(m.id));
+                replyHistory = chat.history;
             }
             
             // 添加到界面气泡（由于 regex 设置，会被隐藏，仅 Debug 模式可见）
@@ -836,6 +817,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         let firstMessageProcessed = false;
 
         for (const item of messages) {
+            if (!replyIsCurrent()) return;
             // 自动剔除不存在的表情包
             const stickerRegex = /\[(?:.*?的)?表情包：(.+?)\]/i;
             const stickerMatch = item.content.match(stickerRegex);
@@ -963,6 +945,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             if (!isBackground) {
                 const delay = firstMessageProcessed ? (900 + Math.random() * 1300) : (400 + Math.random() * 400);
                 await new Promise(resolve => setTimeout(resolve, delay));
+                if (!replyIsCurrent()) return;
                 
                 // 如果开启了多条消息提示音，且不是第一条消息（第一条已由系统默认逻辑播放），则播放提示音
                 if (firstMessageProcessed && db.multiMsgSoundEnabled && db.globalReceiveSound) {
@@ -1035,6 +1018,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 addMessageBubble(message, targetChatId, targetChatType);
                 
                 setTimeout(async () => {
+                    if (!replyIsCurrent()) return;
                     message.isWithdrawn = true;
                     message.content = `[${characterName}撤回了一条消息：${originalContent}]`;
                     
@@ -1053,7 +1037,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 const character = chat;
                 const myName = character.myName;
 
-                const aiQuoteRegex = new RegExp(`\\[${character.realName}引用[“"](.*?)["”]并回复：([\\s\\S]*?)\\]`);
+                const aiQuoteRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}引用[“"](.*?)["”]并回复：([\\s\\S]*?)\\]`);
                 const aiQuoteMatch = item.content.match(aiQuoteRegex);
 
                 if (aiQuoteMatch) {
@@ -1100,8 +1084,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 } else {
-                    const receivedTransferRegex = new RegExp(`\\[${character.realName}的转账：.*?元；备注：.*?\\]`);
-                    const giftRegex = new RegExp(`\\[${character.realName}送来的礼物：.*?\\]`);
+                    const receivedTransferRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}的转账：.*?元；备注：.*?\\]`);
+                    const giftRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}送来的礼物：.*?\\]`);
 
                     const message = {
                         id: `msg_${Date.now()}_${Math.random()}`,
@@ -1205,6 +1189,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
+        if (!replyIsCurrent()) return;
         await saveData();
         renderChatList();
 

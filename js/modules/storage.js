@@ -294,6 +294,97 @@ function setupStorageAnalysisScreen() {
     }
 }
 
+// 将设定和运行数据分开；存档也遵循同一勾选范围。
+const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'lastUserMessageTimestamp',
+    'status', 'peekData', 'privateSessions', 'gossipSessions'];
+const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
+const storageClone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+function storageRuntimeData(chat) {
+    const result = {};
+    STORAGE_CHAT_KEYS.forEach(key => { if (chat[key] !== undefined) result[key] = storageClone(chat[key]); });
+    if (chat.statusPanel) {
+        result.statusPanel = {};
+        STORAGE_STATUS_KEYS.forEach(key => { if (chat.statusPanel[key] !== undefined) result.statusPanel[key] = storageClone(chat.statusPanel[key]); });
+    }
+    return result;
+}
+function storageContactData(chat) {
+    const result = storageClone(chat);
+    [...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery'].forEach(key => delete result[key]);
+    if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
+    return result;
+}
+function storageExportChat(chat, contacts, chats) {
+    const result = contacts ? storageContactData(chat) : { id: chat.id, name: chat.name };
+    if (chats) {
+        Object.assign(result, storageRuntimeData(chat));
+        if (contacts && chat.statusPanel) result.statusPanel = storageClone(chat.statusPanel);
+        result.activeArchiveId = chat.activeArchiveId;
+        result.archives = (chat.archives || []).map(archive => ({ ...storageClone(archive),
+            data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}) } : storageRuntimeData(archive.data || {}) }));
+        result.archives.forEach(archive => {
+            if (contacts && archive.data.statusPanel && chat.archives.find(item => item.id === archive.id)?.data?.statusPanel) {
+                archive.data.statusPanel = storageClone(chat.archives.find(item => item.id === archive.id).data.statusPanel);
+            }
+            if (archive.id === chat.activeArchiveId) archive.data = { ...archive.data, ...storageRuntimeData(chat),
+                ...(contacts && chat.statusPanel ? { statusPanel: storageClone(chat.statusPanel) } : {}) };
+        });
+    }
+    return result;
+}
+function storageMergeChats(targets, incoming, contacts, chats) {
+    if (!Array.isArray(incoming)) return;
+    incoming.forEach(imported => {
+        if (!imported || typeof imported.id !== 'string') throw new Error('角色或群聊数据无效');
+        let target = targets.find(item => item.id === imported.id);
+        if (!target && !contacts) return;
+        if (!target) { target = { id: imported.id, history: [], callHistory: [], memoryJournals: [] }; targets.push(target); }
+        if (contacts) {
+            const contact = storageContactData(imported);
+            if (contact.statusPanel) contact.statusPanel = { ...target.statusPanel, ...contact.statusPanel };
+            Object.assign(target, contact);
+        }
+        if (!chats) return;
+        const applyRuntime = (destination, source) => {
+            const data = storageRuntimeData(source);
+            if (data.statusPanel) data.statusPanel = { ...destination.statusPanel, ...data.statusPanel };
+            Object.assign(destination, data);
+        };
+        if (Array.isArray(imported.archives) && imported.archives.length) {
+            const previous = target.archives || [];
+            const archives = imported.archives.map(archive => {
+                const existing = previous.find(item => item.id === archive.id);
+                const data = contacts ? storageContactData(archive.data || {}) : { ...storageContactData(target), ...storageContactData(existing?.data || {}) };
+                applyRuntime(data, archive.data || {});
+                if (contacts && archive.data?.statusPanel) data.statusPanel = storageClone(archive.data.statusPanel);
+                if (existing?.data?.gallery) data.gallery = existing.data.gallery;
+                return { ...storageClone(archive), data };
+            });
+            previous.forEach(archive => { if (!archives.some(item => item.id === archive.id)) archives.push(archive); });
+            target.archives = archives;
+            target.activeArchiveId = archives.some(item => item.id === imported.activeArchiveId) ? imported.activeArchiveId : archives[0].id;
+            applyRuntime(target, archives.find(item => item.id === target.activeArchiveId).data);
+        }
+        applyRuntime(target, imported);
+    });
+}
+async function storageExportFonts() {
+    if (!dexieDB?.customFonts) return [];
+    const fonts = await dexieDB.customFonts.toArray();
+    return Promise.all(fonts.filter(font => font.file).map(async font => ({ id: font.id, timestamp: font.timestamp,
+        name: font.file.name || font.id, type: font.file.type || 'application/octet-stream',
+        dataUrl: await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(font.file); }) })));
+}
+async function storageImportFonts(fonts) {
+    if (!Array.isArray(fonts) || !fonts.length) return;
+    if (!dexieDB?.customFonts) throw new Error('字体数据库尚未就绪');
+    for (const font of fonts) {
+        if (typeof font.id !== 'string' || typeof font.dataUrl !== 'string' || !/^data:[^,]*;base64,/.test(font.dataUrl)) throw new Error('备份字体数据无效');
+        const bytes = Uint8Array.from(atob(font.dataUrl.slice(font.dataUrl.indexOf(',') + 1)), char => char.charCodeAt(0));
+        await dexieDB.customFonts.put({ id: font.id, timestamp: font.timestamp, file: new File([bytes], font.name || font.id, { type: font.type || 'application/octet-stream' }) });
+    }
+}
+
 // --- 导出逻辑 ---
 async function handleExport() {
     if (!Object.values(selectedModules).some(v => v)) {
@@ -318,32 +409,8 @@ async function handleExport() {
             exportData.modules.characters = [];
             exportData.modules.groups = [];
 
-            db.characters.forEach(char => {
-                let exportChar = { ...char };
-                if (!selectedModules.chats) {
-                    exportChar.history = [];
-                    exportChar.callHistory = [];
-                }
-                if (!selectedModules.contacts) {
-                    // If only exporting chats, we still need basic info to identify the char
-                    exportChar = { id: char.id, name: char.name, history: char.history, callHistory: char.callHistory };
-                }
-                // 始终不导出 gallery
-                exportChar.gallery = [];
-                exportData.modules.characters.push(exportChar);
-            });
-
-            db.groups.forEach(group => {
-                let exportGroup = { ...group };
-                if (!selectedModules.chats) {
-                    exportGroup.history = [];
-                    exportGroup.callHistory = [];
-                }
-                if (!selectedModules.contacts) {
-                    exportGroup = { id: group.id, name: group.name, history: group.history, callHistory: group.callHistory };
-                }
-                exportData.modules.groups.push(exportGroup);
-            });
+            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, selectedModules.contacts, selectedModules.chats));
+            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, selectedModules.contacts, selectedModules.chats));
         }
 
         // 2. Worldbooks
@@ -374,6 +441,7 @@ async function handleExport() {
         if (selectedModules.fonts) {
             exportData.modules.fontUrl = db.fontUrl;
             exportData.modules.fontPresets = db.fontPresets;
+            exportData.modules.customFonts = await storageExportFonts();
         }
 
         // 6. Settings
@@ -445,6 +513,7 @@ async function handleImport(event) {
     }
 
     const file = input.files[0];
+    const previousData = storageClone(db);
 
     const importLabel = document.getElementById('storage-import-label');
     const importText = document.getElementById('storage-import-text');
@@ -469,60 +538,9 @@ async function handleImport(event) {
 
             const mods = importedData.modules;
 
-            // 1. Chats & Contacts
-            if ((selectedModules.chats || selectedModules.contacts) && mods.characters) {
-                mods.characters.forEach(importedChar => {
-                    const existingCharIndex = db.characters.findIndex(c => c.id === importedChar.id);
-                    if (existingCharIndex !== -1) {
-                        let existingChar = db.characters[existingCharIndex];
-                        if (selectedModules.chats && importedChar.history) {
-                            existingChar.history = importedChar.history;
-                            existingChar.callHistory = importedChar.callHistory || [];
-                        }
-                        if (selectedModules.contacts) {
-                            // Merge contact info, keep existing history if not importing chats
-                            const tempHistory = existingChar.history;
-                            const tempCallHistory = existingChar.callHistory;
-                            const tempGallery = existingChar.gallery;
-                            
-                            Object.assign(existingChar, importedChar);
-                            
-                            if (!selectedModules.chats) {
-                                existingChar.history = tempHistory;
-                                existingChar.callHistory = tempCallHistory;
-                            }
-                            // 始终保留原有的 gallery
-                            existingChar.gallery = tempGallery;
-                        }
-                    } else if (selectedModules.contacts) {
-                        // Only add new character if contacts is selected
-                        db.characters.push(importedChar);
-                    }
-                });
-            }
-
-            if ((selectedModules.chats || selectedModules.contacts) && mods.groups) {
-                mods.groups.forEach(importedGroup => {
-                    const existingGroupIndex = db.groups.findIndex(g => g.id === importedGroup.id);
-                    if (existingGroupIndex !== -1) {
-                        let existingGroup = db.groups[existingGroupIndex];
-                        if (selectedModules.chats && importedGroup.history) {
-                            existingGroup.history = importedGroup.history;
-                            existingGroup.callHistory = importedGroup.callHistory || [];
-                        }
-                        if (selectedModules.contacts) {
-                            const tempHistory = existingGroup.history;
-                            const tempCallHistory = existingGroup.callHistory;
-                            Object.assign(existingGroup, importedGroup);
-                            if (!selectedModules.chats) {
-                                existingGroup.history = tempHistory;
-                                existingGroup.callHistory = tempCallHistory;
-                            }
-                        }
-                    } else if (selectedModules.contacts) {
-                        db.groups.push(importedGroup);
-                    }
-                });
+            if (selectedModules.chats || selectedModules.contacts) {
+                storageMergeChats(db.characters, mods.characters, selectedModules.contacts, selectedModules.chats);
+                storageMergeChats(db.groups, mods.groups, selectedModules.contacts, selectedModules.chats);
             }
 
             // 2. Worldbooks
@@ -573,13 +591,18 @@ async function handleImport(event) {
                 });
             }
 
-            await saveData();
+            await dexieDB.transaction('rw', dexieDB.tables, async () => {
+                if (selectedModules.fonts) await storageImportFonts(mods.customFonts);
+                await saveData();
+            });
             showToast('导入成功，即将刷新页面');
             setTimeout(() => {
                 window.location.reload();
             }, 1500);
 
         } catch (error) {
+            Object.keys(db).forEach(key => { if (!(key in previousData)) delete db[key]; });
+            Object.assign(db, previousData);
             console.error('导入出错:', error);
             showToast('导入失败，文件格式可能不正确');
             importLabel.classList.remove('disabled');

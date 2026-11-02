@@ -328,11 +328,14 @@ window.showForwardedChatModal = function(chatContent, charName) {
         // 尝试匹配 "名字：内容" 或 "名字: 内容"
         const match = line.match(/^([^：:]+)[：:]([\s\S]+)$/);
         if (match) {
-            const name = match[1].trim();
+            const rawName = match[1].trim();
+            const nameNode = document.createElement('span');
+            nameNode.textContent = rawName;
+            const name = nameNode.innerHTML;
             const text = match[2].trim();
             
             // 简单的左右区分逻辑：如果名字是当前角色，放右边，否则放左边
-            const isSelf = name === charName;
+            const isSelf = rawName === charName;
             
             html += `
                 <div style="display: flex; flex-direction: column; align-items: ${isSelf ? 'flex-end' : 'flex-start'}; margin-bottom: 12px;">

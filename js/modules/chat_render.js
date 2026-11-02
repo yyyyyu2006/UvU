@@ -545,7 +545,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     const callRecordRegex = /\[(视频|语音)通话记录[：:](.*?)[；;](.*?)[；;](.*?)\]/;
     
     // 转发聊天记录正则
-    const forwardedChatRegex = new RegExp(`<${chat.realName}转发的聊天记录>([\\s\\S]+?)<\\/${chat.realName}转发的聊天记录>`);
+    const forwardedChatRegex = new RegExp(`<${escapeMessageRegex(chat.realName)}转发的聊天记录>([\\s\\S]+?)<\\/${escapeMessageRegex(chat.realName)}转发的聊天记录>`);
     
     const shopOrderMatchNew = content.match(shopOrderRegexNew);
     const shopPayRequestMatch = content.match(shopPayRequestRegex);
@@ -990,7 +990,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.style.backgroundColor = bubbleTheme.bg;
             bubbleElement.style.color = bubbleTheme.text;
         }
-    } else if (message && Array.isArray(message.parts) && message.parts[0].type === 'html') {
+    } else if (message && Array.isArray(message.parts) && message.parts[0]?.type === 'html') {
         bubbleElement = document.createElement('div');
         bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'} html-bubble`;
         const htmlContent = message.parts[0].text;
@@ -1232,17 +1232,17 @@ function addMessageBubble(message, targetChatId, targetChatType) {
 
     if (currentChatType === 'private') {
         const character = db.characters.find(c => c.id === currentChatId);
-        const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为[：:](.*?)\\]`);
-        const transferActionRegex = new RegExp(`\\[${character.realName}(接收|退回)${character.myName}的转账\\]`);
-        const giftReceivedRegex = new RegExp(`\\[${character.realName}已接收礼物\\]`);
+        const updateStatusRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}更新状态为[：:](.*?)\\]`);
+        const transferActionRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}(接收|退回)${escapeMessageRegex(character.myName)}的转账\\]`);
+        const giftReceivedRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}已接收礼物\\]`);
         
         // AI 回应用户的代付请求
-        const payAgreedRegex = new RegExp(`\\[${character.realName}同意了${character.myName}的代付请求\\]`);
-        const payRejectedRegex = new RegExp(`\\[${character.realName}拒绝了${character.myName}的代付请求\\]`);
+        const payAgreedRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}同意了${escapeMessageRegex(character.myName)}的代付请求\\]`);
+        const payRejectedRegex = new RegExp(`\\[${escapeMessageRegex(character.realName)}拒绝了${escapeMessageRegex(character.myName)}的代付请求\\]`);
         
         // 用户回应 AI 的代付请求 (通过按钮触发的指令)
-        const userPayAgreedRegex = new RegExp(`\\[${character.myName}同意了${character.realName}的代付请求\\]`);
-        const userPayRejectedRegex = new RegExp(`\\[${character.myName}拒绝了${character.realName}的代付请求\\]`);
+        const userPayAgreedRegex = new RegExp(`\\[${escapeMessageRegex(character.myName)}同意了${escapeMessageRegex(character.realName)}的代付请求\\]`);
+        const userPayRejectedRegex = new RegExp(`\\[${escapeMessageRegex(character.myName)}拒绝了${escapeMessageRegex(character.realName)}的代付请求\\]`);
 
         if (message.content.match(updateStatusRegex)) {
             character.status = message.content.match(updateStatusRegex)[1];
