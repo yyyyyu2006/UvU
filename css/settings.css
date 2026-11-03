@@ -118,6 +118,23 @@
     line-height: 1.2;
 }
 
+#api-settings-screen .system-notification-test-button {
+    align-self: flex-start;
+    width: auto;
+    max-width: 100%;
+    min-height: 28px;
+    margin: 8px 0 0;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 18px;
+    white-space: normal;
+}
+#api-settings-screen .system-notification-test-button:disabled {
+    opacity: .55;
+    cursor: default;
+}
+
 .kkt-item-subtitle {
     color: #888;
     font-size: calc(13px * var(--app-font-scale));

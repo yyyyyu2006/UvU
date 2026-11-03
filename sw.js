@@ -15,7 +15,8 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const { chatId, chatType } = event.notification.data || {};
-  if (typeof chatId !== 'string' || !['private', 'group'].includes(chatType)) return;
+  const isTest = event.notification.data?.type === 'uvu-notification-test';
+  if (!isTest && (typeof chatId !== 'string' || !['private', 'group'].includes(chatType))) return;
   event.waitUntil((async () => {
     const scope = new URL(self.registration.scope);
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -25,9 +26,9 @@ self.addEventListener('notificationclick', event => {
     });
     if (client) {
       await client.focus();
-      client.postMessage({ type: 'uvu-open-chat', chatId, chatType });
+      if (!isTest) client.postMessage({ type: 'uvu-open-chat', chatId, chatType });
     } else {
-      scope.hash = 'uvu-notification=' + encodeURIComponent(JSON.stringify({ chatId, chatType }));
+      if (!isTest) scope.hash = 'uvu-notification=' + encodeURIComponent(JSON.stringify({ chatId, chatType }));
       await self.clients.openWindow(scope.href);
     }
   })());

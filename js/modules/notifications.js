@@ -76,13 +76,73 @@ async function showSystemMessageNotification(title, body, icon, chatId, chatType
 function setupMessageNotifications() {
     const toggle = document.getElementById('system-notification-switch');
     const status = document.getElementById('system-notification-status');
+    const testButton = document.getElementById('system-notification-test');
+    const testStatus = document.getElementById('system-notification-test-status');
     const supported = window.isSecureContext && typeof Notification !== 'undefined' && 'serviceWorker' in navigator;
+    let testJob = null;
+    const setTestStatus = message => {
+        if (!testStatus) return;
+        testStatus.textContent = message;
+        testStatus.hidden = !message;
+    };
+    const finishTest = (job, message) => {
+        if (testJob !== job) return;
+        if (job.timer !== null) clearTimeout(job.timer);
+        testJob = null;
+        if (testButton) {
+            testButton.disabled = !supported;
+            testButton.textContent = '测试系统通知';
+        }
+        setTestStatus(message);
+    };
     const refresh = () => {
         if (!toggle || !status) return;
         toggle.checked = systemNotificationsEnabled && supported && Notification.permission === 'granted';
         status.textContent = !supported ? '此浏览器不支持；iOS 请添加到主屏幕后打开' : Notification.permission === 'denied' ?
             '通知权限已被拒绝，请在浏览器或系统设置中开启' : toggle.checked ? '已开启；网页暂停或关闭后无法持续接收' : '未开启';
+        if (testJob && !toggle.checked) finishTest(testJob, '系统通知已关闭或权限不可用，测试已取消');
+        if (testButton) testButton.disabled = !supported || !!testJob;
     };
+    testButton?.addEventListener('click', async () => {
+        if (testJob) return;
+        if (!supported || !systemNotificationsEnabled || Notification.permission !== 'granted') {
+            setTestStatus('请先开启系统消息通知，并允许浏览器发送通知');
+            return;
+        }
+        const job = { timer: null };
+        testJob = job;
+        testButton.disabled = true;
+        testButton.textContent = '等待测试…';
+        try {
+            const registration = await getMessageNotificationRegistration();
+            if (testJob !== job) return;
+            setTestStatus('请在 5 秒内返回手机主屏幕，等待测试通知；不要关闭网页。系统暂停网页时，测试可能延迟或无法执行。');
+            showToast('5 秒后测试系统通知，请返回手机主屏幕查看');
+            job.timer = setTimeout(async () => {
+                if (testJob !== job) return;
+                job.timer = null;
+                if (!systemNotificationsEnabled || Notification.permission !== 'granted') {
+                    finishTest(job, '系统通知已关闭或权限不可用，测试已取消');
+                    return;
+                }
+                if (document.visibilityState !== 'hidden') {
+                    finishTest(job, '未发送：网页未进入后台，请重新测试并在 5 秒内返回手机主屏幕');
+                    return;
+                }
+                try {
+                    await registration.showNotification('UwU 通知测试', {
+                        body: '这是一条系统测试通知，用于检查当前设备的通知显示。',
+                        tag: 'uvu-system-notification-test', data: { type: 'uvu-notification-test' }, timestamp: Date.now()
+                    });
+                    finishTest(job, '测试通知请求已提交，请检查系统通知栏或通知中心；是否出现横幅取决于系统设置。');
+                } catch (_) {
+                    finishTest(job, '测试通知发送失败，请检查浏览器权限及系统通知设置后重试');
+                }
+            }, 5000);
+        } catch (_) {
+            finishTest(job, '通知服务尚未就绪或不可用，请稍后重试');
+        }
+    });
     toggle?.addEventListener('change', async () => {
         const desired = toggle.checked;
         toggle.disabled = true;

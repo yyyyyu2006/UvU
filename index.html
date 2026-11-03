@@ -29,7 +29,7 @@
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261103-notifications-backup">
-    <link rel="stylesheet" href="css/settings.css?v=20261103-vector-viewport">
+    <link rel="stylesheet" href="css/settings.css?v=20261103-notification-test">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
@@ -470,6 +470,8 @@
                             <div class="kkt-item-content">
                                 <div class="kkt-item-title">系统消息通知</div>
                                 <div class="kkt-item-subtitle" id="system-notification-status" aria-live="polite">未开启</div>
+                                <button type="button" class="btn btn-secondary system-notification-test-button" id="system-notification-test">测试系统通知</button>
+                                <div class="kkt-item-subtitle" id="system-notification-test-status" aria-live="polite" hidden></div>
                             </div>
                             <div class="kkt-item-control"><label class="kkt-switch"><input type="checkbox" id="system-notification-switch"><span class="kkt-slider"></span></label></div>
                         </div>
@@ -2774,7 +2776,7 @@
     <script src="js/modules/chat_ai_airdrop.js"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261103-documents"></script>
     <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
-    <script src="js/modules/notifications.js?v=20261103-notifications"></script>
+    <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
     <script src="js/modules/chat_ai.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/chat_features.js?v=20261103-chat-safety"></script>
 <script src="js/modules/chat_ops.js?v=20261103-chat-safety"></script>
