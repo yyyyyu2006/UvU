@@ -592,6 +592,9 @@ async function handleImport(event) {
             }
 
             await dexieDB.transaction('rw', dexieDB.tables, async () => {
+                // 显式覆盖集合：删除操作与写入处于同一事务，失败一起回滚。
+                if (selectedModules.worldbooks && Array.isArray(mods.worldBooks)) await dexieDB.worldBooks.clear();
+                if (selectedModules.wallpapers && Array.isArray(mods.myStickers)) await dexieDB.myStickers.clear();
                 if (selectedModules.fonts) await storageImportFonts(mods.customFonts);
                 await saveData();
             });
@@ -744,15 +747,14 @@ function setupCleanImageCache() {
                 }
                 if (msg.parts) {
                     msg.parts.forEach(part => {
-                        if (part.type === 'image' && isBase64Image(part.data)) {
-                            cacheSizes.chat += getStringSize(part.data);
+                        if (part.type === 'image' && (isBase64Image(part.data) || isBase64Image(part.url))) {
+                            cacheSizes.chat += getStringSize(part.data || part.url);
                         }
                     });
                 }
             });
         };
-        (db.characters || []).forEach(char => processHistory(char.history));
-        (db.groups || []).forEach(group => processHistory(group.history));
+        storageChatHistories().forEach(processHistory);
 
         (db.characters || []).forEach(char => {
             if (char.gallery) {
@@ -763,7 +765,7 @@ function setupCleanImageCache() {
         });
 
         (db.myStickers || []).forEach(sticker => {
-            if (isBase64Image(sticker.url)) cacheSizes.stickers += getStringSize(sticker.url);
+            if (isBase64Image(sticker.data)) cacheSizes.stickers += getStringSize(sticker.data);
         });
 
         document.getElementById('size-generated-images').textContent = `(${formatBytes(cacheSizes.generated)})`;
@@ -812,6 +814,7 @@ function setupCleanImageCache() {
 
         try {
             let dataChanged = false;
+            let removedStickerIds = [];
 
             if (selectedCategories.includes('generated') && dexieDB) {
                 const workshopItems = await dexieDB.workshopHistory.toArray();
@@ -852,8 +855,9 @@ function setupCleanImageCache() {
                         }
                         if (msg.parts) {
                             msg.parts.forEach(part => {
-                                if (part.type === 'image' && isBase64Image(part.data)) {
+                                if (part.type === 'image' && (isBase64Image(part.data) || isBase64Image(part.url))) {
                                     part.data = '';
+                                    delete part.url;
                                     part.type = 'text';
                                     part.text = '[图片已清理]';
                                     dataChanged = true;
@@ -862,8 +866,7 @@ function setupCleanImageCache() {
                         }
                     });
                 };
-                (db.characters || []).forEach(char => cleanHistory(char.history));
-                (db.groups || []).forEach(group => cleanHistory(group.history));
+                storageChatHistories().forEach(cleanHistory);
             }
 
             if (selectedCategories.includes('gallery')) {
@@ -878,12 +881,16 @@ function setupCleanImageCache() {
 
             if (selectedCategories.includes('stickers')) {
                 const originalLength = db.myStickers.length;
-                db.myStickers = db.myStickers.filter(sticker => !isBase64Image(sticker.url));
+                removedStickerIds = db.myStickers.filter(sticker => isBase64Image(sticker.data)).map(sticker => sticker.id);
+                db.myStickers = db.myStickers.filter(sticker => !isBase64Image(sticker.data));
                 if (originalLength !== db.myStickers.length) dataChanged = true;
             }
 
             if (dataChanged) {
-                await saveData();
+                await dexieDB.transaction('rw', dexieDB.tables, async () => {
+                    if (removedStickerIds.length) await dexieDB.myStickers.bulkDelete(removedStickerIds);
+                    await saveData();
+                });
             }
 
             showToast('清理完成！');
@@ -908,3 +915,15 @@ function setupCleanImageCache() {
 window.checkAndRequestPersistence = checkAndRequestPersistence;
 window.setupStorageAnalysisScreen = setupStorageAnalysisScreen;
 window.setupCleanImageCache = setupCleanImageCache;
+
+// 当前存档与所有非当前分支均需清理，避免切换分支后图片重新出现。
+function storageChatHistories() {
+    const histories = new Set();
+    for (const chat of [...(db.characters || []), ...(db.groups || [])]) {
+        if (Array.isArray(chat.history)) histories.add(chat.history);
+        for (const archive of chat.archives || []) {
+            if (Array.isArray(archive.data?.history)) histories.add(archive.data.history);
+        }
+    }
+    return [...histories];
+}

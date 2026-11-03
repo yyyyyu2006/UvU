@@ -996,7 +996,12 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         const htmlContent = message.parts[0].text;
         if (htmlContent.includes('<!DOCTYPE html>') || htmlContent.includes('<html')) {
             const processedHtml = processTemplate(htmlContent, chat);
-            bubbleElement.innerHTML = `<iframe srcdoc="${processedHtml.replace(/"/g, '"')}" style="width: 100%; min-width: 250px; height: 350px; border: none; background: white; border-radius: 10px;"></iframe>`;
+            const frame = document.createElement('iframe');
+            frame.setAttribute('sandbox', 'allow-scripts');
+            frame.setAttribute('referrerpolicy', 'no-referrer');
+            frame.style.cssText = 'width:100%;min-width:250px;height:350px;border:none;background:white;border-radius:10px';
+            frame.srcdoc = processedHtml;
+            bubbleElement.replaceChildren(frame);
         } else {
             const processedHtml = processTemplate(htmlContent, chat);
             bubbleElement.innerHTML = DOMPurify.sanitize(processedHtml, { ADD_TAGS: ['style'], ADD_ATTR: ['style'] });

@@ -110,6 +110,16 @@ test('old backups without archives still restore top-level chats and keep local 
     f.c.storageMergeChats([target], [{ id: 'c', history: [{ id: 'old' }] }], false, true);
     assert.equal(target.history[0].id, 'old'); assert.equal(target.archives, archives);
 });
+test('image cleanup enumerates unique current and archived histories for characters and groups', () => {
+    const f = fixture();
+    const live = [{ id: 'live' }], branch = [{ id: 'branch' }], groupHistory = [{ id: 'group' }];
+    f.c.db.characters.push({ id: 'with-archives', history: live, archives: [
+        { id: 'active', data: { history: live } }, { id: 'branch', data: { history: branch } }
+    ] });
+    f.c.db.groups.push({ id: 'group', history: groupHistory, archives: [{ id: 'old', data: { history: [{ id: 'old-group' }] } }] });
+    const histories = f.c.storageChatHistories();
+    assert.deepEqual(Array.from(histories, history => history[0].id), ['u', 'live', 'branch', 'group', 'old-group']);
+});
 test('font restore reconstructs original binary file', async () => {
     const f = fixture(), saved = []; f.c.dexieDB = { customFonts: { put: async data => saved.push(data) } };
     await f.c.storageImportFonts([{ id: 'font1', name: 'test.woff', type: 'font/woff', dataUrl: 'data:font/woff;base64,Zm9udA==' }]);

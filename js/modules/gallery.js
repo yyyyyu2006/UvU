@@ -287,14 +287,18 @@ function renderGalleryList(char) {
         el.style.cursor = 'pointer';
         
         el.innerHTML = `
-            <div style="width: 50px; height: 50px; background-image: url('${item.url}'); background-size: cover; background-position: center; border-radius: 4px; flex-shrink: 0;"></div>
+            <div style="width: 50px; height: 50px;  background-size: cover; background-position: center; border-radius: 4px; flex-shrink: 0;"></div>
             <div style="flex: 1; overflow: hidden;">
-                <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px;">${item.name}</div>
-                <div style="font-size: 12px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.url}</div>
+                <div style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px;"></div>
+                <div style="font-size: 12px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>
             </div>
             <button class="btn btn-danger btn-small delete-btn" style="padding: 4px 8px;">删除</button>
         `;
         
+        el.firstElementChild.style.backgroundImage = `url(${JSON.stringify(String(item.url || ''))})`;
+        el.children[1].children[0].textContent = item.name;
+        el.children[1].children[1].textContent = item.url;
+
         el.querySelector('.delete-btn').addEventListener('click', async (e) => {
             e.stopPropagation();
             if (confirm(`确定删除图片“${item.name}”吗？`)) {
@@ -340,7 +344,7 @@ function renderGalleryPresets() {
         
         el.innerHTML = `
             <div>
-                <div style="font-weight: 500;">${preset.name}</div>
+                <div style="font-weight: 500;"></div>
                 <div style="font-size: 12px; color: #999;">${preset.items.length} 张图片</div>
             </div>
             <div style="display: flex; gap: 5px;">
@@ -348,6 +352,8 @@ function renderGalleryPresets() {
                 <button class="btn btn-danger btn-small delete-btn">删除</button>
             </div>
         `;
+
+        el.firstElementChild.firstElementChild.textContent = preset.name;
 
         el.querySelector('.load-btn').addEventListener('click', async () => {
             if (confirm(`确定加载预设“${preset.name}”吗？`)) {

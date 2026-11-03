@@ -96,6 +96,64 @@ test('vector memory is opt-in and caches embeddings while ranking relevant journ
     assert.equal(inputs.length, 3);
 });
 
+test('vector history library filters reasoning, status blocks and excluded context while preserving source messages', () => {
+    const f = fixture(4, { vectorSearchEnabled: true, keepRecent: 1 });
+    f.chat.statusPanel = { enabled: true, regexPattern: '<status>[\\s\\S]*?<\\/status>' };
+    f.chat.history[0].content = '旧剧情 <thinking>私有推理</thinking><status>状态栏</status>';
+    f.chat.history[1].content = '第二段剧情';
+    f.chat.history[2].isThinking = true;
+    f.chat.history[3].content = '最近一条';
+    f.chat.memoryJournals.push({ id: 'old', title: '旧', content: '已合并旧记忆', isFavorited: true, vectorSupersededBy: 'manual_1' });
+    const before = JSON.stringify(f.chat.history);
+    const entries = f.context.getVectorMemoryCandidates(f.chat);
+    assert.equal(entries.length, 1);
+    assert.match(entries[0].content, /旧剧情/);
+    assert.match(entries[0].content, /第二段剧情/);
+    assert.doesNotMatch(entries[0].content, /私有推理|状态栏|最近一条/);
+    assert.equal(JSON.stringify(f.chat.history), before);
+});
+
+test('successful vector retrieval replaces whole-journal injection only during prompt construction', () => {
+    const f = fixture(1);
+    f.chat.memoryJournals.push({ id: 'favorite', title: '旧事', content: '整篇旧记忆', isFavorited: true });
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
+    const prompt = f.context.buildPromptWithVectorMemory(f.chat,
+        () => `base:${f.context.getContextMemoryJournals(f.chat).length}`, '\n向量片段');
+    assert.equal(prompt, 'base:0\n向量片段');
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
+});
+
+test('vector results rank distinct memory entries before applying Top K', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorTopK: 2, vectorThreshold: 0 });
+    f.chat.memoryJournals.push({ id: 'one', title: '同一长记忆', content: '事件甲。'.repeat(2000), isFavorited: true },
+        { id: 'two', title: '另一篇记忆', content: '事件乙。', isFavorited: true });
+    f.context.db.vectorMemoryApiSettings = { provider: 'newapi', url: 'https://vectors.test/v1', key: 'test-key', embeddingModel: 'embed-model' };
+    f.context.fetch = async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        const isOther = String(input).includes('事件乙');
+        return { ok: true, json: async () => ({ data: [{ embedding: isOther ? [0.9, 0.1] : [1, 0] }] }) };
+    };
+    const result = await f.context.getVectorMemoryContext(f.chat, '当前话题');
+    assert.match(result, /同一长记忆/);
+    assert.match(result, /另一篇记忆/);
+});
+
+test('vector indexing rejects stale archive results and leaves the new archive index untouched', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorThreshold: 0 });
+    f.chat.memoryJournals.push({ id: 'note', title: '记忆', content: '相关剧情', isFavorited: true });
+    f.context.db.vectorMemoryApiSettings = { provider: 'newapi', url: 'https://vectors.test/v1', key: 'test-key', embeddingModel: 'embed-model' };
+    let finish, started;
+    const ready = new Promise(resolve => started = resolve);
+    f.context.fetch = async () => { started(); return new Promise(resolve => finish = resolve); };
+    const pending = f.context.getVectorMemoryContext(f.chat, '当前话题');
+    await ready;
+    f.chat.activeArchiveId = 'a2';
+    finish({ ok: true, json: async () => ({ data: [{ embedding: [1, 0] }] }) });
+    await assert.rejects(pending, /存档|变化|取消/);
+    assert.equal(f.chat.memoryVectorIndex, undefined);
+    assert.equal(f.saves.length, 0);
+});
+
 test('long memories index and retrieve tail chunks, reuse chunk cache, and inject excerpts only', async () => {
     const f = fixture(1, { vectorSearchEnabled: true, vectorTopK: 1, vectorThreshold: 0.5 });
     const opening = `最早标记：${'早期无关记录。'.repeat(900)}`;

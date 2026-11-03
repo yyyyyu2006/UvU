@@ -125,28 +125,40 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
         const worldBookPlan = typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, historySlice) : undefined;
-        if (chatType === 'private') {
-            systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
-        } else {
-            // generateGroupSystemPrompt 应该在 group_chat.js 中定义
-            if (typeof generateGroupSystemPrompt === 'function') {
-                systemPrompt = generateGroupSystemPrompt(chat, worldBookPlan);
-            } else {
-                systemPrompt = "Group chat system prompt not available.";
+        let vectorContext = '';
+        if (typeof getVectorMemoryContext === 'function') {
+            const query = historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');
+            try { vectorContext = await getVectorMemoryContext(chat, query, activeGenerationController?.signal); }
+            catch (error) {
+                if (error.name === 'AbortError') throw error;
+                console.error('Vector memory lookup failed:', error.message);
+                if (!isBackground) showToast('向量记忆检索失败，本次继续使用原有记忆');
             }
         }
+        if (!requestIsCurrent()) return;
+        const buildBasePrompt = () => {
+            if (chatType === 'private') {
+                systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
+            } else {
+                // generateGroupSystemPrompt 应该在 group_chat.js 中定义
+                if (typeof generateGroupSystemPrompt === 'function') {
+                    systemPrompt = generateGroupSystemPrompt(chat, worldBookPlan);
+                } else {
+                    systemPrompt = "Group chat system prompt not available.";
+                }
+            }
+
+            return systemPrompt;
+        };
+        systemPrompt = typeof buildPromptWithVectorMemory === 'function'
+            ? buildPromptWithVectorMemory(chat, buildBasePrompt, vectorContext) : buildBasePrompt() + vectorContext;
 
         if (generationGuidance.trim()) {
             systemPrompt += `\n\n【本次重新生成的修改方向】\n${generationGuidance.trim()}\n请仅针对本次回复遵循以上修改方向；保留原有角色设定和既有规则。`;
         }
 
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
-        if (typeof getVectorMemoryContext === 'function') {
-            const latestUserText = [...historySlice].reverse().find(message => message.role === 'user')?.content || '';
-            try { systemPrompt += await getVectorMemoryContext(chat, latestUserText, activeGenerationController?.signal); }
-            catch (error) { console.error('Vector memory lookup failed:', error.message); showToast('向量记忆检索失败，本次回复继续使用原上下文'); }
-        }
-        
+
         const lastContextMessage = historySlice[historySlice.length - 1];
         if (worldBookPlan) historySlice = insertDepthWorldBooks(historySlice, worldBookPlan);
 
@@ -164,22 +176,22 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             let contents = historySlice.map(msg => {
                 const role = msg.role === 'assistant' ? 'model' : 'user';
                 if (msg.worldBookInjection) return Object.defineProperty({ role, parts: [{ text: msg.role === 'system' ? '[system]\n' + msg.content : msg.content }] }, 'worldBookInjection', { value: true });
-                
+
                 let prefix = '';
                 const currentMsgTime = msg.timestamp;
                 const timeDiff = currentMsgTime - lastMsgTimeForAI;
                 const isSameMarkerDay = new Date(currentMsgTime).toDateString() === new Date(lastTimeMarkerForAI).toDateString();
-               
+
                if (lastTimeMarkerForAI === 0 || currentMsgTime - lastTimeMarkerForAI >= 10 * 60 * 1000 || !isSameMarkerDay) {
                    const dateObj = new Date(currentMsgTime);
                    const timeStr = `${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;
-                   
+
                    prefix = `[system: ${timeStr}]`;
-                   
+
                    if (db.apiSettings && db.apiSettings.timePerceptionEnabled && timeDiff > 30 * 60 * 1000 && lastMsgTimeForAI !== 0) {
                        prefix += `\n[system: 距离上次互动已过去 ${formatTimeGap(timeDiff)}。话题可能已中断，请自然地开启新话题或对时间流逝做出反应。]`;
                    }
-                   
+
                    prefix += '\n';
                    lastTimeMarkerForAI = currentMsgTime;
                }
@@ -343,15 +355,15 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             };
 
             let lastTimeMarkerForAI = 0;
-            
+
             historySlice.forEach(msg => {
                if (msg.worldBookInjection) { messages.push(Object.defineProperty({ role: msg.role, content: msg.content }, 'worldBookInjection', { value: true })); return; }
                let content;
                let prefix = '';
-               
+
                const currentMsgTime = msg.timestamp;
                const isSameMarkerDay = new Date(currentMsgTime).toDateString() === new Date(lastTimeMarkerForAI).toDateString();
-               
+
                if (lastTimeMarkerForAI === 0 || currentMsgTime - lastTimeMarkerForAI >= 10 * 60 * 1000 || !isSameMarkerDay) {
                    const dateObj = new Date(currentMsgTime);
                    const timeStr = `${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())} ${pad(dateObj.getHours())}:${pad(dateObj.getMinutes())}`;

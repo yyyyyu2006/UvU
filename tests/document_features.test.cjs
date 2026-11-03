@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 function fixture(books = []) {
-    const c = vm.createContext({ db: { worldBooks: books, myStickers: [], characters: [], groups: [] }, crypto, TextDecoder, console });
+    const c = vm.createContext({ db: { worldBooks: books, myStickers: [], characters: [], groups: [] }, crypto, TextDecoder, AbortController, setTimeout, clearTimeout, console });
     for (const name of ['worldbook_rules', 'document_import', 'text_editor', 'sticker_assist']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/' + name + '.js'), 'utf8'), c);
     return c;
 }

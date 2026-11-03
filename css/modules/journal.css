@@ -307,3 +307,17 @@
     width: 22px;
     height: 22px;
 }
+
+/* 独立记忆管理样式，避免覆盖聊天气泡和用户美化。 */
+.memory-library .feature-dialog-card{max-width:640px;max-height:88vh;max-height:88dvh;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.memory-library .memory-library-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.memory-library label:not(.memory-library-pick){display:flex;flex-direction:column;gap:6px;font-size:13px;margin:10px 0}
+.memory-library input:not([type=checkbox]),.memory-library textarea,.memory-library select{box-sizing:border-box;width:100%;min-width:0;border:1px solid #ddd;border-radius:8px;padding:8px;font:inherit;font-size:16px;color:#333;background:#fff}
+.memory-library textarea{resize:vertical;min-height:150px}
+.memory-library .memory-library-card{border:1px solid #e4e4e4;border-radius:10px;padding:12px;margin:12px 0;overflow-wrap:anywhere}
+.memory-library pre{font-family:inherit;font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;margin:10px 0}
+.memory-library .memory-library-pick{display:flex;gap:8px;align-items:center}
+.memory-library input[type=checkbox]{width:18px;height:18px;flex-shrink:0;margin:0}
+.memory-library summary{cursor:pointer;font-size:13px;line-height:1.6}
+.memory-library .memory-library-status{font-size:13px;line-height:1.6}
+.memory-library button{min-height:36px;margin:0;line-height:1.35;white-space:normal}
