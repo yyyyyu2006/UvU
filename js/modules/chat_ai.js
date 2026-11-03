@@ -22,10 +22,23 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
     }
     messages.filter(message => message.role === 'assistant' && !message.isStatusUpdate && !message.isThinking && !message.isContextDisabled).forEach(message => {
         const card = document.createElement('button'); card.type = 'button'; card.className = 'incoming-message-toast';
-        const title = document.createElement('strong'); title.textContent = chatType === 'private' ? (chat.remarkName || chat.realName || '新消息') : (message.senderId ? chat.members?.find(member => member.id === message.senderId)?.groupNickname || chat.name : chat.name);
-        const body = document.createElement('span');
-        body.textContent = String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').slice(0, 90) || '发送了一条消息';
-        card.append(title, body); host.appendChild(card);
+        const member = chatType === 'group' && message.senderId ? chat.members?.find(item => item.id === message.senderId) : null;
+        const titleText = chatType === 'private' ? (chat.remarkName || chat.realName || '新消息') : (member?.groupNickname || member?.realName || chat.name || '新消息');
+        const avatar = document.createElement('img');
+        avatar.className = 'incoming-message-avatar';
+        avatar.alt = '';
+        avatar.src = member?.avatar || chat.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        avatar.onerror = () => { avatar.onerror = null; avatar.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; };
+        const content = document.createElement('span'); content.className = 'incoming-message-content';
+        const title = document.createElement('strong'); title.textContent = titleText;
+        const id = document.createElement('small'); id.textContent = member?.id || chat.id || '';
+        const body = document.createElement('span'); body.className = 'incoming-message-text';
+        body.textContent = String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息';
+        content.append(title, id, body);
+        card.append(avatar, content);
+        while (host.children.length >= 3) host.lastElementChild.remove();
+        host.prepend(card);
+        Array.from(host.children).forEach((node, index) => { node.style.zIndex = String(host.children.length - index); });
         card.addEventListener('click', () => { card.remove(); if (typeof openChatRoom === 'function') openChatRoom(chatId, chatType); });
         setTimeout(() => card.remove(), 5000);
     });

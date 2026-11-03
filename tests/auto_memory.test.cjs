@@ -61,6 +61,20 @@ test('empty, hidden and thinking-only records are not counted as floors; media m
     assert.equal(c.isAutoMemoryFloor({ id: 'image', role: 'user', content: '', parts: [{ type: 'image', data: 'data:image/png;base64,AA==' }] }), true);
 });
 
+test('coverage status counts eligible floors and reports the first uncovered record even with gaps', () => {
+    const { context: c, chat } = fixture(7, { keepRecent: 2 });
+    chat.history[1].isContextDisabled = true;
+    chat.history[4].parts = [{ type: 'image', url: 'data:image/png;base64,AA==' }];
+    const stats = c.getAutoMemoryCoverageStats(chat, { covered: new Set(['m0', 'm3', 'm6']) });
+    assert.equal(stats.total, 6);
+    assert.equal(stats.excluded, 1);
+    assert.equal(stats.covered, 3);
+    assert.deepEqual(ids(stats.uncovered.map(item => item.message)), ['m2', 'm4', 'm5']);
+    assert.equal(stats.next.floor, 3);
+    assert.equal(stats.retained, 2);
+    assert.equal(stats.available, 2);
+});
+
 test('vector memory is opt-in and caches embeddings while ranking relevant journals', async () => {
     const f = fixture(1, { vectorSearchEnabled: false });
     const journal = { id: 'favorite', title: '约定', content: '两人约定下周一起看电影。', isFavorited: true };
@@ -99,6 +113,34 @@ test('optional memory API reranker can reorder cosine-ranked summaries', async (
     const result = await f.context.getVectorMemoryContext(f.chat, '需要周末约定');
     assert.match(result, /旧事二/);
     assert.doesNotMatch(result, /旧事一/);
+});
+
+test('vector retrieval uses its own API endpoint and distinct embedding and rerank models', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorRerankEnabled: true, vectorTopK: 1, vectorThreshold: 0 });
+    f.chat.memoryJournals.push(
+        { id: 'first', title: '旧事一', content: '讨论电影。', isFavorited: true },
+        { id: 'second', title: '旧事二', content: '周末见面。', isFavorited: true }
+    );
+    f.context.db.memoryApiSettings = { provider: 'newapi', url: 'https://summary.test/v1', key: 'summary-key', model: 'summary-model' };
+    f.context.db.vectorMemoryApiSettings = { provider: 'newapi', url: 'https://vectors.test/v1', key: 'vector-key', embeddingModel: 'embed-v2', rerankModel: 'rank-v3' };
+    const embeddingRequests = [];
+    f.context.fetch = async (url, request) => {
+        embeddingRequests.push({ url, request, body: JSON.parse(request.body) });
+        const input = JSON.parse(request.body).input;
+        return { ok: true, json: async () => ({ data: [{ embedding: Array.isArray(input) ? [1, 0] : [1, 0] }] }) };
+    };
+    f.context.buildChatApiRequest = config => {
+        assert.equal(config.url, 'https://vectors.test/v1');
+        assert.equal(config.key, 'vector-key');
+        assert.equal(config.model, 'rank-v3');
+        return { requestBody: {}, headers: {}, endpoint: 'https://vectors.test/v1/chat/completions' };
+    };
+    f.context.fetchAiResponse = async () => '2, 1';
+    const result = await f.context.getVectorMemoryContext(f.chat, '当前话题');
+    assert.equal(embeddingRequests.length, 3);
+    assert.ok(embeddingRequests.every(item => item.url === 'https://vectors.test/v1/embeddings'));
+    assert.ok(embeddingRequests.every(item => item.body.model === 'embed-v2'));
+    assert.match(result, /旧事二/);
 });
 
 test('batch can be smaller or larger than threshold; it never consumes recent floors', () => {
