@@ -3,3 +3,5 @@
 /* 联想结果保持一行滑动，所有匹配项均可浏览。 */
 .sticker-suggestions{min-width:0;flex-shrink:0;touch-action:pan-x;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scroll-snap-type:x proximity}
 .sticker-suggestions button{scroll-snap-align:start}
+
+.document-edit-tools > button{width:auto;min-width:46px;min-height:28px;padding:3px 7px}

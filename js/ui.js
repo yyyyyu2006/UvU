@@ -77,6 +77,7 @@ const switchScreen = (targetId) => {
     document.querySelectorAll('.screen').forEach(screen => screen.classList.remove('active'));
     const targetScreen = document.getElementById(targetId);
     if (targetScreen) targetScreen.classList.add('active');
+    if (typeof window.refreshChatViewport === 'function') window.refreshChatViewport();
     
     // 关闭所有覆盖层和侧边栏
     const overlays = document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar');
@@ -1339,77 +1340,71 @@ function showPanel(type) {
 
 function initKeyboardDetection() {
     if (!window.visualViewport) return;
-
-    let maxViewportHeight = window.visualViewport.height;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    
-    // 初始化应用保存的高度
+    const viewport = window.visualViewport;
+    const phone = document.querySelector('body > .phone-screen');
+    if (!phone) return;
+    let maxViewportHeight = viewport.height, frame = 0, saveTimer = 0;
+    let previousHeight = viewport.height;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     if (db.savedKeyboardHeight) {
         document.documentElement.style.setProperty('--panel-height', `${db.savedKeyboardHeight}px`);
     }
-
-    window.visualViewport.addEventListener('resize', () => {
-        const currentHeight = window.visualViewport.height;
+    const update = () => {
+        frame = 0;
+        if (Math.abs((viewport.scale || 1) - 1) > 0.05) return;
+        const currentHeight = viewport.height;
         const activeElement = document.activeElement;
-        const isInputFocused = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
-        
-        // 如果高度变小了，且输入框聚焦，说明键盘弹出了
-        if (currentHeight < maxViewportHeight && isInputFocused) {
-            const diff = maxViewportHeight - currentHeight;
-            // 简单的阈值判断，防止误判
-            if (diff > 150) { 
-                const keyboardHeight = diff;
-                
-                // iOS 下，键盘弹出时我们不应该增加 --panel-height，因为浏览器会自动调整视口
-                // 增加高度会导致输入框被顶得过高，遮挡消息
-                if (!isIOS) {
-                    document.documentElement.style.setProperty('--panel-height', `${keyboardHeight}px`);
-                }
-                
-                // 保存到 DB (防抖)
-                if (db.savedKeyboardHeight !== keyboardHeight) {
-                    db.savedKeyboardHeight = keyboardHeight;
-                    if (typeof saveData === 'function') {
-                        saveData();
-                    }
-                }
-
-                // 键盘弹出后，确保消息区域滚动到底部
-                if (targetScreen && targetScreen.id === 'chat-room-screen') {
-                    setTimeout(() => {
-                        if (messageArea) messageArea.scrollTop = messageArea.scrollHeight;
-                    }, 100);
-                }
-            }
-        } else if (currentHeight > maxViewportHeight) {
-            // 可能是地址栏收起导致的高度增加，更新最大高度
-            maxViewportHeight = currentHeight;
+        const isInputFocused = activeElement && ['INPUT', 'TEXTAREA'].includes(activeElement.tagName);
+        const inChat = chatRoomScreen?.classList.contains('active');
+        const chatInputFocused = inChat && isInputFocused && chatRoomScreen.contains(activeElement);
+        maxViewportHeight = Math.max(maxViewportHeight, currentHeight);
+        const keyboardHeight = Math.round(maxViewportHeight - currentHeight);
+        const keyboardOpen = keyboardHeight > 120;
+        const follow = inChat && keyboardOpen && (chatInputFocused || phone.classList.contains('chat-keyboard-open'));
+        const pinned = messageArea && messageArea.scrollHeight - messageArea.scrollTop - messageArea.clientHeight < 80;
+        phone.classList.toggle('chat-keyboard-open', Boolean(follow));
+        if (follow) {
+            phone.style.setProperty('--chat-viewport-height', `${Math.round(currentHeight)}px`);
+            phone.style.setProperty('--chat-viewport-top', `${Math.max(0, viewport.offsetTop || 0)}px`);
+            if (window.scrollY) window.scrollTo(0, 0);
+            if (pinned && previousHeight !== currentHeight) messageArea.scrollTop = messageArea.scrollHeight;
+        } else {
+            phone.style.removeProperty('--chat-viewport-height');
+            phone.style.removeProperty('--chat-viewport-top');
         }
+        previousHeight = currentHeight;
+        clearTimeout(saveTimer);
+        if (isInputFocused && keyboardOpen) {
+            if (!isIOS) document.documentElement.style.setProperty('--panel-height', `${keyboardHeight}px`);
+            saveTimer = setTimeout(() => {
+                if (db.savedKeyboardHeight === keyboardHeight) return;
+                db.savedKeyboardHeight = keyboardHeight;
+                if (typeof saveData === 'function') Promise.resolve(saveData()).catch(() => {});
+            }, 400);
+        }
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    viewport.addEventListener('resize', schedule);
+    viewport.addEventListener('scroll', schedule);
+    document.addEventListener('focusin', schedule);
+    document.addEventListener('focusout', schedule);
+    window.addEventListener('orientationchange', () => {
+        maxViewportHeight = Math.max(viewport.height, window.innerHeight);
+        schedule();
     });
-
-    // 修复 iOS 键盘弹出导致的页面偏移（光标错位、点击错位）
+    window.refreshChatViewport = schedule;
+    // Retain the existing iOS reset for editors outside the chat composer.
     if (isIOS) {
-        document.addEventListener('focusin', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                // 键盘弹出时，强制重置滚动位置，防止 iOS 自动滚动导致的错位
+        const resetOutsideChat = e => {
+            if (['INPUT', 'TEXTAREA'].includes(e.target.tagName) && !chatRoomScreen?.contains(e.target)) {
                 setTimeout(() => {
                     window.scrollTo(0, 0);
                     document.body.scrollTop = 0;
                 }, 50);
             }
-        });
-
-        document.addEventListener('focusout', (e) => {
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                // 键盘收起时，再次重置滚动位置
-                setTimeout(() => {
-                    window.scrollTo(0, 0);
-                    document.body.scrollTop = 0;
-                    // 额外触发一次 resize 检查，确保布局恢复
-                    window.dispatchEvent(new Event('resize'));
-                }, 50);
-            }
-        });
+        };
+        document.addEventListener('focusin', resetOutsideChat);
+        document.addEventListener('focusout', resetOutsideChat);
     }
 }
 

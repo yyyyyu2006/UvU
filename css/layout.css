@@ -27,6 +27,17 @@
     display: flex;
 }
 
+/* Only the active chat follows the keyboard's visible viewport. */
+.phone-screen.chat-keyboard-open {
+    height: var(--chat-viewport-height);
+    top: var(--chat-viewport-top);
+    min-height: 0;
+}
+.phone-screen.chat-keyboard-open #chat-room-screen,
+.phone-screen.chat-keyboard-open #chat-room-screen .content {
+    min-height: 0;
+}
+
 .content {
     flex-grow: 1;
     overflow-y: auto;

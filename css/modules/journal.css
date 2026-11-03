@@ -27,6 +27,8 @@
 .auto-memory-range input, #memory-api-panel input { box-sizing: border-box; width: 100%; min-width: 0; font-size: 16px; padding: 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; color: #333; }
 #vector-api-panel input { box-sizing: border-box; width: 100%; min-width: 0; font-size: 16px; padding: 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; color: #333; }
 #memory-api-panel > button, #vector-api-panel > button { box-sizing: border-box; width: 100%; min-height: 44px; margin: 8px 0; display: flex; align-items: center; justify-content: center; }
+#vector-api-status { display: block; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+#vector-api-status.memory-error { color: #9b332d; }
 #auto-memory-range-preview { white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
 @media (max-width: 380px) { .auto-memory-actions { grid-template-columns: 1fr; } }
 

@@ -98,6 +98,7 @@ const init = async () => {
     if (typeof setupStUnlock === 'function') setupStUnlock();
     if (typeof injectChatRoomHtml === 'function') injectChatRoomHtml();
     setupChatRoom();
+    if (typeof initKeyboardDetection === 'function') initKeyboardDetection();
     if (typeof setupAirDropPanelBtn === 'function') setupAirDropPanelBtn();
     if (typeof injectChatSettingsHtml === 'function') injectChatSettingsHtml();
     if (typeof injectGroupSettingsHtml === 'function') injectGroupSettingsHtml();

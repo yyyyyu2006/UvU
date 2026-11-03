@@ -25,18 +25,18 @@
     <link rel="manifest" href="manifest.json">
     <!-- CSS Split: Base & Layout -->
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261103-compact-editor">
-    <link rel="stylesheet" href="css/settings.css?v=20261103-reroll-notify">
+    <link rel="stylesheet" href="css/settings.css?v=20261103-vector-viewport">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
     <link rel="stylesheet" href="css/modules/moments.css">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
-    <link rel="stylesheet" href="css/modules/journal.css?v=20261103-memory-ui">
+    <link rel="stylesheet" href="css/modules/journal.css?v=20261103-vector-viewport">
     <link rel="stylesheet" href="css/modules/chat_archives.css">
     <link rel="stylesheet" href="css/modules/steps.css">
     <link rel="stylesheet" href="css/modules/more.css">
@@ -2750,7 +2750,7 @@
 <script src="js/db.js?v=20261103-storage-perf"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
-<script src="js/ui.js"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
+<script src="js/ui.js?v=20261103-vector-viewport"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261103-chat-safety"></script>
 <script src="js/modules/worldbook_rules.js?v=20261103-documents"></script>
@@ -2758,7 +2758,7 @@
 <script src="js/modules/text_editor.js?v=20261103-chat-controls"></script>
 <script src="js/modules/worldbook_editor.js?v=20261103-documents"></script>
 <script src="js/modules/sticker_assist.js?v=20261103-chat-controls"></script>
-<link rel="stylesheet" href="css/modules/document_features.css?v=20261103-chat-controls">
+<link rel="stylesheet" href="css/modules/document_features.css?v=20261103-vector-viewport">
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261103-friends">
 <script src="js/modules/chat_relationship.js?v=20261103-friends"></script>
@@ -2832,9 +2832,16 @@
                     <label>接口地址<input id="vector-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
                     <label>API 密钥<input id="vector-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
                     <label>嵌入模型名称<input id="vector-api-embedding-model" type="text" list="vector-api-models" autocomplete="off" placeholder="例如 text-embedding-3-small"></label>
-                    <label>重排模型名称<input id="vector-api-rerank-model" type="text" list="vector-api-models" autocomplete="off" placeholder="输入支持对话排序的模型"></label>
+                    <label>嵌入批量条数<input id="vector-api-batch-size" type="number" min="1" max="16" value="4"></label>
+                    <label>接口超时（秒）<input id="vector-api-timeout" type="number" min="1" max="120" value="30"></label>
+                    <label>重排接口类型<select id="vector-api-rerank-mode"><option value="native">专用 Rerank 接口</option><option value="chat">聊天模型排序（兼容旧配置）</option></select></label>
+                    <label>重排模型名称<input id="vector-api-rerank-model" type="text" list="vector-api-models" autocomplete="off" placeholder="例如 bge-reranker-v2-m3"></label>
+                    <label>重排接口地址（留空沿用嵌入接口）<input id="vector-api-rerank-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
+                    <label>重排密钥（留空沿用嵌入密钥）<input id="vector-api-rerank-key" type="password" autocomplete="new-password"></label>
                     <datalist id="vector-api-models"></datalist>
                     <button type="button" class="btn btn-secondary" id="vector-api-fetch-models">拉取向量模型列表</button>
+                    <button type="button" class="btn btn-secondary" id="vector-api-test">测试向量接口</button>
+                    <output id="vector-api-status" aria-live="polite"></output>
                 </details>
                 <div class="auto-memory-grid">
                     <label>最多注入几篇<input name="vectorTopK" type="number" min="1" max="10" required></label>
@@ -2864,7 +2871,7 @@
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261103-friends"></script>
+<script src="js/modules/auto_memory.js?v=20261103-vector-viewport"></script>
 <script src="js/modules/memory_library.js?v=20261103-library"></script>
 <script src="js/modules/storage_html.js?v=20261103-chat-safety"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261103-chat-safety"></script>   <!-- 存储空间分析图表 -->
@@ -2895,6 +2902,6 @@
 <script src="js/modules/reader_view.js"></script> <!-- 阅读器视图逻辑 -->
 
 <!-- [4. 程序入口] -->
-<script src="js/main.js?v=20261103-friends"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261103-vector-viewport"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>
