@@ -380,9 +380,13 @@ async function sendSticker(sticker) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat) return;
     const chatId = currentChatId, chatType = currentChatType;
+    const target = captureChatSendTarget();
+    const mutation = beginChatMutation(chat, chatType);
     const dbSticker = db.myStickers.find(s => s.id === sticker.id);
+    const beforeUsed = dbSticker?.lastUsedTime;
+    const usedAt = Date.now();
     if (dbSticker) {
-        dbSticker.lastUsedTime = Date.now();
+        dbSticker.lastUsedTime = usedAt;
     }
 
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
@@ -404,12 +408,13 @@ async function sendSticker(sticker) {
         chat.history.push(message);
     addMessageBubble(message, currentChatId, currentChatType);
     
-    try { await saveData(); } catch (error) {
-        const index = chat.history.indexOf(message); if (index >= 0) chat.history.splice(index, 1);
-        if (currentChatId === chatId && currentChatType === chatType) renderMessages();
-        throw error;
+    if (!await saveChatMutation(mutation, '表情发送未保存，请重试')) {
+        if (dbSticker?.lastUsedTime === usedAt) {
+            if (beforeUsed === undefined) delete dbSticker.lastUsedTime; else dbSticker.lastUsedTime = beforeUsed;
+        }
+        return;
     }
     renderChatList();
     
-    showPanel('none');
+    if (isChatTargetVisible(target)) showPanel('none');
 }

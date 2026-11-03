@@ -528,9 +528,7 @@ function openChatRoom(chatId, type) {
     }
     getReplyBtn.style.display = 'inline-flex';
     chatRoomScreen.style.backgroundImage = chat.chatBg ? `url(${chat.chatBg})` : 'none';
-    typingIndicator.style.display = 'none';
-    isGenerating = false;
-    getReplyBtn.disabled = false;
+    refreshChatGenerationUI();
     currentPage = 1;
     chatRoomScreen.className = chatRoomScreen.className.replace(/\bchat-active-[^ ]+\b/g, '');
     chatRoomScreen.classList.add(`chat-active-${chatId}`);
@@ -629,6 +627,8 @@ async function sendMessage() {
     messageInput.value = '';
     messageInput.dispatchEvent(new Event('input', { bubbles: true }));
     if (!chat.history) chat.history = [];
+    const mutation = beginChatMutation(chat, currentChatType, [], ['lastUserMessageTimestamp', 'name']);
+    const sendTarget = captureChatSendTarget();
 
     if (db.apiSettings && db.apiSettings.timePerceptionEnabled) {
         const now = new Date();
@@ -710,7 +710,20 @@ async function sendMessage() {
         promptForBackupIfNeeded('history_milestone');
     }
 
-    await saveData();
+    if (!await saveChatMutation(mutation, '发送未保存，已恢复消息和草稿')) {
+        if (isChatTargetVisible(sendTarget)) {
+            if (!messageInput.value) {
+                messageInput.value = text;
+                messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+                if (quoteInfo && !currentQuoteInfo) {
+                    currentQuoteInfo = quoteInfo;
+                    if (typeof startQuoteReply === 'function') startQuoteReply(quoteInfo.id);
+                }
+            }
+            chatRoomTitle.textContent = mutation.type === 'private' ? chat.remarkName : chat.name;
+        }
+        return;
+    }
     renderChatList();
 
 }

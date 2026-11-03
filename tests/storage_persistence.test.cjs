@@ -131,3 +131,79 @@ test('malformed category backup is rejected before any data changes', async t =>
     assert.ok(await f.database.worldBooks.get('w'));
     assert.deepEqual(f.writes, []);
 });
+
+test('nested corrupt backups reject before a transaction and leave stored prompts and history untouched', async t => {
+    const f = await fixture(t), before = JSON.stringify(f.c.db);
+    const samples = [
+        { characters: [{ id: "c", history: "broken" }] },
+        { groups: [{ id: "g", history: [null] }] },
+        { characters: [{ id: "c", history: [{ content: {} }] }] },
+        { characters: [{ id: "c", history: [{ parts: "broken" }] }] },
+        { characters: [{ id: "c", history: [{ parts: [null] }] }] },
+        { characters: [{ id: "c", history: [{ quote: [] }] }] },
+        { characters: [{ id: "c", archives: [{ id: "x", data: { history: {} } }] }] },
+        { characters: [{ id: "c", archives: [{ id: "x" }, { id: "x" }] }] },
+        { characters: [{ id: "c", memoryJournals: "broken" }] },
+        { apiSettings: [] }, { cotPresets: "broken" }, { homeLayoutPages: "broken" }
+    ];
+    for (const sample of samples) {
+        await assert.rejects(f.c.storageCommitImport({ chats: true, contacts: true, settings: true }, sample));
+        assert.equal(JSON.stringify(f.c.db), before);
+    }
+    assert.deepEqual(f.writes, []);
+    assert.equal((await f.database.characters.get("c")).history[0].content, "original");
+    assert.equal((await f.database.globalSettings.get("cotPresets")).value[0].content, "original prompt");
+});
+
+test('legacy missing optional fields and future extension keys remain accepted without changing prompt text', async t => {
+    const f = await fixture(t);
+    await f.c.storageCommitImport({ chats: true, contacts: true, settings: true }, { characters: [{ id: "c", persona: "UwU / T.T original", history: [{ id: "legacy", content: "legacy text" }], extension: { future: true } }], cotPresets: [{ content: "UwU / T.T literal" }], homeLayoutPages: null });
+    const saved = await f.database.characters.get("c");
+    assert.equal(saved.history[0].content, "legacy text"); assert.equal(saved.persona, "UwU / T.T original");
+    assert.equal((await f.database.globalSettings.get("cotPresets")).value[0].content, "UwU / T.T literal");
+});
+
+function loadChatActions(f) {
+    for (const file of ["modules/chat_ops.js", "modules/chat_list.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "../js", file), "utf8"), f.c);
+    f.c.showToast = () => {}; f.c.renderChatList = () => {}; f.c.currentChatId = null; f.c.currentChatType = null;
+}
+for (const [key, type] of [["characters", "private"], ["groups", "group"]]) {
+    test(type + " clear affects current archive runtime only, preserving persona, prompts and other branches", async t => {
+        const f = await fixture(t); loadChatActions(f); const chat = f.c.db[key][0];
+        chat.persona = "persona"; chat.customPrompt = "original custom prompt"; chat.friendRelationship = { peer: { blocked: true } };
+        chat.history = [{ id: "message", content: "story" }]; chat.memoryJournals = [{ content: "memory" }]; chat.memoryVectorIndex = { vector: [1] };
+        chat.archives.push({ id: "other", data: { history: [{ content: "other story" }], persona: "other persona" } });
+        await f.save();
+        assert.equal(await f.c.clearChatHistory(chat, type), true);
+        const saved = await f.database[key].get(chat.id);
+        assert.equal(saved.history.length, 0); assert.equal(saved.memoryJournals.length, 0); assert.deepEqual(saved.memoryVectorIndex, {});
+        assert.equal(saved.persona, "persona"); assert.equal(saved.customPrompt, "original custom prompt");
+        assert.equal(saved.archives.find(a => a.id === "other").data.history[0].content, "other story");
+        assert.equal(saved.friendRelationship.peer.blocked, true);
+        assert.equal((await f.database.globalSettings.get("cotPresets")).value[0].content, "original prompt");
+    });
+    test(type + " clear failure restores runtime and archive; retry persists", async t => {
+        const f = await fixture(t); loadChatActions(f); const chat = f.c.db[key][0];
+        chat.history = [{ id: "message", content: "story" }]; chat.memoryJournals = [{ content: "memory" }]; await f.save();
+        const fail = () => { throw Error("quota"); }; f.database[key].hook("updating", fail);
+        assert.equal(await f.c.clearChatHistory(chat, type), false);
+        assert.equal(chat.history[0].content, "story"); assert.equal(chat.memoryJournals[0].content, "memory");
+        assert.equal(chat.archives.find(a => a.id === chat.activeArchiveId).data.history[0].content, "story");
+        assert.equal((await f.database[key].get(chat.id)).history[0].content, "story");
+        f.database[key].hook("updating").unsubscribe(fail); assert.equal(await f.c.clearChatHistory(chat, type), true);
+        assert.equal((await f.database[key].get(chat.id)).history.length, 0);
+    });
+    test(type + " entity deletion serializes with saves and is not resurrected", async t => {
+        const f = await fixture(t); loadChatActions(f); const chat = f.c.db[key][0];
+        const before = f.save(), deletion = f.c.deleteChatEntity(chat, type), after = f.save();
+        await Promise.all([before, deletion, after]);
+        assert.equal(await f.database[key].get(chat.id), undefined); assert.equal(f.c.db[key].some(item => item.id === chat.id), false);
+        await f.save(); assert.equal(await f.database[key].get(chat.id), undefined);
+    });
+    test(type + " entity deletion failure restores the entity and leaves database untouched", async t => {
+        const f = await fixture(t); loadChatActions(f); const chat = f.c.db[key][0];
+        const fail = () => { throw Error("delete failed"); }; f.database[key].hook("deleting", fail);
+        assert.equal(await f.c.deleteChatEntity(chat, type), false); assert.equal(f.c.db[key][0], chat);
+        assert.equal((await f.database[key].get(chat.id)).id, chat.id);
+    });
+}

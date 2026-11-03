@@ -20,12 +20,16 @@ function setupVoiceMessageSystem() {
 }
 
 function sendMyVoiceMessage(text) {
+    const target = captureChatSendTarget();
+    if (!target) return;
     const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('send-voice-modal').classList.remove('visible');
-    setTimeout(() => {
-        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    return new Promise(resolve => setTimeout(resolve, 100)).then(async () => {
+        if (!isChatSendTargetValid(target)) return false;
+        const { chat, type: currentChatType, chatId: currentChatId } = target;
+        const mutation = beginChatMutation(chat, currentChatType);
         const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
         const content = `[${myName}的语音：${text}]`;
         const message = {
@@ -40,10 +44,11 @@ function sendMyVoiceMessage(text) {
         }
         if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
         chat.history.push(message);
-        addMessageBubble(message, currentChatId, currentChatType);
-        saveData();
+        if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
+        const saved = await saveChatMutation(mutation, '发送未保存，请重试');
         renderChatList();
-    }, 100);
+        return saved;
+    });
 }
 
 function setupPhotoVideoSystem() {
@@ -63,12 +68,16 @@ function setupPhotoVideoSystem() {
 }
 
 function sendMyPhotoVideo(text) {
+    const target = captureChatSendTarget();
+    if (!target) return;
     const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('send-pv-modal').classList.remove('visible');
-    setTimeout(() => {
-        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    return new Promise(resolve => setTimeout(resolve, 100)).then(async () => {
+        if (!isChatSendTargetValid(target)) return false;
+        const { chat, type: currentChatType, chatId: currentChatId } = target;
+        const mutation = beginChatMutation(chat, currentChatType);
         const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
         const content = `[${myName}发来的照片\/视频：${text}]`;
         const message = {
@@ -83,10 +92,11 @@ function sendMyPhotoVideo(text) {
         }
         if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
         chat.history.push(message);
-        addMessageBubble(message, currentChatId, currentChatType);
-        saveData();
+        if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
+        const saved = await saveChatMutation(mutation, '发送未保存，请重试');
         renderChatList();
-    }, 100);
+        return saved;
+    });
 }
 
 function setupImageRecognition() {
@@ -99,13 +109,14 @@ function setupImageRecognition() {
     imageUploadInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
+            const target = captureChatSendTarget();
             try {
                 const compressedUrl = await compressImage(file, {
                     quality: 0.8,
                     maxWidth: 1024,
                     maxHeight: 1024
                 });
-                sendImageForRecognition(compressedUrl);
+                await sendImageForRecognition(compressedUrl, target);
             } catch (error) {
                 console.error('Image compression failed:', error);
                 showToast('图片处理失败，请重试');
@@ -116,7 +127,9 @@ function setupImageRecognition() {
     });
 }
 
-async function sendImageForRecognition(base64Data) {
+async function sendImageForRecognition(base64Data, target = captureChatSendTarget()) {
+    if (!isChatSendTargetValid(target)) return;
+    const { type: currentChatType, chatId: currentChatId } = target;
     const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!base64Data || isGenerating) return;
@@ -134,9 +147,10 @@ async function sendImageForRecognition(base64Data) {
         message.senderId = 'user_me';
     }
     if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
+    const mutation = beginChatMutation(chat, currentChatType);
     chat.history.push(message);
-    addMessageBubble(message, currentChatId, currentChatType);
-    await saveData();
+    if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
+    if (!await saveChatMutation(mutation, '图片发送未保存，请重试')) return;
     renderChatList();
 }
 
@@ -177,11 +191,16 @@ function setupWalletSystem() {
 }
 
 function sendMyTransfer(amount, remark) {
+    const target = captureChatSendTarget();
+    if (!target) return;
+    const recipients = typeof currentGroupAction !== 'undefined' ? [...(currentGroupAction.recipients || [])] : [];
     const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     document.getElementById('send-transfer-modal').classList.remove('visible');
-    setTimeout(() => {
-        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    return new Promise(resolve => setTimeout(resolve, 100)).then(async () => {
+        if (!isChatSendTargetValid(target)) return false;
+        const { chat, type: currentChatType, chatId: currentChatId } = target;
+        const mutation = beginChatMutation(chat, currentChatType);
         if (currentChatType === 'private') {
             const content = `[${chat.myName}给你转账：${amount}元；备注：${remark}]`;
             const message = {
@@ -194,10 +213,10 @@ function sendMyTransfer(amount, remark) {
             };
             if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
             chat.history.push(message);
-            addMessageBubble(message, currentChatId, currentChatType);
+            if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
         } else { 
-            if (typeof currentGroupAction !== 'undefined' && currentGroupAction.recipients) {
-                currentGroupAction.recipients.forEach(recipientId => {
+            if (recipients.length) {
+                recipients.forEach(recipientId => {
                     const recipient = chat.members.find(m => m.id === recipientId);
                     if (recipient) {
                         const content = `[${chat.me.nickname} 向 ${recipient.realName} 转账：${amount}元；备注：${remark}]`;
@@ -211,14 +230,15 @@ function sendMyTransfer(amount, remark) {
                         };
                         if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
                         chat.history.push(message);
-                        addMessageBubble(message, currentChatId, currentChatType);
+                        if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
                     }
                 });
             }
         }
-        saveData();
+        const saved = await saveChatMutation(mutation, '发送未保存，请重试');
         renderChatList();
-    }, 100);
+        return saved;
+    });
 }
 
 function handleReceivedTransferClick(messageId) {
@@ -233,8 +253,10 @@ async function respondToTransfer(action) {
         showToast('请先恢复好友关系，再处理转账');
         return;
     }
-    const message = character.history.find(m => m.id === currentTransferMessageId);
+    const message = character?.history.find(m => m.id === currentTransferMessageId);
     if (message) {
+        const mutation = beginChatMutation(character, 'private', [message]);
+        const transferId = currentTransferMessageId;
         message.transferStatus = action;
         const cardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${currentTransferMessageId}"] .transfer-card`);
         if (cardOnScreen) {
@@ -253,8 +275,9 @@ async function respondToTransfer(action) {
         };
         if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(character, contextMessage);
         character.history.push(contextMessage);
-        await saveData();
+        if (!await saveChatMutation(mutation)) return;
         renderChatList();
+        if (currentChatId !== character.id || currentChatType !== 'private' || currentTransferMessageId !== transferId) return;
     }
     document.getElementById('receive-transfer-actionsheet').classList.remove('visible');
     currentTransferMessageId = null;
@@ -285,12 +308,17 @@ function setupGiftSystem() {
 }
 
 function sendMyGift(description) {
+    const target = captureChatSendTarget();
+    if (!target) return;
+    const recipients = typeof currentGroupAction !== 'undefined' ? [...(currentGroupAction.recipients || [])] : [];
     const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!description) return;
     document.getElementById('send-gift-modal').classList.remove('visible');
-    setTimeout(() => {
-        const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    return new Promise(resolve => setTimeout(resolve, 100)).then(async () => {
+        if (!isChatSendTargetValid(target)) return false;
+        const { chat, type: currentChatType, chatId: currentChatId } = target;
+        const mutation = beginChatMutation(chat, currentChatType);
 
         if (currentChatType === 'private') {
             const content = `[${chat.myName}送来的礼物：${description}]`;
@@ -304,10 +332,10 @@ function sendMyGift(description) {
             };
             if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
             chat.history.push(message);
-            addMessageBubble(message, currentChatId, currentChatType);
+            if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
         } else { 
-            if (typeof currentGroupAction !== 'undefined' && currentGroupAction.recipients) {
-                currentGroupAction.recipients.forEach(recipientId => {
+            if (recipients.length) {
+                recipients.forEach(recipientId => {
                     const recipient = chat.members.find(m => m.id === recipientId);
                     if (recipient) {
                         const content = `[${chat.me.nickname} 向 ${recipient.realName} 送来了礼物：${description}]`;
@@ -321,14 +349,15 @@ function sendMyGift(description) {
                         };
                         if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
                         chat.history.push(message);
-                        addMessageBubble(message, currentChatId, currentChatType);
+                        if (isChatTargetVisible(target)) addMessageBubble(message, currentChatId, currentChatType);
                     }
                 });
             }
         }
-        saveData();
+        const saved = await saveChatMutation(mutation, '发送未保存，请重试');
         renderChatList();
-    }, 100);
+        return saved;
+    });
 }
 
 // --- 转发聊天记录弹窗逻辑 ---
@@ -404,12 +433,16 @@ function setupTimeSkipSystem() {
 }
 
 async function sendTimeSkipMessage(text) {
-    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    const target = captureChatSendTarget();
+    if (!target) return;
+    const relationshipTarget = target.type === 'private' && db.characters.find(c => c.id === target.chatId);
     if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('time-skip-modal').classList.remove('visible');
     await new Promise(resolve => setTimeout(resolve, 100));
-    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!isChatSendTargetValid(target)) return;
+    const { chat } = target;
+    const mutation = beginChatMutation(chat, target.type);
     if (!chat) return;
 
     const visualMessage = {
@@ -426,15 +459,15 @@ async function sendTimeSkipMessage(text) {
         parts: [{type: 'text', text: `[system: ${text}]`}],
         timestamp: Date.now()
     };
-    if (currentChatType === 'group') {
+    if (target.type === 'group') {
         contextMessage.senderId = 'user_me';
         visualMessage.senderId = 'user_me';
     }
 
-    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, contextMessage, currentChatType);
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, contextMessage, target.type);
     chat.history.push(visualMessage, contextMessage);
-    addMessageBubble(visualMessage, currentChatId, currentChatType);
-    await saveData();
+    if (isChatTargetVisible(target)) addMessageBubble(visualMessage, target.chatId, target.type);
+    if (!await saveChatMutation(mutation, '发送未保存，请重试')) return;
     renderChatList();
 }
 

@@ -1,3 +1,42 @@
+async function clearChatHistory(chat, type, archiveId = chat.activeArchiveId) {
+    if (!(type === "private" ? db.characters : db.groups).includes(chat) || chat.activeArchiveId !== archiveId) return false;
+    const mutation = beginChatMutation(chat, type, [], ["memoryJournals", "memoryVectorIndex", "callHistory", "lastUserMessageTimestamp", "peekData", "privateSessions", "gossipSessions"]);
+    chat.history = [];
+    chat.memoryJournals = [];
+    chat.memoryVectorIndex = {};
+    chat.callHistory = [];
+    chat.lastUserMessageTimestamp = null;
+    chat.peekData = {};
+    if (chat.privateSessions) chat.privateSessions = {};
+    if (chat.gossipSessions) chat.gossipSessions = {};
+    if (chat.statusPanel) chat.statusPanel = { ...chat.statusPanel, history: [], currentStatusRaw: "", currentStatusHtml: "" };
+    chat.status = "在线";
+    if (!await saveChatMutation(mutation, "清空未保存，已恢复原记录，请重试")) return false;
+    if (currentChatId === chat.id && currentChatType === type && chat.activeArchiveId === archiveId) openChatRoom(chat.id, type);
+    renderChatList();
+    showToast("已清空当前存档记录，角色设定和其他存档保留");
+    return true;
+}
+async function deleteChatEntity(chat, type) {
+    const key = type === "private" ? "characters" : "groups";
+    const index = db[key].indexOf(chat);
+    if (index < 0) return false;
+    // Remove from live state before enqueuing deletion so later saves cannot resurrect it.
+    db[key] = db[key].filter(item => item !== chat);
+    try { await runDataPersistence(() => dexieDB.transaction("rw", dexieDB[key], () => dexieDB[key].delete(chat.id))); }
+    catch (error) {
+        if (!db[key].some(item => item.id === chat.id)) db[key].splice(Math.min(index, db[key].length), 0, chat);
+        renderChatList();
+        showToast("删除未保存，已恢复角色或群聊，请重试");
+        return false;
+    }
+    if (typeof chatGenerationRequests !== "undefined") [...chatGenerationRequests].filter(request => request.chat === chat).forEach(request => request.controller?.abort());
+    if (currentChatId === chat.id && currentChatType === type) { currentChatId = null; currentChatType = null; switchScreen("chat-list-screen"); }
+    renderChatList();
+    showToast(type === "private" ? "角色及全部存档已删除" : "群聊及全部存档已删除");
+    return true;
+}
+
 // --- 聊天列表与文件夹管理模块 ---
 
 // 聊天列表屏幕逻辑
@@ -317,20 +356,18 @@ function handleChatListLongPress(chatId, chatType, x, y) {
             }
         },
         {
-            label: '删除聊天',
+            label: '清空当前存档记录',
             danger: true,
             action: async () => {
-                if (confirm(`确定要删除与“${itemName}”的聊天记录吗？此操作不可恢复。`)) {
-                    if (chatType === 'private') {
-                        await dexieDB.characters.delete(chatId);
-                        db.characters = db.characters.filter(c => c.id !== chatId);
-                    } else {
-                        await dexieDB.groups.delete(chatId);
-                        db.groups = db.groups.filter(g => g.id !== chatId);
-                    }
-                    renderChatList();
-                    showToast('聊天已删除');
-                }
+                const archiveId = chatItem.activeArchiveId;
+                if (confirm(`确定清空“${itemName}”当前存档的聊天、通话、记忆及偷看记录吗？角色设定、提示词、好友关系和其他存档保留。此操作不可恢复。`)) await clearChatHistory(chatItem, chatType, archiveId);
+            }
+        },
+        {
+            label: chatType === 'private' ? '删除整个角色' : '删除整个群聊',
+            danger: true,
+            action: async () => {
+                if (confirm(`确定删除“${itemName}”整个${chatType === 'private' ? '角色' : '群聊'}吗？该对象的设定、全部存档、聊天及记忆都会删除。此操作不可恢复。`)) await deleteChatEntity(chatItem, chatType);
             }
         }
     ];

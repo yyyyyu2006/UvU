@@ -1,3 +1,86 @@
+// Capture only affected records; preserve unrelated arrivals and later edits on failure.
+function captureChatSendTarget(chatId = currentChatId, type = currentChatType) {
+    const chat = (type === 'private' ? db.characters : db.groups).find(item => item.id === chatId);
+    return chat ? { chat, type, chatId, archiveId: chat.activeArchiveId, history: chat.history, relationshipRevision: chat.friendRelationship?.revision } : null;
+}
+function isChatSendTargetValid(target) {
+    return Boolean(target && (target.type === 'private' ? db.characters : db.groups).includes(target.chat) &&
+        target.chat.activeArchiveId === target.archiveId && target.chat.history === target.history &&
+        target.relationshipRevision === target.chat.friendRelationship?.revision);
+}
+function isChatTargetVisible(target) {
+    return isChatSendTargetValid(target) && currentChatId === target.chatId && currentChatType === target.type;
+}
+function beginChatMutation(chat, type, messages = [], fields = []) {
+    const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    return { chat, type, chatId: chat.id, archiveId: chat.activeArchiveId, history: chat.history,
+        before: chat.history.slice(), messages: messages.map(message => ({ message, before: clone(message) })),
+        fields: [...new Set(['status', 'statusPanel', ...fields])].map(key => ({ key, before: clone(chat[key]) })), clone };
+}
+async function saveChatMutation(state, failureText = '保存失败，已恢复本次操作，请重试') {
+    const { chat, clone } = state;
+    const appliedHistory = chat.history;
+    const beforeIds = new Set(state.before.map(message => message.id));
+    const appliedIds = new Set(appliedHistory.map(message => message.id));
+    const added = new Set(appliedHistory.filter(message => !beforeIds.has(message.id)).map(message => message.id));
+    const removed = state.before.filter(message => !appliedIds.has(message.id));
+    state.messages.forEach(item => item.applied = clone(item.message));
+    state.fields.forEach(item => item.applied = clone(chat[item.key]));
+    const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    try { await saveData(); return true; }
+    catch (error) {
+        const restore = data => {
+            if (!data || !Array.isArray(data.history)) return;
+            for (let i = data.history.length - 1; i >= 0; i--) if (added.has(data.history[i].id)) data.history.splice(i, 1);
+            if (removed.length) {
+                const present = new Set(data.history.map(message => message.id));
+                const removedIds = new Set(removed.map(message => message.id));
+                const beforeAnchor = new Map();
+                let anchor = null;
+                // Restore large deletions in one pass while preserving concurrent arrivals.
+                for (let i = state.before.length - 1; i >= 0; i--) {
+                    const message = state.before[i];
+                    if (present.has(message.id)) anchor = message.id;
+                    else if (removedIds.has(message.id)) {
+                        if (!beforeAnchor.has(anchor)) beforeAnchor.set(anchor, []);
+                        beforeAnchor.get(anchor).push(message);
+                    }
+                }
+                const restored = [];
+                const appendBefore = id => {
+                    const bucket = beforeAnchor.get(id) || [];
+                    for (let i = bucket.length - 1; i >= 0; i--) restored.push(bucket[i]);
+                };
+                for (const message of data.history) { appendBefore(message.id); restored.push(message); }
+                appendBefore(null);
+                data.history.length = 0;
+                for (const message of restored) data.history.push(message);
+            }
+            state.messages.forEach(item => {
+                const message = data.history.find(message => message.id === item.before.id);
+                if (message && equal(message, item.applied)) {
+                    Object.keys(message).forEach(key => delete message[key]);
+                    Object.assign(message, clone(item.before));
+                    if (item.before.timestamp !== item.applied.timestamp) data.history.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                }
+            });
+            state.fields.forEach(item => {
+                if (equal(data[item.key], item.applied)) {
+                    if (item.before === undefined) delete data[item.key];
+                    else data[item.key] = clone(item.before);
+                }
+            });
+        };
+        if (chat.activeArchiveId === state.archiveId) restore(chat);
+        const archive = chat.archives?.find(item => item.id === state.archiveId);
+        if (archive?.data) restore(archive.data);
+        if (currentChatId === chat.id && currentChatType === state.type && chat.activeArchiveId === state.archiveId && typeof renderMessages === 'function') renderMessages(false, true);
+        if (typeof renderChatList === 'function') renderChatList();
+        showToast(failureText);
+        return false;
+    }
+}
+
 // --- 消息操作模块 (编辑、撤回、多选、截图、历史记录管理) ---
 
 let currentMultiSelectMode = 'delete'; // 'delete' or 'capture'
@@ -121,6 +204,7 @@ function startDebugEdit(messageId) {
         timestampGroup.style.display = 'flex';
     }
     
+    const debugType = currentChatType, debugArchiveId = chat.activeArchiveId;
     if (deleteBtn) {
         deleteBtn.style.display = 'block';
         const newDeleteBtn = deleteBtn.cloneNode(true);
@@ -128,16 +212,7 @@ function startDebugEdit(messageId) {
         
         newDeleteBtn.addEventListener('click', async () => {
             if (confirm('【调试模式】确定要永久删除这条消息吗？')) {
-                chat.history = chat.history.filter(m => m.id !== messageId);
-                
-                if (currentChatType === 'private') {
-                    recalculateChatStatus(chat);
-                }
-
-                await saveData(); 
-                renderMessages(false, true); 
-                cancelMessageEdit(); 
-                showToast('消息已删除');
+                await deleteSingleMessage(messageId, chat, debugType, debugArchiveId);
             }
         });
     }
@@ -440,6 +515,10 @@ async function saveMessageEdit() {
 
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     
+    if (!chat) return;
+    const target = captureChatSendTarget();
+    const mutation = beginChatMutation(chat, currentChatType, chat.history.filter(message => message.id === editingMessageId));
+    const editToken = editingMessageId;
     if (isAddingMessageMode) {
         const targetIndex = chat.history.findIndex(m => m.id === addingAfterMessageId);
         if (targetIndex === -1) {
@@ -623,11 +702,11 @@ async function saveMessageEdit() {
         }
     }
 
-    await saveData();
+    if (!await saveChatMutation(mutation)) return;
+    if (!isChatTargetVisible(target) || editingMessageId !== editToken) return;
     currentPage = 1;
     renderMessages(false, true);
     renderChatList();
-    
     cancelMessageEdit();
 }
 
@@ -1081,6 +1160,8 @@ async function withdrawMessage(messageId) {
         return;
     }
 
+    const target = captureChatSendTarget();
+    const mutation = beginChatMutation(chat, currentChatType, [message]);
     message.isWithdrawn = true;
 
     const cleanContentMatch = message.content.match(/\[.*?的消息：([\s\S]+?)\]/);
@@ -1095,7 +1176,8 @@ async function withdrawMessage(messageId) {
         recalculateChatStatus(chat);
     }
 
-    await saveData();
+    if (!await saveChatMutation(mutation)) return;
+    if (!isChatTargetVisible(target)) return;
 
     currentPage = 1;
     renderMessages(false, true);
@@ -1239,7 +1321,7 @@ function setupDeleteHistoryChunk() {
             showToast('请输入有效的起止范围');
             return null;
         }
-        return { chat, startIndex: s - 1, endIndex: e, count: e - s + 1 };
+        return { chat, target: captureChatSendTarget(), ids: chat.history.slice(s - 1, e).map(message => message.id), startIndex: s - 1, endIndex: e, count: e - s + 1 };
     };
 
     if (btnBlock) {
@@ -1247,6 +1329,7 @@ function setupDeleteHistoryChunk() {
             const range = getRange();
             if (!range) return;
             
+            const mutation = beginChatMutation(range.chat, range.target.type, range.chat.history.slice(range.startIndex, range.endIndex));
             let changedCount = 0;
             const modifiedIds = [];
             for (let i = range.startIndex; i < range.endIndex; i++) {
@@ -1258,7 +1341,8 @@ function setupDeleteHistoryChunk() {
             }
             
             if (changedCount > 0) {
-                await saveData();
+                if (!await saveChatMutation(mutation)) return;
+                if (!isChatTargetVisible(range.target)) return;
                 showToast(`已屏蔽 ${changedCount} 条消息`);
                 // Update DOM in-place
                 modifiedIds.forEach(id => {
@@ -1278,6 +1362,7 @@ function setupDeleteHistoryChunk() {
             const range = getRange();
             if (!range) return;
             
+            const mutation = beginChatMutation(range.chat, range.target.type, range.chat.history.slice(range.startIndex, range.endIndex));
             let changedCount = 0;
             const modifiedIds = [];
             for (let i = range.startIndex; i < range.endIndex; i++) {
@@ -1293,7 +1378,8 @@ function setupDeleteHistoryChunk() {
             }
             
             if (changedCount > 0) {
-                await saveData();
+                if (!await saveChatMutation(mutation)) return;
+                if (!isChatTargetVisible(range.target)) return;
                 showToast(`已恢复 ${changedCount} 条消息`);
                 // Update DOM in-place
                 modifiedIds.forEach(id => {
@@ -1329,14 +1415,18 @@ function setupDeleteHistoryChunk() {
         confirmDeleteBtn.addEventListener('click', async () => {
             if (!pendingDeleteRange) return;
             
-            const { chat, startIndex, count } = pendingDeleteRange;
-            chat.history.splice(startIndex, count);
+            const { chat, target, ids, count } = pendingDeleteRange;
+            if (!isChatTargetVisible(target)) { showToast('聊天或存档已切换，请重新选择范围'); return; }
+            const mutation = beginChatMutation(chat, target.type);
+            const removedIds = new Set(ids);
+            chat.history = chat.history.filter(message => !removedIds.has(message.id));
 
             if (currentChatType === 'private') {
                 recalculateChatStatus(chat);
             }
 
-            await saveData();
+            if (!await saveChatMutation(mutation)) return;
+            if (!isChatTargetVisible({ ...target, history: chat.history })) return;
             confirmDeleteModal.classList.remove('visible');
             deleteChunkModal.classList.remove('visible');
             showToast(`已永久删除 ${count} 条消息`);

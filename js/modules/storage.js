@@ -54,7 +54,8 @@ function formatBytes(bytes, decimals = 2) {
 
 function stringifySize(obj) {
     try {
-        return obj ? JSON.stringify(obj).length : 0;
+        const text = JSON.stringify(obj);
+        return text === undefined ? 0 : new Blob([text]).size;
     } catch (e) {
         return 0;
     }
@@ -75,22 +76,24 @@ async function calculateStorageSize() {
 
     if (!db || !db.characters) await loadData();
 
-    // 1. chats & contacts & other(gallery)
-    (db.characters || []).forEach(char => {
-        sizes.chats += stringifySize(char.history);
-        sizes.chats += stringifySize(char.callHistory);
-        sizes.other += stringifySize(char.gallery);
-        
-        const charBase = { ...char, history: undefined, callHistory: undefined, gallery: undefined };
-        sizes.contacts += stringifySize(charBase);
-    });
-    (db.groups || []).forEach(group => {
-        sizes.chats += stringifySize(group.history);
-        sizes.chats += stringifySize(group.callHistory);
-        
-        const groupBase = { ...group, history: undefined, callHistory: undefined };
-        sizes.contacts += stringifySize(groupBase);
-    });
+    // Serialized UTF-8 payload includes actual saved archive snapshots.
+    const classifyChat = (chat, nested = false) => {
+        Object.entries(chat).forEach(([key, value]) => {
+            if (key === 'archives') return;
+            if (key === 'gallery') sizes.other += stringifySize(value);
+            else if (key === 'statusPanel' && value) {
+                const settings = {}, runtime = {};
+                Object.entries(value).forEach(([name, item]) => { (STORAGE_STATUS_KEYS.includes(name) ? runtime : settings)[name] = item; });
+                sizes.contacts += stringifySize(settings); sizes.chats += stringifySize(runtime);
+            } else if (STORAGE_CHAT_KEYS.includes(key) || key === 'activeArchiveId' || key === 'memoryVectorIndex') sizes.chats += stringifySize(value);
+            else sizes.contacts += stringifySize(value);
+        });
+        if (!nested) (chat.archives || []).forEach(({ data, ...metadata }) => {
+            sizes.chats += stringifySize(metadata);
+            classifyChat(data || {}, true);
+        });
+    };
+    [...(db.characters || []), ...(db.groups || [])].forEach(chat => classifyChat(chat));
 
     // 2. worldbooks
     sizes.worldbooks += stringifySize(db.worldBooks);
@@ -115,15 +118,7 @@ async function calculateStorageSize() {
     sizes.fonts += stringifySize(db.fontPresets);
 
     // 6. settings
-    const settingsKeys = [
-        'apiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode', 
-        'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 
-        'fontSizeScale', 'savedKeyboardHeight', 'statusBarPresets', 'globalSendSound', 
-        'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 
-        'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 
-        'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 
-        'widgetTemplates', 'addedWidgets', 'backupReminderSettings', 'stUnlocked'
-    ];
+    const settingsKeys = STORAGE_IMPORT_SETTING_KEYS;
     settingsKeys.forEach(key => {
         sizes.settings += stringifySize(db[key]);
     });
@@ -394,17 +389,95 @@ function storagePrepareImport(selection, modules) {
 }
 
 function storageValidateModules(modules) {
-    if (!modules || typeof modules !== 'object' || Array.isArray(modules)) throw new Error('备份内容格式无效');
-    for (const key of ['characters', 'groups', 'worldBooks', 'myStickers', 'customFonts']) {
-        if (modules[key] === undefined) continue;
-        if (!Array.isArray(modules[key])) throw new Error(key + ' 必须是列表');
+    const fail = (path, expected) => { throw new Error(path + ' 必须是' + expected); };
+    const object = (value, path) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) fail(path, '对象');
+    };
+    const optional = (value, path, type) => {
+        if (value !== undefined && (typeof value !== type || (type === 'number' && !Number.isFinite(value)))) fail(path, type === 'string' ? '文本' : type === 'number' ? '有效数字' : '布尔值');
+    };
+    const list = (value, path, validate, uniqueIds = false) => {
+        if (value === undefined) return;
+        if (!Array.isArray(value)) fail(path, '列表');
         const ids = new Set();
-        for (const record of modules[key]) {
-            if (!record || typeof record.id !== 'string' || !record.id || ids.has(record.id)) throw new Error(key + ' 包含无效或重复的 ID');
-            ids.add(record.id);
+        value.forEach((item, index) => {
+            const location = `${path}[${index}]`;
+            object(item, location);
+            if (uniqueIds && (typeof item.id !== 'string' || !item.id || ids.has(item.id))) throw new Error(location + ' 包含无效或重复的 ID');
+            if (uniqueIds) ids.add(item.id);
+            validate(item, location);
+        });
+    };
+    const message = (item, path) => {
+        for (const key of ['id', 'role', 'content', 'senderId', 'originalContent']) optional(item[key], path + '.' + key, 'string');
+        optional(item.timestamp, path + '.timestamp', 'number');
+        for (const key of ['isWithdrawn', 'isThinking', 'isStatusUpdate', 'isContextDisabled']) optional(item[key], path + '.' + key, 'boolean');
+        list(item.parts, path + '.parts', (part, location) => {
+            optional(part.type, location + '.type', 'string');
+            optional(part.text, location + '.text', 'string');
+            optional(part.data, location + '.data', 'string');
+        });
+        if (item.quote !== undefined && item.quote !== null) {
+            object(item.quote, path + '.quote');
+            for (const key of ['messageId', 'senderId', 'senderName', 'content']) optional(item.quote[key], path + '.quote.' + key, 'string');
         }
+        if (item.forwardedChat !== undefined) {
+            object(item.forwardedChat, path + '.forwardedChat');
+            list(item.forwardedChat.records, path + '.forwardedChat.records', message);
+        }
+    };
+    const runtime = (item, path) => {
+        list(item.history, path + '.history', message);
+        list(item.callHistory, path + '.callHistory', (call, location) => {
+            optional(call.summary, location + '.summary', 'string');
+            list(call.context, location + '.context', message);
+        });
+        list(item.memoryJournals, path + '.memoryJournals', (journal, location) => {
+            optional(journal.content, location + '.content', 'string');
+            if (journal.range !== undefined) object(journal.range, location + '.range');
+        });
+        list(item.members, path + '.members', (member, location) => {
+            optional(member.id, location + '.id', 'string');
+            optional(member.realName, location + '.realName', 'string');
+        });
+        if (item.gallery !== undefined && !Array.isArray(item.gallery)) fail(path + '.gallery', '列表');
+        for (const key of ['statusPanel', 'autoMemorySettings', 'vectorMemorySettings', 'friendRelationship', 'privateSessions', 'gossipSessions', 'peekData']) {
+            if (item[key] !== undefined && item[key] !== null) object(item[key], path + '.' + key);
+        }
+        for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
+        for (const key of ['privateSessions', 'gossipSessions']) {
+            if (item[key]) Object.entries(item[key]).forEach(([id, session]) => {
+                object(session, path + '.' + key + '.' + id);
+                list(session.history, path + '.' + key + '.' + id + '.history', message);
+            });
+        }
+    };
+    object(modules, '备份内容');
+    for (const key of ['characters', 'groups', 'worldBooks', 'myStickers', 'customFonts']) {
+        list(modules[key], key, (item, path) => {
+            if (key === 'characters' || key === 'groups') {
+                runtime(item, path);
+                optional(item.activeArchiveId, path + '.activeArchiveId', 'string');
+                list(item.archives, path + '.archives', (archive, location) => {
+                    if (archive.data !== undefined) { object(archive.data, location + '.data'); runtime(archive.data, location + '.data'); }
+                }, true);
+            }
+            if (key === 'worldBooks') {
+                optional(item.content, path + '.content', 'string');
+                if (item.keys !== undefined && (!Array.isArray(item.keys) || item.keys.some(key => typeof key !== 'string'))) fail(path + '.keys', '文本列表');
+            }
+            if (key === 'customFonts' && (typeof item.dataUrl !== 'string' || !/^data:[^,]*;base64,/.test(item.dataUrl))) throw new Error(path + '.dataUrl 字体数据无效');
+        }, true);
     }
+    for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
+        if (modules[key] !== undefined) object(modules[key], key);
+    }
+    for (const key of ['apiPresets', 'cotPresets', 'myPersonaPresets', 'bubbleCssPresets', 'globalCssPresets', 'fontPresets', 'statusBarPresets', 'themePresets', 'soundPresets', 'galleryPresets', 'chatFolders', 'workshopLlmPresets', 'workshopPromptPresets', 'widgetTemplates', 'addedWidgets']) list(modules[key], key, () => {});
+    for (const key of ['wallpaper', 'globalCss', 'fontUrl', 'homeSignature', 'moreProfileCardBg', 'homeScreenMode']) optional(modules[key], key, 'string');
+    if (modules.homeLayoutOrder !== undefined && (!Array.isArray(modules.homeLayoutOrder) || modules.homeLayoutOrder.some(id => typeof id !== 'string'))) fail('homeLayoutOrder', '文本列表');
+    if (modules.homeLayoutPages !== undefined && modules.homeLayoutPages !== null && (!Array.isArray(modules.homeLayoutPages) || modules.homeLayoutPages.some(page => !Array.isArray(page) || page.some(id => typeof id !== 'string')))) fail('homeLayoutPages', '页面列表');
 }
+
 function storageMergeChats(targets, incoming, contacts, chats) {
     if (!Array.isArray(incoming)) return;
     incoming.forEach(imported => {

@@ -19,7 +19,7 @@ function injectStorageHTML() {
                 <div class="storage-group-title">存储空间使用情况</div>
                 <div class="storage-content">
                     <div class="storage-total">
-                        <span class="storage-total-label">总占用</span>
+                        <span class="storage-total-label">数据估算</span>
                         <span class="storage-total-value" id="storage-total-size">0 B</span>
                     </div>
                     
@@ -29,6 +29,7 @@ function injectStorageHTML() {
                         </div>
                     </div>
 
+                    <p style="font-size:12px;color:#888;line-height:1.5">按 JSON 的 UTF-8 字节估算，包含保存的存档副本；图片缓存和字体另计。不等于浏览器磁盘占用或压缩备份大小。</p>
                     <div class="storage-legend" id="storage-legend-container">
                         <!-- JS 动态注入图例 -->
                     </div>

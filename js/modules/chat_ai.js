@@ -3,10 +3,30 @@
 const HUMAN_RUN_PROMPT = `<角色活人运转>\n## [PSYCHOLOGY: HEXACO-SCHEMA-ACT]\n> Personality: HEXACO-driven, dynamic traits, inner conflicts required \n> Filter: schema-bias drives emotion; no pure reaction allowed \n> Attachment: secure/insecure logic must govern intimacy  \n> If-Then Behavior: situation-dependent activation of traits only  \n---\n    ## [VITALITY]\n+inconsistency +emoflux +splitmotifs +microreact +minddrift\n---\n## [TRAJECTORY-COHERENCE]\n> Role maintains an identity narrative = coherent over time  \n> No mood/goal switch without contradiction resolution \n> Every action must protect or challenge self-concept  \n> Interrupts = inner conflict or narrative clash  \n> Output = filtered through “who I am” logic\n</角色活人运转>`;
 
 // AI 交互逻辑
-let activeGenerationController = null;
+// Each request owns its controller and archive scope. Navigation only changes visible controls.
+const chatGenerationRequests = new Set();
+function getChatGeneration(chatId = currentChatId, chatType = currentChatType) {
+    const chat = (chatType === 'private' ? db.characters : db.groups).find(item => item.id === chatId);
+    return [...chatGenerationRequests].find(request => request.chat === chat && request.chatType === chatType &&
+        request.archiveId === chat?.activeArchiveId && request.history === chat?.history);
+}
+function refreshChatGenerationUI() {
+    const request = getChatGeneration();
+    isGenerating = Boolean(request);
+    getReplyBtn.disabled = isGenerating;
+    regenerateBtn.disabled = isGenerating;
+    const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
+    if (stopButton) stopButton.hidden = !request;
+    typingIndicator.style.display = request ? 'block' : 'none';
+    if (request) {
+        const name = request.chatType === 'private' ? request.chat.remarkName : request.chat.name;
+        typingIndicator.textContent = `“${name}”正在输入中...`;
+    }
+}
 function stopAiReply() {
-    if (!activeGenerationController) return false;
-    activeGenerationController.abort();
+    const request = getChatGeneration();
+    if (!request?.controller) return false;
+    request.controller.abort();
     return true;
 }
 
@@ -48,7 +68,7 @@ function formatQuotedUserMessage(message, chat, chatType) {
 }
 
 async function getAiReply(chatId, chatType, isBackground = false, generationGuidance = '') {
-    if (isGenerating && !isBackground) return; 
+    if (getChatGeneration(chatId, chatType)) return;
     
     if (!isBackground) {
         if (db.globalSendSound) {
@@ -71,7 +91,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
     }
 
-    if (isGenerating && !isBackground) return;
+    if (getChatGeneration(chatId, chatType)) return;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
@@ -111,9 +131,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         url = url.slice(0, -1);
     }
 
+    const generationController = typeof AbortController === 'function' ? new AbortController() : null;
+    const generationRequest = { chat, chatType, archiveId: chat.activeArchiveId, history: chat.history, controller: generationController };
+    chatGenerationRequests.add(generationRequest);
     if (!isBackground) {
         isGenerating = true;
-        activeGenerationController = typeof AbortController === 'function' ? new AbortController() : null;
         getReplyBtn.disabled = true;
         regenerateBtn.disabled = true;
         const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
@@ -128,9 +150,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         const memoryArchiveId = chat.activeArchiveId;
         const relationshipRevision = chat.friendRelationship?.revision;
         if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
-        if (chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
+        if (generationController?.signal.aborted || chat.history !== generationRequest.history || chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         const requestHistory = chat.history;
-        const requestIsCurrent = () => chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
+        const requestIsCurrent = () => !generationController?.signal.aborted && chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
             (chatType !== 'private' || typeof relationshipCanChat !== 'function' || (relationshipCanChat(chat, chatType) && chat.friendRelationship?.revision === relationshipRevision)) &&
             (chatType === 'private' ? db.characters : db.groups).includes(chat);
         let systemPrompt, requestBody;
@@ -141,7 +163,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         let vectorContext = '';
         if (typeof getVectorMemoryContext === 'function') {
             const query = historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');
-            try { vectorContext = await getVectorMemoryContext(chat, query, activeGenerationController?.signal); }
+            try { vectorContext = await getVectorMemoryContext(chat, query, generationController?.signal); }
             catch (error) {
                 if (error.name === 'AbortError') throw error;
                 console.error('Vector memory lookup failed:', error.message);
@@ -586,7 +608,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             method: 'POST',
             headers: headers,
             body: JSON.stringify(requestBody),
-            ...(!isBackground && activeGenerationController ? { signal: activeGenerationController.signal } : {})
+            ...(generationController ? { signal: generationController.signal } : {})
         });
         if (!response.ok) {
             const error = new Error(`API Error: ${response.status} ${await response.text()}`);
@@ -595,7 +617,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
         
         if (streamEnabled) {
-            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, activeGenerationController?.signal);
+            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal);
         } else {
             let result;
             try {
@@ -627,22 +649,15 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, activeGenerationController?.signal);
+            await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
         }
 
     } catch (error) {
-        if (!isBackground && !activeGenerationController?.signal.aborted) showApiError(error);
+        if (!isBackground && !generationController?.signal.aborted) showApiError(error);
         else console.error("Background Auto-Reply Error:", error);
     } finally {
-        if (!isBackground) {
-            isGenerating = false;
-            getReplyBtn.disabled = false;
-            regenerateBtn.disabled = false;
-            const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
-            if (stopButton) stopButton.hidden = true;
-            if (currentChatId === chatId && currentChatType === chatType) typingIndicator.style.display = 'none';
-            activeGenerationController = null;
-        }
+        chatGenerationRequests.delete(generationRequest);
+        refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
     }
 }
@@ -719,7 +734,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 }
             }
             if (idsToRemove.size > 0) {
-                chat.history = chat.history.filter(m => !idsToRemove.has(m.id));
+                for (let i = chat.history.length - 1; i >= 0; i--) {
+                    if (idsToRemove.has(chat.history[i].id)) chat.history.splice(i, 1);
+                }
                 replyHistory = chat.history;
             }
             
@@ -1335,8 +1352,12 @@ async function handleRegenerate() {
         return;
     }
 
+    const target = captureChatSendTarget();
+    const lastUserId = chat.history[lastUserMessageIndex].id;
     const guidance = await showRegenerateGuidanceDialog();
     if (guidance === null) return;
+    if (!isChatTargetVisible(target) || isGenerating || chat.history[lastUserMessageIndex]?.id !== lastUserId) return;
+    const mutation = beginChatMutation(chat, target.type);
 
     const originalLength = chat.history.length;
     chat.history.splice(lastUserMessageIndex + 1);
@@ -1350,12 +1371,13 @@ async function handleRegenerate() {
         recalculateChatStatus(chat);
     }
 
-    await saveData();
+    if (!await saveChatMutation(mutation)) return;
+    if (!isChatTargetVisible(target)) return;
     
     currentPage = 1; 
     renderMessages(false, true); 
 
-    await getAiReply(currentChatId, currentChatType, false, guidance);
+    await getAiReply(target.chatId, target.type, false, guidance);
 }
 
 function showRegenerateGuidanceDialog() {
