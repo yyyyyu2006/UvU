@@ -31,14 +31,11 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
         avatar.onerror = () => { avatar.onerror = null; avatar.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; };
         const content = document.createElement('span'); content.className = 'incoming-message-content';
         const title = document.createElement('strong'); title.textContent = titleText;
-        const id = document.createElement('small'); id.textContent = member?.id || chat.id || '';
         const body = document.createElement('span'); body.className = 'incoming-message-text';
         body.textContent = String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息';
-        content.append(title, id, body);
+        content.append(title, body);
         card.append(avatar, content);
-        while (host.children.length >= 3) host.lastElementChild.remove();
-        host.prepend(card);
-        Array.from(host.children).forEach((node, index) => { node.style.zIndex = String(host.children.length - index); });
+        host.replaceChildren(card);
         card.addEventListener('click', () => { card.remove(); if (typeof openChatRoom === 'function') openChatRoom(chatId, chatType); });
         setTimeout(() => card.remove(), 5000);
     });
@@ -1332,56 +1329,21 @@ function showRegenerateGuidanceDialog() {
     const overlay = document.createElement('div');
     overlay.className = 'feature-dialog regenerate-guidance-dialog';
     overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
-    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>重新生成</strong><button type="button" data-action="cancel" aria-label="关闭">关闭</button></header><p class="feature-help">说明哪里不满意，下一次回复会参考这些修改方向；留空可直接重 Roll。</p><div class="regenerate-reasons" aria-label="常见原因"></div><div class="regenerate-saved"><span>我的预设</span><button type="button" data-action="save-preset">保存为预设</button></div><div class="regenerate-presets"></div><textarea rows="5" placeholder="例如：回复太短了，忽略了我刚才说的地点，请结合上下文重新生成。" aria-label="本次修改方向"></textarea><footer><button type="button" data-action="cancel">取消</button><button type="button" data-action="direct">直接重 Roll</button><button type="button" data-action="apply" class="regenerate-apply">附说明重 Roll</button></footer></div>';
-    const reasons = ['角色 OOC', '失忆 / 忘记前文', '搞错事情', '太短', '太长', '重复前文'];
-    const reasonBox = overlay.querySelector('.regenerate-reasons');
+    overlay.setAttribute('aria-label', '重新生成回复');
+    overlay.innerHTML = '<div class="feature-dialog-card regenerate-guidance-card"><textarea rows="6" placeholder="写下希望调整的方向；留空则直接重回。" aria-label="回复修改方向"></textarea><footer><button type="button" data-action="cancel">取消</button><button type="button" data-action="reroll">重回</button></footer></div>';
     const textarea = overlay.querySelector('textarea');
-    const selected = new Set();
-    reasons.forEach(reason => {
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = reason;
-        button.addEventListener('click', () => {
-            if (selected.has(reason)) selected.delete(reason); else selected.add(reason);
-            button.classList.toggle('selected', selected.has(reason));
-        }); reasonBox.appendChild(button);
-    });
-    const presets = Array.isArray(db.regenerateGuidancePresets) ? db.regenerateGuidancePresets : [];
-    const presetBox = overlay.querySelector('.regenerate-presets');
-    presets.slice(0, 12).forEach((preset, index) => {
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = preset.name || preset.text.slice(0, 24);
-        button.title = preset.text; button.addEventListener('click', () => { textarea.value = preset.text; });
-        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除预设');
-        const row = document.createElement('span'); row.className = 'regenerate-preset-row'; row.append(button, remove); presetBox.appendChild(row);
-        remove.addEventListener('click', async () => { const at = presets.indexOf(preset); if (at >= 0) presets.splice(at, 1); db.regenerateGuidancePresets = presets; row.remove(); await saveData(); });
-    });
-    const close = value => { overlay.remove(); resolve(value); };
     let resolve;
     const result = new Promise(done => { resolve = done; });
-    overlay.addEventListener('click', async event => {
-        const action = event.target.closest('[data-action]')?.dataset.action;
+    const close = value => { overlay.remove(); resolve(value); };
+    overlay.addEventListener('click', event => {
+        const action = event.target.closest?.('[data-action]')?.dataset.action;
         if (action === 'cancel') close(null);
-        if (action === 'direct') close('');
-        if (action === 'apply') {
-            const text = [...selected, textarea.value.trim()].filter(Boolean).join('；');
-            if (!text) return showToast('请先选择原因或填写修改方向');
-            close(text);
-        }
-        if (action === 'save-preset') {
-            const text = [...selected, textarea.value.trim()].filter(Boolean).join('；');
-            if (!text) return showToast('请先选择原因或填写修改方向');
-            const name = prompt('预设名称', text.slice(0, 18));
-            if (!name) return;
-            if (!Array.isArray(db.regenerateGuidancePresets)) db.regenerateGuidancePresets = [];
-            db.regenerateGuidancePresets.unshift({ name: name.trim(), text }); db.regenerateGuidancePresets = db.regenerateGuidancePresets.slice(0, 12);
-            await saveData();
-            const button = document.createElement('button'); button.type = 'button'; button.textContent = name.trim(); button.title = text;
-            button.addEventListener('click', () => { textarea.value = text; });
-            const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除预设');
-            const row = document.createElement('span'); row.className = 'regenerate-preset-row'; row.append(button, remove); presetBox.prepend(row);
-            remove.addEventListener('click', async () => { const items = db.regenerateGuidancePresets || []; const at = items.findIndex(item => item.name === name.trim() && item.text === text); if (at >= 0) items.splice(at, 1); await saveData(); row.remove(); });
-            showToast('修改方向预设已保存');
-        }
+        if (action === 'reroll') close(textarea.value.trim());
+        if (event.target === overlay) close(null);
     });
-    overlay.addEventListener('click', event => { if (event.target === overlay) close(null); });
+    overlay.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); close(null); }
+    });
     document.body.appendChild(overlay); textarea.focus();
     return result;
 }
