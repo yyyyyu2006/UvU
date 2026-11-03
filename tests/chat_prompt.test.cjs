@@ -48,3 +48,43 @@ test('Gemini dynamic history placeholder also handles an empty conversation', as
     assert.deepEqual(f.requests[0].contents, []);
     assert.match(f.requests[0].system_instruction.parts[0].text, /<chat_history>\n<\/chat_history>/);
 });
+
+test('retry guidance is added only for that generation and leaves the base prompt intact', async () => {
+    const f = fixture([{ id: 'user', role: 'user', content: '刚才说的地点呢？', timestamp: 1700000000000 }]);
+    await f.context.getAiReply(f.chat.id, 'private', false, '请记住前文提到的地点，并简短回复');
+    const system = f.requests[0].system_instruction.parts[0].text;
+    assert.match(system, /^原始角色规则/);
+    assert.match(system, /原始世界书规则/);
+    assert.match(system, /本次重新生成的修改方向/);
+    assert.match(system, /请记住前文提到的地点/);
+});
+
+test('stop action aborts the active chat request without surfacing an API error', async () => {
+    const f = fixture([{ id: 'user', role: 'user', content: '继续', timestamp: 1700000000000 }]);
+    f.context.AbortController = AbortController;
+    let signal;
+    f.context.fetch = (_url, init) => new Promise((_resolve, reject) => {
+        signal = init.signal;
+        signal.addEventListener('abort', () => { const error = new Error('aborted'); error.name = 'AbortError'; reject(error); }, { once: true });
+    });
+    const pending = f.context.getAiReply(f.chat.id, 'private');
+    assert.equal(f.context.stopAiReply(), true);
+    await pending;
+    assert.equal(signal.aborted, true);
+    assert.deepEqual(f.errors, []);
+    assert.equal(f.context.isGenerating, false);
+});
+
+test('finishing an old chat request always clears the global generating lock after switching chats', async () => {
+    const f = fixture([{ id: 'user', role: 'user', content: '继续', timestamp: 1700000000000 }]);
+    f.context.AbortController = AbortController;
+    let finishFetch;
+    f.context.fetch = () => new Promise(resolve => { finishFetch = resolve; });
+    const pending = f.context.getAiReply(f.chat.id, 'private');
+    f.context.currentChatId = 'another-chat';
+    finishFetch({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '回复' }] } }] }) });
+    await pending;
+    assert.equal(f.context.isGenerating, false);
+    assert.equal(f.context.getReplyBtn.disabled, false);
+    assert.equal(f.context.regenerateBtn.disabled, false);
+});

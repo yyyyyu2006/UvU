@@ -3,13 +3,41 @@
 const HUMAN_RUN_PROMPT = `<角色活人运转>\n## [PSYCHOLOGY: HEXACO-SCHEMA-ACT]\n> Personality: HEXACO-driven, dynamic traits, inner conflicts required \n> Filter: schema-bias drives emotion; no pure reaction allowed \n> Attachment: secure/insecure logic must govern intimacy  \n> If-Then Behavior: situation-dependent activation of traits only  \n---\n    ## [VITALITY]\n+inconsistency +emoflux +splitmotifs +microreact +minddrift\n---\n## [TRAJECTORY-COHERENCE]\n> Role maintains an identity narrative = coherent over time  \n> No mood/goal switch without contradiction resolution \n> Every action must protect or challenge self-concept  \n> Interrupts = inner conflict or narrative clash  \n> Output = filtered through “who I am” logic\n</角色活人运转>`;
 
 // AI 交互逻辑
+let activeGenerationController = null;
+function stopAiReply() {
+    if (!activeGenerationController) return false;
+    activeGenerationController.abort();
+    return true;
+}
+
+function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
+    if (!messages?.length || typeof document === 'undefined' || !document.body) return;
+    const chatScreen = document.getElementById('chat-room-screen');
+    const isViewingChat = currentChatId === chatId && currentChatType === chatType && chatScreen?.classList.contains('active');
+    if (isViewingChat && document.visibilityState !== 'hidden') return;
+    let host = document.getElementById('incoming-message-notifications');
+    if (!host) {
+        host = document.createElement('div'); host.id = 'incoming-message-notifications'; host.setAttribute('aria-live', 'polite');
+        document.body.appendChild(host);
+    }
+    messages.filter(message => message.role === 'assistant' && !message.isStatusUpdate && !message.isThinking && !message.isContextDisabled).forEach(message => {
+        const card = document.createElement('button'); card.type = 'button'; card.className = 'incoming-message-toast';
+        const title = document.createElement('strong'); title.textContent = chatType === 'private' ? (chat.remarkName || chat.realName || '新消息') : (message.senderId ? chat.members?.find(member => member.id === message.senderId)?.groupNickname || chat.name : chat.name);
+        const body = document.createElement('span');
+        body.textContent = String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').slice(0, 90) || '发送了一条消息';
+        card.append(title, body); host.appendChild(card);
+        card.addEventListener('click', () => { card.remove(); if (typeof openChatRoom === 'function') openChatRoom(chatId, chatType); });
+        setTimeout(() => card.remove(), 5000);
+    });
+}
+
 function formatQuotedUserMessage(message, chat, chatType) {
     const name = chatType === 'group' ? (chat.me?.nickname || '我') : (chat.myName || '我');
     const quotedName = message.quote.senderName ? `${message.quote.senderName}：` : '';
     return `[${name}引用“${quotedName}${message.quote.content}”并回复：${getQuoteMessageContent(message)}]`;
 }
 
-async function getAiReply(chatId, chatType, isBackground = false) {
+async function getAiReply(chatId, chatType, isBackground = false, generationGuidance = '') {
     if (isGenerating && !isBackground) return; 
     
     if (!isBackground) {
@@ -64,8 +92,11 @@ async function getAiReply(chatId, chatType, isBackground = false) {
 
     if (!isBackground) {
         isGenerating = true;
+        activeGenerationController = typeof AbortController === 'function' ? new AbortController() : null;
         getReplyBtn.disabled = true;
         regenerateBtn.disabled = true;
+        const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
+        if (stopButton) stopButton.hidden = false;
         const typingName = chatType === 'private' ? chat.remarkName : chat.name;
         typingIndicator.textContent = `“${typingName}”正在输入中...`;
         typingIndicator.style.display = 'block';
@@ -95,7 +126,16 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             }
         }
 
+        if (generationGuidance.trim()) {
+            systemPrompt += `\n\n【本次重新生成的修改方向】\n${generationGuidance.trim()}\n请仅针对本次回复遵循以上修改方向；保留原有角色设定和既有规则。`;
+        }
+
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
+        if (typeof getVectorMemoryContext === 'function') {
+            const latestUserText = [...historySlice].reverse().find(message => message.role === 'user')?.content || '';
+            try { systemPrompt += await getVectorMemoryContext(chat, latestUserText, activeGenerationController?.signal); }
+            catch (error) { console.error('Vector memory lookup failed:', error.message); showToast('向量记忆检索失败，本次回复继续使用原上下文'); }
+        }
         
         const lastContextMessage = historySlice[historySlice.length - 1];
         if (worldBookPlan) historySlice = insertDepthWorldBooks(historySlice, worldBookPlan);
@@ -509,7 +549,8 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            ...(!isBackground && activeGenerationController ? { signal: activeGenerationController.signal } : {})
         });
         if (!response.ok) {
             const error = new Error(`API Error: ${response.status} ${await response.text()}`);
@@ -518,7 +559,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         }
         
         if (streamEnabled) {
-            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent);
+            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, activeGenerationController?.signal);
         } else {
             let result;
             try {
@@ -550,24 +591,27 @@ async function getAiReply(chatId, chatType, isBackground = false) {
             
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground);
+            await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, activeGenerationController?.signal);
         }
 
     } catch (error) {
-        if (!isBackground) showApiError(error);
+        if (!isBackground && !activeGenerationController?.signal.aborted) showApiError(error);
         else console.error("Background Auto-Reply Error:", error);
     } finally {
-        if (!isBackground && currentChatId === chatId && currentChatType === chatType) {
+        if (!isBackground) {
             isGenerating = false;
             getReplyBtn.disabled = false;
             regenerateBtn.disabled = false;
-            typingIndicator.style.display = 'none';
+            const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
+            if (stopButton) stopButton.hidden = true;
+            if (currentChatId === chatId && currentChatType === chatType) typingIndicator.style.display = 'none';
+            activeGenerationController = null;
         }
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true) {
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal) {
     let fullResponse = await readStreamResponse(response, apiType);
     if (!requestIsCurrent()) return;
     if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
@@ -584,13 +628,21 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
     }
 
     // ===================
-    await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground);
+    await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal);
 }
 
-async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false) {
+async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal) {
     const replyArchiveId = chat.activeArchiveId;
     let replyHistory = chat.history;
-    const replyIsCurrent = () => chat.activeArchiveId === replyArchiveId && chat.history === replyHistory;
+    const initialHistoryLength = chat.history.length;
+    let notificationOffset = initialHistoryLength;
+    const replyIsCurrent = () => !signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory;
+    const notifyNewMessages = () => {
+        const added = chat.history.slice(notificationOffset);
+        notificationOffset = chat.history.length;
+        showIncomingMessageNotifications(chat, added, targetChatId, targetChatType);
+    };
+    if (!replyIsCurrent()) return;
     const rawResponse = fullResponse;
     if (fullResponse) {
         // 1. 移除 [incipere] 标签
@@ -813,7 +865,14 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         let firstMessageProcessed = false;
 
         for (const item of messages) {
-            if (!replyIsCurrent()) return;
+            if (!replyIsCurrent()) {
+                if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
+                    await saveData();
+                    notifyNewMessages();
+                }
+                return;
+            }
+            notifyNewMessages();
             // 自动剔除不存在的表情包
             const stickerRegex = /\[(?:.*?的)?表情包：(.+?)\]/i;
             const stickerMatch = item.content.match(stickerRegex);
@@ -940,8 +999,19 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             // 如果是后台模式，跳过延迟，直接处理
             if (!isBackground) {
                 const delay = firstMessageProcessed ? (900 + Math.random() * 1300) : (400 + Math.random() * 400);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                if (!replyIsCurrent()) return;
+                await new Promise(resolve => {
+                    const timer = setTimeout(done, delay);
+                    function done() { signal?.removeEventListener('abort', abort); resolve(); }
+                    function abort() { clearTimeout(timer); done(); }
+                    signal?.addEventListener('abort', abort, { once: true });
+                });
+                if (!replyIsCurrent()) {
+                    if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
+                        await saveData();
+                        notifyNewMessages();
+                    }
+                    return;
+                }
                 
                 // 如果开启了多条消息提示音，且不是第一条消息（第一条已由系统默认逻辑播放），则播放提示音
                 if (firstMessageProcessed && db.multiMsgSoundEnabled && db.globalReceiveSound) {
@@ -1185,8 +1255,15 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
-        if (!replyIsCurrent()) return;
+        if (!replyIsCurrent()) {
+            if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
+                await saveData();
+                notifyNewMessages();
+            }
+            return;
+        }
         await saveData();
+        notifyNewMessages();
         renderChatList();
 
         // 触发独立的电量检查（不阻塞主流程）
@@ -1215,6 +1292,9 @@ async function handleRegenerate() {
         return;
     }
 
+    const guidance = await showRegenerateGuidanceDialog();
+    if (guidance === null) return;
+
     const originalLength = chat.history.length;
     chat.history.splice(lastUserMessageIndex + 1);
 
@@ -1232,5 +1312,63 @@ async function handleRegenerate() {
     currentPage = 1; 
     renderMessages(false, true); 
 
-    await getAiReply(currentChatId, currentChatType);
+    await getAiReply(currentChatId, currentChatType, false, guidance);
+}
+
+function showRegenerateGuidanceDialog() {
+    const overlay = document.createElement('div');
+    overlay.className = 'feature-dialog regenerate-guidance-dialog';
+    overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>重新生成</strong><button type="button" data-action="cancel" aria-label="关闭">关闭</button></header><p class="feature-help">说明哪里不满意，下一次回复会参考这些修改方向；留空可直接重 Roll。</p><div class="regenerate-reasons" aria-label="常见原因"></div><div class="regenerate-saved"><span>我的预设</span><button type="button" data-action="save-preset">保存为预设</button></div><div class="regenerate-presets"></div><textarea rows="5" placeholder="例如：回复太短了，忽略了我刚才说的地点，请结合上下文重新生成。" aria-label="本次修改方向"></textarea><footer><button type="button" data-action="cancel">取消</button><button type="button" data-action="direct">直接重 Roll</button><button type="button" data-action="apply" class="regenerate-apply">附说明重 Roll</button></footer></div>';
+    const reasons = ['角色 OOC', '失忆 / 忘记前文', '搞错事情', '太短', '太长', '重复前文'];
+    const reasonBox = overlay.querySelector('.regenerate-reasons');
+    const textarea = overlay.querySelector('textarea');
+    const selected = new Set();
+    reasons.forEach(reason => {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = reason;
+        button.addEventListener('click', () => {
+            if (selected.has(reason)) selected.delete(reason); else selected.add(reason);
+            button.classList.toggle('selected', selected.has(reason));
+        }); reasonBox.appendChild(button);
+    });
+    const presets = Array.isArray(db.regenerateGuidancePresets) ? db.regenerateGuidancePresets : [];
+    const presetBox = overlay.querySelector('.regenerate-presets');
+    presets.slice(0, 12).forEach((preset, index) => {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = preset.name || preset.text.slice(0, 24);
+        button.title = preset.text; button.addEventListener('click', () => { textarea.value = preset.text; });
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除预设');
+        const row = document.createElement('span'); row.className = 'regenerate-preset-row'; row.append(button, remove); presetBox.appendChild(row);
+        remove.addEventListener('click', async () => { const at = presets.indexOf(preset); if (at >= 0) presets.splice(at, 1); db.regenerateGuidancePresets = presets; row.remove(); await saveData(); });
+    });
+    const close = value => { overlay.remove(); resolve(value); };
+    let resolve;
+    const result = new Promise(done => { resolve = done; });
+    overlay.addEventListener('click', async event => {
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'cancel') close(null);
+        if (action === 'direct') close('');
+        if (action === 'apply') {
+            const text = [...selected, textarea.value.trim()].filter(Boolean).join('；');
+            if (!text) return showToast('请先选择原因或填写修改方向');
+            close(text);
+        }
+        if (action === 'save-preset') {
+            const text = [...selected, textarea.value.trim()].filter(Boolean).join('；');
+            if (!text) return showToast('请先选择原因或填写修改方向');
+            const name = prompt('预设名称', text.slice(0, 18));
+            if (!name) return;
+            if (!Array.isArray(db.regenerateGuidancePresets)) db.regenerateGuidancePresets = [];
+            db.regenerateGuidancePresets.unshift({ name: name.trim(), text }); db.regenerateGuidancePresets = db.regenerateGuidancePresets.slice(0, 12);
+            await saveData();
+            const button = document.createElement('button'); button.type = 'button'; button.textContent = name.trim(); button.title = text;
+            button.addEventListener('click', () => { textarea.value = text; });
+            const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', '删除预设');
+            const row = document.createElement('span'); row.className = 'regenerate-preset-row'; row.append(button, remove); presetBox.prepend(row);
+            remove.addEventListener('click', async () => { const items = db.regenerateGuidancePresets || []; const at = items.findIndex(item => item.name === name.trim() && item.text === text); if (at >= 0) items.splice(at, 1); await saveData(); row.remove(); });
+            showToast('修改方向预设已保存');
+        }
+    });
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(null); });
+    document.body.appendChild(overlay); textarea.focus();
+    return result;
 }

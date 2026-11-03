@@ -18,14 +18,15 @@
 .auto-memory-help { font-size: 12px; line-height: 1.65; color: #666; margin: 10px 0; }
 #auto-memory-status { font-size: 13px; line-height: 1.6; padding: 10px; background: #f6f3ef; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #auto-memory-status.memory-error { color: #9b332d; }
-.auto-memory-actions { display: flex; gap: 8px; margin-top: 18px; }
-.auto-memory-actions .btn { flex: 1; white-space: normal; color: #333; }
+.auto-memory-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 18px; align-items: stretch; }
+.auto-memory-actions .btn { width: 100%; min-width: 0; min-height: 48px; height: 100%; display: flex; align-items: center; justify-content: center; white-space: normal; overflow-wrap: anywhere; line-height: 1.35; color: #333; }
 .auto-memory-fold-notice { display: block; margin: 12px auto; padding: 8px 12px; border: 1px solid #ddd; border-radius: 14px; font-size: 12px; background: #f8f6f3; color: #666; max-width: 95%; }
 .auto-memory-badge { font-size: 11px; color: #705b45; margin-top: 6px; }
 .auto-memory-range { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin-top: 18px; min-width: 0; }
 .auto-memory-range label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin: 8px 0; }
 .auto-memory-range input, #memory-api-panel input { box-sizing: border-box; width: 100%; min-width: 0; font-size: 16px; padding: 9px; border: 1px solid #ddd; border-radius: 8px; background: #fafafa; color: #333; }
 #auto-memory-range-preview { white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
+@media (max-width: 380px) { .auto-memory-actions { grid-template-columns: 1fr; } }
 
 #memory-journal-screen .content {
     padding: 15px;

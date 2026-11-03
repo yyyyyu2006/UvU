@@ -66,12 +66,14 @@ function setupExpandedEditors() {
         if (target.closest('.feature-dialog') || !target.id) return;
         target.dataset.expandedEditor = 'true';
         const toolbar = document.createElement('div'); toolbar.className = 'document-edit-tools';
-        const expand = document.createElement('button'); expand.type = 'button'; expand.textContent = '展开编辑 / 查找替换'; expand.addEventListener('click', () => openExpandedEditor(target)); toolbar.appendChild(expand);
+        const expand = document.createElement('button'); expand.type = 'button'; expand.className = 'document-edit-expand'; expand.textContent = '展开编辑 / 查找替换'; expand.addEventListener('click', () => openExpandedEditor(target)); toolbar.appendChild(expand);
         if (/persona|personality/.test(target.id)) {
             const importButton = document.createElement('button'); importButton.type = 'button'; importButton.textContent = '导入 DOCX / TXT';
             importButton.addEventListener('click', () => chooseImportFile('.docx,.txt', async file => { const result = await readImportDocument(file); openExpandedEditor(target, result.text); })); toolbar.appendChild(importButton);
         }
-        target.insertAdjacentElement('beforebegin', toolbar);
+        const host = target.parentElement;
+        if (host?.classList.contains('form-group') && host.children.length === 1) host.appendChild(toolbar);
+        else target.insertAdjacentElement('afterend', toolbar);
     });
     attach();
     new MutationObserver(records => { if (records.some(r => Array.from(r.addedNodes).some(n => n.nodeType === 1 && (n.matches?.('textarea') || n.querySelector?.('textarea'))))) attach(); }).observe(document.body, { childList: true, subtree: true });

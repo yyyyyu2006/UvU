@@ -94,6 +94,10 @@ function setupChatRoom() {
     messageInput = document.getElementById('message-input');
     getReplyBtn = document.getElementById('get-reply-btn');
     regenerateBtn = document.getElementById('regenerate-btn');
+    const stopAiButton = document.getElementById('stop-ai-btn');
+    if (stopAiButton) stopAiButton.addEventListener('click', () => {
+        if (typeof stopAiReply === 'function' && stopAiReply()) showToast('已请求停止 AI 回复');
+    });
 
     const memoryJournalBtn = document.getElementById('memory-journal-btn');
     const deleteHistoryBtn = document.getElementById('delete-history-btn');

@@ -1531,6 +1531,24 @@
 }
 
 #send-message-btn { display: none; }
+#stop-ai-btn[hidden] { display: none !important; }
+#stop-ai-btn:not([hidden]) { display: inline-flex; color: #b23b36; }
+#incoming-message-notifications { position: fixed; z-index: 50000; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.incoming-message-toast { pointer-events: auto; width: min(420px, 100%); margin: 0 auto; padding: 12px 14px; border: 1px solid #ddd; border-radius: 12px; background: #fff; color: #222; box-shadow: 0 8px 28px #0003; display: flex; flex-direction: column; gap: 4px; text-align: left; animation: slideUp .18s ease-out; }
+.incoming-message-toast strong { font-size: 14px; }
+.incoming-message-toast span { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.regenerate-guidance-dialog .feature-dialog-card { display: flex; flex-direction: column; gap: 14px; }
+.regenerate-guidance-dialog header { justify-content: space-between; }
+.regenerate-guidance-dialog .regenerate-reasons, .regenerate-guidance-dialog .regenerate-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.regenerate-guidance-dialog .regenerate-reasons button, .regenerate-guidance-dialog .regenerate-preset-row button { width: auto; min-height: 36px; border-radius: 18px; background: #fff; }
+.regenerate-guidance-dialog .regenerate-reasons .selected { background: #dceaf2; border-color: #8aafc6; }
+.regenerate-guidance-dialog .regenerate-saved { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.regenerate-guidance-dialog .regenerate-saved button { width: auto; }
+.regenerate-guidance-dialog .regenerate-preset-row { display: inline-flex; gap: 3px; align-items: center; }
+.regenerate-guidance-dialog textarea { width: 100%; min-height: 120px; resize: vertical; box-sizing: border-box; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font: inherit; }
+.regenerate-guidance-dialog footer { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; border-top: 1px solid #eee; padding-top: 12px; }
+.regenerate-guidance-dialog footer button { width: auto; min-height: 42px; }
+@media (max-width: 420px) { .regenerate-guidance-dialog footer button { flex: 1 1 100%; } }
 #get-reply-btn {
     background-color: transparent;
     color: var(--func-icon-color);

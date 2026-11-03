@@ -724,6 +724,11 @@ input:checked + .kkt-slider:before {
 }
 
 /* === 文本框编辑工具栏 (搜索/替换) === */
+.sticker-import-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.sticker-import-actions button { width: auto; min-width: 0; flex: 1 1 auto; }
+.import-recognize-status { flex: 1 1 100%; min-height: 1.4em; font-size: 12px; color: #666; }
+.document-edit-tools { align-items: flex-start; min-width: 0; }
+.document-edit-tools .document-edit-expand { width: auto; min-height: 34px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; line-height: 1.35; }
 .textarea-edit-toolbar {
     margin-bottom: 8px;
     display: flex;

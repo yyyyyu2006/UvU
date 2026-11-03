@@ -105,7 +105,7 @@ async function recognizeStickerImage(image) {
 function showStickerImportPreview(items, initialGroup) {
     if (items.length > 300) throw new Error('一次最多导入 300 张表情，请拆分文档');
     const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'sticker-import-preview';
-    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>表情文档导入预览</strong><button type="button" class="import-cancel">取消</button></header><p class="feature-help">可修改每张图的名称、关键词、画面说明。格式：名称|关键词|说明:图片URL；DOCX 嵌入图片可在同一表格行填写这些信息。图片识别可在导入后点“编辑”调用视觉 API。</p><label>分组<input class="import-group" type="text"></label><div class="sticker-import-list"></div><button type="button" class="import-save">确认导入</button></div>';
+    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>表情文档导入预览</strong><button type="button" class="import-cancel">取消</button></header><p class="feature-help">可修改每张图的名称、关键词、画面说明。格式：名称|关键词|说明:图片URL；DOCX 嵌入图片可在同一表格行填写这些信息。批量识图会逐张调用当前图片识别 API，并保存识别说明。</p><label>分组<input class="import-group" type="text"></label><div class="sticker-import-list"></div><div class="sticker-import-actions"><button type="button" class="import-recognize">批量识别所选图片</button><span class="import-recognize-status" aria-live="polite"></span><button type="button" class="import-save">确认导入</button></div></div>';
     overlay.querySelector('.import-group').value = initialGroup;
     const rows = items.map(item => {
         const row = document.createElement('label'); row.className = 'sticker-import-row'; const checked = document.createElement('input'); checked.type = 'checkbox'; checked.checked = true; checked.style.width = 'auto';
@@ -116,6 +116,33 @@ function showStickerImportPreview(items, initialGroup) {
         row.append(checked, image, fields); overlay.querySelector('.sticker-import-list').appendChild(row); return { item, row, checked };
     });
     overlay.querySelector('.import-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('.import-recognize').onclick = async event => {
+        const button = event.currentTarget;
+        const checked = rows.filter(row => row.checked.checked);
+        if (!checked.length) return showToast('请先选择要识别的图片');
+        const selected = checked.filter(row => !row.row.querySelector('.import-description').value.trim());
+        if (!selected.length) return showToast('所选图片已有说明；清空说明后可重新识别');
+        const status = overlay.querySelector('.import-recognize-status');
+        button.disabled = true;
+        let cursor = 0, completed = 0, failed = 0;
+        const workers = Array.from({ length: Math.min(2, selected.length) }, async () => {
+            while (cursor < selected.length) {
+                const item = selected[cursor++];
+                const description = item.row.querySelector('.import-description');
+                try {
+                    description.value = await recognizeStickerImage(item.item.data);
+                    completed++;
+                } catch (_) {
+                    failed++;
+                }
+                status.textContent = `已处理 ${completed + failed}/${selected.length} 张，成功 ${completed}，失败 ${failed}`;
+            }
+        });
+        await Promise.all(workers);
+        button.disabled = false;
+        button.textContent = '批量识别所选图片';
+        if (!failed) status.textContent = `识别完成：${completed} 张图片；请核对说明后导入。`;
+    };
     overlay.querySelector('.import-save').onclick = async e => {
         const group = overlay.querySelector('.import-group').value.trim();
         const additions = rows.filter(r => r.checked.checked).map(({ item, row }) => ({ id: 'sticker_' + crypto.randomUUID(), name: row.querySelector('.import-name').value.trim(), keywords: worldBookKeys(row.querySelector('.import-keys').value), description: row.querySelector('.import-description').value.trim(), data: item.data, group, lastUsedTime: 0 }));

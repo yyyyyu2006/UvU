@@ -53,6 +53,54 @@ test('threshold counts eligible old floors after preserving recent floors, skips
     assert.equal(c.getAutoMemoryPlan(chat, true).batch.length, 0);
 });
 
+test('empty, hidden and thinking-only records are not counted as floors; media messages remain eligible', () => {
+    const { context: c } = fixture(1);
+    assert.equal(c.isAutoMemoryFloor({ id: 'empty', role: 'user', content: '  ' }), false);
+    assert.equal(c.isAutoMemoryFloor({ id: 'hidden', role: 'assistant', content: 'text', isHidden: true }), false);
+    assert.equal(c.isAutoMemoryFloor({ id: 'thinking', role: 'assistant', content: '<thinking>reasoning</thinking>' }), false);
+    assert.equal(c.isAutoMemoryFloor({ id: 'image', role: 'user', content: '', parts: [{ type: 'image', data: 'data:image/png;base64,AA==' }] }), true);
+});
+
+test('vector memory is opt-in and caches embeddings while ranking relevant journals', async () => {
+    const f = fixture(1, { vectorSearchEnabled: false });
+    const journal = { id: 'favorite', title: '约定', content: '两人约定下周一起看电影。', isFavorited: true };
+    f.chat.memoryJournals.push(journal);
+    f.context.db.memoryApiSettings = { provider: 'newapi', url: 'https://memory.test/v1', key: 'test-key', embeddingModel: 'embed-model' };
+    const inputs = [];
+    f.context.fetch = async (_url, request) => {
+        const input = JSON.parse(request.body).input; inputs.push(input);
+        return { ok: true, json: async () => ({ data: [{ embedding: input.includes('当前话题') ? [1, 0] : [0.8, 0.6] }] }) };
+    };
+    assert.equal(await f.context.getVectorMemoryContext(f.chat, '当前话题'), '');
+    assert.equal(inputs.length, 0);
+    f.chat.autoMemorySettings.vectorSearchEnabled = true;
+    f.chat.autoMemorySettings.vectorThreshold = 0.7;
+    const context = await f.context.getVectorMemoryContext(f.chat, '当前话题');
+    assert.match(context, /约定下周一起看电影/);
+    assert.equal(inputs.length, 2);
+    await f.context.getVectorMemoryContext(f.chat, '当前话题');
+    assert.equal(inputs.length, 3);
+});
+
+test('optional memory API reranker can reorder cosine-ranked summaries', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorRerankEnabled: true, vectorTopK: 1, vectorThreshold: 0 });
+    f.chat.memoryJournals.push(
+        { id: 'first', title: '旧事一', content: '两人讨论过电影。', isFavorited: true },
+        { id: 'second', title: '旧事二', content: '两人约定周末见面。', isFavorited: true }
+    );
+    f.context.db.memoryApiSettings = { provider: 'newapi', url: 'https://memory.test/v1', key: 'test-key', model: 'reranker', embeddingModel: 'embed-model' };
+    f.context.fetch = async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        if (Array.isArray(input)) return { ok: true, json: async () => ({ data: input.map(() => ({ embedding: [1, 0] })) }) };
+        return { ok: true, json: async () => ({ data: [{ embedding: [1, 0] }] }) };
+    };
+    f.context.buildChatApiRequest = () => ({ requestBody: {}, headers: {}, endpoint: 'https://memory.test/v1/chat/completions' });
+    f.context.fetchAiResponse = async () => '2, 1';
+    const result = await f.context.getVectorMemoryContext(f.chat, '需要周末约定');
+    assert.match(result, /旧事二/);
+    assert.doesNotMatch(result, /旧事一/);
+});
+
 test('batch can be smaller or larger than threshold; it never consumes recent floors', () => {
     const { context: c, chat } = fixture(8, { threshold: 3, batchSize: 20, keepRecent: 3 });
     assert.deepEqual(ids(c.getAutoMemoryPlan(chat).batch), ['m0', 'm1', 'm2', 'm3', 'm4']);
