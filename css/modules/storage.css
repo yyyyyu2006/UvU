@@ -1,4 +1,10 @@
 /* css/modules/storage.css */
+#storage-analysis-screen [hidden] { display: none !important; }
+.storage-backup-modes { display: flex; gap: 8px; padding: 0 12px 12px; }
+.storage-backup-modes button { flex: 1; min-width: 0; border: 1px solid #ced4da; border-radius: 8px; background: #f8f9fa; color: #495057; padding: 8px; font: inherit; font-size: 13px; }
+.storage-backup-modes button[aria-pressed="true"] { background: #e7f1ff; border-color: #8ab4e8; color: #245b91; }
+.storage-export-format { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 14px 0; font-size: 13px; color: #495057; }
+.storage-export-format select { flex: 1; min-width: 0; max-width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 8px; background: #fff; color: inherit; font: inherit; }
 .storage-page-container {
   height: 100%;
   display: flex;

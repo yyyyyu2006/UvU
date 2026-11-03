@@ -240,7 +240,7 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
-        if (e.target.closest?.('.feature-dialog')) return;
+        if (e.target.closest?.('.feature-dialog, .relationship-dialog')) return;
         const now = Date.now();
         const gap = now - globalRescueLastClickTime;
         

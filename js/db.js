@@ -603,26 +603,55 @@ function initDatabase() {
     });
 }
 
+// 按内容比较，兼容旧功能直接原地修改对象；不保留可能在事务失败后失真的缓存基线。
+function persistedValuesEqual(left, right, seen = new WeakMap()) {
+    if (Object.is(left, right)) return true;
+    if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+    const leftTag = Object.prototype.toString.call(left);
+    if (leftTag !== Object.prototype.toString.call(right)) return false;
+    if (leftTag === '[object Date]') return left.getTime() === right.getTime();
+    if (leftTag !== '[object Object]' && leftTag !== '[object Array]') return false;
+    if (seen.has(left)) return seen.get(left) === right;
+    seen.set(left, right);
+    if (Array.isArray(left) && left.length !== right.length) return false;
+    const keys = Object.keys(left);
+    if (keys.length !== Object.keys(right).length) return false;
+    return keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && persistedValuesEqual(left[key], right[key], seen));
+}
+
+async function putChangedRecords(table, records, keyName = 'id', batchSize = 16) {
+    // 限制每次读取的历史数据量，不长期复制整份数据库。
+    for (let start = 0; start < records.length; start += batchSize) {
+        const batch = records.slice(start, start + batchSize);
+        const stored = await table.bulkGet(batch.map(record => record[keyName]));
+        const changed = batch.filter((record, index) => !persistedValuesEqual(record, stored[index]));
+        if (changed.length) await table.bulkPut(changed);
+    }
+}
+
+let dataPersistenceQueue = Promise.resolve();
+function runDataPersistence(task) {
+    // 清理缓存等旧功能会在现有事务中保存，必须直接加入该事务，避免等待队列造成互锁。
+    if (typeof Dexie !== 'undefined' && Dexie.currentTransaction) return task();
+    const pending = dataPersistenceQueue.then(task);
+    dataPersistenceQueue = pending.catch(() => {});
+    return pending;
+}
+
 // 数据保存与加载
 const saveData = async () => {
     if (!dexieDB) return;
     if (typeof syncAllActiveArchives === 'function') {
         syncAllActiveArchives();
     }
-    await dexieDB.transaction('rw', dexieDB.tables, async () => {
-        await dexieDB.characters.bulkPut(db.characters);
-        await dexieDB.groups.bulkPut(db.groups);
-        await dexieDB.worldBooks.bulkPut(db.worldBooks);
-        await dexieDB.myStickers.bulkPut(db.myStickers);
-
-        const settingsPromises = globalSettingKeys.map(key => {
-            if (db[key] !== undefined) {
-                return dexieDB.globalSettings.put({ key: key, value: db[key] });
-            }
-            return null;
-        }).filter(p => p);
-        await Promise.all(settingsPromises);
-    });
+    return runDataPersistence(() => dexieDB.transaction('rw', dexieDB.tables, async () => {
+        await putChangedRecords(dexieDB.characters, db.characters, 'id', 1);
+        await putChangedRecords(dexieDB.groups, db.groups, 'id', 1);
+        await putChangedRecords(dexieDB.worldBooks, db.worldBooks);
+        await putChangedRecords(dexieDB.myStickers, db.myStickers);
+        const settings = globalSettingKeys.filter(key => db[key] !== undefined).map(key => ({ key, value: db[key] }));
+        await putChangedRecords(dexieDB.globalSettings, settings, 'key');
+    }));
 };
 
 const loadData = async () => {

@@ -60,6 +60,7 @@ function autoMemoryJournalHash(journal) {
     return autoMemoryFingerprint([journal.title, journal.content, journal.autoMemory]);
 }
 function isAutoMemoryFloor(message) {
+    if (message?.relationshipDelivery) return false;
     const text = String(message?.content || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
     const hasMedia = (message?.parts || []).some(part => ['image', 'audio', 'file', 'video'].includes(part?.type) && (part.data || part.url || part.text));
     return Boolean(message?.id && ['user', 'assistant'].includes(message.role) && (text || hasMedia) && !message.isThinking &&
@@ -310,7 +311,7 @@ function getVectorMemoryCandidates(chat) {
         .map(journal => ({ ...journal, content: cleanVectorStoryText(chat, journal.content) }));
     const eligible = (chat.history || []).map((message, index) => ({ message, floor: index + 1 }))
         .filter(({ message }) => ['user', 'assistant'].includes(message.role) && message.id &&
-            !message.isThinking && !message.isHidden && !message.isWithdrawn && !message.isContextDisabled && !message.isStatusUpdate);
+            !message.isThinking && !message.isHidden && !message.isWithdrawn && !message.isContextDisabled && !message.isStatusUpdate && !message.relationshipDelivery);
     const old = eligible.slice(0, Math.max(0, eligible.length - settings.keepRecent));
     const groups = new Map();
     for (const { message, floor } of old) {

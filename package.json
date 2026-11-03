@@ -1,0 +1,11 @@
+{
+  "name": "uvu-regression-checks",
+  "private": true,
+  "scripts": {
+    "test": "node --test --test-isolation=none tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "dexie": "3.2.4",
+    "fake-indexeddb": "6.2.4"
+  }
+}

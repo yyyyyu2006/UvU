@@ -46,7 +46,7 @@
     <link rel="stylesheet" href="css/modules/widget_market.css">
     <link rel="stylesheet" href="css/modules/cot_settings.css">
     <link rel="stylesheet" href="css/modules/video_call.css">
-    <link rel="stylesheet" href="css/modules/storage.css">
+    <link rel="stylesheet" href="css/modules/storage.css?v=20261103-storage-perf">
     <link rel="stylesheet" href="css/workshop.css">
     <link rel="stylesheet" href="css/modules/console.css">
     <link rel="stylesheet" href="css/modules/community.css">
@@ -2746,8 +2746,8 @@
 -->
 
 <!-- [1. 基础层] -->
-<script src="js/utils.js?v=20261102-audit-fix"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
-<script src="js/db.js?v=20261102-memory2"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
+<script src="js/utils.js?v=20261103-friends"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
+<script src="js/db.js?v=20261103-storage-perf"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
 <script src="js/ui.js"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
@@ -2760,24 +2760,26 @@
 <script src="js/modules/sticker_assist.js?v=20261103-chat-controls"></script>
 <link rel="stylesheet" href="css/modules/document_features.css?v=20261103-chat-controls">
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
-<script src="js/modules/chat_render.js?v=20261103-documents"></script>
+<link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261103-friends">
+<script src="js/modules/chat_relationship.js?v=20261103-friends"></script>
+<script src="js/modules/chat_render.js?v=20261103-friends"></script>
 <script src="js/modules/chat_archives.js?v=20261103-documents"></script>
     <script src="js/modules/chat_ai_airdrop.js"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261103-documents"></script>
     <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
-    <script src="js/modules/chat_ai.js?v=20261103-reroll-notify"></script>
-<script src="js/modules/chat_features.js?v=20261102-audit-fix"></script>
-<script src="js/modules/chat_ops.js?v=20261103-documents"></script>
-<script src="js/modules/message_forward.js?v=20261102-forward"></script>
-<script src="js/chat.js?v=20261103-documents"></script>     <!-- 聊天核心入口 -->
+    <script src="js/modules/chat_ai.js?v=20261103-friends"></script>
+<script src="js/modules/chat_features.js?v=20261103-friends"></script>
+<script src="js/modules/chat_ops.js?v=20261103-friends"></script>
+<script src="js/modules/message_forward.js?v=20261103-friends"></script>
+<script src="js/chat.js?v=20261103-friends"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
-<script src="js/contacts.js"></script> <!-- 联系人：好友列表、名片 -->
+<script src="js/contacts.js?v=20261103-friends"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261103-chat-controls"></script> <!-- 聊天室HTML注入 -->
 <script src="js/modules/chat_settings_html.js"></script> <!-- 聊天设置HTML注入 -->
 <script src="js/modules/group_settings_html.js"></script> <!-- 群聊设置HTML注入 -->
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
-<script src="js/modules/settings_chat.js"></script> <!-- 聊天设置与管理 -->
+<script src="js/modules/settings_chat.js?v=20261103-friends"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/settings_api.js?v=20261103-documents"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
@@ -2785,7 +2787,7 @@
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
-<script src="js/modules/sticker.js?v=20261103-documents"></script>   <!-- 表情包管理系统 -->
+<script src="js/modules/sticker.js?v=20261103-friends"></script>   <!-- 表情包管理系统 -->
 <script src="js/modules/worldbook.js?v=20261103-documents"></script> <!-- 世界书设定集 -->
 <script src="js/modules/peek.js"></script>      <!-- 偷看手机(相册/短信等) -->
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
@@ -2862,10 +2864,10 @@
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261103-memory-ui"></script>
+<script src="js/modules/auto_memory.js?v=20261103-friends"></script>
 <script src="js/modules/memory_library.js?v=20261103-library"></script>
-<script src="js/modules/storage_html.js"></script> <!-- 存储空间HTML注入 -->
-<script src="js/modules/storage.js?v=20261102-audit-fix"></script>   <!-- 存储空间分析图表 -->
+<script src="js/modules/storage_html.js?v=20261103-storage-perf"></script> <!-- 存储空间HTML注入 -->
+<script src="js/modules/storage.js?v=20261103-friends"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->
 <script src="js/modules/tutorial.js"></script>  <!-- 教程、更新日志、GitHub备份 -->
@@ -2875,7 +2877,7 @@
 <script src="js/modules/gallery.js"></script> <!-- 角色相册管理模块 -->
 <script src="js/modules/shop.js"></script>    <!-- 商城模块 -->
 <script src="js/modules/cot_settings.js"></script> <!-- 思维链设置模块 -->
-<script src="js/modules/video_call.js"></script> <!-- 视频通话模块 -->
+<script src="js/modules/video_call.js?v=20261103-friends"></script> <!-- 视频通话模块 -->
 <script src="js/workshop_html.js"></script> <!-- 绘图工坊HTML注入 -->
 <script src="js/modules/image-workshop/settings.js"></script>
 <script src="js/modules/image-workshop/prompts.js"></script>
@@ -2893,6 +2895,6 @@
 <script src="js/modules/reader_view.js"></script> <!-- 阅读器视图逻辑 -->
 
 <!-- [4. 程序入口] -->
-<script src="js/main.js?v=20261103-documents"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261103-friends"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

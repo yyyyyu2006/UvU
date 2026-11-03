@@ -375,6 +375,8 @@ function handleStickerLongPress(stickerId) {
 }
 
 async function sendSticker(sticker) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat) return;
     const chatId = currentChatId, chatType = currentChatType;
@@ -398,7 +400,8 @@ async function sendSticker(sticker) {
     if (currentChatType === 'group') {
         message.senderId = 'user_me';
     }
-    chat.history.push(message);
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
+        chat.history.push(message);
     addMessageBubble(message, currentChatId, currentChatType);
     
     try { await saveData(); } catch (error) {

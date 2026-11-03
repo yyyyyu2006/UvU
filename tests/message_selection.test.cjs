@@ -61,6 +61,26 @@ test('long press offers multi-select normally and select-to-here in screenshot m
     assert.equal(f.element('capture-select-count').textContent, '已选择 4 项');
 });
 
+test('long press delete removes only pressed message without entering multiselect', async () => {
+    const f = fixture(); f.c.handleMessageLongPress(f.rows[3], 10, 10);
+    await f.menu.at(-1).find(item => item.label === '删除').action();
+    assert.equal(f.chat.history.length, 7);
+    assert.equal(f.chat.history.some(m => m.id === 'm3'), false);
+    assert.equal(f.c.isInMultiSelectMode, false);
+});
+
+test('single-delete menu captures original archive; failure restores message and concurrent arrivals', async () => {
+    const f = fixture(); f.c.handleMessageLongPress(f.rows[2], 10, 10);
+    const action = f.menu.at(-1).find(item => item.label === '删除').action;
+    f.chat.activeArchiveId = 'other'; await action(); assert.equal(f.chat.history.length, 8);
+    f.chat.activeArchiveId = 'archive1'; f.chat.archives = [{ id: 'archive1', data: {} }];
+    f.c.saveData = async () => { f.chat.history.push({ id: 'new' }); f.chat.archives[0].data.history = f.chat.history; throw new Error('quota'); };
+    await action();
+    assert.equal(f.chat.history.length, 9);
+    assert.equal(f.chat.history[2].id, 'm2'); assert.equal(f.chat.history.at(-1).id, 'new');
+    assert.equal(f.chat.archives[0].data.history.length, 9);
+});
+
 test('archive change blocks selection, sharing and deletion using an old selection', async () => {
     const f = fixture(); f.c.enterMultiSelectMode('m0'); f.chat.activeArchiveId = 'archive2';
     f.c.selectMessagesTo('m5'); await f.c.shareSelectedMessages(); await f.c.deleteSelectedMessages();

@@ -376,6 +376,7 @@ const VideoCallModule = {
         }
 
         if (!chat) return;
+        if (db.characters.includes(chat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat)) return;
         
         this.state.incomingChat = chat;
         this.state.callType = type;
@@ -449,6 +450,12 @@ const VideoCallModule = {
     },
 
     startCall: async function(type, isIncoming = false, chatObject = null) {
+        const relationshipChat = chatObject || (currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : null);
+        if (relationshipChat && db.characters.includes(relationshipChat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
+            this.hideCallTypeModal();
+            showToast('当前好友关系无法通话，请先恢复好友关系');
+            return;
+        }
         this.hideCallTypeModal();
         this.state.callType = type;
         this.state.isCallActive = true;
@@ -539,6 +546,9 @@ const VideoCallModule = {
 
     fetchInitialAiResponse: async function(chat, type, isIncoming) {
         if (typeof getCallReply !== 'function') return null;
+        const isPrivate = db.characters.includes(chat);
+        if (isPrivate && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat)) return null;
+        const relationshipRevision = chat.friendRelationship?.revision;
         
         let content = '';
         if (isIncoming) {
@@ -554,6 +564,7 @@ const VideoCallModule = {
         
         try {
             const response = await getCallReply(chat, type, tempContext, () => {});
+            if (isPrivate && typeof relationshipCanChat === 'function' && (!relationshipCanChat(chat) || chat.friendRelationship?.revision !== relationshipRevision)) return null;
             return response;
         } catch (e) {
             console.error("获取AI开场白失败:", e);
@@ -881,6 +892,13 @@ const VideoCallModule = {
     },
 
     triggerAiReply: async function() {
+        const relationshipChat = this.state.currentChat;
+        const isPrivate = db.characters.includes(relationshipChat);
+        if (isPrivate && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
+            showToast('当前好友关系无法通话，请先恢复好友关系');
+            return;
+        }
+        const relationshipRevision = relationshipChat?.friendRelationship?.revision;
         // 1. 检查是否正在生成 (优先提示)
         if (this.state.isGenerating) {
             showToast("信号正在传输中...");
@@ -913,6 +931,7 @@ const VideoCallModule = {
                 });
                 
                 if (fullText) {
+                    if (isPrivate && typeof relationshipCanChat === 'function' && (!relationshipCanChat(relationshipChat) || relationshipChat.friendRelationship?.revision !== relationshipRevision)) return;
                     this.parseAndAddAiResponse(fullText);
                 }
             }
@@ -929,6 +948,11 @@ const VideoCallModule = {
 
     sendUserAction: async function(text) {
         if (!text) return;
+        const relationshipChat = this.state.currentChat;
+        if (db.characters.includes(relationshipChat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
+            showToast('当前好友关系无法通话，请先恢复好友关系');
+            return;
+        }
 
         const parts = text.split(/([（\(].*?[）\)])/g);
 

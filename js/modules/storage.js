@@ -11,6 +11,21 @@ const STORAGE_CATEGORIES = [
     { key: 'other', name: '生图缓存', desc: '相册、工坊生图、阅读插图等' }
 ];
 
+const STORAGE_IMPORT_SETTING_KEYS = [
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
+    'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
+    'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
+    'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 'widgetTemplates', 'addedWidgets',
+    'backupReminderSettings', 'stUnlocked'
+];
+const STORAGE_IMPORT_CATEGORY_KEYS = {
+    personas: ['myPersonaPresets', 'homeSignature', 'activePersonaId'],
+    wallpapers: ['wallpaper', 'bubbleCssPresets', 'globalCss', 'globalCssPresets', 'moreProfileCardBg', 'themeSettings', 'themePresets'],
+    fonts: ['fontUrl', 'fontPresets'],
+    settings: STORAGE_IMPORT_SETTING_KEYS
+};
+
 let currentStorageSizes = {};
 let selectedModules = {
     chats: true,
@@ -21,6 +36,12 @@ let selectedModules = {
     fonts: true,
     settings: true
 };
+const selectedImportModules = { ...selectedModules };
+let storageBackupMode = 'export';
+let storageBackupBusy = false;
+function storageCurrentSelection() {
+    return storageBackupMode === 'import' ? selectedImportModules : selectedModules;
+}
 
 function formatBytes(bytes, decimals = 2) {
     if (bytes === 0) return '0 B';
@@ -180,11 +201,18 @@ function renderStorageUI() {
     });
 
     // Render Backup Options
+    const currentSelection = storageCurrentSelection();
+    document.querySelectorAll('[data-backup-mode]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.backupMode === storageBackupMode));
+    });
+    document.getElementById('storage-export-btn').hidden = storageBackupMode !== 'export';
+    document.getElementById('storage-export-format-row').hidden = storageBackupMode !== 'export';
+    document.getElementById('storage-import-control').hidden = storageBackupMode !== 'import';
     backupOptions.innerHTML = '';
     STORAGE_CATEGORIES.forEach(cat => {
         if (cat.key === 'other') return; // 不在备份选项中显示其他缓存
         const size = currentStorageSizes[cat.key] || 0;
-        const isChecked = selectedModules[cat.key] ? 'checked' : '';
+        const isChecked = currentSelection[cat.key] ? 'checked' : '';
         backupOptions.innerHTML += `
             <div class="storage-setting-item">
                 <div class="storage-setting-info">
@@ -208,7 +236,7 @@ function renderStorageUI() {
     // Bind Checkbox Events
     document.querySelectorAll('.backup-module-checkbox').forEach(cb => {
         cb.addEventListener('change', (e) => {
-            selectedModules[e.target.dataset.key] = e.target.checked;
+            storageCurrentSelection()[e.target.dataset.key] = e.target.checked;
             updateSelectAllBtn();
         });
     });
@@ -218,7 +246,7 @@ function renderStorageUI() {
 function updateSelectAllBtn() {
     const btn = document.getElementById('storage-select-all-btn');
     if (!btn) return;
-    const allSelected = Object.values(selectedModules).every(v => v);
+    const allSelected = Object.values(storageCurrentSelection()).every(v => v);
     btn.textContent = allSelected ? '全不选' : '全选';
 }
 
@@ -238,12 +266,21 @@ function setupStorageAnalysisScreen() {
     observer.observe(screen, { attributes: true, attributeFilter: ['class'] });
 
     // Select All Button
+    document.querySelectorAll('[data-backup-mode]').forEach(button => {
+        button.addEventListener('click', () => {
+            if (storageBackupBusy) return;
+            storageBackupMode = button.dataset.backupMode;
+            renderStorageUI();
+        });
+    });
     const selectAllBtn = document.getElementById('storage-select-all-btn');
     if (selectAllBtn) {
         selectAllBtn.addEventListener('click', () => {
-            const allSelected = Object.values(selectedModules).every(v => v);
+            if (storageBackupBusy) return;
+            const selection = storageCurrentSelection();
+            const allSelected = Object.values(selection).every(v => v);
             const newValue = !allSelected;
-            Object.keys(selectedModules).forEach(k => selectedModules[k] = newValue);
+            Object.keys(selection).forEach(k => selection[k] = newValue);
             renderStorageUI();
         });
     }
@@ -296,9 +333,9 @@ function setupStorageAnalysisScreen() {
 
 // 将设定和运行数据分开；存档也遵循同一勾选范围。
 const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'lastUserMessageTimestamp',
-    'status', 'peekData', 'privateSessions', 'gossipSessions'];
+    'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
-const storageClone = value => typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+const storageClone = value => value === undefined ? undefined : (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
 function storageRuntimeData(chat) {
     const result = {};
     STORAGE_CHAT_KEYS.forEach(key => { if (chat[key] !== undefined) result[key] = storageClone(chat[key]); });
@@ -309,8 +346,9 @@ function storageRuntimeData(chat) {
     return result;
 }
 function storageContactData(chat) {
-    const result = storageClone(chat);
-    [...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery'].forEach(key => delete result[key]);
+    const excluded = new Set([...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery']);
+    const result = {};
+    Object.keys(chat).forEach(key => { if (!excluded.has(key)) result[key] = storageClone(chat[key]); });
     if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
     return result;
 }
@@ -320,8 +358,11 @@ function storageExportChat(chat, contacts, chats) {
         Object.assign(result, storageRuntimeData(chat));
         if (contacts && chat.statusPanel) result.statusPanel = storageClone(chat.statusPanel);
         result.activeArchiveId = chat.activeArchiveId;
-        result.archives = (chat.archives || []).map(archive => ({ ...storageClone(archive),
-            data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}) } : storageRuntimeData(archive.data || {}) }));
+        result.archives = (chat.archives || []).map(archive => {
+            const metadata = {};
+            Object.keys(archive).forEach(key => { if (key !== 'data') metadata[key] = storageClone(archive[key]); });
+            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}) } : storageRuntimeData(archive.data || {}) };
+        });
         result.archives.forEach(archive => {
             if (contacts && archive.data.statusPanel && chat.archives.find(item => item.id === archive.id)?.data?.statusPanel) {
                 archive.data.statusPanel = storageClone(chat.archives.find(item => item.id === archive.id).data.statusPanel);
@@ -331,6 +372,38 @@ function storageExportChat(chat, contacts, chats) {
         });
     }
     return result;
+}
+
+function storagePrepareImport(selection, modules) {
+    const pending = {};
+    if (selection.chats || selection.contacts) {
+        for (const key of ['characters', 'groups']) {
+            if (!Array.isArray(modules[key])) continue;
+            const ids = new Set(modules[key].map(chat => chat.id));
+            // 合并只替换顶层字段及新建的存档对象；保留未修改的大历史数组，避免整份回滚副本。
+            pending[key] = db[key].map(chat => ids.has(chat.id) ? { ...chat } : chat);
+            storageMergeChats(pending[key], modules[key], selection.contacts, selection.chats);
+        }
+    }
+    if (selection.worldbooks && modules.worldBooks !== undefined) pending.worldBooks = modules.worldBooks;
+    if (selection.wallpapers && modules.myStickers !== undefined) pending.myStickers = modules.myStickers;
+    Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).forEach(([category, keys]) => {
+        if (selection[category]) keys.forEach(key => { if (modules[key] !== undefined) pending[key] = modules[key]; });
+    });
+    return pending;
+}
+
+function storageValidateModules(modules) {
+    if (!modules || typeof modules !== 'object' || Array.isArray(modules)) throw new Error('备份内容格式无效');
+    for (const key of ['characters', 'groups', 'worldBooks', 'myStickers', 'customFonts']) {
+        if (modules[key] === undefined) continue;
+        if (!Array.isArray(modules[key])) throw new Error(key + ' 必须是列表');
+        const ids = new Set();
+        for (const record of modules[key]) {
+            if (!record || typeof record.id !== 'string' || !record.id || ids.has(record.id)) throw new Error(key + ' 包含无效或重复的 ID');
+            ids.add(record.id);
+        }
+    }
 }
 function storageMergeChats(targets, incoming, contacts, chats) {
     if (!Array.isArray(incoming)) return;
@@ -385,15 +458,77 @@ async function storageImportFonts(fonts) {
     }
 }
 
+async function storagePersistImportedSelection(selection, modules, pending) {
+    const includeChats = selection.chats || selection.contacts;
+    const hasChatData = Array.isArray(modules.characters) || Array.isArray(modules.groups);
+    const hasWorldBooks = selection.worldbooks && Array.isArray(modules.worldBooks);
+    const hasStickers = selection.wallpapers && Array.isArray(modules.myStickers);
+    const hasFonts = selection.fonts && Array.isArray(modules.customFonts) && modules.customFonts.length > 0;
+    const selectedSettingKeys = [
+        ...(selection.personas ? STORAGE_IMPORT_CATEGORY_KEYS.personas : []),
+        ...(selection.wallpapers ? STORAGE_IMPORT_CATEGORY_KEYS.wallpapers : []),
+        ...(selection.fonts ? STORAGE_IMPORT_CATEGORY_KEYS.fonts : []),
+        ...(selection.settings ? STORAGE_IMPORT_SETTING_KEYS : [])
+    ].filter(key => modules[key] !== undefined);
+
+    const tables = [];
+    if (includeChats && hasChatData) tables.push(dexieDB.characters, dexieDB.groups);
+    if (hasWorldBooks) tables.push(dexieDB.worldBooks);
+    if (hasStickers) tables.push(dexieDB.myStickers);
+    if (hasFonts) tables.push(dexieDB.customFonts);
+    if (selectedSettingKeys.length) tables.push(dexieDB.globalSettings);
+    if (!tables.length) return;
+
+    await dexieDB.transaction('rw', tables, async () => {
+        if (includeChats && hasChatData) {
+            for (const key of ['characters', 'groups']) {
+                if (!pending[key]) continue;
+                const ids = new Set(modules[key].map(chat => chat.id));
+                const changed = pending[key].filter(chat => ids.has(chat.id));
+                if (typeof syncChatActiveArchive === 'function') changed.forEach(chat => {
+                    // 当前存档同步会替换 archive.data，先隔离存档外壳，失败时不触及原对象。
+                    if (chat.archives) chat.archives = chat.archives.map(archive => ({ ...archive }));
+                    syncChatActiveArchive(chat);
+                });
+                if (changed.length) await dexieDB[key].bulkPut(changed);
+            }
+        }
+        if (hasWorldBooks) {
+            await dexieDB.worldBooks.clear();
+            await dexieDB.worldBooks.bulkPut(pending.worldBooks);
+        }
+        if (hasStickers) {
+            await dexieDB.myStickers.clear();
+            await dexieDB.myStickers.bulkPut(pending.myStickers);
+        }
+        if (hasFonts) await storageImportFonts(modules.customFonts);
+        await Promise.all(selectedSettingKeys.map(key => dexieDB.globalSettings.put({ key, value: pending[key] })));
+    });
+}
+
+async function storageCommitImport(selection, modules) {
+    storageValidateModules(modules);
+    const commit = async () => {
+        const pending = storagePrepareImport(selection, modules);
+        await storagePersistImportedSelection(selection, modules, pending);
+        Object.assign(db, pending);
+    };
+    return runDataPersistence(commit);
+}
+
 // --- 导出逻辑 ---
 async function handleExport() {
-    if (!Object.values(selectedModules).some(v => v)) {
+    if (storageBackupBusy) return;
+    const exportSelection = { ...selectedModules };
+    if (!Object.values(exportSelection).some(v => v)) {
         showToast('请至少选择一项要导出的数据');
         return;
     }
 
     const exportBtn = document.getElementById('storage-export-btn');
     const exportText = document.getElementById('storage-export-text');
+    const format = document.getElementById('storage-export-format')?.value || 'ee';
+    storageBackupBusy = true;
     exportBtn.disabled = true;
     exportText.textContent = '处理中...';
 
@@ -405,28 +540,28 @@ async function handleExport() {
         };
 
         // 1. Chats & Contacts
-        if (selectedModules.chats || selectedModules.contacts) {
+        if (exportSelection.chats || exportSelection.contacts) {
             exportData.modules.characters = [];
             exportData.modules.groups = [];
 
-            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, selectedModules.contacts, selectedModules.chats));
-            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, selectedModules.contacts, selectedModules.chats));
+            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats));
+            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats));
         }
 
         // 2. Worldbooks
-        if (selectedModules.worldbooks) {
+        if (exportSelection.worldbooks) {
             exportData.modules.worldBooks = db.worldBooks;
         }
 
         // 3. Personas
-        if (selectedModules.personas) {
+        if (exportSelection.personas) {
             exportData.modules.myPersonaPresets = db.myPersonaPresets;
             exportData.modules.homeSignature = db.homeSignature;
             exportData.modules.activePersonaId = db.activePersonaId;
         }
 
         // 4. Wallpapers
-        if (selectedModules.wallpapers) {
+        if (exportSelection.wallpapers) {
             exportData.modules.wallpaper = db.wallpaper;
             exportData.modules.bubbleCssPresets = db.bubbleCssPresets;
             exportData.modules.globalCss = db.globalCss;
@@ -438,24 +573,15 @@ async function handleExport() {
         }
 
         // 5. Fonts
-        if (selectedModules.fonts) {
+        if (exportSelection.fonts) {
             exportData.modules.fontUrl = db.fontUrl;
             exportData.modules.fontPresets = db.fontPresets;
             exportData.modules.customFonts = await storageExportFonts();
         }
 
         // 6. Settings
-        if (selectedModules.settings) {
-            const settingsKeys = [
-                'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
-                'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 
-                'fontSizeScale', 'savedKeyboardHeight', 'statusBarPresets', 'globalSendSound', 
-                'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 
-                'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 
-                'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 
-                'widgetTemplates', 'addedWidgets', 'backupReminderSettings', 'stUnlocked'
-            ];
-            settingsKeys.forEach(key => {
+        if (exportSelection.settings) {
+            STORAGE_IMPORT_SETTING_KEYS.forEach(key => {
                 exportData.modules[key] = db[key];
             });
         }
@@ -463,39 +589,31 @@ async function handleExport() {
         const jsonString = JSON.stringify(exportData);
         const dataBlob = new Blob([jsonString]);
         
-        try {
-            const compressionStream = new CompressionStream('gzip');
-            const compressedStream = dataBlob.stream().pipeThrough(compressionStream);
-            const compressedBlob = await new Response(compressedStream, { headers: { 'Content-Type': 'application/octet-stream' } }).blob();
-
-            const url = URL.createObjectURL(compressedBlob);
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", url);
-            downloadAnchorNode.setAttribute("download", `UwU_Backup_${new Date().toISOString().slice(0,10)}.ee`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
-            URL.revokeObjectURL(url);
-            
-            showToast('导出成功');
-        } catch (compressError) {
-            console.warn('压缩导出失败，尝试降级为未压缩导出:', compressError);
-            // 降级为未压缩的 JSON 导出
-            const url = URL.createObjectURL(dataBlob);
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", url);
-            downloadAnchorNode.setAttribute("download", `UwU_Backup_${new Date().toISOString().slice(0,10)}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
-            URL.revokeObjectURL(url);
-            
-            showToast('导出成功 (未压缩)');
+        let outputBlob = dataBlob;
+        let extension = 'json';
+        if (format !== 'json') {
+            try {
+                const compressedStream = dataBlob.stream().pipeThrough(new CompressionStream('gzip'));
+                outputBlob = await new Response(compressedStream).blob();
+                extension = 'ee';
+            } catch (compressError) {
+                console.warn('压缩导出失败，改为兼容的 JSON 备份:', compressError);
+            }
         }
+        const url = URL.createObjectURL(outputBlob);
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.href = url;
+        downloadAnchorNode.download = `UwU_Backup_${new Date().toISOString().slice(0,10)}.${extension}`;
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast(extension === 'ee' ? '导出成功' : '导出成功 (未压缩 JSON)');
     } catch (error) {
         console.error('导出失败:', error);
         showToast('导出失败，请重试');
     } finally {
+        storageBackupBusy = false;
         exportBtn.disabled = false;
         exportText.textContent = '导出备份';
     }
@@ -506,23 +624,26 @@ async function handleImport(event) {
     const input = event.target;
     if (!input.files || input.files.length === 0) return;
 
-    if (!Object.values(selectedModules).some(v => v)) {
+    if (storageBackupBusy) { input.value = ''; return; }
+    const importSelection = { ...selectedImportModules };
+    if (!Object.values(importSelection).some(v => v)) {
         showToast('请至少选择一项要导入的数据类型');
         input.value = '';
         return;
     }
 
     const file = input.files[0];
-    const previousData = storageClone(db);
 
     const importLabel = document.getElementById('storage-import-label');
     const importText = document.getElementById('storage-import-text');
+    storageBackupBusy = true;
     importLabel.classList.add('disabled');
     importText.textContent = '处理中...';
 
     try {
         let jsonString;
-        if (file.name.endsWith('.ee')) {
+        if (/\.ee$/i.test(file.name)) {
+            if (typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
             const decompressionStream = new DecompressionStream('gzip');
             const decompressedStream = file.stream().pipeThrough(decompressionStream);
             jsonString = await new Response(decompressedStream).text();
@@ -531,87 +652,20 @@ async function handleImport(event) {
         }
 
         const importedData = JSON.parse(jsonString);
-            if (!importedData.modules) {
-                // 兼容旧版备份格式
-                importedData.modules = importedData;
-            }
-
-            const mods = importedData.modules;
-
-            if (selectedModules.chats || selectedModules.contacts) {
-                storageMergeChats(db.characters, mods.characters, selectedModules.contacts, selectedModules.chats);
-                storageMergeChats(db.groups, mods.groups, selectedModules.contacts, selectedModules.chats);
-            }
-
-            // 2. Worldbooks
-            if (selectedModules.worldbooks && mods.worldBooks) {
-                db.worldBooks = mods.worldBooks;
-            }
-
-            // 3. Personas
-            if (selectedModules.personas) {
-                if (mods.myPersonaPresets) db.myPersonaPresets = mods.myPersonaPresets;
-                if (mods.homeSignature !== undefined) db.homeSignature = mods.homeSignature;
-                if (mods.activePersonaId !== undefined) db.activePersonaId = mods.activePersonaId;
-            }
-
-            // 4. Wallpapers
-            if (selectedModules.wallpapers) {
-                if (mods.wallpaper !== undefined) db.wallpaper = mods.wallpaper;
-                if (mods.bubbleCssPresets) db.bubbleCssPresets = mods.bubbleCssPresets;
-                if (mods.globalCss !== undefined) db.globalCss = mods.globalCss;
-                if (mods.globalCssPresets) db.globalCssPresets = mods.globalCssPresets;
-                if (mods.myStickers) db.myStickers = mods.myStickers;
-                if (mods.moreProfileCardBg !== undefined) db.moreProfileCardBg = mods.moreProfileCardBg;
-                if (mods.themeSettings) db.themeSettings = mods.themeSettings;
-                if (mods.themePresets) db.themePresets = mods.themePresets;
-            }
-
-            // 5. Fonts
-            if (selectedModules.fonts) {
-                if (mods.fontUrl !== undefined) db.fontUrl = mods.fontUrl;
-                if (mods.fontPresets) db.fontPresets = mods.fontPresets;
-            }
-
-            // 6. Settings
-            if (selectedModules.settings) {
-                const settingsKeys = [
-                    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
-                    'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 
-                    'fontSizeScale', 'savedKeyboardHeight', 'statusBarPresets', 'globalSendSound', 
-                    'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets', 
-                    'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 
-                    'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 
-                    'widgetTemplates', 'addedWidgets', 'backupReminderSettings', 'stUnlocked'
-                ];
-                settingsKeys.forEach(key => {
-                    if (mods[key] !== undefined) {
-                        db[key] = mods[key];
-                    }
-                });
-            }
-
-            await dexieDB.transaction('rw', dexieDB.tables, async () => {
-                // 显式覆盖集合：删除操作与写入处于同一事务，失败一起回滚。
-                if (selectedModules.worldbooks && Array.isArray(mods.worldBooks)) await dexieDB.worldBooks.clear();
-                if (selectedModules.wallpapers && Array.isArray(mods.myStickers)) await dexieDB.myStickers.clear();
-                if (selectedModules.fonts) await storageImportFonts(mods.customFonts);
-                await saveData();
-            });
-            showToast('导入成功，即将刷新页面');
-            setTimeout(() => {
-                window.location.reload();
-            }, 1500);
-
-        } catch (error) {
-            Object.keys(db).forEach(key => { if (!(key in previousData)) delete db[key]; });
-            Object.assign(db, previousData);
-            console.error('导入出错:', error);
-            showToast('导入失败，文件格式可能不正确');
-            importLabel.classList.remove('disabled');
-            importText.textContent = '导入备份';
-            input.value = '';
-        }
+        jsonString = null;
+        // 兼容旧版没有 modules 包装的 JSON 备份。
+        const mods = importedData?.modules ?? importedData;
+        await storageCommitImport(importSelection, mods);
+        showToast('导入成功，即将刷新页面');
+        setTimeout(() => { window.location.reload(); }, 1500);
+    } catch (error) {
+        console.error('导入出错:', error);
+        showToast('导入失败：' + error.message);
+        storageBackupBusy = false;
+        importLabel.classList.remove('disabled');
+        importText.textContent = '导入备份';
+        input.value = '';
+    }
 }
 
 // --- 持久化存储逻辑 ---

@@ -60,7 +60,18 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
+    if (chatType === 'private' && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat, chatType)) {
+        const archiveId = chat.activeArchiveId;
+        if (!isBackground && typeof checkRelationshipRecovery === 'function') {
+            try { await checkRelationshipRecovery(chat); } catch (error) { showToast('好友恢复检查失败，请在好友关系中重试'); }
+        }
+        if (chat.activeArchiveId !== archiveId || !relationshipCanChat(chat, chatType)) {
+            if (!isBackground) showToast('当前好友关系无法接收回复，请先恢复好友关系');
+            return;
+        }
+    }
 
+    if (isGenerating && !isBackground) return;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
@@ -115,10 +126,12 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
     try {
         const memoryArchiveId = chat.activeArchiveId;
+        const relationshipRevision = chat.friendRelationship?.revision;
         if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
         if (chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         const requestHistory = chat.history;
         const requestIsCurrent = () => chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
+            (chatType !== 'private' || typeof relationshipCanChat !== 'function' || (relationshipCanChat(chat, chatType) && chat.friendRelationship?.revision === relationshipRevision)) &&
             (chatType === 'private' ? db.characters : db.groups).includes(chat);
         let systemPrompt, requestBody;
         let historySlice = typeof getAutoMemoryContextHistory === 'function'
@@ -568,6 +581,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             'Content-Type': 'application/json',
             Authorization: `Bearer ${key}`
         };
+        if (!requestIsCurrent()) return;
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
@@ -658,7 +672,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     let replyHistory = chat.history;
     const initialHistoryLength = chat.history.length;
     let notificationOffset = initialHistoryLength;
-    const replyIsCurrent = () => !signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory;
+    const relationshipRevision = chat.friendRelationship?.revision;
+    const replyIsCurrent = () => !signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory &&
+        (targetChatType !== 'private' || typeof relationshipCanChat !== 'function' || (relationshipCanChat(chat, targetChatType) && chat.friendRelationship?.revision === relationshipRevision));
     const notifyNewMessages = () => {
         const added = chat.history.slice(notificationOffset);
         notificationOffset = chat.history.length;
@@ -1297,6 +1313,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
 async function handleRegenerate() {
     if (isGenerating) return;
+    const relationshipChat = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipChat && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
+        showToast('请先恢复好友关系，再重新生成回复');
+        return;
+    }
 
     const chat = (currentChatType === 'private')
         ? db.characters.find(c => c.id === currentChatId)

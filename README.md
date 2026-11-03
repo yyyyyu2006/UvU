@@ -2,6 +2,10 @@
 
 这是一个由 HTML、CSS 和 JavaScript 组成的静态网页项目，入口为 `index.html`，可以直接部署到 GitHub Pages，无需安装依赖或运行构建命令。
 
+分类备份、JSON / .ee 兼容性与保存优化说明见 [数据管理说明](docs/storage-performance.md)。运行开发回归测试时先执行 `npm ci`，再执行 `npm test`；这些依赖不参与页面运行。
+
+好友关系使用方式见 [好友关系说明](docs/chat-relationship.md)，完成任务后的额外问题见 [只读排查清单](docs/audit-2026-11-03.md)。清单中的问题尚未修改。
+
 ## 上传到 GitHub
 
 1. 登录 GitHub，创建一个名为 `uwu` 的仓库。使用免费个人账户部署时，选择 **Public**（公开）。

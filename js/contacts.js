@@ -172,7 +172,7 @@ function renderContactList() {
 
     listContainer.innerHTML = '';
     
-    const allContacts = db.characters || [];
+    const allContacts = (db.characters || []).filter(char => typeof getChatRelationship !== 'function' || !getChatRelationship(char).self.deleted);
     
     if (countEl) countEl.textContent = allContacts.length;
 

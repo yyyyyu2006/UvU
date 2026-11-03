@@ -512,6 +512,7 @@ function getMixedContent(responseData) {
 function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
     // 1. 基础过滤：深度克隆并过滤掉被屏蔽上下文的消息
     let filteredHistory = JSON.parse(JSON.stringify(historySlice || chat.history));
+    filteredHistory = filteredHistory.filter(m => !m.relationshipDelivery);
     if (!ignoreContextDisabled) {
         filteredHistory = filteredHistory.filter(m => !m.isContextDisabled);
     }

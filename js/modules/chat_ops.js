@@ -15,6 +15,8 @@ function handleMessageLongPress(messageWrapper, x, y) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    const menuChatType = currentChatType;
+    const menuArchiveId = chat.activeArchiveId;
     if (isInMultiSelectMode) {
         if (!isCurrentMessageSelection(chat)) return;
         createContextMenu([{ label: '选到这里', action: () => selectMessagesTo(messageId) }], x, y);
@@ -45,7 +47,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
             menuItems.push({label: '编辑', action: () => startMessageEdit(messageId)});
         }
         
-        if (!isInvisibleMessage) {
+        if (!isInvisibleMessage && canQuoteMessage(message)) {
             menuItems.push({label: '引用', action: () => startQuoteReply(messageId)});
         }
 
@@ -69,7 +71,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
     });
 
     menuItems.push({label: '多选', action: () => enterMultiSelectMode(messageId)});
-    menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
+    menuItems.push({label: '删除', action: () => deleteSingleMessage(messageId, chat, menuChatType, menuArchiveId)});
     menuItems.push({label: '从这里创建分支', action: () => createBranchArchiveAtMessage(messageId)});
 
     if (menuItems.length > 0) {
@@ -160,7 +162,7 @@ function getQuoteMessageContent(message) {
 
 function canQuoteMessage(message) {
     return Boolean(message && ['user', 'assistant'].includes(message.role) &&
-        !message.isWithdrawn && !message.isThinking && !message.isStatusUpdate &&
+        !message.isWithdrawn && !message.isThinking && !message.isStatusUpdate && !message.relationshipDelivery &&
         !/^\s*(?:<thinking>|\[system(?:-display)?:)/.test(message.content || ''));
 }
 
@@ -996,6 +998,35 @@ async function generateCapture() {
     } finally {
         document.body.removeChild(tempContainer);
     }
+}
+
+async function deleteSingleMessage(messageId, chat, type, archiveId) {
+    if (!chat || chat.activeArchiveId !== archiveId || currentChatId !== chat.id || currentChatType !== type) return;
+    const originalHistory = chat.history;
+    if (!originalHistory?.some(message => message.id === messageId)) return;
+    const nextHistory = originalHistory.filter(message => message.id !== messageId);
+    chat.history = nextHistory;
+    if (type === 'private') recalculateChatStatus(chat);
+    try { await saveData(); }
+    catch (error) {
+        const ids = new Set(originalHistory.map(message => message.id));
+        const restored = originalHistory.concat(nextHistory.filter(message => !ids.has(message.id)));
+        if (chat.activeArchiveId === archiveId && chat.history === nextHistory) {
+            chat.history = restored;
+            if (type === 'private') recalculateChatStatus(chat);
+        }
+        const stored = chat.archives?.find(archive => archive.id === archiveId);
+        if (stored?.data) stored.data.history = restored;
+        showToast('删除未保存，消息已恢复，请重试');
+        return;
+    }
+    if (chat.activeArchiveId !== archiveId || currentChatId !== chat.id || currentChatType !== type) return;
+    if (typeof currentQuoteInfo !== 'undefined' && currentQuoteInfo?.id === messageId) cancelQuoteReply();
+    if (typeof editingMessageId !== 'undefined' && editingMessageId === messageId) cancelMessageEdit();
+    currentPage = 1;
+    renderMessages(false, true);
+    renderChatList();
+    showToast('已删除这条消息');
 }
 
 async function deleteSelectedMessages() {

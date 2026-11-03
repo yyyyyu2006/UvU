@@ -110,6 +110,38 @@ test('old backups without archives still restore top-level chats and keep local 
     f.c.storageMergeChats([target], [{ id: 'c', history: [{ id: 'old' }] }], false, true);
     assert.equal(target.history[0].id, 'old'); assert.equal(target.archives, archives);
 });
+test('import staging leaves current data untouched and excludes unselected categories', () => {
+    const f = fixture();
+    f.c.db.wallpaper = 'old-wallpaper';
+    f.c.db.apiSettings = { key: 'preserve' };
+    f.c.db.unrelatedLargeData = { value: 'not copied' };
+    const pending = f.c.storagePrepareImport({ wallpapers: true }, { wallpaper: 'new-wallpaper', apiSettings: { key: 'ignored' } });
+    assert.deepEqual(Object.keys(pending), ['wallpaper']);
+    assert.equal(pending.wallpaper, 'new-wallpaper');
+    assert.equal(f.c.db.wallpaper, 'old-wallpaper');
+    assert.equal(f.c.db.apiSettings.key, 'preserve');
+});
+test('category import persists only selected tables and settings in one transaction', async () => {
+    const f = fixture(), writes = [], transactions = [];
+    const table = name => ({
+        name,
+        bulkPut: async () => writes.push(`${name}:bulkPut`),
+        clear: async () => writes.push(`${name}:clear`),
+        put: async value => writes.push(`${name}:${value.key}`)
+    });
+    f.c.dexieDB = {
+        characters: table('characters'), groups: table('groups'), worldBooks: table('worldBooks'),
+        myStickers: table('myStickers'), customFonts: table('customFonts'), globalSettings: table('globalSettings'),
+        transaction: async (mode, tables, callback) => { transactions.push({ mode, names: tables.map(item => item.name) }); await callback(); }
+    };
+    f.c.db.apiSettings = { provider: 'preserve' };
+    f.c.db.wallpaper = 'new-wallpaper';
+    f.c.db.myStickers = [];
+    const modules = { wallpaper: 'new-wallpaper', myStickers: [] };
+    await f.c.storagePersistImportedSelection({ wallpapers: true }, modules, f.c.storagePrepareImport({ wallpapers: true }, modules));
+    assert.deepEqual(plain(transactions), [{ mode: 'rw', names: ['myStickers', 'globalSettings'] }]);
+    assert.deepEqual(writes, ['myStickers:clear', 'myStickers:bulkPut', 'globalSettings:wallpaper']);
+});
 test('image cleanup enumerates unique current and archived histories for characters and groups', () => {
     const f = fixture();
     const live = [{ id: 'live' }], branch = [{ id: 'branch' }], groupHistory = [{ id: 'group' }];

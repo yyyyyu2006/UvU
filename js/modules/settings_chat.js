@@ -4,6 +4,7 @@ function setupChatSettings() {
     if (typeof injectChatSettingsHtml === 'function') {
         injectChatSettingsHtml();
     }
+    if (typeof setupRelationshipSettings === 'function') setupRelationshipSettings();
 
     const themeSelect = document.getElementById('setting-theme-color');
     themeSelect.innerHTML = '';
@@ -370,6 +371,9 @@ function renderBoundWorldBooks(type, worldBookIds) {
 }
 
 function loadSettingsToSidebar() {
+    const relationshipChat = db.characters.find(c => c.id === currentChatId);
+    const relationshipStatus = document.getElementById('relationship-settings-status');
+    if (relationshipChat && relationshipStatus && typeof relationshipStatusText === 'function') relationshipStatus.textContent = relationshipStatusText(relationshipChat);
     const e = db.characters.find(e => e.id === currentChatId);
     if (e) {
         document.getElementById('setting-char-avatar-preview').src = e.avatar;

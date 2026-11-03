@@ -29,6 +29,33 @@ function createQuotedMessageElement(quote, chat) {
     return element;
 }
 
+function createInvisibleMessageRegex(showStatusUpdateMsg) {
+    const momentsRegex = /\[(?:.*?)\s*(?:发布了一条(?:带图)?动态|评论了.*?|回复.*?|更新了个性签名)[：:][\s\S]+?\]/;
+    const patterns = [
+        /\[.*?(?:接收|退回).*?的转账\]/.source,
+        ...(!showStatusUpdateMsg ? [/\[.*?更新状态为：.*?\]/.source] : []),
+        /\[.*?已接收礼物\]/.source,
+        /\[system:.*?\]/.source,
+        /\[.*?邀请.*?加入了群聊\]/.source,
+        /\[.*?修改群名为：.*?\]/.source,
+        ...(!showStatusUpdateMsg ? [/\[system-display:.*?\]/.source] : []),
+        /\[.*?同意了.*?的代付请求\]/.source,
+        /\[.*?拒绝了.*?的代付请求\]/.source,
+        /<thinking>[\s\S]*?<\/thinking>/.source,
+        /^<thinking>[\s\S]*/.source,
+        momentsRegex.source
+    ];
+    return new RegExp(patterns.join('|'));
+}
+
+function findPreviousRenderableMessage(history, start, memoryCovered, invisibleRegex) {
+    for (let i = start - 1; i >= 0; i--) {
+        const candidate = history[i];
+        if (!memoryCovered.has(candidate.id) && !invisibleRegex.test(candidate.content)) return candidate;
+    }
+    return null;
+}
+
 function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuildLoadedPages = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
@@ -65,7 +92,10 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
         lastMsgTime = chat.history[start - 1].timestamp;
     }
 
-    messagesToRender.forEach((msg, index) => {
+    const invisibleRegex = createInvisibleMessageRegex(chat.showStatusUpdateMsg);
+    let previousRenderableMessage = findPreviousRenderableMessage(chat.history, start, memoryCovered, invisibleRegex);
+
+    messagesToRender.forEach(msg => {
         if (memoryCovered.has(msg.id)) return;
         const currentMsgTime = msg.timestamp;
         const timeDiff = currentMsgTime - lastMsgTime;
@@ -84,59 +114,14 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
 
         let isContinuous = false;
         
-        let invisibleRegex;
-        const momentsRegex = /\[(?:.*?)\s*(?:发布了一条(?:带图)?动态|评论了.*?|回复.*?|更新了个性签名)[：:][\s\S]+?\]/;
-        if (chat.showStatusUpdateMsg) {
-            // 在末尾添加 |<thinking>[\s\S]*?<\/thinking>
-            invisibleRegex = new RegExp([
-                /\[.*?(?:接收|退回).*?的转账\]/.source,
-                /\[.*?已接收礼物\]/.source,
-                /\[system:.*?\]/.source,
-                /\[.*?邀请.*?加入了群聊\]/.source,
-                /\[.*?修改群名为：.*?\]/.source,
-                /\[.*?同意了.*?的代付请求\]/.source,
-                /\[.*?拒绝了.*?的代付请求\]/.source,
-                /<thinking>[\s\S]*?<\/thinking>/.source,
-                /^<thinking>[\s\S]*/.source,
-                momentsRegex.source
-            ].join('|'));
-        } else {
-            // 在末尾添加 |<thinking>[\s\S]*?<\/thinking>
-            invisibleRegex = new RegExp([
-                /\[.*?(?:接收|退回).*?的转账\]/.source,
-                /\[.*?更新状态为：.*?\]/.source,
-                /\[.*?已接收礼物\]/.source,
-                /\[system:.*?\]/.source,
-                /\[.*?邀请.*?加入了群聊\]/.source,
-                /\[.*?修改群名为：.*?\]/.source,
-                /\[system-display:.*?\]/.source,
-                /\[.*?同意了.*?的代付请求\]/.source,
-                /\[.*?拒绝了.*?的代付请求\]/.source,
-                /<thinking>[\s\S]*?<\/thinking>/.source,
-                /^<thinking>[\s\S]*/.source,
-                momentsRegex.source
-            ].join('|'));
-        }
-
         const isSystemMsg = /\[system:.*?\]|\[system-display:.*?\]/.test(msg.content);
         
         if (!isSystemMsg) {
-            let prevMsg = null;
-            let currentIndexInHistory = start + index;
-            
-            for (let i = currentIndexInHistory - 1; i >= 0; i--) {
-                const candidate = chat.history[i];
-                if (!memoryCovered.has(candidate.id) && !invisibleRegex.test(candidate.content)) {
-                    prevMsg = candidate;
-                    break;
-                }
-            }
-
-            if (prevMsg) {
+            if (previousRenderableMessage) {
                 const currentSender = msg.role === 'user' ? 'user' : (msg.senderId || 'assistant');
-                const prevSender = prevMsg.role === 'user' ? 'user' : (prevMsg.senderId || 'assistant');
+                const prevSender = previousRenderableMessage.role === 'user' ? 'user' : (previousRenderableMessage.senderId || 'assistant');
                 
-                const timeGap = msg.timestamp - prevMsg.timestamp;
+                const timeGap = msg.timestamp - previousRenderableMessage.timestamp;
                 const isTimeClose = timeGap < 10 * 60 * 1000;
 
                 if (currentSender === prevSender && isTimeClose) {
@@ -147,6 +132,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
 
         const bubble = createMessageBubbleElement(msg, isContinuous);
         if (bubble) fragment.appendChild(bubble);
+        if (!invisibleRegex.test(msg.content)) previousRenderableMessage = msg;
     });
     const existingLoadBtn = document.getElementById('load-more-btn');
     if (existingLoadBtn) existingLoadBtn.remove();
@@ -181,6 +167,11 @@ function loadMoreMessages() {
 }
 
 function createMessageBubbleElement(message, isContinuous = false) {
+    const element = createBaseMessageBubbleElement(message, isContinuous);
+    return typeof decorateRelationshipMessage === 'function' ? decorateRelationshipMessage(element, message) : element;
+}
+
+function createBaseMessageBubbleElement(message, isContinuous = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (message.type === 'forwarded-chat' && message.forwardedChat && !message.isWithdrawn) {
         return createMessageForwardElement(message, chat, currentChatType, isContinuous);
@@ -1149,6 +1140,10 @@ window.sendPayResponse = async function(msgId, action) {
 
 
 function addMessageBubble(message, targetChatId, targetChatType) {
+    if (typeof prepareRelationshipMessage === 'function') {
+        const target = (targetChatType === 'private' ? db.characters : db.groups).find(c => c.id === targetChatId);
+        if (target) prepareRelationshipMessage(target, message, targetChatType);
+    }
     if (targetChatId !== currentChatId || targetChatType !== currentChatType) {
         const senderChat = (targetChatType === 'private')
             ? db.characters.find(c => c.id === targetChatId)

@@ -495,6 +495,10 @@ function setupChatRoom() {
 }
 
 function openChatRoom(chatId, type) {
+    if (type === 'private' && typeof checkRelationshipRecovery === 'function') {
+        const target = db.characters.find(c => c.id === chatId);
+        checkRelationshipRecovery(target).catch(() => {});
+    }
     if (typeof window.clearStickerSuggestions === 'function') window.clearStickerSuggestions();
     const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
@@ -619,6 +623,7 @@ async function sendMessage() {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
 
     if (!chat) return;
+    if (typeof relationshipCanSend === 'function' && !relationshipCanSend(chat, currentChatType)) return;
     const quoteInfo = currentQuoteInfo?.chatId === currentChatId && currentQuoteInfo.chatType === currentChatType &&
         currentQuoteInfo.archiveId === chat.activeArchiveId ? currentQuoteInfo : null;
     messageInput.value = '';
@@ -694,6 +699,7 @@ async function sendMessage() {
         message.senderId = 'user_me';
     }
     chat.history.push(message);
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
     if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chat.id, currentChatType);
     addMessageBubble(message, currentChatId, currentChatType);
     // 在异步保存前清空本次引用，避免保存期间新选中的引用被旧发送操作取消。

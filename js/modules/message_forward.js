@@ -137,6 +137,7 @@ async function sendMessageForward(snapshot, targetId, type, archiveId) {
     if (type === 'group') message.senderId = 'user_me';
     if (!Array.isArray(target.history)) target.history = [];
     const history = target.history; history.push(message);
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(target, message, type);
     try {
         await saveData();
     } catch (error) {

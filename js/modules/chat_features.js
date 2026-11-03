@@ -20,6 +20,8 @@ function setupVoiceMessageSystem() {
 }
 
 function sendMyVoiceMessage(text) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('send-voice-modal').classList.remove('visible');
     setTimeout(() => {
@@ -36,6 +38,7 @@ function sendMyVoiceMessage(text) {
         if (currentChatType === 'group') {
             message.senderId = 'user_me';
         }
+        if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
         chat.history.push(message);
         addMessageBubble(message, currentChatId, currentChatType);
         saveData();
@@ -60,6 +63,8 @@ function setupPhotoVideoSystem() {
 }
 
 function sendMyPhotoVideo(text) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('send-pv-modal').classList.remove('visible');
     setTimeout(() => {
@@ -76,6 +81,7 @@ function sendMyPhotoVideo(text) {
         if (currentChatType === 'group') {
             message.senderId = 'user_me';
         }
+        if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
         chat.history.push(message);
         addMessageBubble(message, currentChatId, currentChatType);
         saveData();
@@ -111,6 +117,8 @@ function setupImageRecognition() {
 }
 
 async function sendImageForRecognition(base64Data) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!base64Data || isGenerating) return;
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
@@ -125,6 +133,7 @@ async function sendImageForRecognition(base64Data) {
     if (currentChatType === 'group') {
         message.senderId = 'user_me';
     }
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
     chat.history.push(message);
     addMessageBubble(message, currentChatId, currentChatType);
     await saveData();
@@ -168,6 +177,8 @@ function setupWalletSystem() {
 }
 
 function sendMyTransfer(amount, remark) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     document.getElementById('send-transfer-modal').classList.remove('visible');
     setTimeout(() => {
         const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
@@ -181,6 +192,7 @@ function sendMyTransfer(amount, remark) {
                 timestamp: Date.now(),
                 transferStatus: 'pending'
             };
+            if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
             chat.history.push(message);
             addMessageBubble(message, currentChatId, currentChatType);
         } else { 
@@ -197,6 +209,7 @@ function sendMyTransfer(amount, remark) {
                             timestamp: Date.now(),
                             senderId: 'user_me'
                         };
+                        if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
                         chat.history.push(message);
                         addMessageBubble(message, currentChatId, currentChatType);
                     }
@@ -216,6 +229,10 @@ function handleReceivedTransferClick(messageId) {
 async function respondToTransfer(action) {
     if (!currentTransferMessageId) return;
     const character = db.characters.find(c => c.id === currentChatId);
+    if (character && typeof relationshipCanChat === 'function' && !relationshipCanChat(character)) {
+        showToast('请先恢复好友关系，再处理转账');
+        return;
+    }
     const message = character.history.find(m => m.id === currentTransferMessageId);
     if (message) {
         message.transferStatus = action;
@@ -234,6 +251,7 @@ async function respondToTransfer(action) {
             parts: [{type: 'text', text: contextMessageContent}],
             timestamp: Date.now()
         };
+        if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(character, contextMessage);
         character.history.push(contextMessage);
         await saveData();
         renderChatList();
@@ -267,6 +285,8 @@ function setupGiftSystem() {
 }
 
 function sendMyGift(description) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!description) return;
     document.getElementById('send-gift-modal').classList.remove('visible');
     setTimeout(() => {
@@ -282,6 +302,7 @@ function sendMyGift(description) {
                 timestamp: Date.now(),
                 giftStatus: 'sent'
             };
+            if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
             chat.history.push(message);
             addMessageBubble(message, currentChatId, currentChatType);
         } else { 
@@ -298,6 +319,7 @@ function sendMyGift(description) {
                             timestamp: Date.now(),
                             senderId: 'user_me'
                         };
+                        if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
                         chat.history.push(message);
                         addMessageBubble(message, currentChatId, currentChatType);
                     }
@@ -382,6 +404,8 @@ function setupTimeSkipSystem() {
 }
 
 async function sendTimeSkipMessage(text) {
+    const relationshipTarget = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (relationshipTarget && typeof relationshipCanSend === 'function' && !relationshipCanSend(relationshipTarget)) return;
     if (!text) return;
     document.getElementById('time-skip-modal').classList.remove('visible');
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -407,6 +431,7 @@ async function sendTimeSkipMessage(text) {
         visualMessage.senderId = 'user_me';
     }
 
+    if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, contextMessage, currentChatType);
     chat.history.push(visualMessage, contextMessage);
     addMessageBubble(visualMessage, currentChatId, currentChatType);
     await saveData();

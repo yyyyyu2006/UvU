@@ -42,8 +42,15 @@ function injectStorageHTML() {
             <!-- 备份选项 -->
             <div class="ios6-grouped-card">
                 <div class="storage-group-title">
-                    <span>备份选项</span>
+                    <span>分类备份</span>
                     <button class="storage-select-all-btn" id="storage-select-all-btn">全不选</button>
+                </div>
+                <div style="padding: 0 12px 10px; color: #777; font-size: 12px; line-height: 1.5;">
+                    导出与导入分别记住各自的勾选范围；全选保留原有完整备份范围，只选部分可减小文件体积。
+                </div>
+                <div class="storage-backup-modes" role="group" aria-label="备份操作">
+                    <button type="button" data-backup-mode="export" aria-pressed="true">导出分类</button>
+                    <button type="button" data-backup-mode="import" aria-pressed="false">导入分类</button>
                 </div>
                 <div id="storage-backup-options">
                     <!-- JS 动态注入选项 -->
@@ -51,6 +58,13 @@ function injectStorageHTML() {
             </div>
 
             <!-- 操作按钮 -->
+            <label class="storage-export-format" id="storage-export-format-row">
+                导出格式
+                <select id="storage-export-format">
+                    <option value="ee">压缩备份 .ee（文件较小）</option>
+                    <option value="json">通用备份 .json（无需解压支持）</option>
+                </select>
+            </label>
             <div class="storage-action-group">
                 <button class="storage-action-btn storage-export-btn" id="storage-export-btn">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -61,7 +75,7 @@ function injectStorageHTML() {
                     <span id="storage-export-text">导出备份</span>
                 </button>
 
-                <div style="width: 100%;">
+                <div id="storage-import-control" style="width: 100%;" hidden>
                     <input type="file" id="storage-import-file" accept=".json,.ee" class="storage-hidden-input">
                     <label for="storage-import-file" class="storage-action-btn storage-import-btn" id="storage-import-label">
                         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
