@@ -229,6 +229,35 @@ async function requestMemoryEmbedding(text, config, signal) {
     return values;
 }
 
+function splitMemoryIntoChunks(content, maxLength = 1200, overlap = 180) {
+    const text = String(content || '').trim();
+    if (!text) return [];
+    const chunks = [];
+    let start = 0;
+    while (start < text.length) {
+        let end = Math.min(start + maxLength, text.length);
+        if (end < text.length) {
+            const minBreak = start + Math.floor(maxLength * 0.55);
+            let boundary = -1;
+            for (let i = end - 1; i >= minBreak; i--) {
+                if ('。！？.!?\n'.includes(text[i])) { boundary = i + 1; break; }
+            }
+            if (boundary > start) end = boundary;
+        }
+        while (end > start && /\s/.test(text[end - 1])) end--;
+        if (end <= start) end = Math.min(start + maxLength, text.length);
+        chunks.push({ start, end, text: text.slice(start, end) });
+        if (end >= text.length) break;
+        let next = Math.max(start + 1, end - overlap);
+        const minNext = Math.max(start + 1, end - Math.floor(overlap * 1.5));
+        for (let i = next; i < Math.min(end, minNext + 80); i++) {
+            if ('。！？.!?\n'.includes(text[i])) { next = i + 1; break; }
+        }
+        start = next;
+    }
+    return chunks;
+}
+
 async function rerankMemoryCandidates(query, candidates, config, signal) {
     if (typeof buildChatApiRequest !== 'function' || typeof fetchAiResponse !== 'function' || !candidates.length) return candidates;
     const api = { provider: config.provider || 'newapi', url: config.url, key: config.key,
@@ -261,17 +290,62 @@ async function getVectorMemoryContext(chat, queryText, signal) {
     let changed = false;
     if (typeof BLOCKED_API_DOMAINS !== 'undefined' && BLOCKED_API_DOMAINS.some(domain => config.url.includes(domain))) throw new Error('向量 API 站点已被屏蔽');
     const queryVector = await requestMemoryEmbedding(String(queryText).slice(-6000), config, signal);
-    for (const journal of candidates) {
-        const hash = autoMemoryFingerprint([journal.title, journal.content, apiFingerprint]);
-        const cached = chat.memoryVectorIndex[journal.id];
-        if (cached?.hash === hash && Array.isArray(cached.vector)) continue;
-        const vector = await requestMemoryEmbedding(`${journal.title || ''}\n${journal.content}`.slice(0, 8000), config, signal);
-        if (vector.length !== queryVector.length) continue;
-        chat.memoryVectorIndex[journal.id] = { hash, vector };
-        changed = true;
+    const chunkHits = [];
+    try {
+        for (const journal of candidates) {
+            const content = String(journal.content || '').trim();
+            const chunks = splitMemoryIntoChunks(content);
+            const cached = chat.memoryVectorIndex[journal.id];
+            const cachedChunks = new Map((cached?.version === 2 && Array.isArray(cached.chunks) ? cached.chunks : [])
+                .map(chunk => [chunk.key, chunk]));
+            const nextChunks = [];
+            for (const chunk of chunks) {
+                const hash = autoMemoryFingerprint([apiFingerprint, journal.title || '', chunk.text]);
+                const previous = cachedChunks.get(hash);
+                let vector = previous?.vector;
+                if (!Array.isArray(vector)) {
+                    vector = await requestMemoryEmbedding(`${journal.title || ''}\n${chunk.text}`, config, signal);
+                    if (vector.length !== queryVector.length) continue;
+                    changed = true;
+                }
+                const indexedChunk = { key: hash, start: chunk.start, end: chunk.end, vector };
+                nextChunks.push(indexedChunk);
+                const oldAtPosition = cached?.version === 2 ? cached.chunks[nextChunks.length - 1] : null;
+                if (!oldAtPosition || oldAtPosition.key !== hash || oldAtPosition.start !== chunk.start || oldAtPosition.end !== chunk.end) changed = true;
+                chat.memoryVectorIndex[journal.id] = { version: 2, chunks: [...nextChunks] };
+                const score = autoMemoryCosine(queryVector, vector);
+                if (score >= settings.vectorThreshold) chunkHits.push({ journal, chunk: indexedChunk, score });
+            }
+            if (cached?.version !== 2 || nextChunks.length !== cached.chunks?.length || nextChunks.some((chunk, index) =>
+                chunk.key !== cached.chunks[index]?.key || chunk.start !== cached.chunks[index]?.start || chunk.end !== cached.chunks[index]?.end)) changed = true;
+            chat.memoryVectorIndex[journal.id] = { version: 2, chunks: nextChunks };
+        }
+    } finally {
+        if (changed) await saveData();
     }
-    let ranked = candidates.map(journal => ({ journal, score: autoMemoryCosine(queryVector, chat.memoryVectorIndex[journal.id]?.vector) }))
-        .filter(item => item.score >= settings.vectorThreshold).sort((a, b) => b.score - a.score).slice(0, Math.max(settings.vectorTopK, settings.vectorRerankEnabled ? settings.vectorTopK * 3 : settings.vectorTopK));
+    const hitLimit = Math.max(settings.vectorTopK, settings.vectorRerankEnabled ? settings.vectorTopK * 3 : settings.vectorTopK);
+    chunkHits.sort((a, b) => b.score - a.score);
+    const selectedHits = chunkHits.slice(0, hitLimit);
+    const byJournal = new Map();
+    for (const hit of selectedHits) {
+        if (!byJournal.has(hit.journal.id)) byJournal.set(hit.journal.id, []);
+        byJournal.get(hit.journal.id).push(hit);
+    }
+    let ranked = [...byJournal.values()].map(hits => {
+        hits.sort((a, b) => a.chunk.start - b.chunk.start);
+        const ranges = [];
+        for (const hit of hits) {
+            const last = ranges[ranges.length - 1];
+            if (last && hit.chunk.start <= last.end + 1) {
+                last.end = Math.max(last.end, hit.chunk.end);
+                last.score = Math.max(last.score, hit.score);
+            } else ranges.push({ start: hit.chunk.start, end: hit.chunk.end, score: hit.score });
+        }
+        const source = String(hits[0].journal.content || '').trim();
+        const excerpts = ranges.map(range => source.slice(range.start, range.end).trim()).filter(Boolean);
+        const content = [...new Set(excerpts)].join('\n[…]\n');
+        return { journal: { ...hits[0].journal, content }, score: Math.max(...hits.map(hit => hit.score)) };
+    }).sort((a, b) => b.score - a.score).slice(0, hitLimit);
     if (settings.vectorRerankEnabled && ranked.length > 1) {
         if (!config.rerankModel) throw new Error('请在独立向量记忆 API 中填写重排模型名称。');
         ranked = await rerankMemoryCandidates(queryText, ranked, config, signal);

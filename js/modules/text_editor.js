@@ -66,9 +66,9 @@ function setupExpandedEditors() {
         if (target.closest('.feature-dialog') || !target.id) return;
         target.dataset.expandedEditor = 'true';
         const toolbar = document.createElement('div'); toolbar.className = 'document-edit-tools';
-        const expand = document.createElement('button'); expand.type = 'button'; expand.className = 'document-edit-expand'; expand.textContent = '展开编辑 / 查找替换'; expand.addEventListener('click', () => openExpandedEditor(target)); toolbar.appendChild(expand);
+        const expand = document.createElement('button'); expand.type = 'button'; expand.className = 'document-edit-expand'; expand.textContent = '展开'; expand.addEventListener('click', () => openExpandedEditor(target)); toolbar.appendChild(expand);
         if (/persona|personality/.test(target.id)) {
-            const importButton = document.createElement('button'); importButton.type = 'button'; importButton.textContent = '导入 DOCX / TXT';
+            const importButton = document.createElement('button'); importButton.type = 'button'; importButton.textContent = '导入';
             importButton.addEventListener('click', () => chooseImportFile('.docx,.txt', async file => { const result = await readImportDocument(file); openExpandedEditor(target, result.text); })); toolbar.appendChild(importButton);
         }
         const host = target.parentElement;

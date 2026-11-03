@@ -96,6 +96,58 @@ test('vector memory is opt-in and caches embeddings while ranking relevant journ
     assert.equal(inputs.length, 3);
 });
 
+test('long memories index and retrieve tail chunks, reuse chunk cache, and inject excerpts only', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorTopK: 1, vectorThreshold: 0.5 });
+    const opening = `最早标记：${'早期无关记录。'.repeat(900)}`;
+    const journal = { id: 'long-note', title: '长总结', content: `${opening}尾部约定：月桂街 88 号。`, isFavorited: true };
+    f.chat.memoryJournals.push(journal);
+    f.context.db.vectorMemoryApiSettings = { provider: 'newapi', url: 'https://vectors.test/v1', key: 'test-key', embeddingModel: 'embed-model' };
+    const inputs = [];
+    f.context.fetch = async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        inputs.push(input);
+        const relevant = input.includes('当前话题') || input.includes('月桂街');
+        return { ok: true, json: async () => ({ data: [{ embedding: relevant ? [1, 0] : [0, 1] }] }) };
+    };
+
+    const result = await f.context.getVectorMemoryContext(f.chat, '当前话题：住址');
+    assert.match(result, /月桂街 88 号/);
+    assert.doesNotMatch(result, /最早标记/);
+    assert.ok(inputs.some(input => input.includes('月桂街 88 号')));
+    const indexed = f.chat.memoryVectorIndex['long-note'];
+    assert.equal(indexed.version, 2);
+    assert.ok(indexed.chunks.length > 1);
+    const initialCalls = inputs.length;
+
+    await f.context.getVectorMemoryContext(f.chat, '当前话题：住址');
+    assert.equal(inputs.length, initialCalls + 1, 'only the query should be embedded on a cache hit');
+});
+
+test('partial chunk indexing survives an embedding API failure without re-embedding completed chunks', async () => {
+    const f = fixture(1, { vectorSearchEnabled: true, vectorThreshold: 0 });
+    f.chat.memoryJournals.push({ id: 'partial-note', title: '长记忆', content: '连续事件。'.repeat(500), isFavorited: true });
+    f.context.db.vectorMemoryApiSettings = { provider: 'newapi', url: 'https://vectors.test/v1', key: 'test-key', embeddingModel: 'embed-model' };
+    const firstPass = [];
+    f.context.fetch = async (_url, request) => {
+        const input = JSON.parse(request.body).input;
+        firstPass.push(input);
+        if (firstPass.length === 3) throw new Error('temporary embedding failure');
+        return { ok: true, json: async () => ({ data: [{ embedding: [1, 0] }] }) };
+    };
+    await assert.rejects(f.context.getVectorMemoryContext(f.chat, '当前话题'), /temporary embedding failure/);
+    const cached = f.chat.memoryVectorIndex['partial-note'].chunks;
+    assert.ok(cached.length > 0);
+    const firstCompletedText = firstPass[1].slice('长记忆\n'.length);
+
+    const retryInputs = [];
+    f.context.fetch = async (_url, request) => {
+        retryInputs.push(JSON.parse(request.body).input);
+        return { ok: true, json: async () => ({ data: [{ embedding: [1, 0] }] }) };
+    };
+    await f.context.getVectorMemoryContext(f.chat, '当前话题');
+    assert.ok(!retryInputs.includes(`长记忆\n${firstCompletedText}`));
+});
+
 test('optional memory API reranker can reorder cosine-ranked summaries', async () => {
     const f = fixture(1, { vectorSearchEnabled: true, vectorRerankEnabled: true, vectorTopK: 1, vectorThreshold: 0 });
     f.chat.memoryJournals.push(

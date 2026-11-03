@@ -1541,10 +1541,10 @@
 .incoming-message-content strong { min-width: 0; font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .incoming-message-content .incoming-message-text { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 @keyframes incomingMessageDrop { from { transform: translateY(-12px); opacity: .5; } to { transform: translateY(0); opacity: 1; } }
-.regenerate-guidance-dialog .regenerate-guidance-card { width: min(480px, 100%); max-height: 90dvh; display: flex; flex-direction: column; gap: 12px; }
-.regenerate-guidance-dialog textarea { width: 100%; min-height: 180px; max-height: 55dvh; resize: vertical; box-sizing: border-box; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font: inherit; font-size: 16px; }
-.regenerate-guidance-dialog footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid #eee; padding-top: 12px; }
-.regenerate-guidance-dialog footer button { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; margin: 0; display: flex; align-items: center; justify-content: center; }
+.regenerate-guidance-dialog .regenerate-guidance-card { width: min(477px, 100%); max-height: 90dvh; display: flex; flex-direction: column; gap: 10px; }
+.regenerate-guidance-dialog textarea { width: 100%; min-height: 177px; max-height: 55dvh; resize: vertical; box-sizing: border-box; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font: inherit; font-size: 16px; }
+.regenerate-guidance-dialog footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; border-top: 1px solid #eee; padding-top: 10px; }
+.regenerate-guidance-dialog footer button { box-sizing: border-box; width: 100%; min-width: 0; min-height: 45px; margin: 0; display: flex; align-items: center; justify-content: center; }
 #get-reply-btn {
     background-color: transparent;
     color: var(--func-icon-color);
