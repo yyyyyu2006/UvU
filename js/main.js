@@ -105,6 +105,7 @@ const init = async () => {
     setupChatSettings();
     if (typeof setupChatArchiveSystem === 'function') setupChatArchiveSystem();
     setupApiSettingsApp();
+    setupMessageNotifications();
     setupWallpaperApp();
     await setupStickerSystem();
     setupPresetFeatures();

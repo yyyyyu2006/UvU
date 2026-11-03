@@ -65,6 +65,7 @@ test('incoming notifications replace the previous card and omit internal IDs', (
         getElementById(id) { return elements.get(id) || null; },
         createElement: element
     }, currentChatId: 'elsewhere', currentChatType: 'private', setTimeout() { return 1; }, clearTimeout() {} });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/notifications.js'), 'utf8'), context);
     vm.runInContext(source, context);
     const chat = { id: 'internal-chat-id', realName: '谢澄', avatar: 'avatar.png' };
     context.showIncomingMessageNotifications(chat, [

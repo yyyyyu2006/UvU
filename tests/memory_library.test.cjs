@@ -38,3 +38,32 @@ test('failed manual-memory save restores the original journal list', async () =>
     assert.deepEqual(chat.memoryJournals.map(item => item.id), ['source']);
     assert.equal(source.vectorSupersededBy, undefined);
 });
+
+test('failed manual save repairs its original archive while preserving the active branch and concurrent entries', async () => {
+    const { chat, c } = fixture();
+    const source = { id: 'source', title: 'Source', content: 'Original' };
+    chat.memoryJournals = [source];
+    chat.archives = [{ id: 'a', data: {} }, { id: 'b', data: { memoryJournals: [{ id: 'branch' }] } }];
+    c.saveData = async () => {
+        chat.archives[0].data.memoryJournals = JSON.parse(JSON.stringify(chat.memoryJournals));
+        chat.archives[0].data.memoryJournals.push({ id: 'concurrent', title: 'Later' });
+        chat.activeArchiveId = 'b'; chat.memoryJournals = [{ id: 'branch' }];
+        throw new Error('quota');
+    };
+    await assert.rejects(c.saveLibraryMemory(chat, { title: 'Merged', content: 'Result' }, { sources: [source] }), /quota/);
+    assert.deepEqual(Array.from(chat.memoryJournals, item => item.id), ['branch']);
+    assert.deepEqual(Array.from(chat.archives[0].data.memoryJournals, item => item.id), ['source', 'concurrent']);
+    assert.equal(chat.archives[0].data.memoryJournals[0].vectorSupersededBy, undefined);
+});
+
+test('manual save rollback preserves a later edit and later additions to the same list', async () => {
+    const { chat, c } = fixture();
+    c.saveData = async () => {
+        chat.memoryJournals[0].content = 'Later edit';
+        chat.memoryJournals.push({ id: 'later' });
+        throw new Error('quota');
+    };
+    await assert.rejects(c.saveLibraryMemory(chat, { title: 'New', content: 'Draft' }), /quota/);
+    assert.equal(chat.memoryJournals[0].content, 'Later edit');
+    assert.equal(chat.memoryJournals[1].id, 'later');
+});

@@ -503,6 +503,8 @@ function openChatRoom(chatId, type) {
     const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
 
+    currentChatId = chatId;
+    currentChatType = type;
     cancelQuoteReply();
 
     // 迁移旧的私聊数据 (仅群聊)

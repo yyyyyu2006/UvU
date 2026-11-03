@@ -9,7 +9,8 @@ const { indexedDB, IDBKeyRange } = require('fake-indexeddb');
 let serial = 0;
 async function fixture(t) {
     const database = new Dexie(`uvu-regression-${Date.now()}-${serial++}`, { indexedDB, IDBKeyRange });
-    database.version(1).stores({ characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key', customFonts: '&id' });
+    database.version(1).stores({ characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key', customFonts: '&id',
+        workshopHistory: '++id', workshopVibeGroups: '++id', characterPhotos: '++id', reader_books: '&id', reader_chapters: '&id', reader_comments: '++id' });
     await database.open();
     t.after(() => database.delete());
     const c = vm.createContext({ Dexie, console, structuredClone, Blob, File, atob, window: {}, document: { addEventListener() {} } });
@@ -41,6 +42,47 @@ test('unchanged save writes no records; in-place mutations save only affected re
     assert.equal(saved.history[0].content, 'edited in place');
     assert.equal(saved.archives[0].data.history[0].content, 'edited in place');
     assert.deepEqual(await f.database.globalSettings.get('cotPresets'), { key: 'cotPresets', value: [{ content: 'original prompt' }] });
+});
+
+test('optional media migration round-trips galleries, archived galleries and all cache tables without writing prompts', async t => {
+    const f = await fixture(t), chat = f.c.db.characters[0];
+    chat.gallery = [{ url: 'data:image/png;base64,AA==' }];
+    f.c.syncChatActiveArchive(chat);
+    await f.database.workshopHistory.put({ id: 2, image: 'data:image/png;base64,AA==', prompt: 'Source' });
+    await f.database.reader_books.put({ id: 'book', title: 'Title' });
+    await f.database.reader_chapters.put({ id: 'chapter', bookId: 'book', content: 'Chapter' });
+    const mediaCache = await f.c.storageExportMediaCache();
+    chat.gallery = []; chat.archives[0].data.gallery = [];
+    await f.database.workshopHistory.put({ id: 3, image: 'extra' }); f.writes.length = 0;
+    await f.c.storageCommitImport({ other: true }, { mediaCache });
+    assert.equal(f.c.db.characters[0].gallery[0].url, 'data:image/png;base64,AA==');
+    assert.equal((await f.database.characters.get('c')).archives[0].data.gallery[0].url, 'data:image/png;base64,AA==');
+    assert.equal(await f.database.workshopHistory.count(), 1);
+    assert.equal((await f.database.reader_chapters.get('chapter')).bookId, 'book');
+    assert.equal(f.writes.some(item => item.startsWith('globalSettings:')), false);
+    assert.equal(f.c.db.characters[0].persona, 'original persona');
+});
+
+test('media restore failure rolls back cache and chat tables and preserves live data', async t => {
+    const f = await fixture(t), chat = f.c.db.characters[0]; chat.gallery = [{ url: 'old' }];
+    await f.database.workshopHistory.put({ id: 1, image: 'old' });
+    const hook = () => { throw new Error('cache quota'); }; f.database.reader_books.hook('creating', hook);
+    const mediaCache = { version: 1, characters: [{ id: 'c', gallery: [{ url: 'new' }] }], tables: {
+        workshopHistory: [{ id: 2, image: 'new' }], reader_books: [{ id: 'b', title: 'Book' }] } };
+    await assert.rejects(f.c.storageCommitImport({ other: true }, { mediaCache }), /cache quota/);
+    assert.equal(f.c.db.characters[0], chat); assert.equal(chat.gallery[0].url, 'old');
+    assert.equal((await f.database.workshopHistory.get(1)).image, 'old'); assert.equal(await f.database.workshopHistory.get(2), undefined);
+});
+
+test('media data stays untouched when unchecked and malformed cache packages fail before writes', async t => {
+    const f = await fixture(t); await f.database.workshopHistory.put({ id: 1, image: 'old' }); f.writes.length = 0;
+    await f.c.storageCommitImport({ worldbooks: true }, { mediaCache: { version: 1, tables: { workshopHistory: [{ id: 2, image: 'new' }] } } });
+    assert.equal(await f.database.workshopHistory.count(), 1); assert.equal(f.writes.length, 0);
+    for (const mediaCache of [{ version: 2, tables: {} }, { version: 1, tables: { globalSettings: [] } },
+        { version: 1, tables: { workshopHistory: [{ id: 1, image: 2 }] } }]) {
+        await assert.rejects(f.c.storageCommitImport({ other: true }, { mediaCache }));
+    }
+    assert.equal(f.writes.length, 0);
 });
 
 test('failure rolls back all tables and next save retries every unapplied change', async t => {

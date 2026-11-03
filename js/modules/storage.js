@@ -8,7 +8,7 @@ const STORAGE_CATEGORIES = [
     { key: 'wallpapers', name: '壁纸与外观', desc: '自定义壁纸、主题、表情包' },
     { key: 'fonts', name: '字体', desc: '自定义字体文件' },
     { key: 'settings', name: '基础设置', desc: 'API配置、UI偏好等' },
-    { key: 'other', name: '生图缓存', desc: '相册、工坊生图、阅读插图等' }
+    { key: 'other', name: '相册／工坊／阅读数据', desc: '可选大数据迁移；导入会按备份快照替换工坊和阅读数据' }
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
@@ -34,7 +34,8 @@ let selectedModules = {
     personas: true,
     wallpapers: true,
     fonts: true,
-    settings: true
+    settings: true,
+    other: false
 };
 const selectedImportModules = { ...selectedModules };
 let storageBackupMode = 'export';
@@ -139,6 +140,9 @@ async function calculateStorageSize() {
                 const comments = await dexieDB.reader_comments.toArray();
                 comments.forEach(item => sizes.other += stringifySize(item));
             }
+            for (const name of ['reader_books', 'reader_chapters']) {
+                if (dexieDB[name]) (await dexieDB[name].toArray()).forEach(item => sizes.other += stringifySize(item));
+            }
             
             if (dexieDB.customFonts) {
                 const fonts = await dexieDB.customFonts.toArray();
@@ -205,7 +209,6 @@ function renderStorageUI() {
     document.getElementById('storage-import-control').hidden = storageBackupMode !== 'import';
     backupOptions.innerHTML = '';
     STORAGE_CATEGORIES.forEach(cat => {
-        if (cat.key === 'other') return; // 不在备份选项中显示其他缓存
         const size = currentStorageSizes[cat.key] || 0;
         const isChecked = currentSelection[cat.key] ? 'checked' : '';
         backupOptions.innerHTML += `
@@ -224,7 +227,7 @@ function renderStorageUI() {
     
     backupOptions.innerHTML += `
         <div style="font-size: 12px; color: #888; margin-top: 15px; text-align: center;">
-            * 注：为避免备份文件过大导致崩溃，相册、工坊历史等包含大量图片的本地缓存数据不参与导出。
+            * 相册／工坊／阅读数据默认不勾选。跨设备迁移时可另外导出；导入只恢复已存在角色与存档的相册，并替换包内的工坊／阅读数据表。JSON／EE 格式保持兼容，旧版可能忽略此新增分类。
         </div>
     `;
 
@@ -330,6 +333,7 @@ function setupStorageAnalysisScreen() {
 const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'lastUserMessageTimestamp',
     'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
+const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
 const storageClone = value => value === undefined ? undefined : (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
 function storageRuntimeData(chat) {
     const result = {};
@@ -385,6 +389,23 @@ function storagePrepareImport(selection, modules) {
     Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).forEach(([category, keys]) => {
         if (selection[category]) keys.forEach(key => { if (modules[key] !== undefined) pending[key] = modules[key]; });
     });
+    if (selection.other && modules.mediaCache) {
+        for (const key of ['characters', 'groups']) {
+            const galleries = modules.mediaCache[key];
+            if (!galleries) continue;
+            pending[key] = (pending[key] || db[key]).map(chat => {
+                const incoming = galleries.find(item => item.id === chat.id);
+                if (!incoming) return chat;
+                const result = { ...chat };
+                if (incoming.gallery !== undefined) result.gallery = storageClone(incoming.gallery);
+                if (chat.archives) result.archives = chat.archives.map(archive => {
+                    const source = incoming.archives?.find(item => item.id === archive.id);
+                    return source ? { ...archive, data: { ...archive.data, gallery: storageClone(source.gallery) } } : archive;
+                });
+                return result;
+            });
+        }
+    }
     return pending;
 }
 
@@ -469,6 +490,30 @@ function storageValidateModules(modules) {
             if (key === 'customFonts' && (typeof item.dataUrl !== 'string' || !/^data:[^,]*;base64,/.test(item.dataUrl))) throw new Error(path + '.dataUrl 字体数据无效');
         }, true);
     }
+    if (modules.mediaCache !== undefined) {
+        object(modules.mediaCache, 'mediaCache');
+        if (modules.mediaCache.version !== 1) throw new Error('相册与缓存迁移格式版本不支持');
+        for (const key of ['characters', 'groups']) list(modules.mediaCache[key], 'mediaCache.' + key, (item, path) => {
+            if (item.gallery !== undefined && !Array.isArray(item.gallery)) fail(path + '.gallery', '列表');
+            list(item.archives, path + '.archives', (archive, location) => {
+                if (!Array.isArray(archive.gallery)) fail(location + '.gallery', '列表');
+            }, true);
+        }, true);
+        object(modules.mediaCache.tables, 'mediaCache.tables');
+        for (const key of Object.keys(modules.mediaCache.tables)) {
+            if (!STORAGE_CACHE_TABLES.includes(key)) throw new Error('缓存包包含不支持的数据表');
+            const ids = new Set();
+            list(modules.mediaCache.tables[key], 'mediaCache.tables.' + key, (item, path) => {
+                if (!['string', 'number'].includes(typeof item.id) || (typeof item.id === 'number' && !Number.isFinite(item.id)) || ids.has(item.id)) throw new Error(path + ' 包含无效或重复 ID');
+                ids.add(item.id);
+                if (key === 'characterPhotos' && typeof item.charId !== 'string') fail(path + '.charId', '文本');
+                if (key === 'workshopHistory' && typeof item.image !== 'string') fail(path + '.image', '文本');
+                if (key.startsWith('reader_') && key !== 'reader_books' && typeof item.bookId !== 'string') fail(path + '.bookId', '文本');
+                if (key === 'reader_books' && typeof item.title !== 'string') fail(path + '.title', '文本');
+                if (key === 'reader_chapters' && typeof item.content !== 'string') fail(path + '.content', '文本');
+            });
+        }
+    }
     for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
     }
@@ -521,6 +566,73 @@ async function storageExportFonts() {
         name: font.file.name || font.id, type: font.file.type || 'application/octet-stream',
         dataUrl: await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(font.file); }) })));
 }
+
+async function storageExportMediaCache() {
+    const tables = {};
+    const galleries = chat => ({ id: chat.id, gallery: storageClone(chat.gallery || []),
+        archives: (chat.archives || []).map(archive => ({ id: archive.id,
+            gallery: storageClone((archive.id === chat.activeArchiveId ? chat : archive.data)?.gallery || []) })) });
+    const result = { version: 1, characters: db.characters.map(galleries), groups: db.groups.map(galleries), tables };
+    const names = STORAGE_CACHE_TABLES.filter(key => dexieDB?.[key]);
+    // Current cache tables store JSON and data URLs; never silently drop a future Blob field.
+    const assertPortable = value => {
+        if ((typeof Blob !== 'undefined' && value instanceof Blob) || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+            throw new Error('缓存中包含暂不支持的二进制字段，请保留原设备数据');
+        }
+        if (value && typeof value === 'object') Object.values(value).forEach(assertPortable);
+    };
+    if (names.length) await dexieDB.transaction('r', names.map(key => dexieDB[key]), async () => {
+        for (const key of names) {
+            const rows = await dexieDB[key].toArray(); rows.forEach(assertPortable); tables[key] = rows;
+        }
+    });
+    return result;
+}
+
+async function storageReadBackup(file, selection) {
+    if (/\.ee$/i.test(file.name) && typeof DecompressionStream !== 'function') {
+        throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
+    }
+    if (typeof Worker === 'function') {
+        const keys = [
+            ...(selection.contacts || selection.chats ? ['characters', 'groups'] : []),
+            ...(selection.worldbooks ? ['worldBooks'] : []), ...(selection.wallpapers ? ['myStickers'] : []),
+            ...(selection.fonts ? ['customFonts'] : []), ...(selection.other ? ['mediaCache'] : []),
+            ...Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).flatMap(([category, items]) => selection[category] ? items : [])
+        ];
+        return new Promise((resolve, reject) => {
+            let worker;
+            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261103-backup'); }
+            catch (_) { reject(new Error('备份后台解析无法启动，请检查浏览器或网站脚本策略')); return; }
+            const finish = () => { worker.terminate(); clearTimeout(timer); };
+            const timer = setTimeout(() => { finish(); reject(new Error('备份解析超时，请按类别拆分后重试')); }, 180000);
+            worker.onmessage = event => {
+                finish();
+                if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data.modules);
+            };
+            worker.onerror = () => { finish(); reject(new Error('备份后台解析失败，请检查文件或按类别拆分')); };
+            try { worker.postMessage({ file, keys }); }
+            catch (_) { finish(); reject(new Error('无法将备份文件交给后台解析')); }
+        });
+    }
+    if (file.size > 8 * 1024 * 1024) throw new Error('当前浏览器不支持后台解析，请升级浏览器或导入小于 8 MB 的分类备份');
+    let text;
+    if (/\.ee$/i.test(file.name)) {
+        const reader = file.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+        const parts = []; let bytes = 0;
+        try {
+            while (true) {
+                const { value, done } = await reader.read(); if (done) break;
+                bytes += value.byteLength;
+                if (bytes > 8 * 1024 * 1024) { await reader.cancel(); throw new Error('当前浏览器不支持大备份后台解析，请升级浏览器或拆分备份'); }
+                parts.push(value);
+            }
+            text = await new Blob(parts).text();
+        } finally { reader.releaseLock(); }
+    } else text = await file.text();
+    const imported = JSON.parse(text);
+    return imported?.modules ?? imported;
+}
 async function storageImportFonts(fonts) {
     if (!Array.isArray(fonts) || !fonts.length) return;
     if (!dexieDB?.customFonts) throw new Error('字体数据库尚未就绪');
@@ -532,8 +644,8 @@ async function storageImportFonts(fonts) {
 }
 
 async function storagePersistImportedSelection(selection, modules, pending) {
-    const includeChats = selection.chats || selection.contacts;
-    const hasChatData = Array.isArray(modules.characters) || Array.isArray(modules.groups);
+    const includeChats = selection.chats || selection.contacts || selection.other && !!modules.mediaCache;
+    const hasChatData = Array.isArray(pending.characters) || Array.isArray(pending.groups);
     const hasWorldBooks = selection.worldbooks && Array.isArray(modules.worldBooks);
     const hasStickers = selection.wallpapers && Array.isArray(modules.myStickers);
     const hasFonts = selection.fonts && Array.isArray(modules.customFonts) && modules.customFonts.length > 0;
@@ -550,13 +662,19 @@ async function storagePersistImportedSelection(selection, modules, pending) {
     if (hasStickers) tables.push(dexieDB.myStickers);
     if (hasFonts) tables.push(dexieDB.customFonts);
     if (selectedSettingKeys.length) tables.push(dexieDB.globalSettings);
+    const cacheTables = selection.other && modules.mediaCache ? Object.keys(modules.mediaCache.tables) : [];
+    for (const name of cacheTables) {
+        if (!dexieDB[name]) throw new Error('当前版本缺少缓存数据表：' + name);
+        tables.push(dexieDB[name]);
+    }
     if (!tables.length) return;
 
     await dexieDB.transaction('rw', tables, async () => {
         if (includeChats && hasChatData) {
             for (const key of ['characters', 'groups']) {
                 if (!pending[key]) continue;
-                const ids = new Set(modules[key].map(chat => chat.id));
+                const ids = new Set([...(selection.contacts || selection.chats ? modules[key] || [] : []),
+                    ...(selection.other ? modules.mediaCache?.[key] || [] : [])].map(chat => chat.id));
                 const changed = pending[key].filter(chat => ids.has(chat.id));
                 if (typeof syncChatActiveArchive === 'function') changed.forEach(chat => {
                     // 当前存档同步会替换 archive.data，先隔离存档外壳，失败时不触及原对象。
@@ -575,6 +693,11 @@ async function storagePersistImportedSelection(selection, modules, pending) {
             await dexieDB.myStickers.bulkPut(pending.myStickers);
         }
         if (hasFonts) await storageImportFonts(modules.customFonts);
+        for (const name of cacheTables) {
+            // Cache IDs and reader relationships form a snapshot; replace selected tables atomically.
+            await dexieDB[name].clear();
+            if (modules.mediaCache.tables[name].length) await dexieDB[name].bulkPut(modules.mediaCache.tables[name]);
+        }
         await Promise.all(selectedSettingKeys.map(key => dexieDB.globalSettings.put({ key, value: pending[key] })));
     });
 }
@@ -659,6 +782,7 @@ async function handleExport() {
             });
         }
 
+        if (exportSelection.other) exportData.modules.mediaCache = await storageExportMediaCache();
         const jsonString = JSON.stringify(exportData);
         const dataBlob = new Blob([jsonString]);
         
@@ -714,20 +838,8 @@ async function handleImport(event) {
     importText.textContent = '处理中...';
 
     try {
-        let jsonString;
-        if (/\.ee$/i.test(file.name)) {
-            if (typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
-            const decompressionStream = new DecompressionStream('gzip');
-            const decompressedStream = file.stream().pipeThrough(decompressionStream);
-            jsonString = await new Response(decompressedStream).text();
-        } else {
-            jsonString = await file.text();
-        }
-
-        const importedData = JSON.parse(jsonString);
-        jsonString = null;
-        // 兼容旧版没有 modules 包装的 JSON 备份。
-        const mods = importedData?.modules ?? importedData;
+        if (file.size > 32 * 1024 * 1024) showToast('大备份正在后台解析，请保持页面打开；内存不足时可按类别拆分备份');
+        const mods = await storageReadBackup(file, importSelection);
         await storageCommitImport(importSelection, mods);
         showToast('导入成功，即将刷新页面');
         setTimeout(() => { window.location.reload(); }, 1500);

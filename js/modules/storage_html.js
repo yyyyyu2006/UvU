@@ -47,7 +47,7 @@ function injectStorageHTML() {
                     <button class="storage-select-all-btn" id="storage-select-all-btn">全不选</button>
                 </div>
                 <div style="padding: 0 12px 10px; color: #777; font-size: 12px; line-height: 1.5;">
-                    导出与导入分别记住各自的勾选范围；全选保留原有完整备份范围，只选部分可减小文件体积。
+                    导出与导入分别记住各自的勾选范围。常规七类默认勾选；相册／工坊／阅读数据可另选或单独迁移，全选包含此新增分类。
                 </div>
                 <div class="storage-backup-modes" role="group" aria-label="备份操作">
                     <button type="button" data-backup-mode="export" aria-pressed="true">导出分类</button>

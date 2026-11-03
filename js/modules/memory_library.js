@@ -22,6 +22,7 @@ async function saveLibraryMemory(chat, fields, { existing = null, sources = [], 
     if (!isCurrent()) throw new Error('存档已切换，请重新打开记忆管理');
     const content = String(fields.content || '').trim(), title = String(fields.title || '').trim();
     if (!title || !content) throw new Error('请填写标题和记忆正文');
+    const archiveId = chat.activeArchiveId;
     const before = (chat.memoryJournals || []).slice();
     if (existing && !before.includes(existing) || sources.some(source => !before.includes(source))) throw new Error('来源记忆已变化，请重新打开');
     const id = existing?.id || `manual_${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`}`;
@@ -32,9 +33,23 @@ async function saveLibraryMemory(chat, fields, { existing = null, sources = [], 
         category: source.category || '', timeline: source.timeline || '', createdAt: source.createdAt, range: source.range }));
     const next = before.filter(item => item.id !== id).map(item => sources.includes(item) ? { ...item, vectorSupersededBy: id } : item);
     next.push(journal);
+    const changes = new Map(next.filter(item => !before.includes(item)).map(item => [item.id,
+        { applied: JSON.stringify(item), original: before.find(previous => previous.id === item.id) }]));
     chat.memoryJournals = next;
     try { await saveData(); }
-    catch (error) { if (chat.memoryJournals === next) chat.memoryJournals = before; throw error; }
+    catch (error) {
+        const restore = data => {
+            if (!Array.isArray(data?.memoryJournals)) return;
+            data.memoryJournals = data.memoryJournals.flatMap(item => {
+                const change = changes.get(item.id);
+                if (!change || JSON.stringify(item) !== change.applied) return [item];
+                return change.original ? [change.original] : [];
+            });
+        };
+        if (chat.activeArchiveId === archiveId) restore(chat);
+        restore(chat.archives?.find(item => item.id === archiveId)?.data);
+        throw error;
+    }
     return journal;
 }
 

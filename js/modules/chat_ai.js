@@ -56,7 +56,8 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
         content.append(title, body);
         card.append(avatar, content);
         host.replaceChildren(card);
-        card.addEventListener('click', () => { card.remove(); if (typeof openChatRoom === 'function') openChatRoom(chatId, chatType); });
+        bindIncomingNotificationSwipe(card, () => openChatRoom(chatId, chatType));
+        showSystemMessageNotification(titleText, body.textContent, avatar.src, chatId, chatType);
         setTimeout(() => card.remove(), 5000);
     });
 }

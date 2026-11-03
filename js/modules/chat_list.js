@@ -501,21 +501,26 @@ function renderChatList() {
         const unreadText = unreadCount > 99 ? '99+' : unreadCount;
 
         li.innerHTML = `
-            <img src="${chat.avatar}" alt="${itemName}" class="chat-avatar ${avatarClass}">
+            <img class="chat-avatar ${avatarClass}">
             <div class="item-details">
                 <div class="item-details-row" style="justify-content: flex-start; align-items: center;">
-                    <div class="item-name">${itemName}</div>
+                    <div class="item-name"></div>
                     ${pinBadgeHTML}
                 </div>
                 <div class="item-preview-wrapper">
-                    <div class="item-preview">${lastMessageText}</div>
+                    <div class="item-preview"></div>
                 </div>
             </div>
             <div class="item-meta-container">
                 <span class="item-time">${timeString}</span>
-                <span class="unread-badge ${unreadClass}">${unreadText}</span>
+                <span class="unread-badge ${unreadClass}"></span>
             </div>`;
 
+        li.querySelector('.chat-avatar').src = chat.avatar || '';
+        li.querySelector('.chat-avatar').alt = itemName || '';
+        li.querySelector('.item-name').textContent = itemName || '';
+        li.querySelector('.item-preview').textContent = lastMessageText;
+        li.querySelector('.unread-badge').textContent = unreadText;
         chatListContainer.appendChild(li);
     });
 }

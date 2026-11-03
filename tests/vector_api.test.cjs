@@ -19,6 +19,45 @@ const json = data => ({ ok: true, json: async () => data });
 const failure = status => ({ ok: false, status });
 const candidates = () => [{ journal: { title: 'one', content: 'movie' } }, { journal: { title: 'two', content: 'weekend' } }];
 
+test('optional embedding prefixes preserve whitespace and Gemini query/document task types', async () => {
+    const { c, config } = fixture(); const bodies = [];
+    c.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return json(config.provider === 'gemini' ? { embedding: { values: [1, 0] } } : { data: [{ embedding: [1, 0] }] }); };
+    Object.assign(config, { queryPrefix: 'query: ', documentPrefix: 'passage: ' });
+    await c.requestMemoryEmbedding('question', config, undefined, 'query');
+    await c.requestMemoryEmbedding('story', config);
+    assert.equal(bodies[0].input, 'query: question'); assert.equal(bodies[1].input, 'passage: story');
+    config.provider = 'gemini'; config.embeddingTaskMode = 'retrieval';
+    await c.requestMemoryEmbedding('question', config, undefined, 'query'); await c.requestMemoryEmbedding('story', config);
+    assert.equal(bodies[2].taskType, 'RETRIEVAL_QUERY'); assert.equal(bodies[3].taskType, 'RETRIEVAL_DOCUMENT');
+});
+
+test('document adaptation rebuilds cached embeddings; query prefix changes reuse document vectors', async () => {
+    const { c, config, chat } = fixture(); const inputs = [];
+    chat.memoryJournals = [{ id: 'one', title: 'Story', content: 'Original' }];
+    c.fetch = async (_url, init) => { const body = JSON.parse(init.body); inputs.push(body.input); return json({ data: [{ embedding: [1, 0] }] }); };
+    await c.getVectorMemoryContext(chat, 'question'); assert.equal(inputs.length, 2);
+    config.queryPrefix = 'query: '; await c.getVectorMemoryContext(chat, 'question'); assert.equal(inputs.length, 3);
+    config.documentPrefix = 'passage: '; await c.getVectorMemoryContext(chat, 'question'); assert.equal(inputs.length, 5);
+    assert.match(inputs.at(-1), /^passage: /);
+});
+
+test('unsupported Gemini taskType fails clearly before a paid request', async () => {
+    const { c, config } = fixture(); let calls = 0; c.fetch = async () => calls++;
+    Object.assign(config, { provider: 'gemini', embeddingModel: 'gemini-embedding-2-preview', embeddingTaskMode: 'retrieval' });
+    await assert.rejects(c.requestMemoryEmbedding('query', config), /不支持 taskType/); assert.equal(calls, 0);
+});
+
+test('in-place source changes invalidate late retrieval without serializing numeric vectors', async () => {
+    const { c, chat } = fixture(); chat.memoryJournals = [{ id: 'one', title: 'Story', content: 'Original' }];
+    let finish, started; const ready = new Promise(resolve => started = resolve);
+    c.fetch = async () => { started(); return new Promise(resolve => finish = resolve); };
+    const pending = c.getVectorMemoryContext(chat, 'question'); await ready;
+    chat.memoryJournals[0].content = 'Changed'; finish(json({ data: [{ embedding: [1, 0] }] }));
+    // The next document request resolves immediately so the final consistency check can run.
+    c.fetch = async () => json({ data: [{ embedding: [1, 0] }] });
+    await assert.rejects(pending, { name: 'AbortError' }); assert.equal(chat.memoryVectorIndex, undefined);
+});
+
 test('vector endpoints preserve explicit versions and normalize complete OpenAI/Gemini paths', () => {
     const { c } = fixture();
     for (const [url, expected] of [

@@ -187,13 +187,12 @@ function renderContactList() {
         
         const statusText = char.status || (char.persona ? char.persona.substring(0, 20) + '...' : '');
 
-        li.innerHTML = `
-            <img src="${char.avatar}" alt="${char.remarkName}" class="profile-avatar squircle">
-            <div class="profile-info">
-                <div class="profile-name">${char.remarkName}</div>
-                <div class="profile-status">${statusText}</div>
-            </div>
-        `;
+        const avatar = document.createElement('img');
+        avatar.src = char.avatar || ''; avatar.alt = char.remarkName || ''; avatar.className = 'profile-avatar squircle';
+        const info = document.createElement('div'); info.className = 'profile-info';
+        const name = document.createElement('div'); name.className = 'profile-name'; name.textContent = char.remarkName || char.realName || '';
+        const status = document.createElement('div'); status.className = 'profile-status'; status.textContent = statusText;
+        info.append(name, status); li.append(avatar, info);
         
         li.addEventListener('click', () => {
             openProfileCard(char.id);
@@ -515,10 +514,9 @@ function renderBindingTags(preset) {
             
             const tag = document.createElement('div');
             tag.className = `mp-tag ${hasExtra ? 'has-extra' : ''}`;
-            tag.innerHTML = `
-                <img src="${char.avatar}" class="mp-tag-avatar">
-                <span>${char.remarkName}</span>
-            `;
+            const avatar = document.createElement('img'); avatar.src = char.avatar || ''; avatar.className = 'mp-tag-avatar'; avatar.alt = '';
+            const name = document.createElement('span'); name.textContent = char.remarkName || '';
+            tag.append(avatar, name);
             tag.onclick = () => openExclusivePanel(charId);
             
             container.appendChild(tag);
@@ -641,11 +639,10 @@ function openCharSelectModal() {
         availableChars.forEach(char => {
             const item = document.createElement('div');
             item.className = 'mp-select-item';
-            item.innerHTML = `
-                <input type="checkbox" class="mp-select-checkbox" value="${char.id}">
-                <img src="${char.avatar}" class="mp-select-avatar">
-                <span class="mp-select-name">${char.remarkName}</span>
-            `;
+            const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'mp-select-checkbox'; checkbox.value = char.id;
+            const avatar = document.createElement('img'); avatar.src = char.avatar || ''; avatar.className = 'mp-select-avatar'; avatar.alt = '';
+            const name = document.createElement('span'); name.className = 'mp-select-name'; name.textContent = char.remarkName || '';
+            item.append(checkbox, avatar, name);
             item.onclick = (e) => {
                 if (e.target.tagName !== 'INPUT') {
                     const cb = item.querySelector('input');

@@ -272,10 +272,15 @@ async function requestVectorJson(endpoint, body, config, signal, stage, headers)
 function validMemoryVector(values) {
     return Array.isArray(values) && values.length > 0 && values.every(Number.isFinite) && values.some(value => value !== 0);
 }
-async function requestMemoryEmbeddings(texts, config, signal) {
+async function requestMemoryEmbeddings(texts, config, signal, purpose = 'document') {
     if (!texts.length) return [];
+    const prefix = String((purpose === 'query' ? config.queryPrefix : config.documentPrefix) || '');
+    texts = texts.map(text => prefix + text);
     const model = String(config.embeddingModel || '').trim();
     if (!model) throw new Error('请在独立向量 API 中填写嵌入模型名称');
+    if (config.provider === 'gemini' && config.embeddingTaskMode === 'retrieval' && /(?:^|\/)gemini-embedding-2(?:-|$)/i.test(model)) {
+        throw new Error('此 Gemini 模型不支持 taskType，请选择模型默认，并按模型要求配置查询与文档前缀');
+    }
     const headers = { 'Content-Type': 'application/json' };
     const key = getRandomValue(config.key);
     let endpoint, body, parse;
@@ -285,8 +290,9 @@ async function requestMemoryEmbeddings(texts, config, signal) {
         if (/^https:\/\/generativelanguage\.googleapis\.com\//i.test(endpoint)) headers['x-goog-api-key'] = key;
         else headers.Authorization = `Bearer ${key}`;
         const modelName = 'models/' + model.replace(/^models\//, '');
-        body = batch ? { requests: texts.map(text => ({ model: modelName, content: { parts: [{ text }] } })) }
-            : { model: modelName, content: { parts: [{ text: texts[0] }] } };
+        const task = config.embeddingTaskMode === 'retrieval' ? { taskType: purpose === 'query' ? 'RETRIEVAL_QUERY' : 'RETRIEVAL_DOCUMENT' } : {};
+        body = batch ? { requests: texts.map(text => ({ model: modelName, content: { parts: [{ text }] }, ...task })) }
+            : { model: modelName, content: { parts: [{ text: texts[0] }] }, ...task };
         parse = data => batch ? data.embeddings?.map(item => item.values) : [data.embedding?.values];
     } else {
         endpoint = vectorApiEndpoint(config.url, 'embeddings');
@@ -309,8 +315,8 @@ async function requestMemoryEmbeddings(texts, config, signal) {
     }
     return vectors;
 }
-async function requestMemoryEmbedding(text, config, signal) {
-    return (await requestMemoryEmbeddings([text], config, signal))[0];
+async function requestMemoryEmbedding(text, config, signal, purpose = 'document') {
+    return (await requestMemoryEmbeddings([text], config, signal, purpose))[0];
 }
 
 function splitMemoryIntoChunks(content, maxLength = 1200, overlap = 180) {
@@ -441,19 +447,33 @@ function getVectorMemoryContext(chat, queryText, signal) {
     return next.finally(() => { if (vectorMemoryQueues.get(chat) === next) vectorMemoryQueues.delete(chat); });
 }
 
+function vectorSourceFingerprint(chat) {
+    // Hash individual records so large histories never form one temporary JSON string.
+    return autoMemoryFingerprint([(chat.history || []).map(item => autoMemoryFingerprint([item])),
+        (chat.memoryJournals || []).map(item => autoMemoryFingerprint([item])), chat.autoMemorySettings, chat.statusPanel?.regexPattern]);
+}
+function sameMemoryVectorIndex(previous, next) {
+    const ids = Object.keys(previous);
+    return ids.length === Object.keys(next).length && ids.every(id => {
+        const a = previous[id], b = next[id];
+        return a?.version === b?.version && Array.isArray(a?.chunks) && a.chunks.length === b?.chunks?.length &&
+            a.chunks.every((chunk, i) => chunk.key === b.chunks[i].key && chunk.start === b.chunks[i].start &&
+                chunk.end === b.chunks[i].end && chunk.vector === b.chunks[i].vector);
+    });
+}
 async function retrieveVectorMemoryContext(chat, queryText, signal) {
     const settings = getAutoMemorySettings(chat);
     if (!settings.vectorSearchEnabled || !String(queryText || '').trim()) return '';
     const config = resolveVectorMemoryApi();
     if (!config.url || !config.key || !config.embeddingModel) throw new Error('向量 API 的地址、密钥或嵌入模型尚未配置完整');
     const archive = chat.activeArchiveId, history = chat.history, journals = chat.memoryJournals;
-    const snapshot = autoMemoryFingerprint([chat.history, chat.memoryJournals, chat.autoMemorySettings, chat.statusPanel?.regexPattern]);
+    const snapshot = vectorSourceFingerprint(chat);
     const apiSnapshot = autoMemoryFingerprint([db.memoryApiSettings, db.vectorMemoryApiSettings]);
     const assertCurrent = (deep = false) => {
         if (signal?.aborted || chat.activeArchiveId !== archive || chat.history !== history || chat.memoryJournals !== journals ||
             ![...(db.characters || []), ...(db.groups || [])].includes(chat) ||
             autoMemoryFingerprint([db.memoryApiSettings, db.vectorMemoryApiSettings]) !== apiSnapshot ||
-            (deep && autoMemoryFingerprint([chat.history, chat.memoryJournals, chat.autoMemorySettings, chat.statusPanel?.regexPattern]) !== snapshot)) {
+            (deep && vectorSourceFingerprint(chat) !== snapshot)) {
             const error = new Error('记忆检索已取消或存档内容已变化'); error.name = 'AbortError'; throw error;
         }
     };
@@ -462,11 +482,13 @@ async function retrieveVectorMemoryContext(chat, queryText, signal) {
     if (!candidates.length) { recordVectorMemoryStatus(chat, '当前没有可索引的旧剧情或记忆'); return ''; }
     const oldIndex = chat.memoryVectorIndex || {};
     const nextIndex = {};
-    const apiFingerprint = autoMemoryFingerprint([config.provider, config.url, config.embeddingModel]);
+    const adaptation = config.documentPrefix || config.provider === 'gemini' && config.embeddingTaskMode === 'retrieval';
+    const apiFingerprint = autoMemoryFingerprint([config.provider, config.url, config.embeddingModel,
+        ...(adaptation ? [config.documentPrefix || '', config.provider === 'gemini' ? config.embeddingTaskMode || 'default' : 'default'] : [])]);
     if (typeof BLOCKED_API_DOMAINS !== 'undefined' && BLOCKED_API_DOMAINS.some(domain => config.url.includes(domain))) throw new Error('向量 API 站点已被屏蔽');
     const query = cleanVectorStoryText(chat, queryText).slice(-6000);
     if (!query.trim()) return '';
-    const queryVector = await requestMemoryEmbedding(query, config, signal);
+    const queryVector = await requestMemoryEmbedding(query, config, signal, 'query');
     assertCurrent();
     const embeddings = new Map();
     for (const cached of Object.values(oldIndex)) {
@@ -505,7 +527,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal) {
     } finally {
         assertCurrent(true);
         const committedIndex = completedIndex ? nextIndex : { ...oldIndex, ...nextIndex };
-        if (autoMemoryFingerprint(oldIndex) !== autoMemoryFingerprint(committedIndex)) {
+        if (!sameMemoryVectorIndex(oldIndex, committedIndex)) {
             chat.memoryVectorIndex = committedIndex;
             try { await saveData(); }
             catch (error) { if (chat.memoryVectorIndex === committedIndex) chat.memoryVectorIndex = oldIndex; throw error; }
@@ -789,10 +811,11 @@ function setupAutoMemory() {
     let editing = null;
     const fields = Object.keys(AUTO_MEMORY_DEFAULTS);
     const vectorFields = { provider: 'provider', url: 'url', key: 'key', embeddingModel: 'embedding-model', rerankModel: 'rerank-model',
-        rerankMode: 'rerank-mode', rerankUrl: 'rerank-url', rerankKey: 'rerank-key', batchSize: 'batch-size', timeoutSec: 'timeout' };
+        rerankMode: 'rerank-mode', rerankUrl: 'rerank-url', rerankKey: 'rerank-key', batchSize: 'batch-size', timeoutSec: 'timeout',
+        queryPrefix: 'query-prefix', documentPrefix: 'document-prefix', embeddingTaskMode: 'task-mode' };
     const readVectorApi = () => Object.fromEntries(Object.entries(vectorFields).map(([name, suffix]) => {
         const input = document.getElementById(`vector-api-${suffix}`);
-        return [name, input.type === 'number' ? Number(input.value) : input.value.trim()];
+        return [name, input.type === 'number' ? Number(input.value) : name.endsWith('Prefix') ? input.value : input.value.trim()];
     }));
     button.addEventListener('click', () => {
         const chat = getCurrentAutoMemoryChat();
@@ -810,7 +833,7 @@ function setupAutoMemory() {
         }
         const vectorApi = db.vectorMemoryApiSettings || {};
         const resolved = resolveVectorMemoryApi();
-        const defaults = { provider: 'newapi', rerankMode: vectorApi.url ? resolved.rerankMode : 'native', batchSize: vectorApi.url ? 1 : 4, timeoutSec: 30 };
+        const defaults = { provider: 'newapi', rerankMode: vectorApi.url ? resolved.rerankMode : 'native', batchSize: vectorApi.url ? 1 : 4, timeoutSec: 30, embeddingTaskMode: 'default' };
         for (const [name, suffix] of Object.entries(vectorFields)) {
             document.getElementById(`vector-api-${suffix}`).value = vectorApi[name] ||
                 (name === 'rerankMode' ? defaults[name] : resolved[name] || defaults[name]) || '';
