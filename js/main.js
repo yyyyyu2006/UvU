@@ -105,6 +105,7 @@ const init = async () => {
     setupChatSettings();
     if (typeof setupChatArchiveSystem === 'function') setupChatArchiveSystem();
     setupApiSettingsApp();
+    if (typeof setupUvUStoryBridge === 'function') { try { setupUvUStoryBridge(); } catch (error) { console.error('UvU Story Bridge failed:', error); } }
     setupMessageNotifications();
     setupWallpaperApp();
     await setupStickerSystem();

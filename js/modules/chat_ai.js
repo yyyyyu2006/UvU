@@ -81,6 +81,20 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
+    let storyBridgeMode = null;
+    if (chatType === 'private' && globalThis.UvUStoryBridge?.isConnected()) {
+        try {
+            storyBridgeMode = await globalThis.UvUStoryBridge.getMode(chatId);
+            if (storyBridgeMode.mode === 'offline') {
+                if (!isBackground) showToast('当前处于酒馆线下剧情模式；拿出手机后才能让 UvU 回复。');
+                return;
+            }
+        } catch (error) {
+            if (!isBackground) showToast('暂时无法确认酒馆模式，本次没有发送回复。请检查本机桥接连接。');
+            console.warn('UvU Story Bridge mode check failed:', error.message);
+            return;
+        }
+    }
     if (chatType === 'private' && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat, chatType)) {
         const archiveId = chat.activeArchiveId;
         if (!isBackground && typeof checkRelationshipRecovery === 'function') {
@@ -664,6 +678,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
             replyDelivered = true;
+        }
+        if (replyDelivered && storyBridgeMode && globalThis.UvUStoryBridge) {
+            try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode); }
+            catch (error) { console.warn('UvU Story Bridge sync failed:', error.message); }
         }
         if (requestIsCurrent() && typeof recordChatTokenUsage === 'function') {
             try { recordChatTokenUsage(chat, chatType, reportedUsage, tokenEstimate, provider); }

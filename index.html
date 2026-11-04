@@ -563,6 +563,24 @@
                     </button>
                 </form>
 
+                <div class="kkt-group" id="uvu-story-bridge-settings">
+                    <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
+                        <div class="kkt-item-content">
+                            <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
+                            <div class="kkt-item-subtitle">连接同设备运行的酒馆。需先安装并启动 UvU Story Bridge 服务端插件。</div>
+                        </div>
+                        <label>酒馆本机桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8000/api/plugins/uvu-story-bridge"></label>
+                        <label>一次性配对码<input id="uvu-bridge-pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="在酒馆桥接面板生成"></label>
+                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 将酒馆剧情记忆加入后续上下文</label>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
+                            <button type="button" class="btn btn-secondary" id="uvu-bridge-sync">收取酒馆记忆</button>
+                            <button type="button" class="btn btn-neutral" id="uvu-bridge-disconnect">断开连接</button>
+                        </div>
+                        <output id="uvu-bridge-status" aria-live="polite">未连接</output>
+                    </div>
+                </div>
+
                 <div class="kkt-group minimax-tts-settings" id="minimax-tts-settings">
                     <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
                         <div class="kkt-item-content">
@@ -2933,6 +2951,7 @@
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/auto_memory.js?v=20261104-memory-safety"></script>
+<script src="js/modules/story_bridge.js?v=20261104-story-bridge"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261104-avatar-location"></script>   <!-- 存储空间分析图表 -->
