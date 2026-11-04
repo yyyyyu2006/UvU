@@ -852,5 +852,7 @@ input:checked + .kkt-slider:before {
     padding-top: 8px;
     animation: fadeIn 0.2s ease-out;
 }
-.global-css-document-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.global-css-document-tools .btn { min-height: 34px; margin: 0; padding: 5px 8px; font-size: 12px; letter-spacing: 0; }
+.global-css-document-tools { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; margin-top: 8px; min-width: 0; }
+.global-css-document-tools .btn,
+.global-css-document-tools .document-edit-expand { box-sizing: border-box; flex: 1 1 0; min-width: 0; min-height: 30px; margin: 0; padding: 4px 3px; font-size: 11px; line-height: 1.15; letter-spacing: 0; white-space: nowrap; text-align: center; }
+.global-css-document-tools .document-edit-expand { display: flex; align-items: center; justify-content: center; border: 1px solid #d9dfe6; border-radius: 8px; background: #f5f7fa; color: #334155; cursor: pointer; font: inherit; }

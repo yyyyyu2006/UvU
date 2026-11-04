@@ -119,7 +119,13 @@ function setupExpandedEditors() {
             importButton.addEventListener('click', () => chooseImportFile('.docx,.txt', async file => { const result = await readImportDocument(file); openExpandedEditor(target, result.text); })); toolbar.appendChild(importButton);
         }
         const host = target.parentElement;
-        if (host?.classList.contains('form-group') && host.children.length === 1) host.appendChild(toolbar);
+        const documentTools = target.id === 'global-beautification-css'
+            ? host?.querySelector('.global-css-document-tools')
+            : null;
+        if (documentTools) {
+            // Keep the global CSS editor's four document actions in one compact row.
+            documentTools.insertBefore(expand, documentTools.firstChild);
+        } else if (host?.classList.contains('form-group') && host.children.length === 1) host.appendChild(toolbar);
         else target.insertAdjacentElement('afterend', toolbar);
     });
     attach();
