@@ -89,10 +89,23 @@
         if (!result.token) throw new Error('酒馆未返回配对令牌。');
         saveToken(result.token);
         if (codeInput) codeInput.value = '';
+        await publishCharacterDirectory(true);
         await saveData();
         status('已配对；默认记忆上下文不变。');
         const imported = await syncIncoming(currentChatType === 'private' ? currentChatId : '');
         if (!imported) status('已配对；酒馆收件箱目前没有新剧情。');
+    }
+
+    async function publishCharacterDirectory(force = false) {
+        if (!isConnected()) return;
+        const characters = (db.characters || []).filter(character => character?.id != null).map(character => ({
+            id: String(character.id),
+            name: String(character.realName || character.name || character.remarkName || '未命名角色').trim().slice(0, 120)
+        }));
+        const fingerprint = JSON.stringify(characters);
+        if (!force && settings().characterDirectoryFingerprint === fingerprint) return;
+        await request('/client/characters', { method: 'PUT', body: { characters } });
+        settings().characterDirectoryFingerprint = fingerprint;
     }
 
     async function disconnect() {
@@ -135,7 +148,7 @@
         if (!content) return false;
         chat.memoryJournals.push({
             id: `st_scene_${sceneId}`, externalSceneId: sceneId,
-            source: 'sillytavern', title: scene.title || '酒馆线下剧情',
+            source: 'sillytavern', title: `${chat.realName || chat.remarkName || chat.name || '当前角色'} · ${scene.title || '酒馆线下剧情'}`,
             content, range: { start: 0, end: 0 }, createdAt: scene.createdAt || Date.now(),
             chatId: chat.id, chatType: 'private', isFavorited: settings().injectScenes === true
         });
@@ -161,17 +174,27 @@
                 status('桥接队列已有过期记录，不能确认剧情完整；请在酒馆重新导出本场剧情。', true);
                 return 0;
             }
+            if ((result.events || []).some(item => String(item.characterKey || '') !== String(characterKey))) {
+                status('收到角色 ID 不匹配的酒馆剧情，已停止导入；请检查角色绑定。', true);
+                return 0;
+            }
             for (const item of result.events || []) {
                 nextCursor = Math.max(nextCursor, Number(item.seq) || 0);
                 if (item.kind !== 'scene_transcript') continue;
                 const payload = item.payload || {};
                 const sceneId = String(item.sceneId || '');
                 if (!sceneId) continue;
-                const scene = state.pendingScenes[sceneId] || (state.pendingScenes[sceneId] = {
+                const sceneKey = `${characterKey}:${sceneId}`;
+                const legacyScene = state.pendingScenes[sceneId];
+                const scene = state.pendingScenes[sceneKey] || legacyScene || (state.pendingScenes[sceneKey] = {
                     title: String(payload.title || '酒馆线下剧情'),
                     createdAt: Number(item.createdAt) || Date.now(),
                     partCount: Math.max(1, Number(payload.partCount) || 1), parts: {}
                 });
+                if (legacyScene && !state.pendingScenes[sceneKey]) {
+                    state.pendingScenes[sceneKey] = scene;
+                    delete state.pendingScenes[sceneId];
+                }
                 scene.partCount = Math.max(scene.partCount, Number(payload.partCount) || 1);
                 const part = Math.max(1, Number(payload.part) || 1);
                 scene.parts[part] = cleanText(payload.text);
@@ -218,6 +241,7 @@
         urlInput.value = settings().baseUrl || DEFAULT_URL;
         injectCheckbox.checked = settings().injectScenes === true;
         status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
+        if (isConnected()) publishCharacterDirectory().catch(error => status(`角色列表同步失败：${error.message}`, true));
         pairButton.dataset.bound = 'true';
         pairButton.addEventListener('click', async () => {
             pairButton.disabled = true;
@@ -249,6 +273,7 @@
         });
         clearInterval(pollTimer);
         pollTimer = setInterval(() => {
+            publishCharacterDirectory().catch(error => console.warn('UvU Story Bridge character directory sync failed:', error.message));
             if (currentChatType === 'private' && currentChatId) syncIncoming(currentChatId).catch(error => status(error.message, true));
         }, 8000);
         document.addEventListener('visibilitychange', () => {
@@ -258,6 +283,6 @@
         });
     }
 
-    window.UvUStoryBridge = { isConnected, getMode, publishTurn, syncIncoming };
+    window.UvUStoryBridge = { isConnected, getMode, publishTurn, publishCharacterDirectory, syncIncoming };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();
