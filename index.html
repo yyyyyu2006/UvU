@@ -2851,12 +2851,12 @@
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
     <div class="modal-window auto-memory-dialog">
         <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
-        <p class="auto-memory-help">设置仅对当前聊天的当前存档生效。总结成功并保存后，旧楼层由记忆替代进入 AI 上下文，原聊天记录仍保留。</p>
+        <p class="auto-memory-help">设置仅对当前聊天的当前存档生效。自动整理与记忆注入分开控制；关闭“使用自动记忆”时，只生成并保存总结，不替换聊天上下文。</p>
         <p id="auto-memory-status" role="status" aria-live="polite"></p>
         <form id="auto-memory-form">
             <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
             <label class="auto-memory-check"><input name="useMemory" type="checkbox"> 使用自动记忆，替代已总结原文进入上下文</label>
-            <p class="auto-memory-help">关闭“使用自动记忆”可恢复原文进入上下文（仍受原有上下文条数限制）；关闭自动整理仅停止后续调用。</p>
+            <p class="auto-memory-help">关闭“使用自动记忆”会让原楼层继续进入上下文（仍受原有条数限制）；关闭自动整理仅停止后续调用。默认只沿用 1900 版上下文，不自动注入新总结。</p>
             <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">下方独立记忆 API</option></select></label>
             <details id="memory-api-panel"><summary>独立总结 API 配置（全局共用）</summary>
                 <p class="auto-memory-help">仅当上方总结 API 选择“下方独立记忆 API”时使用，不会改变聊天主 API。</p>
@@ -2870,6 +2870,7 @@
                 <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
                 <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
                 <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
+                <label class="auto-memory-check"><input name="useTargetLength" type="checkbox"> 为小总结和大总结追加目标字数约束</label>
                 <label>总结目标字数<input name="targetLength" type="number" min="50" max="20000" required></label>
             </div><p class="auto-memory-help">一条有效用户或角色消息算一楼；思考、撤回和手动禁用消息不计。先保留最近楼层，剩余未总结旧楼层达到阈值才触发；按时间从旧到新整理。</p></fieldset>
             <fieldset><legend>大总结</legend>
@@ -2878,7 +2879,7 @@
                     <label>生效记忆达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
                     <label>每次最多合并几篇（不低于阈值）<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
                     <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
-                </div><p class="auto-memory-help">严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；6 篇大总结才进一步压缩。手动整理同样遵守阈值。已被合并的摘要不重复计数。</p>
+                </div><p class="auto-memory-help">默认直接使用原日记与大总结提示词。只有勾选目标字数或填写自定义要求时才会追加规则。严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；已被合并的摘要不重复计数。</p>
             </fieldset>
             <fieldset class="vector-memory-fieldset"><legend>向量记忆检索</legend>
                 <label class="auto-memory-check"><input name="vectorSearchEnabled" type="checkbox"> 启用嵌入检索相关记忆（会调用独立向量 API）</label>

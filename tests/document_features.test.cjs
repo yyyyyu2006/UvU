@@ -19,19 +19,19 @@ test('legacy worldbooks retain binding order and old depth sorting with no extra
     assert.deepEqual(books, [{ id: 'a', position: 'before', content: 'A', depth: 20 }, { id: 'b', position: 'before', content: 'B', depth: 10 }, { id: 'c', type: 'folder' }]);
 });
 test('worldbook counts deduplicate real entries, exclude folders, identify stale bindings, and count enabled entries', () => {
-    const books = [{ id: 'on', rules: { enabled: true } }, { id: 'off', rules: { enabled: false } }, { id: 'folder', type: 'folder' }];
+    const books = [{ id: 'on', rules: { advancedEnabled: true, enabled: true } }, { id: 'off', rules: { advancedEnabled: true, enabled: false } }, { id: 'folder', type: 'folder' }];
     const c = fixture(books), stats = c.getWorldBookBindingStats(['on', 'on', 'off', 'folder', 'deleted']);
     assert.deepEqual(plain(stats.entries.map(book => book.id)), ['on', 'off']);
     assert.equal(stats.enabled, 1);
     assert.deepEqual(plain(stats.missingIds), ['folder', 'deleted']);
 });
 test('activation honors constant, disabled, exact probability boundaries and secondary logic', () => {
-    const books = [0, 1, 2, 3].map(n => ({ id: '' + n, content: '' + n, rules: { constant: false, keys: ['猫'], secondaryKeys: ['开心', '晚安'], selectiveLogic: n, probability: 100 } }));
+    const books = [0, 1, 2, 3].map(n => ({ id: '' + n, content: '' + n, rules: { advancedEnabled: true, constant: false, keys: ['猫'], secondaryKeys: ['开心', '晚安'], selectiveLogic: n, probability: 100 } }));
     const c = fixture(books), chat = { worldBookIds: books.map(b => b.id), history: [{ content: '猫很开心' }] };
     assert.deepEqual(plain(c.buildWorldBookPlan(chat)).map(b => b.id), ['0', '1']);
     books[0].rules.enabled = false; books[1].rules.probability = 0;
     assert.equal(c.buildWorldBookPlan(chat).length, 0);
-    books[0].rules = { constant: true, probability: 50 };
+    books[0].rules = { advancedEnabled: true, constant: true, probability: 50 };
     assert.equal(c.buildWorldBookPlan(chat, [], () => 0.49).length, 1);
     assert.equal(c.buildWorldBookPlan(chat, [], () => 0.50).length, 0);
 });
@@ -46,7 +46,7 @@ test('keyword matching supports literal punctuation, case, whole words and regex
     assert.equal(c.worldBookMatches('Cat', 'cat', { caseSensitive: true }), false);
 });
 test('scan depth zero and finite depth exclude older trigger messages', () => {
-    const book = { id: 'a', rules: { constant: false, keys: ['old'], scanDepth: 1 } }, c = fixture([book]);
+    const book = { id: 'a', rules: { advancedEnabled: true, constant: false, keys: ['old'], scanDepth: 1 } }, c = fixture([book]);
     const chat = { worldBookIds: ['a'], history: [{ content: 'old' }, { content: 'new' }] };
     assert.equal(c.buildWorldBookPlan(chat).length, 0); book.rules.scanDepth = 2; assert.equal(c.buildWorldBookPlan(chat).length, 1);
     book.rules.scanDepth = 0; assert.equal(c.buildWorldBookPlan(chat).length, 0);

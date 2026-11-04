@@ -11,7 +11,7 @@ function getWorldBookBindingStats(ids) {
     const entries = uniqueIds.map(id => db.worldBooks.find(book => book.id === id)).filter(book => book && book.type !== 'folder');
     const validIds = new Set(entries.map(book => book.id));
     return { entries, missingIds: uniqueIds.filter(id => !validIds.has(id)),
-        enabled: entries.filter(book => book.rules?.enabled !== false).length };
+        enabled: entries.filter(book => !worldBookUsesAdvancedRules(book) || book.rules.enabled !== false).length };
 }
 function escapeWorldBookHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -28,11 +28,14 @@ function worldBookMatches(key, text, rules) {
     const escaped = key.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
     return new RegExp('(?:^|[^\\p{L}\\p{N}_])' + escaped + '(?=$|[^\\p{L}\\p{N}_])', 'u').test(text);
 }
+function worldBookUsesAdvancedRules(book) {
+    return book?.rules?.advancedEnabled === true;
+}
 function buildWorldBookPlan(chat, history = chat.history || [], random = Math.random) {
     return (chat.worldBookIds || []).map(id => db.worldBooks.find(w => w.id === id)).filter(w => {
-        if (!w || w.type === 'folder') return false;
+        if (!w || w.type === 'folder' || w.rules?.unsupportedPosition) return false;
         const r = w.rules;
-        if (!r) return true;
+        if (!worldBookUsesAdvancedRules(w)) return true;
         if (r.enabled === false) return false;
         const count = Math.floor(worldBookNumber(r.scanDepth, 20, 0, 10000));
         const text = (count ? history.slice(-count) : []).map(m => m.content || '').join('\n');
@@ -47,7 +50,11 @@ function buildWorldBookPlan(chat, history = chat.history || [], random = Math.ra
         }
         const probability = worldBookNumber(r.probability, 100, 0, 100);
         return probability === 100 || (probability > 0 && random() * 100 < probability);
-    }).sort((a, b) => worldBookNumber(a.rules?.order, a.depth || 100) - worldBookNumber(b.rules?.order, b.depth || 100));
+    }).sort((a, b) => {
+        const aOrder = worldBookUsesAdvancedRules(a) ? worldBookNumber(a.rules.order, a.depth || 100) : (a.depth || 100);
+        const bOrder = worldBookUsesAdvancedRules(b) ? worldBookNumber(b.rules.order, b.depth || 100) : (b.depth || 100);
+        return aOrder - bOrder;
+    });
 }
 function worldBookSection(plan, position) {
     return plan.filter(w => (w.position === position || (position === 'before' && w.position === 'chat')) && !w.rules?.unsupportedPosition)
@@ -78,6 +85,8 @@ function importWorldBookJson(value, parentId) {
             caseSensitive: ext.caseSensitive ?? e.caseSensitive ?? false, wholeWords: ext.matchWholeWords ?? e.matchWholeWords ?? false,
             unsupportedPosition: unsupported
         };
+        // Imported trigger metadata is preserved, but stays dormant until explicitly enabled in the editor.
+        rules.advancedEnabled = false;
         if (!supplied && e.type === 'entry' && typeof e.position === 'string' && e.constant == null && e.key == null && e.keys == null) rules.constant = true;
         return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: e.depth ?? 100, rules, importSource: e };
     });

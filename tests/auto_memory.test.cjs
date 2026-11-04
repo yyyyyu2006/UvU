@@ -8,7 +8,7 @@ function fixture(count = 12, settings = {}) {
     const chat = { id: 'alice', activeArchiveId: 'a1', realName: '晴', remarkName: '晴', myName: '我',
         persona: '人物', maxMemory: 100, history: Array.from({ length: count }, (_, i) => ({
             id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: `原楼层${i}`, timestamp: 1700000000000 + i * 1000
-        })), memoryJournals: [], autoMemorySettings: { enabled: true, keepRecent: 2, threshold: 4, batchSize: 4,
+        })), memoryJournals: [], autoMemorySettings: { enabled: true, useMemory: true, contextInjectionOptIn: true, keepRecent: 2, threshold: 4, batchSize: 4,
             mergeThreshold: 2, mergeBatchSize: 2, ...settings } };
     const requests = [], saves = [];
     const context = vm.createContext({ window: {}, document: { addEventListener() {}, getElementById() { return null; } },
@@ -310,14 +310,14 @@ test('big summaries keep separate levels, persist and recover from source editin
     assert.equal(second.context.getContextMemoryJournals(second.chat).length, 2);
 });
 
-test('pausing injection restores raw context and prevents summary calls, manual favorites remain', async () => {
+test('pausing injection restores raw context while automatic summaries continue, manual favorites remain', async () => {
     const f = fixture(); await f.run();
     f.chat.memoryJournals.push({ id: 'manual', title: '收藏日记', content: '共同回忆', isFavorited: true });
     f.chat.autoMemorySettings.useMemory = false;
     assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 12);
     assert.deepEqual(ids(f.context.getContextMemoryJournals(f.chat)), ['manual']);
     await f.run({ force: true });
-    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests.length, 3);
 });
 
 test('disabling automatic generation still keeps existing memories in context', async () => {
@@ -327,12 +327,13 @@ test('disabling automatic generation still keeps existing memories in context', 
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
 });
 
-test('default summary and merge reuse original prompt builders; custom rules replace them', () => {
+test('default summary and merge send original prompt builders unchanged; custom rules replace them', () => {
     const { context: c, chat } = fixture();
     const settings = c.getAutoMemorySettings(chat);
     const messages = c.buildAutoMemoryPrompt(chat, 'private', chat.history.slice(0, 2), 'summary', settings);
-    assert.ok(messages[0].content.includes(c.buildJournalSummaryPrompt(chat, 'private', chat.history.slice(0, 2))));
-    assert.match(messages[0].content, /800 字/);
+    assert.equal(messages.length, 1);
+    assert.equal(messages[0].role, 'user');
+    assert.equal(messages[0].content, c.buildJournalSummaryPrompt(chat, 'private', chat.history.slice(0, 2), false));
     const custom = c.buildAutoMemoryPrompt(chat, 'private', chat.history.slice(0, 2), 'summary', { ...settings,
         summaryPrompt: '只写 JSON，保留关系变化', requirements: '不能遗漏承诺' });
     assert.match(custom[0].content, /只写 JSON/);
@@ -340,8 +341,29 @@ test('default summary and merge reuse original prompt builders; custom rules rep
     assert.doesNotMatch(custom[0].content, /第一人称视角/);
     assert.match(custom[1].content, /原楼层0/);
     const merge = c.buildAutoMemoryPrompt(chat, 'private', [{ title: 'A', content: '事实', range: { start: 1, end: 4 } }], 'merged', settings);
-    assert.match(merge[0].content, /专业的档案记录员/);
-    assert.match(merge[0].content, /1500 字/);
+    assert.equal(merge.length, 1);
+    assert.equal(merge[0].role, 'user');
+    assert.equal(merge[0].content, c.buildJournalMergePrompt(chat, '楼层 1-4\n标题：A\n事实'));
+});
+
+test('automatic summaries stay outside context until memory injection is enabled', async () => {
+    const f = fixture(6, { useMemory: false, keepRecent: 1, threshold: 4, batchSize: 4 });
+    await f.run();
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 6);
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 0);
+    f.chat.autoMemorySettings.useMemory = true;
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 2);
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
+});
+
+test('legacy saved useMemory defaults do not opt into context replacement after upgrade', () => {
+    const f = fixture(6);
+    delete f.chat.autoMemorySettings.contextInjectionOptIn;
+    assert.equal(f.context.getAutoMemorySettings(f.chat).useMemory, false);
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 6);
+    f.chat.autoMemorySettings.contextInjectionOptIn = true;
+    assert.equal(f.context.getAutoMemorySettings(f.chat).useMemory, true);
 });
 
 test('API source routing supports primary, secondary, follow and rejects incomplete secondary', () => {
@@ -362,8 +384,8 @@ test('Gemini and OpenAI requests both carry instructions and an abort signal', a
         const f = fixture(); f.context.db.apiSettings.provider = provider; await f.run();
         const req = f.requests[0];
         assert.ok(req.options.signal);
-        if (provider === 'gemini') { assert.ok(req.body.system_instruction); assert.ok(req.body.contents.length); assert.match(req.endpoint, /generateContent/); }
-        else { assert.equal(req.body.messages[0].role, 'system'); assert.ok(req.endpoint.endsWith('/v1/chat/completions')); }
+        if (provider === 'gemini') { assert.ok(req.body.contents.length); assert.match(req.endpoint, /generateContent/); }
+        else { assert.equal(req.body.messages[0].role, 'user'); assert.ok(req.endpoint.endsWith('/v1/chat/completions')); }
     }
 });
 

@@ -11,10 +11,10 @@ function fixture(provider, placeholder, type, injectedRole) {
     ] };
     let rolls = 0;
     const c = vm.createContext({ db: { characters: type === 'private' ? [chat] : [], groups: type === 'group' ? [chat] : [], worldBooks: [
-        { id:'head', position:'before', content:'WORLD_HEAD', rules:{constant:true,probability:50} },
-        { id:'middle', position:'chat', content:'WORLD_MIDDLE', rules:{constant:true,chatDepth:2,role:'system'} },
-        { id:'tail', position:'chat', content:'WORLD_TAIL', rules:{constant:true,chatDepth:0,role:injectedRole} },
-        { id:'off', position:'before', content:'SHOULD_NOT_APPEAR', rules:{enabled:false} }
+        { id:'head', position:'before', content:'WORLD_HEAD', rules:{advancedEnabled:true,constant:true,probability:50} },
+        { id:'middle', position:'chat', content:'WORLD_MIDDLE', rules:{advancedEnabled:true,constant:true,chatDepth:2,role:'system'} },
+        { id:'tail', position:'chat', content:'WORLD_TAIL', rules:{advancedEnabled:true,constant:true,chatDepth:0,role:injectedRole} },
+        { id:'off', position:'before', content:'SHOULD_NOT_APPEAR', rules:{advancedEnabled:true,enabled:false} }
     ], apiSettings:{provider,url:'https://test.invalid',key:'fake',model:'test',streamEnabled:false} },
         Math: Object.assign(Object.create(Math), { random: () => { rolls++; return 0.1; } }),
         console:{log(){},error(){}}, currentChatId:chat.id,currentChatType:type,isGenerating:false,
@@ -28,6 +28,20 @@ function fixture(provider, placeholder, type, injectedRole) {
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/chat_ai.js'),'utf8'),c);c.handleAiReplyContent=async()=>{};
     return {c,chat,requests,errors,rolls:()=>rolls};
 }
+test('unselected advanced rules preserve bound worldbooks and legacy depth order', async () => {
+    const f = fixture('newapi', false, 'private', 'system');
+    f.c.db.worldBooks.forEach(book => { book.rules.advancedEnabled = false; });
+    f.c.db.worldBooks.find(book => book.id === 'head').depth = 3;
+    f.c.db.worldBooks.find(book => book.id === 'middle').depth = 1;
+    f.c.db.worldBooks.find(book => book.id === 'tail').depth = 2;
+    await f.c.getAiReply(f.chat.id, 'private');
+    const text = JSON.stringify(f.requests[0]);
+    for (const word of ['WORLD_HEAD', 'WORLD_MIDDLE', 'WORLD_TAIL', 'SHOULD_NOT_APPEAR']) assert.ok(text.includes(word), text);
+    assert.equal(f.rolls(), 0);
+    const system = f.requests[0].messages.find(message => message.role === 'system').content;
+    assert.ok(system.indexOf('WORLD_MIDDLE') < system.indexOf('WORLD_TAIL'));
+    assert.ok(system.indexOf('WORLD_TAIL') < system.indexOf('WORLD_HEAD'));
+});
 for (const provider of ['newapi','gemini']) for (const placeholder of [false,true]) for (const type of ['private','group']) for (const role of ['system','user','assistant']) {
     test('final worldbook insertion ' + [provider,placeholder,type,role].join('/'), async () => {
         const f=fixture(provider,placeholder,type,role), original=JSON.stringify(f.chat.history);
