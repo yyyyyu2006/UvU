@@ -1,7 +1,8 @@
 // Optional local relay for SillyTavern continuity memories.
 (function () {
     const STORAGE_KEY = 'uvu-story-bridge.v1';
-    const DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
+    const DEFAULT_URL = 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge';
+    const PREVIOUS_DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
     let syncBusy = false;
     let pollTimer = null;
 
@@ -24,7 +25,12 @@
     }
 
     function baseUrl() {
-        return String(settings().baseUrl || DEFAULT_URL).trim().replace(/\/+$/, '');
+        const saved = String(settings().baseUrl || '').trim().replace(/\/+$/, '');
+        if (!saved || saved === PREVIOUS_DEFAULT_URL) {
+            settings().baseUrl = DEFAULT_URL;
+            return DEFAULT_URL;
+        }
+        return saved;
     }
 
     function targetAddressSpace() {
@@ -63,9 +69,9 @@
                 : permission === 'prompt'
                     ? 'loopback-network 尚未授权；若没有弹窗，请确认使用 HTTPS 页面并在页面内点击连接。'
                     : permission === 'granted'
-                        ? 'loopback-network 已授权；请检查酒馆 CORS 来源白名单和桥接路由。'
+                        ? 'loopback-network 已授权；请检查酒馆桥接插件是否已启动、server/config.json 是否包含当前 UvU 来源，以及客户端端口是否与桥接地址一致。'
                         : permission === 'unavailable'
-                            ? '浏览器未提供 loopback-network 权限状态；请确认本地网络访问权限和酒馆 CORS 来源白名单。'
+                            ? '浏览器未提供 loopback-network 权限状态；请确认已安装并启动酒馆桥接插件、server/config.json 来源白名单与客户端端口配置正确。'
                             : '请确认酒馆桥接地址和服务状态。';
             throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
@@ -271,7 +277,7 @@
         const disconnectButton = document.getElementById('uvu-bridge-disconnect');
         const injectCheckbox = document.getElementById('uvu-bridge-inject-scenes');
         if (!urlInput || !pairButton || pairButton.dataset.bound === 'true') return;
-        urlInput.value = settings().baseUrl || DEFAULT_URL;
+        urlInput.value = baseUrl();
         injectCheckbox.checked = settings().injectScenes === true;
         status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
         if (isConnected()) publishCharacterDirectory().catch(error => status(`角色列表同步失败：${error.message}`, true));

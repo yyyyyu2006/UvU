@@ -10,7 +10,7 @@ function harness(fetchImpl, permissionState = 'granted') {
     const values = new Map([['uvu-story-bridge.v1', JSON.stringify({ token: 'paired-token' })]]);
     const output = { textContent: '', dataset: {} };
     const chat = { id: 'char-1', memoryJournals: [] };
-    const db = { characters: [chat], uvuStoryBridgeSettings: { baseUrl: 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge' } };
+    const db = { characters: [chat], uvuStoryBridgeSettings: { baseUrl: 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge' } };
     const context = vm.createContext({
         window: {},
         URL,
