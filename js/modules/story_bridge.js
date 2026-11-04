@@ -95,8 +95,13 @@
         const urlInput = document.getElementById('uvu-bridge-url');
         const codeInput = document.getElementById('uvu-bridge-pair-code');
         settings().baseUrl = (urlInput?.value || DEFAULT_URL).trim().replace(/\/+$/, '');
-        await saveData();
-        const result = await request('/client/pair', { method: 'POST', body: { code: String(codeInput?.value || '').trim() }, auth: false });
+        let result;
+        try {
+            result = await request('/client/pair', { method: 'POST', body: { code: String(codeInput?.value || '').trim() }, auth: false });
+        } catch (error) {
+            await saveData().catch(() => {});
+            throw error;
+        }
         if (!result.token) throw new Error('酒馆未返回配对令牌。');
         saveToken(result.token);
         if (codeInput) codeInput.value = '';
