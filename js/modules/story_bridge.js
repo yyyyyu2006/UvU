@@ -36,6 +36,13 @@
         return undefined;
     }
 
+    async function loopbackPermissionState() {
+        if (!globalThis.navigator?.permissions?.query) return 'unavailable';
+        try {
+            return (await navigator.permissions.query({ name: 'loopback-network' })).state || 'unknown';
+        } catch { return 'unavailable'; }
+    }
+
     async function request(path, { method = 'GET', body, auth = true } = {}) {
         const headers = { Accept: 'application/json' };
         const token = readToken();
@@ -43,14 +50,24 @@
         if (auth) headers.Authorization = `Bearer ${token}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         let response;
+        const addressSpace = targetAddressSpace();
         try {
-            const addressSpace = targetAddressSpace();
             response = await fetch(`${baseUrl()}/v1${path}`, {
                 method, headers, body: body === undefined ? undefined : JSON.stringify(body),
                 ...(addressSpace ? { targetAddressSpace: addressSpace } : {})
             });
         } catch (error) {
-            throw new Error('浏览器未能连接酒馆：请允许此网站访问本地网络，并确认酒馆桥接配置已允许当前 UvU 网站来源。', { cause: error });
+            const permission = addressSpace === 'loopback' ? await loopbackPermissionState() : 'not-loopback';
+            const diagnosis = permission === 'denied'
+                ? 'Chrome 已拒绝此网站的 loopback-network 权限，请在该网站权限中解除阻止。'
+                : permission === 'prompt'
+                    ? 'loopback-network 尚未授权；若没有弹窗，请确认使用 HTTPS 页面并在页面内点击连接。'
+                    : permission === 'granted'
+                        ? 'loopback-network 已授权；请检查酒馆 CORS 来源白名单和桥接路由。'
+                        : permission === 'unavailable'
+                            ? '浏览器未提供 loopback-network 权限状态；请确认本地网络访问权限和酒馆 CORS 来源白名单。'
+                            : '请确认酒馆桥接地址和服务状态。';
+            throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `桥接请求失败（HTTP ${response.status}）`);

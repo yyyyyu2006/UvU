@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function harness(fetchImpl) {
+function harness(fetchImpl, permissionState = 'granted') {
     const values = new Map([['uvu-story-bridge.v1', JSON.stringify({ token: 'paired-token' })]]);
     const output = { textContent: '', dataset: {} };
     const chat = { id: 'char-1', memoryJournals: [] };
@@ -21,6 +21,7 @@ function harness(fetchImpl) {
             setItem: (key, value) => values.set(key, value),
             removeItem: key => values.delete(key)
         },
+        navigator: { permissions: { query: async () => ({ state: permissionState }) } },
         fetch: fetchImpl,
         structuredClone,
         saveData: async () => {},
@@ -45,6 +46,11 @@ test('bridge mode lookup uses the paired bearer token and requested character ke
     assert.match(calls[0].url, /\/client\/state\?characterKey=char-1$/);
     assert.equal(calls[0].options.headers.Authorization, 'Bearer paired-token');
     assert.equal(calls[0].options.targetAddressSpace, 'loopback');
+});
+
+test('connection errors report the browser loopback permission state', async () => {
+    const { bridge } = harness(async () => { throw new TypeError('Failed to fetch'); }, 'denied');
+    await assert.rejects(bridge.getMode('char-1'), /loopback-network: denied.*Chrome 已拒绝此网站/);
 });
 
 test('paired UvU sends stable character IDs and clear names to the local directory', async () => {
