@@ -3,6 +3,43 @@ function findEditorMatches(text, query, caseSensitive = false) {
     const escaped = query.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
     return Array.from(text.matchAll(new RegExp(escaped, caseSensitive ? 'gu' : 'giu')), m => ({ start: m.index, end: m.index + m[0].length }));
 }
+const EXPANDED_EDITOR_SCROLL_PREFIX = 'uvu:expanded-editor-scroll:';
+function getExpandedEditorScrollKey(target) {
+    if (!target) return '';
+    const id = target.id || target.name || '';
+    if (!id) return '';
+    // The field id is stable across reopening and does not include the draft text.
+    return EXPANDED_EDITOR_SCROLL_PREFIX + id;
+}
+function readExpandedEditorScroll(target) {
+    const key = getExpandedEditorScrollKey(target);
+    if (!key || typeof localStorage === 'undefined') return null;
+    try {
+        const saved = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!saved || !Number.isFinite(saved.ratio)) return null;
+        return { ratio: Math.max(0, Math.min(1, saved.ratio)) };
+    } catch (_) { return null; }
+}
+function saveExpandedEditorScroll(target, draft) {
+    const key = getExpandedEditorScrollKey(target);
+    if (!key || !draft || typeof localStorage === 'undefined') return;
+    const max = Math.max(0, (draft.scrollHeight || 0) - (draft.clientHeight || 0));
+    const ratio = max > 0 ? Math.max(0, Math.min(1, draft.scrollTop / max)) : 0;
+    try { localStorage.setItem(key, JSON.stringify({ ratio, updatedAt: Date.now() })); } catch (_) { /* storage is optional */ }
+}
+function restoreExpandedEditorScroll(target, draft) {
+    const saved = readExpandedEditorScroll(target);
+    if (!saved || !draft) return;
+    const apply = () => {
+        const max = Math.max(0, (draft.scrollHeight || 0) - (draft.clientHeight || 0));
+        draft.scrollTop = max * saved.ratio;
+    };
+    apply();
+    // Textarea metrics may settle one frame after the overlay is attached.
+    if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => { apply(); requestAnimationFrame(apply); });
+    }
+}
 function openExpandedEditor(target, importedText) {
     if (target.disabled || target.readOnly) return showToast('请先启用此项设置');
     if (document.getElementById('expanded-text-editor')) return;
@@ -16,6 +53,11 @@ function openExpandedEditor(target, importedText) {
     draft.value = importedText ?? original;
     overlay.querySelector('.editor-import-options').hidden = importedText === undefined;
     let matches = [], active = -1;
+    let scrollSaveTimer = null;
+    const persistScroll = () => {
+        if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+        scrollSaveTimer = setTimeout(() => { scrollSaveTimer = null; saveExpandedEditorScroll(target, draft); }, 80);
+    };
     const status = () => { overlay.querySelector('.editor-count').textContent = (active < 0 ? 0 : active + 1) + ' / ' + matches.length; };
     const update = () => { matches = findEditorMatches(draft.value, find.value, caseBox.checked); active = -1; status(); };
     const select = index => {
@@ -25,8 +67,12 @@ function openExpandedEditor(target, importedText) {
         const line = draft.value.slice(0, matches[active].start).split('\n').length - 1;
         draft.scrollTop = Math.max(0, line * 24 - draft.clientHeight / 3); status();
     };
-    const close = () => { overlay.remove(); target.focus({ preventScroll: true }); };
-    find.addEventListener('input', update); caseBox.addEventListener('change', update); draft.addEventListener('input', update);
+    const close = () => {
+        if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+        saveExpandedEditorScroll(target, draft);
+        overlay.remove(); target.focus({ preventScroll: true });
+    };
+    find.addEventListener('input', update); caseBox.addEventListener('change', update); draft.addEventListener('input', update); draft.addEventListener('scroll', persistScroll, { passive: true });
     overlay.addEventListener('click', e => {
         const action = e.target.closest('[data-action]')?.dataset.action;
         if (action === 'cancel') { if (draft.value === original || confirm('放弃未应用的编辑？')) close(); }
@@ -59,7 +105,8 @@ function openExpandedEditor(target, importedText) {
             if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
         }
     });
-    document.body.appendChild(overlay); update(); draft.focus();
+    document.body.appendChild(overlay); update(); draft.focus({ preventScroll: true });
+    if (importedText === undefined) restoreExpandedEditorScroll(target, draft);
 }
 function setupExpandedEditors() {
     const attach = () => document.querySelectorAll('textarea:not([data-expanded-editor])').forEach(target => {

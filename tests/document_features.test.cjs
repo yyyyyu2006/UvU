@@ -5,8 +5,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
 function fixture(books = []) {
-    const c = vm.createContext({ db: { worldBooks: books, myStickers: [], characters: [], groups: [] }, crypto, TextDecoder, AbortController, setTimeout, clearTimeout, console });
+    const storage = { data: Object.create(null), getItem(key) { return this.data[key] ?? null; }, setItem(key, value) { this.data[key] = String(value); }, removeItem(key) { delete this.data[key]; } };
+    const c = vm.createContext({ db: { worldBooks: books, myStickers: [], characters: [], groups: [] }, crypto, TextDecoder, AbortController, setTimeout, clearTimeout, console, localStorage: storage });
     for (const name of ['worldbook_rules', 'document_import', 'text_editor', 'sticker_assist']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/' + name + '.js'), 'utf8'), c);
+    c.__storage = storage;
     return c;
 }
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -79,6 +81,15 @@ test('find treats special characters literally and supports Unicode and case set
     assert.deepEqual(plain(c.findEditorMatches('a.b aXb a.b', 'a.b')), [{ start: 0, end: 3 }, { start: 8, end: 11 }]);
     assert.equal(c.findEditorMatches('你好你好', '你好').length, 2); assert.equal(c.findEditorMatches('Aa', 'a', true).length, 1);
     assert.equal(c.findEditorMatches('anything', '').length, 0);
+});
+test('expanded document editor preserves per-field scroll progress after reopening', () => {
+    const c = fixture(), target = { id: 'character-persona' };
+    const firstDraft = { scrollTop: 250, scrollHeight: 1000, clientHeight: 500 };
+    c.saveExpandedEditorScroll(target, firstDraft);
+    assert.deepEqual(JSON.parse(c.__storage.data['uvu:expanded-editor-scroll:character-persona']), { ratio: 0.5, updatedAt: JSON.parse(c.__storage.data['uvu:expanded-editor-scroll:character-persona']).updatedAt });
+    const reopenedDraft = { scrollTop: 0, scrollHeight: 2000, clientHeight: 500 };
+    c.restoreExpandedEditorScroll(target, reopenedDraft);
+    assert.equal(reopenedDraft.scrollTop, 750);
 });
 test('sticker document URLs retain metadata, ignore executable URLs and trigger recommendations', () => {
     const c = fixture();
