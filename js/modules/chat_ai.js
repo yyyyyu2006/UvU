@@ -551,9 +551,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             };
         }
         
-        const tokenEstimate = typeof estimateChatTokenUsage === 'function'
-            ? estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan)
-            : null;
+        let tokenEstimate = null;
+        try {
+            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody);
+        } catch (error) { console.warn('Token 分类估算失败，不影响本轮聊天:', error.message); }
         // 格式化打印日志
         let logText = "========== [发送给 AI 的请求内容] ==========\n";
         if (requestBody.messages) {
@@ -657,7 +658,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
             replyDelivered = true;
         }
-        if (typeof recordChatTokenUsage === 'function') recordChatTokenUsage(chat, chatType, reportedUsage, tokenEstimate);
+        if (requestIsCurrent() && typeof recordChatTokenUsage === 'function') {
+            try { recordChatTokenUsage(chat, chatType, reportedUsage, tokenEstimate, provider); }
+            catch (error) { console.warn('Token 用量记录失败:', error.message); }
+        }
 
     } catch (error) {
         if (!isBackground && !generationController?.signal.aborted) showApiError(error);

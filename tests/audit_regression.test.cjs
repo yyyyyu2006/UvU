@@ -154,7 +154,8 @@ test('category import persists only selected tables and settings in one transact
     const modules = { wallpaper: 'new-wallpaper', myStickers: [] };
     await f.c.storagePersistImportedSelection({ wallpapers: true }, modules, f.c.storagePrepareImport({ wallpapers: true }, modules));
     assert.deepEqual(plain(transactions), [{ mode: 'rw', names: ['myStickers', 'globalSettings'] }]);
-    assert.deepEqual(writes, ['myStickers:clear', 'myStickers:bulkPut', 'globalSettings:wallpaper']);
+    // Empty snapshots clear the table without issuing an empty bulkPut batch.
+    assert.deepEqual(writes, ['myStickers:clear', 'globalSettings:wallpaper']);
 });
 test('image cleanup enumerates unique current and archived histories for characters and groups', () => {
     const f = fixture();

@@ -84,7 +84,6 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     container.replaceChildren();
 
     const formatTokens = value => Number(value || 0).toLocaleString();
-    const formatSignedTokens = value => `${value > 0 ? '+' : ''}${formatTokens(value)}`;
     const worldBookDetails = Array.isArray(data.worldBookDetails)
         ? data.worldBookDetails.filter(item => item && item.triggered !== false)
         : [];
@@ -102,27 +101,34 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     const floor = document.createElement('span');
     floor.textContent = `当前聊天楼层 ${chat.history?.length || 0}`;
     const total = document.createElement('b');
-    total.textContent = `${formatTokens(data.totalTokens || data.total || 0)} token`;
+    total.textContent = data.actual && !data.totalActual
+        ? (data.inputOutputActual ? `输入+输出 ${formatTokens(data.totalTokens)} token` : '总量未返回')
+        : `${data.totalActual ? '' : '约 '}${formatTokens(data.totalTokens ?? data.total ?? 0)} token`;
     summary.append(floor, total);
 
     const context = document.createElement('p');
     context.className = 'status-token-context';
-    const inputLabel = data.actual ? 'API 实际输入' : '输入估算';
-    const outputLabel = data.actual ? 'API 实际输出' : '输出估算';
-    context.textContent = `本轮上下文楼层 ${data.floorCount || 0} · ${inputLabel} ${formatTokens(data.promptTokens || 0)} · ${outputLabel} ${formatTokens(data.completionTokens || 0)}`;
+    const inputLabel = data.promptActual ? 'API 返回输入' : '输入估算';
+    const outputLabel = data.completionActual ? `API 返回输出 ${formatTokens(data.completionTokens)}` : 'API 输出未返回';
+    context.textContent = `本轮上下文楼层 ${data.floorCount || 0} · ${inputLabel} ${formatTokens(data.promptTokens || 0)} · ${outputLabel}`;
+
+    const note = document.createElement('p');
+    note.className = 'status-token-note';
+    note.textContent = data.actual
+        ? '输入分类为本地估算；差额仅用于比较，不代表额外扣费。推理输出是否计入输出总量取决于接口。'
+        : '当前未收到 API usage；下方数字为本地估算，仅供参考。';
 
     const list = document.createElement('div');
     list.className = 'status-token-list';
     const items = [
-        ['提示词 / 系统基础', data.baseSystem],
-        ['思维链指令', data.cot],
-        ['角色人设', data.charPersona],
-        ['用户人设', data.userPersona],
-        ['记忆总结', data.memory],
-        ['向量记忆', data.vectorMemory],
-        ['聊天记录', data.history],
-        ['思维链输出', data.reasoningTokens],
-        ['本轮输出', data.completionTokens]
+        ['提示词 / 系统基础（估算）', data.baseSystem],
+        ['思维链指令（估算）', data.cot],
+        ['角色人设（估算）', data.charPersona],
+        ['用户人设（估算）', data.userPersona],
+        ['记忆总结（估算）', data.memory],
+        ['向量记忆（估算）', data.vectorMemory],
+        ['世界书合计（估算）', data.worldBook],
+        ['聊天记录（估算）', data.history]
     ];
     const appendRow = (name, value, valueText = formatTokens(value), extraClass = '') => {
         const row = document.createElement('div');
@@ -135,6 +141,9 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         list.appendChild(row);
     };
     items.forEach(([name, value]) => appendRow(name, value));
+    appendRow('推理 Token（接口单列）', data.reasoningTokens,
+        data.reasoningActual ? formatTokens(data.reasoningTokens) : '接口未单独返回');
+    appendRow('本轮输出（API 返回）', data.completionTokens, data.completionActual ? formatTokens(data.completionTokens) : '接口未返回');
 
     if (worldBookDetails.length) {
         const worldBookSection = document.createElement('div');
@@ -164,7 +173,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
             const triggered = document.createElement('span');
             triggered.textContent = item.triggered ? '已触发' : '未触发';
             const amount = document.createElement('b');
-            amount.textContent = `${formatTokens(item.tokenEstimate)} token`;
+            amount.textContent = `约 ${formatTokens(item.tokenEstimate)} token`;
             row.append(name, triggered, amount);
             details.appendChild(row);
         });
@@ -178,13 +187,16 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         list.appendChild(worldBookSection);
     }
 
-    if (data.actual) {
+    if (data.promptActual) {
         const estimatedInput = [data.baseSystem, data.cot, data.worldBook, data.charPersona, data.userPersona, data.memory, data.vectorMemory, data.history]
             .reduce((sum, value) => sum + Number(value || 0), 0);
         const difference = Number(data.promptTokens || 0) - estimatedInput;
-        if (difference !== 0) appendRow('未分类 / 协议差异', difference, `${formatSignedTokens(difference)} token`, 'status-token-difference');
+        if (difference !== 0) {
+            const name = difference < 0 ? '分类估算高于 API 返回输入' : 'API 返回输入高于分类估算';
+            appendRow(name, difference, `${formatTokens(Math.abs(difference))} token`, 'status-token-difference');
+        }
     }
-    container.append(heading, summary, context, list);
+    container.append(heading, summary, context, note, list);
 }
 
 function setupChatRoom() {

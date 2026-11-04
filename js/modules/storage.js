@@ -62,6 +62,74 @@ function stringifySize(obj) {
     }
 }
 
+// Stream JSON in bounded chunks so large exports do not create one extra giant
+// UTF-16 string before compression. The payload schema and key order remain the
+// same as JSON.stringify for ordinary data.
+function* storageJsonPieces(value, key = '', ancestors = new Set()) {
+    if (value && typeof value.toJSON === 'function') value = value.toJSON(key);
+    if (value === undefined || typeof value === 'function' || typeof value === 'symbol') return;
+    if (typeof value === 'string') {
+        yield '"';
+        for (let start = 0; start < value.length; start += 16384) yield JSON.stringify(value.slice(start, start + 16384)).slice(1, -1);
+        yield '"'; return;
+    }
+    if (!value || typeof value !== 'object') { yield JSON.stringify(value); return; }
+    if (ancestors.has(value)) throw new Error('备份数据包含循环引用');
+    ancestors.add(value);
+    if (Array.isArray(value)) {
+        yield '[';
+        for (let i = 0; i < value.length; i++) {
+            if (i) yield ',';
+            const pieces = storageJsonPieces(value[i], String(i), ancestors);
+            let emitted = false;
+            for (const piece of pieces) { yield piece; emitted = true; }
+            if (!emitted) yield 'null';
+        }
+        yield ']';
+    } else {
+        yield '{';
+        let first = true;
+        for (const name of Object.keys(value)) {
+            const pieces = storageJsonPieces(value[name], name, ancestors);
+            const next = pieces.next();
+            if (next.done) continue;
+            if (!first) yield ',';
+            first = false;
+            yield JSON.stringify(name); yield ':';
+            yield next.value;
+            yield* pieces;
+        }
+        yield '}';
+    }
+    ancestors.delete(value);
+}
+
+function storageJsonStream(value) {
+    if (typeof ReadableStream !== 'function' || typeof TextEncoder !== 'function') return null;
+    const iterator = storageJsonPieces(value);
+    const encoder = new TextEncoder();
+    let chunks = 0;
+    return new ReadableStream({
+        async pull(controller) {
+            try {
+                if (++chunks % 8 === 0) await new Promise(resolve => setTimeout(resolve, 0));
+                let text = '';
+                while (text.length < 65536) {
+                    const next = iterator.next();
+                    if (next.done) {
+                        if (text) controller.enqueue(encoder.encode(text));
+                        controller.close();
+                        return;
+                    }
+                    text += next.value;
+                }
+                controller.enqueue(encoder.encode(text));
+            } catch (error) { controller.error(error); }
+        },
+        cancel() { iterator.return(); }
+    });
+}
+
 async function calculateStorageSize() {
     let sizes = {
         chats: 0,
@@ -330,7 +398,7 @@ function setupStorageAnalysisScreen() {
 }
 
 // 将设定和运行数据分开；存档也遵循同一勾选范围。
-const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'lastUserMessageTimestamp',
+const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'memoryVectorIndex', 'lastUserMessageTimestamp',
     'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
 const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
@@ -454,9 +522,60 @@ function storageValidateModules(modules) {
             list(call.context, location + '.context', message);
         });
         list(item.memoryJournals, path + '.memoryJournals', (journal, location) => {
-            optional(journal.content, location + '.content', 'string');
-            if (journal.range !== undefined) object(journal.range, location + '.range');
+            for (const key of ['id', 'title', 'content', 'timeline', 'category', 'vectorSupersededBy']) optional(journal[key], location + '.' + key, 'string');
+            optional(journal.createdAt, location + '.createdAt', 'number');
+            optional(journal.isFavorited, location + '.isFavorited', 'boolean');
+            if (journal.range !== undefined) {
+                object(journal.range, location + '.range');
+                for (const name of ['start', 'end']) optional(journal.range[name], location + '.range.' + name, 'number');
+            }
+            if (journal.autoMemory !== undefined) {
+                object(journal.autoMemory, location + '.autoMemory');
+                optional(journal.autoMemory.version, location + '.autoMemory.version', 'number');
+                optional(journal.autoMemory.kind, location + '.autoMemory.kind', 'string');
+                optional(journal.autoMemory.committed, location + '.autoMemory.committed', 'boolean');
+                list(journal.autoMemory.sources, location + '.autoMemory.sources', (source, sourcePath) => {
+                    optional(source.id, sourcePath + '.id', 'string');
+                    optional(source.hash, sourcePath + '.hash', 'string');
+                }, true);
+                list(journal.autoMemory.children, location + '.autoMemory.children', (child, childPath) => {
+                    optional(child.id, childPath + '.id', 'string');
+                    optional(child.hash, childPath + '.hash', 'string');
+                }, true);
+                if (journal.autoMemory.version === 1 && journal.autoMemory.committed) {
+                    if (!journal.range || !Number.isInteger(journal.range.start) || journal.range.start < 1 || !Number.isInteger(journal.range.end) || journal.range.end < journal.range.start) fail(location + '.range', '有效楼层范围');
+                    const sources = journal.autoMemory.kind === 'summary' ? journal.autoMemory.sources : journal.autoMemory.children;
+                    if (!['summary', 'merged'].includes(journal.autoMemory.kind) || !Array.isArray(sources) || !sources.length || sources.some(source => typeof source.hash !== 'string' || !source.hash)) fail(location + '.autoMemory', '有效来源记录');
+                }
+            }
         });
+        if (item.memoryVectorIndex !== undefined) {
+            object(item.memoryVectorIndex, path + '.memoryVectorIndex');
+            Object.entries(item.memoryVectorIndex).forEach(([indexId, entry]) => {
+                const entryPath = `${path}.memoryVectorIndex.${indexId}`;
+                object(entry, entryPath);
+                optional(entry.version, entryPath + '.version', 'number');
+                // Version 1 indexes are accepted for backward compatibility and are rebuilt lazily.
+                if (entry.version !== 2) {
+                    if (entry.vector !== undefined) {
+                        if (!Array.isArray(entry.vector) || !entry.vector.length || entry.vector.some(value => typeof value !== 'number' || !Number.isFinite(value))) fail(entryPath + '.vector', '有效数字列表');
+                    }
+                    return;
+                }
+                if (!Array.isArray(entry.chunks)) fail(entryPath + '.chunks', '列表');
+                let dimension = null;
+                entry.chunks.forEach((chunk, chunkIndex) => {
+                    const chunkPath = `${entryPath}.chunks[${chunkIndex}]`;
+                    object(chunk, chunkPath);
+                    if (typeof chunk.key !== 'string' || !chunk.key) fail(chunkPath + '.key', '文本');
+                    if (!Number.isInteger(chunk.start) || chunk.start < 0) fail(chunkPath + '.start', '非负整数');
+                    if (!Number.isInteger(chunk.end) || chunk.end <= chunk.start) fail(chunkPath + '.end', '大于 start 的整数');
+                    if (!Array.isArray(chunk.vector) || !chunk.vector.length || chunk.vector.some(value => typeof value !== 'number' || !Number.isFinite(value))) fail(chunkPath + '.vector', '有效数字列表');
+                    if (dimension === null) dimension = chunk.vector.length;
+                    if (chunk.vector.length !== dimension) fail(chunkPath + '.vector', '维度一致的数字列表');
+                });
+            });
+        }
         list(item.members, path + '.members', (member, location) => {
             optional(member.id, location + '.id', 'string');
             optional(member.realName, location + '.realName', 'string');
@@ -538,6 +657,9 @@ function storageMergeChats(targets, incoming, contacts, chats) {
         if (!chats) return;
         const applyRuntime = (destination, source) => {
             const data = storageRuntimeData(source);
+            // Old backups have no index. Never pair newly restored history with
+            // vectors from a different local story; the derived cache rebuilds lazily.
+            if (source.history !== undefined && source.memoryVectorIndex === undefined) data.memoryVectorIndex = {};
             if (data.statusPanel) data.statusPanel = { ...destination.statusPanel, ...data.statusPanel };
             Object.assign(destination, data);
         };
@@ -602,7 +724,7 @@ async function storageReadBackup(file, selection) {
         ];
         return new Promise((resolve, reject) => {
             let worker;
-            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261103-backup'); }
+            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261104-memory-safety'); }
             catch (_) { reject(new Error('备份后台解析无法启动，请检查浏览器或网站脚本策略')); return; }
             const finish = () => { worker.terminate(); clearTimeout(timer); };
             const timer = setTimeout(() => { finish(); reject(new Error('备份解析超时，请按类别拆分后重试')); }, 180000);
@@ -669,6 +791,10 @@ async function storagePersistImportedSelection(selection, modules, pending) {
     }
     if (!tables.length) return;
 
+    const putBatches = async (table, records, size = 16) => {
+        for (let offset = 0; offset < records.length; offset += size) await table.bulkPut(records.slice(offset, offset + size));
+    };
+
     await dexieDB.transaction('rw', tables, async () => {
         if (includeChats && hasChatData) {
             for (const key of ['characters', 'groups']) {
@@ -681,22 +807,22 @@ async function storagePersistImportedSelection(selection, modules, pending) {
                     if (chat.archives) chat.archives = chat.archives.map(archive => ({ ...archive }));
                     syncChatActiveArchive(chat);
                 });
-                if (changed.length) await dexieDB[key].bulkPut(changed);
+                if (changed.length) await putBatches(dexieDB[key], changed, 1);
             }
         }
         if (hasWorldBooks) {
             await dexieDB.worldBooks.clear();
-            await dexieDB.worldBooks.bulkPut(pending.worldBooks);
+            await putBatches(dexieDB.worldBooks, pending.worldBooks);
         }
         if (hasStickers) {
             await dexieDB.myStickers.clear();
-            await dexieDB.myStickers.bulkPut(pending.myStickers);
+            await putBatches(dexieDB.myStickers, pending.myStickers);
         }
         if (hasFonts) await storageImportFonts(modules.customFonts);
         for (const name of cacheTables) {
             // Cache IDs and reader relationships form a snapshot; replace selected tables atomically.
             await dexieDB[name].clear();
-            if (modules.mediaCache.tables[name].length) await dexieDB[name].bulkPut(modules.mediaCache.tables[name]);
+            if (modules.mediaCache.tables[name].length) await putBatches(dexieDB[name], modules.mediaCache.tables[name]);
         }
         await Promise.all(selectedSettingKeys.map(key => dexieDB.globalSettings.put({ key, value: pending[key] })));
     });
@@ -783,19 +909,21 @@ async function handleExport() {
         }
 
         if (exportSelection.other) exportData.modules.mediaCache = await storageExportMediaCache();
-        const jsonString = JSON.stringify(exportData);
-        const dataBlob = new Blob([jsonString]);
-        
-        let outputBlob = dataBlob;
+        let outputBlob;
         let extension = 'json';
         if (format !== 'json') {
             try {
-                const compressedStream = dataBlob.stream().pipeThrough(new CompressionStream('gzip'));
+                const stream = storageJsonStream(exportData) || new Blob([JSON.stringify(exportData)]).stream();
+                const compressedStream = stream.pipeThrough(new CompressionStream('gzip'));
                 outputBlob = await new Response(compressedStream).blob();
                 extension = 'ee';
             } catch (compressError) {
                 console.warn('压缩导出失败，改为兼容的 JSON 备份:', compressError);
             }
+        }
+        if (!outputBlob) {
+            const stream = storageJsonStream(exportData);
+            outputBlob = stream ? await new Response(stream).blob() : new Blob([JSON.stringify(exportData)]);
         }
         const url = URL.createObjectURL(outputBlob);
         const downloadAnchorNode = document.createElement('a');

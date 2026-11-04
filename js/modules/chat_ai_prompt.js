@@ -472,10 +472,15 @@ function chatTokenUsageKey(chatId, chatType = 'private', archiveId = '') {
 
 function normalizeChatTokenUsage(usage, provider = '') {
     if (!usage || typeof usage !== 'object') return null;
-    const prompt = Number(usage.prompt_tokens ?? usage.promptTokenCount ?? usage.input_tokens);
-    const completion = Number(usage.completion_tokens ?? usage.candidatesTokenCount ?? usage.output_tokens);
-    const total = Number(usage.total_tokens ?? usage.totalTokenCount);
-    const reasoning = Number(usage.reasoning_tokens ?? usage.thoughtsTokenCount ?? usage.completion_tokens_details?.reasoning_tokens);
+    const number = value => {
+        if (typeof value !== 'number' && !(typeof value === 'string' && value.trim())) return NaN;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : NaN;
+    };
+    const prompt = number(usage.prompt_tokens ?? usage.promptTokenCount ?? usage.input_tokens);
+    const completion = number(usage.completion_tokens ?? usage.candidatesTokenCount ?? usage.output_tokens);
+    const total = number(usage.total_tokens ?? usage.totalTokenCount);
+    const reasoning = number(usage.reasoning_tokens ?? usage.thoughtsTokenCount ?? usage.completion_tokens_details?.reasoning_tokens);
     const hasValue = [prompt, completion, total, reasoning].some(Number.isFinite);
     if (!hasValue) return null;
     return {
@@ -487,22 +492,69 @@ function normalizeChatTokenUsage(usage, provider = '') {
     };
 }
 
-function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = [], vectorContext = '', worldBookPlan) {
+function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', worldBookPlan, requestBody) {
     if (!chat) return null;
-    const breakdown = calculateTokenBreakdown(chat.id, chatType, worldBookPlan) || {};
-    const history = historySlice.length ? historySlice : (chat.history || []);
-    const historyText = history.map(message => {
-        const parts = (message.parts || []).filter(part => part.type === 'text' || part.type === 'html').map(part => part.text || '').join('');
-        return `${message.content || ''}${parts}`;
-    }).join('\n');
-    breakdown.history = countTextTokens(historyText);
-    breakdown.vectorMemory = countTextTokens(vectorContext);
+    const history = Array.isArray(historySlice) ? historySlice : getAutoMemoryContextHistory(chat);
+    const plan = Array.isArray(worldBookPlan) ? worldBookPlan : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, history) : []);
+    const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, history: 0,
+        worldBookDetails: getWorldBookTokenDetails(chat, plan) };
     const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
-        ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, worldBookPlan) : '')
-        : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, worldBookPlan) : ''));
-    const systemEstimate = countTextTokens(effectiveSystemPrompt);
-    const knownParts = breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory;
-    breakdown.baseSystem = Math.max(0, systemEstimate - knownParts);
+        ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
+        : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, plan) : ''));
+    // Read the final request without rewriting it. Each text span belongs to one category only.
+    const fields = [];
+    const add = (text, category) => { if (typeof text === 'string' && text) fields.push({ text, category }); };
+    if (requestBody?.messages) requestBody.messages.forEach(message => {
+        const category = message.role === 'system' ? 'baseSystem' : 'history';
+        if (typeof message.content === 'string') add(message.content, category);
+        else (message.content || []).forEach(part => add(part.text, category));
+    });
+    else if (requestBody?.contents) {
+        (requestBody.system_instruction?.parts || []).forEach(part => add(part.text, 'baseSystem'));
+        requestBody.contents.forEach(message => (message.parts || []).forEach(part => add(part.text, 'history')));
+    } else {
+        add(effectiveSystemPrompt, 'baseSystem');
+        history.forEach(message => {
+            if (message.parts?.length) message.parts.forEach(part => add(part.text, 'history'));
+            else add(message.content, 'history');
+        });
+    }
+    const claim = (fragment, category) => {
+        if (typeof fragment !== 'string' || !fragment) return false;
+        for (let i = 0; i < fields.length; i++) {
+            const field = fields[i];
+            if (field.category !== 'baseSystem' && !(category === 'worldBook' && field.category === 'history')) continue;
+            const index = field.text.indexOf(fragment);
+            if (index < 0) continue;
+            fields.splice(i, 1, { text: field.text.slice(0, index), category: field.category },
+                { text: fragment, category }, { text: field.text.slice(index + fragment.length), category: field.category });
+            return true;
+        }
+        return false;
+    };
+    // A vector hit replaces whole-journal injection for this request only.
+    claim(vectorContext, 'vectorMemory');
+    for (const book of plan) claim(book.content, 'worldBook');
+    claim(chatType === 'private' ? chat.persona : null, 'charPersona');
+    claim(chatType === 'private' ? chat.myPersona : chat.me?.persona, 'userPersona');
+    if (chatType !== 'private') (chat.members || []).forEach(member => claim(member.persona, 'charPersona'));
+    if (!vectorContext) getContextMemoryJournals(chat).forEach(journal => claim(`标题：${journal.title}\n内容：${journal.content}`, 'memory'));
+    const preset = (db.cotPresets || []).find(item => item.id === (chat.exclusiveCotPreset || db.cotSettings?.activePresetId || 'default'));
+    const cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
+    if (db.cotSettings?.enabled && cotText) claim(cotText, 'cot');
+    for (const field of fields) {
+        if (field.category === 'baseSystem') {
+            // T.T can place history inside the system message; count it once as history.
+            const pattern = /<chat_history>[\s\S]*?<\/chat_history>/g;
+            let start = 0, match;
+            while ((match = pattern.exec(field.text))) {
+                breakdown.baseSystem += countTextTokens(field.text.slice(start, match.index));
+                breakdown.history += countTextTokens(match[0]);
+                start = pattern.lastIndex;
+            }
+            breakdown.baseSystem += countTextTokens(field.text.slice(start));
+        } else breakdown[field.category] += countTextTokens(field.text);
+    }
     breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.history;
     breakdown.promptTokens = breakdown.total;
     breakdown.completionTokens = 0;
@@ -513,13 +565,14 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     return breakdown;
 }
 
-function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, estimate = null) {
+function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, estimate = null, provider = db.apiSettings?.provider || '') {
     if (!chat) return null;
-    const normalized = normalizeChatTokenUsage(reportedUsage, db.apiSettings?.provider || '');
-    const base = estimate || estimateChatTokenUsage(chat, chatType, '', chat.history || []);
+    const normalized = normalizeChatTokenUsage(reportedUsage, provider);
+    const base = estimate || estimateChatTokenUsage(chat, chatType);
     const promptTokens = normalized?.promptTokens ?? base?.promptTokens ?? base?.total ?? 0;
     const completionTokens = normalized?.completionTokens ?? base?.completionTokens ?? 0;
     const totalTokens = normalized?.totalTokens ?? (promptTokens + completionTokens);
+    const hasMainUsage = Boolean(normalized && (normalized.promptTokens != null || normalized.completionTokens != null || normalized.totalTokens != null));
     const snapshot = {
         ...(base || {}),
         promptTokens,
@@ -528,8 +581,13 @@ function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, 
         estimatedPromptTokens: base?.promptTokens ?? base?.total ?? null,
         estimatedCompletionTokens: base?.completionTokens ?? 0,
         reasoningTokens: normalized?.reasoningTokens ?? 0,
-        actual: Boolean(normalized && (normalized.promptTokens != null || normalized.completionTokens != null || normalized.totalTokens != null)),
-        source: normalized ? 'API 总量 / 分项估算' : '本地估算',
+        promptActual: normalized?.promptTokens != null,
+        completionActual: normalized?.completionTokens != null,
+        totalActual: normalized?.totalTokens != null,
+        inputOutputActual: normalized?.promptTokens != null && normalized?.completionTokens != null,
+        reasoningActual: normalized?.reasoningTokens != null,
+        actual: hasMainUsage,
+        source: hasMainUsage ? 'API 返回用量 / 分类估算' : '本地分类估算',
         floorCount: base?.floorCount ?? 0,
         timestamp: Date.now()
     };
@@ -542,5 +600,5 @@ function getChatTokenUsageSnapshot(chatId, chatType = 'private') {
     const chat = (chatType === 'private' ? db.characters : db.groups).find(item => item.id === chatId);
     if (!chat) return null;
     return chatTokenUsageSnapshots.get(chatTokenUsageKey(chatId, chatType, chat.activeArchiveId)) ||
-        estimateChatTokenUsage(chat, chatType, '', chat.history || []);
+        estimateChatTokenUsage(chat, chatType);
 }

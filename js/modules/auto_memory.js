@@ -16,12 +16,15 @@ const autoMemoryNeedsRefresh = new Set();
 const vectorMemoryPromptChats = new WeakSet();
 const vectorMemoryQueues = new WeakMap();
 const vectorMemoryStatus = new WeakMap();
+const vectorChunkPlans = new WeakMap();
 
 function resolveVectorMemoryApi() {
     const legacy = db.memoryApiSettings || {}, vector = db.vectorMemoryApiSettings || {};
-    return { ...legacy, ...vector, rerankMode: vector.rerankMode || (vector.rerankModel ? getVectorRerankMode(vector) : legacy.rerankMode || 'chat'),
-        embeddingModel: vector.embeddingModel || legacy.embeddingModel || '',
-        rerankModel: vector.rerankModel || legacy.rerankModel || legacy.model || '' };
+    // Only old installations without independent settings use the legacy route.
+    const independent = ['url', 'key', 'embeddingModel', 'rerankModel'].some(key => String(vector[key] || '').trim());
+    const config = independent ? vector : legacy;
+    return { ...config, rerankMode: config.rerankMode || (config.rerankModel ? getVectorRerankMode(config) : 'chat'),
+        embeddingModel: config.embeddingModel || '', rerankModel: config.rerankModel || (independent ? '' : legacy.model || '') };
 }
 function getVectorRerankMode(config) {
     if (['native', 'chat'].includes(config.rerankMode)) return config.rerankMode;
@@ -456,14 +459,70 @@ function vectorSourceFingerprint(chat) {
     return autoMemoryFingerprint([(chat.history || []).map(item => autoMemoryFingerprint([item])),
         (chat.memoryJournals || []).map(item => autoMemoryFingerprint([item])), chat.autoMemorySettings, chat.statusPanel?.regexPattern]);
 }
-function sameMemoryVectorIndex(previous, next) {
+function sameMemoryVectorIndex(previous, next, deep = false) {
     const ids = Object.keys(previous);
     return ids.length === Object.keys(next).length && ids.every(id => {
         const a = previous[id], b = next[id];
         return a?.version === b?.version && Array.isArray(a?.chunks) && a.chunks.length === b?.chunks?.length &&
             a.chunks.every((chunk, i) => chunk.key === b.chunks[i].key && chunk.start === b.chunks[i].start &&
-                chunk.end === b.chunks[i].end && chunk.vector === b.chunks[i].vector);
+                chunk.end === b.chunks[i].end && (chunk.vector === b.chunks[i].vector || deep && Array.isArray(chunk.vector) && Array.isArray(b.chunks[i].vector) &&
+                chunk.vector.length === b.chunks[i].vector.length && chunk.vector.every((value, index) => value === b.chunks[i].vector[index])));
     });
+}
+
+async function planVectorMemoryChunks(chat, candidates, apiFingerprint, assertCurrent) {
+    const old = vectorChunkPlans.get(chat);
+    const reusable = old?.archiveId === chat.activeArchiveId && old.apiFingerprint === apiFingerprint ? old.entries : new Map();
+    const entries = new Map(), planned = [];
+    for (let i = 0; i < candidates.length; i++) {
+        const journal = candidates[i], cached = reusable.get(journal.id);
+        const chunks = cached?.content === journal.content && cached.title === journal.title ? cached.chunks
+            : splitMemoryIntoChunks(journal.content).map(chunk => ({ chunk, hash: autoMemoryFingerprint([apiFingerprint, journal.title || '', chunk.text]) }));
+        entries.set(journal.id, { title: journal.title, content: journal.content, chunks });
+        for (const item of chunks) planned.push({ journal, ...item });
+        if (i % 32 === 31) { await new Promise(resolve => setTimeout(resolve, 0)); assertCurrent(); }
+    }
+    assertCurrent();
+    vectorChunkPlans.set(chat, { archiveId: chat.activeArchiveId, apiFingerprint, entries });
+    return planned;
+}
+
+async function scoreVectorMemoryChunks(query, rows, assertCurrent, signal) {
+    // Cap temporary packing at 16 MB; very large libraries use the yielding
+    // exact fallback rather than allocating another full numeric index.
+    if (typeof Worker === 'function' && rows.length >= 256 && rows.length * query.length <= 2 * 1024 * 1024) {
+        try {
+            const vectors = new Float64Array(rows.length * query.length);
+            for (let i = 0; i < rows.length; i++) {
+                vectors.set(rows[i].embedding, i * query.length);
+                if (i % 64 === 63) { await new Promise(resolve => setTimeout(resolve, 0)); assertCurrent(); }
+            }
+            const scores = await new Promise((resolve, reject) => {
+                let worker, timer;
+                const stop = () => { worker?.terminate(); clearTimeout(timer); signal?.removeEventListener('abort', cancel); };
+                const cancel = () => { stop(); const error = new Error('记忆检索已取消'); error.name = 'AbortError'; reject(error); };
+                if (signal?.aborted) { cancel(); return; }
+                try { worker = new Worker('js/modules/vector_search_worker.js?v=20261104-memory-safety'); }
+                catch (error) { reject(error); return; }
+                signal?.addEventListener('abort', cancel, { once: true });
+                timer = setTimeout(() => { stop(); reject(new Error('向量本地检索超时')); }, 30000);
+                worker.onerror = () => { stop(); reject(new Error('向量后台检索不可用')); };
+                worker.onmessage = event => { stop(); event.data.error ? reject(new Error(event.data.error)) : resolve(event.data.scores); };
+                try { worker.postMessage({ query, vectors }, [vectors.buffer]); }
+                catch (error) { stop(); reject(error); }
+            });
+            assertCurrent();
+            if (scores.length !== rows.length) throw new Error('向量后台结果不完整');
+            return scores;
+        } catch (error) { if (error.name === 'AbortError') throw error; /* Same exact search with cooperative yielding below. */ }
+    }
+    const scores = [];
+    for (let i = 0; i < rows.length; i++) {
+        scores.push(autoMemoryCosine(query, rows[i].embedding));
+        if (i % 64 === 63) { await new Promise(resolve => setTimeout(resolve, 0)); assertCurrent(); }
+    }
+    assertCurrent();
+    return scores;
 }
 async function retrieveVectorMemoryContext(chat, queryText, signal) {
     const settings = getAutoMemorySettings(chat);
@@ -501,10 +560,11 @@ async function retrieveVectorMemoryContext(chat, queryText, signal) {
         }
     }
     const chunkHits = [];
+    const targetArchive = chat.archives?.find(item => item.id === archive);
+    const previousArchiveIndex = targetArchive?.data?.memoryVectorIndex;
     let completedIndex = false;
     try {
-    const planned = candidates.flatMap(journal => splitMemoryIntoChunks(journal.content).map(chunk => ({ journal, chunk,
-        hash: autoMemoryFingerprint([apiFingerprint, journal.title || '', chunk.text]) })));
+    const planned = await planVectorMemoryChunks(chat, candidates, apiFingerprint, assertCurrent);
     const pending = [...new Map(planned.filter(item => !embeddings.has(item.hash)).map(item => [item.hash, item])).values()];
     const batchSize = Math.max(1, Math.min(16, Math.floor(Number(config.batchSize) || 1)));
     const collect = () => {
@@ -514,8 +574,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal) {
             if (!nextIndex[journal.id]) nextIndex[journal.id] = { version: 2, chunks: [] };
             const indexedChunk = { key: hash, start: chunk.start, end: chunk.end, vector: embedding };
             nextIndex[journal.id].chunks.push(indexedChunk);
-            const score = autoMemoryCosine(queryVector, embedding);
-            if (score >= settings.vectorThreshold) chunkHits.push({ journal, chunk: indexedChunk, score });
+            chunkHits.push({ journal, chunk: indexedChunk, embedding });
         }
     };
     try {
@@ -534,13 +593,24 @@ async function retrieveVectorMemoryContext(chat, queryText, signal) {
         if (!sameMemoryVectorIndex(oldIndex, committedIndex)) {
             chat.memoryVectorIndex = committedIndex;
             try { await saveData(); }
-            catch (error) { if (chat.memoryVectorIndex === committedIndex) chat.memoryVectorIndex = oldIndex; throw error; }
+            catch (error) {
+                if (chat.activeArchiveId === archive && chat.memoryVectorIndex === committedIndex) chat.memoryVectorIndex = oldIndex;
+                const savedArchive = chat.archives?.find(item => item.id === archive);
+                if (savedArchive?.data?.memoryVectorIndex && sameMemoryVectorIndex(savedArchive.data.memoryVectorIndex, committedIndex, true)) {
+                    if (previousArchiveIndex === undefined) delete savedArchive.data.memoryVectorIndex;
+                    else savedArchive.data.memoryVectorIndex = previousArchiveIndex;
+                }
+                throw error;
+            }
             assertCurrent(true);
         }
     }
     const hitLimit = settings.vectorTopK * (settings.vectorRerankEnabled ? 3 : 1);
     const byJournal = new Map();
-    for (const hit of chunkHits) {
+    const scores = await scoreVectorMemoryChunks(queryVector, chunkHits, assertCurrent, signal);
+    for (let i = 0; i < chunkHits.length; i++) {
+        const hit = { ...chunkHits[i], score: scores[i] };
+        if (hit.score < settings.vectorThreshold) continue;
         if (!byJournal.has(hit.journal.id)) byJournal.set(hit.journal.id, []);
         byJournal.get(hit.journal.id).push(hit);
     }

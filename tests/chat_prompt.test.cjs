@@ -9,7 +9,7 @@ function fixture(history = []) {
     const chat = { id: 'prompt-test', realName: '晴', myName: '我', maxMemory: 20, history };
     const context = vm.createContext({
         db: { characters: [chat], groups: [], apiSettings: { provider: 'gemini', url: 'https://test.invalid', key: 'fake', model: 'test', streamEnabled: false } },
-        console: { log() {}, error() {} }, currentChatId: chat.id, currentChatType: 'private', isGenerating: false,
+        console: { log() {}, error() {}, warn() {} }, currentChatId: chat.id, currentChatType: 'private', isGenerating: false,
         AudioManager: { unlock() {} }, getReplyBtn: {}, regenerateBtn: {}, typingIndicator: { style: {} }, messageArea: {},
         generatePrivateSystemPrompt: () => '原始角色规则\n【动态插入: 聊天记录】\n原始世界书规则',
         filterHistoryForAI: (chat, history) => history, pad: n => String(n).padStart(2, '0'), getRandomValue: value => value,
@@ -87,4 +87,15 @@ test('finishing an old chat request always clears the global generating lock aft
     assert.equal(f.context.isGenerating, false);
     assert.equal(f.context.getReplyBtn.disabled, false);
     assert.equal(f.context.regenerateBtn.disabled, false);
+});
+
+test('token accounting failures never block chat delivery or change its request body', async () => {
+    const history = [{ id: 'u', role: 'user', content: '原消息', timestamp: 1700000000000 }];
+    const before = fixture(history), after = fixture(history);
+    after.context.estimateChatTokenUsage = () => { throw new Error('statistics failure'); };
+    after.context.recordChatTokenUsage = () => { throw new Error('statistics failure'); };
+    await before.context.getAiReply(before.chat.id, 'private');
+    await after.context.getAiReply(after.chat.id, 'private');
+    assert.deepEqual(after.requests, before.requests);
+    assert.deepEqual(after.errors, []);
 });

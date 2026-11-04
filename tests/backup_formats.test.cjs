@@ -12,7 +12,7 @@ function fixture() {
         return elements.get(id);
     };
     const c = vm.createContext({ console: { warn() {}, error() {} }, window: {}, structuredClone, Blob, File, Response,
-        CompressionStream, DecompressionStream, setTimeout() {}, showToast: text => toasts.push(text),
+        CompressionStream, DecompressionStream, ReadableStream, TextEncoder, setTimeout() {}, showToast: text => toasts.push(text),
         document: { addEventListener() {}, getElementById: element, body: { appendChild() {} },
             createElement: () => ({ click() { downloads.push(this.download); }, remove() {} }) },
         URL: { createObjectURL(blob) { blobs.push(blob); return 'blob:test'; }, revokeObjectURL() {} } });
@@ -69,4 +69,22 @@ test('unsupported EE decompression explains the JSON alternative without changin
     assert.match(f.toasts.at(-1), /不支持解压.*json/);
     assert.equal(input.value, '');
     assert.equal(f.c.db.characters[0].persona, 'original persona');
+});
+
+test('chat backup carries the active archive vector index without changing prompt fields', async () => {
+    const f = fixture();
+    f.c.db.characters[0].memoryVectorIndex = { note: { version: 2, chunks: [{ key: 'h', start: 0, end: 4, vector: [1, 0] }] } };
+    const exported = f.c.storageExportChat(f.c.db.characters[0], true, true);
+    assert.deepEqual(exported.memoryVectorIndex.note.chunks[0].vector, [1, 0]);
+    assert.equal(exported.persona, 'original persona');
+    assert.equal(exported.history[0].content, 'private history');
+});
+
+test('streamed backup JSON matches the normal JSON structure', async () => {
+    const f = fixture();
+    const value = { modules: { characters: [{ id: 'c', text: '中文😀', longText: 'a'.repeat(16383) + '😀中文', optional: undefined }],
+        array: [null, undefined, true], settings: { enabled: true, skipped: { toJSON() {} } } } };
+    const stream = f.c.storageJsonStream(value);
+    assert.ok(stream);
+    assert.deepEqual(await new Response(stream).json(), JSON.parse(JSON.stringify(value)));
 });

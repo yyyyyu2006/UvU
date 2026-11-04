@@ -1,4 +1,7 @@
 // --- 设置与管理逻辑 (js/settings.js) ---
+// LEGACY: retained as a historical reference only. Do not load this script.
+// Runtime settings live in js/modules/settings_{customize,api,chat,presets}.js.
+// Loading both implementations overrides globals and duplicates event handlers.
 
 function setupChatSettings() {
     const themeSelect = document.getElementById('setting-theme-color');

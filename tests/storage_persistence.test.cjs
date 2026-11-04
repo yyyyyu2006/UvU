@@ -197,12 +197,50 @@ test('nested corrupt backups reject before a transaction and leave stored prompt
     assert.equal((await f.database.globalSettings.get("cotPresets")).value[0].content, "original prompt");
 });
 
+test('deep memory metadata and vector chunks are validated before import writes', async t => {
+    const f = await fixture(t);
+    const valid = { characters: [{ id: 'c', memoryJournals: [{ id: 'j', content: '旧事', range: { start: 1, end: 2 }, autoMemory: {
+        version: 1, kind: 'summary', committed: true, sources: [{ id: 'm1', hash: 'h1' }], children: []
+    } }], memoryVectorIndex: { j: { version: 2, chunks: [{ key: 'h', start: 0, end: 2, vector: [0.2, 0.8] }] } } }] };
+    await f.c.storageCommitImport({ chats: true, contacts: true }, valid);
+    const invalidSamples = [
+        { characters: [{ id: 'c', memoryJournals: [{ id: 'j', autoMemory: { sources: [{ id: 'm1' }, { id: 'm1' }] } }] }] },
+        { characters: [{ id: 'c', memoryVectorIndex: { j: { version: 2, chunks: [{ key: 'h', start: 0, end: 2, vector: [0.2, NaN] }] } } }] },
+        { characters: [{ id: 'c', memoryVectorIndex: { j: { version: 2, chunks: [{ key: 'h', start: 2, end: 2, vector: [0.2] }] } } }] },
+        { characters: [{ id: 'c', memoryVectorIndex: { j: { version: 2, chunks: [{ key: 'h', start: 0, end: 2, vector: [0.2], }, { key: 'h2', start: 2, end: 4, vector: [0.2, 0.8] }] } } }] }
+    ];
+    for (const sample of invalidSamples) await assert.rejects(f.c.storageCommitImport({ chats: true, contacts: true }, sample));
+    assert.equal((await f.database.characters.get('c')).memoryJournals[0].content, '旧事');
+});
+
 test('legacy missing optional fields and future extension keys remain accepted without changing prompt text', async t => {
     const f = await fixture(t);
     await f.c.storageCommitImport({ chats: true, contacts: true, settings: true }, { characters: [{ id: "c", persona: "UwU / T.T original", history: [{ id: "legacy", content: "legacy text" }], extension: { future: true } }], cotPresets: [{ content: "UwU / T.T literal" }], homeLayoutPages: null });
     const saved = await f.database.characters.get("c");
     assert.equal(saved.history[0].content, "legacy text"); assert.equal(saved.persona, "UwU / T.T original");
     assert.equal((await f.database.globalSettings.get("cotPresets")).value[0].content, "UwU / T.T literal");
+});
+
+test('failure after a later import batch rolls back the entire selected table and keeps live data', async t => {
+    const f = await fixture(t), books = f.c.db.worldBooks;
+    const fail = (_key, item) => { if (item.id === 'batch-18') throw new Error('later batch failure'); };
+    f.database.worldBooks.hook('creating', fail);
+    await assert.rejects(f.c.storageCommitImport({ worldbooks: true }, {
+        worldBooks: Array.from({ length: 35 }, (_, index) => ({ id: `batch-${index}`, content: '世界观' }))
+    }), /later batch failure/);
+    assert.equal(f.c.db.worldBooks, books);
+    assert.equal(await f.database.worldBooks.count(), 1);
+    assert.equal((await f.database.worldBooks.get('w')).content, 'world');
+});
+
+test('old history imports clear a recipient vector cache without changing unselected prompts', async t => {
+    const f = await fixture(t);
+    f.c.db.characters[0].memoryVectorIndex = { unrelated: { version: 2, chunks: [] } };
+    await f.c.storageCommitImport({ chats: true }, { characters: [{ id: 'c', history: [{ id: 'old', content: '1900 story' }] }] });
+    const saved = await f.database.characters.get('c');
+    assert.deepEqual(Object.keys(saved.memoryVectorIndex), []);
+    assert.equal(saved.persona, 'original persona');
+    assert.equal((await f.database.globalSettings.get('cotPresets')).value[0].content, 'original prompt');
 });
 
 function loadChatActions(f) {
