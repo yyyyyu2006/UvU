@@ -2209,6 +2209,11 @@
 .status-flip-card.is-flipped { transform: rotateY(180deg); }
 .status-flip-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
 .status-flip-front { display: flex; flex-direction: column; }
+/* Hidden faces must not own iframe touch scrolling or keyboard focus. */
+.status-flip-back { visibility: hidden; pointer-events: none; }
+.status-flip-card.is-flipped .status-flip-front { visibility: hidden; pointer-events: none; }
+.status-flip-card.is-flipped .status-flip-back { visibility: visible; pointer-events: auto; }
+
 .status-flip-back { transform: rotateY(180deg); overflow-y: auto; padding: 42px 20px 110px; box-sizing: border-box; align-items: stretch; }
 .status-token-toggle { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 18px; z-index: 1004; border: 1px solid rgba(255,255,255,.55); border-radius: 999px; padding: 6px 10px; color: #333; background: rgba(255,255,255,.86); box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 12px; cursor: pointer; }
 .status-token-panel { width: min(520px, 100%); margin: 0 auto; padding: 18px; box-sizing: border-box; border-radius: 16px; background: rgba(255,255,255,.94); color: #222; box-shadow: 0 8px 28px rgba(0,0,0,.12); }

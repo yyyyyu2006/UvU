@@ -127,6 +127,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         ['用户人设（估算）', data.userPersona],
         ['记忆总结（估算）', data.memory],
         ['向量记忆（估算）', data.vectorMemory],
+        ...(data.environment ? [['真实环境（估算）', data.environment]] : []),
         ['世界书合计（估算）', data.worldBook],
         ['聊天记录（估算）', data.history]
     ];
@@ -257,6 +258,8 @@ function setupChatRoom() {
             front.className = 'status-flip-face status-flip-front';
             const back = document.createElement('div');
             back.className = 'status-flip-face status-flip-back';
+            back.inert = true;
+            back.setAttribute('aria-hidden', 'true');
             const frontToggle = document.createElement('button');
             frontToggle.type = 'button';
             frontToggle.className = 'status-token-toggle';
@@ -386,7 +389,15 @@ function setupChatRoom() {
             const tokenToggle = e.target.closest('[data-token-flip]');
             if (tokenToggle) {
                 const card = tokenToggle.closest('.status-flip-card');
-                if (card) card.classList.toggle('is-flipped');
+                if (card) {
+                    const flipped = card.classList.toggle('is-flipped');
+                    const front = card.querySelector('.status-flip-front');
+                    const back = card.querySelector('.status-flip-back');
+                    front.inert = flipped; back.inert = !flipped;
+                    front.setAttribute('aria-hidden', String(flipped));
+                    back.setAttribute('aria-hidden', String(!flipped));
+                    (flipped ? back : front).querySelector('[data-token-flip]')?.focus({ preventScroll: true });
+                }
                 return;
             }
             const target = e.target.closest('[data-send-msg]');

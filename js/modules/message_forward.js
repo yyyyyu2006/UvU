@@ -44,7 +44,7 @@ function messageForwardNode(tag, className, text) {
     return element;
 }
 
-function createMessageForwardDialog(title, id) {
+function createMessageForwardDialog(title, id, onDismiss) {
     document.getElementById(id)?.dismissForward?.();
     const previousFocus = document.activeElement;
     const overlay = messageForwardNode('div', 'message-forward-overlay');
@@ -59,6 +59,7 @@ function createMessageForwardDialog(title, id) {
     const dismiss = () => {
         if (busy) return;
         overlay.remove(); document.removeEventListener('keydown', onKey);
+        if (typeof onDismiss === 'function') onDismiss();
         if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
     const onKey = event => { if (event.key === 'Escape') dismiss(); };

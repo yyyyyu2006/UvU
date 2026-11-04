@@ -26,7 +26,7 @@ function initMoreMenu() {
         if (action === 'status-bar') {
             openStatusBarManager();
         } else if (action === 'calendar') {
-            showToast('日历功能开发中...');
+            if (typeof openEnvironmentCalendar === 'function') openEnvironmentCalendar();
         } else if (action === 'star') {
             showToast('收藏功能开发中...');
         } else if (action === 'drawing-workshop') {

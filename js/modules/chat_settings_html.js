@@ -165,6 +165,10 @@ const chatSettingsHtml = `
                             </div>
                         </div>
 
+                        <div class="kkt-group derived-entry-group">
+                            <div class="kkt-item"><div class="kkt-item-label">角色自主头像</div><button type="button" class="derived-compact" onclick="openCharacterAvatarSettings()">设置</button></div>
+                            <div class="kkt-item"><div class="kkt-item-label">天气与异地模式</div><button type="button" class="derived-compact" onclick="openEnvironmentSettings(true)">设置</button></div>
+                        </div>
                         <!-- 互动功能控制中心 -->
                         <div class="feature-control-center" style="margin-top: 15px;">
                             <div class="feature-grid">

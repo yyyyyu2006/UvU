@@ -18,6 +18,7 @@ async function receiveAirDropPhoto(messageId, isAuto = false) {
 
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    const photoArchiveId = chat.activeArchiveId;
 
     const charName = chat.remarkName || chat.name;
 
@@ -82,7 +83,10 @@ async function receiveAirDropPhoto(messageId, isAuto = false) {
             const base64Image = await generateImageFromTags(tags, chat);
 
             // 阶段 3: 保存并展示
-            await saveAirDropPhoto(chat.id, base64Image, tags);
+            await saveAirDropPhoto(chat.id, base64Image, tags, { archiveId: photoArchiveId, messageId });
+            if (chat.activeArchiveId === photoArchiveId && typeof checkCharacterAvatar === 'function' && db.characters.includes(chat)) {
+                checkCharacterAvatar(chat).catch(error => console.warn('Generated avatar check failed:', error.message));
+            }
             
             // 更新最后生图时间
             if (!db.workshopSettings) db.workshopSettings = {};
@@ -339,12 +343,13 @@ async function generateImageFromTags(llmTags, chat) {
     return imageData;
 }
 
-async function saveAirDropPhoto(charId, base64Image, prompt = '') {
+async function saveAirDropPhoto(charId, base64Image, prompt = '', scope = {}) {
     if (!dexieDB) return;
     const photoItem = {
         charId: charId,
         timestamp: Date.now(),
         image: base64Image,
+        ...(scope.archiveId !== undefined ? { archiveId: scope.archiveId, messageId: scope.messageId } : {}),
         prompt: prompt
     };
     await dexieDB.characterPhotos.add(photoItem);
@@ -416,7 +421,7 @@ function showAirDropPreview(photoItem, chat) {
             if (!currentPrompt) throw new Error("缺少提示词，无法重新生成");
             
             const base64Image = await generateImageFromTags(currentPrompt, chat);
-            await saveAirDropPhoto(chat.id, base64Image, currentPrompt);
+            await saveAirDropPhoto(chat.id, base64Image, currentPrompt, { archiveId: photoItem.archiveId, messageId: photoItem.messageId });
             
             const latestPhotos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse().sortBy('timestamp');
             if (latestPhotos.length > 0) {

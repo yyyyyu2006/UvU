@@ -492,11 +492,11 @@ function normalizeChatTokenUsage(usage, provider = '') {
     };
 }
 
-function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', worldBookPlan, requestBody) {
+function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', worldBookPlan, requestBody, environmentContext = '') {
     if (!chat) return null;
     const history = Array.isArray(historySlice) ? historySlice : getAutoMemoryContextHistory(chat);
     const plan = Array.isArray(worldBookPlan) ? worldBookPlan : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, history) : []);
-    const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, history: 0,
+    const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, environment: 0, history: 0,
         worldBookDetails: getWorldBookTokenDetails(chat, plan) };
     const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
         ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
@@ -532,6 +532,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
         }
         return false;
     };
+    claim(environmentContext, 'environment');
     // A vector hit replaces whole-journal injection for this request only.
     claim(vectorContext, 'vectorMemory');
     for (const book of plan) claim(book.content, 'worldBook');
@@ -555,7 +556,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
             breakdown.baseSystem += countTextTokens(field.text.slice(start));
         } else breakdown[field.category] += countTextTokens(field.text);
     }
-    breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.history;
+    breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.environment + breakdown.history;
     breakdown.promptTokens = breakdown.total;
     breakdown.completionTokens = 0;
     breakdown.totalTokens = breakdown.total;

@@ -1,0 +1,35 @@
+/* All new controls are scoped; no original button/avatar/chat selectors. */
+.derived-settings { width: min(440px, calc(100vw - 24px)); max-height: min(88dvh, 780px); color: #30343b; background: #fff; }
+.derived-settings .derived-body { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.derived-settings label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; line-height: 1.5; }
+.derived-settings input:not([type=checkbox]), .derived-settings textarea, .derived-settings select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; font: inherit; font-size: 13px; padding: 7px 8px; border: 1px solid #dfe3e9; border-radius: 7px; color: #30343b; background: #fff; }
+.derived-settings textarea { resize: vertical; }
+.derived-settings .derived-check { flex-direction: row; align-items: center; gap: 8px; }
+.derived-settings input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 16px; margin: 0; }
+.derived-settings button, .derived-entry-group .derived-compact { flex: 0 0 auto; width: auto; min-height: 28px; margin: 0; padding: 5px 9px; font-size: 12px; line-height: 1.3; border: 1px solid #dfe3e9; border-radius: 7px; color: #334155; background: #f5f7fa; cursor: pointer; }
+.derived-settings button:disabled { opacity: .5; cursor: wait; }
+.derived-settings .derived-help { margin: 0; font-size: 11px; line-height: 1.6; color: #737b88; overflow-wrap: anywhere; }
+.derived-settings .derived-status { margin: 0; font-size: 12px; line-height: 1.6; color: #315a87; white-space: pre-line; overflow-wrap: anywhere; }
+.derived-settings footer, .derived-settings .derived-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.derived-settings footer { padding-top: 5px; }
+.derived-settings footer button { padding-inline: 6px; }
+.derived-settings section, .derived-settings details { border: 1px solid #e9edf2; border-radius: 9px; padding: 10px; }
+.derived-settings section > *, .derived-settings details > *, .derived-settings [data-tools] > label { margin-bottom: 8px; }
+.derived-settings summary { cursor: pointer; font-size: 12px; }
+.derived-settings [hidden] { display: none !important; }
+.derived-settings .derived-search { display: flex; align-items: center; gap: 6px; }
+.derived-settings .derived-search input { flex: 1; }
+.derived-settings .derived-city-results { display: flex; flex-direction: column; gap: 5px; }
+.derived-settings .derived-city-results button { white-space: normal; text-align: left; }
+.derived-settings .derived-toolbar select { flex: 1; width: auto; }
+.derived-settings .derived-toolbar strong { flex: 1; text-align: center; font-size: 13px; white-space: nowrap; }
+.environment-calendar .derived-toolbar button { padding-inline: 7px; }
+.derived-settings .environment-clock { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-line; }
+.derived-settings .environment-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.derived-settings .environment-weekday { text-align: center; font-size: 11px; padding: 4px; color: #8a929e; }
+.derived-settings .environment-day { position: relative; min-width: 0; height: 38px; padding: 4px 2px; border-color: transparent; background: #f7f8fa; }
+.derived-settings .environment-day small { position: absolute; right: 2px; top: 1px; font-size: 8px; }
+.derived-settings .environment-day.is-today { font-weight: 700; color: #126bce; }
+.derived-settings .environment-day.is-offday { background: #fff0ef; color: #b5463b; }
+.derived-settings .environment-day.is-workday { background: #f0f3f8; color: #65758b; }
+.derived-settings .environment-day.is-selected { border-color: #4385d4; }

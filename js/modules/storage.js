@@ -12,7 +12,7 @@ const STORAGE_CATEGORIES = [
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
-    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
@@ -399,7 +399,7 @@ function setupStorageAnalysisScreen() {
 
 // 将设定和运行数据分开；存档也遵循同一勾选范围。
 const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'memoryVectorIndex', 'lastUserMessageTimestamp',
-    'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship'];
+    'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship', 'avatarAutonomy', 'environmentProfile'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
 const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
 const storageClone = value => value === undefined ? undefined : (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
@@ -484,6 +484,34 @@ function storageValidateModules(modules) {
     };
     const optional = (value, path, type) => {
         if (value !== undefined && (typeof value !== type || (type === 'number' && !Number.isFinite(value)))) fail(path, type === 'string' ? '文本' : type === 'number' ? '有效数字' : '布尔值');
+    };
+    const environmentLocation = (value, path) => {
+        if (value === undefined || value === null) return;
+        object(value, path);
+        for (const key of ['name', 'countryCode', 'subdivision', 'timezone']) optional(value[key], path + '.' + key, 'string');
+        for (const key of ['latitude', 'longitude']) optional(value[key], path + '.' + key, 'number');
+        if (value.latitude !== undefined && Math.abs(value.latitude) > 90) fail(path + '.latitude', '有效纬度');
+        if (value.longitude !== undefined && Math.abs(value.longitude) > 180) fail(path + '.longitude', '有效经度');
+    };
+    const derivedProfile = (item, path) => {
+        if (item.environmentProfile) {
+            optional(item.environmentProfile.remoteEnabled, path + '.environmentProfile.remoteEnabled', 'boolean');
+            optional(item.environmentProfile.aiEnabled, path + '.environmentProfile.aiEnabled', 'boolean');
+            environmentLocation(item.environmentProfile.charLocation, path + '.environmentProfile.charLocation');
+        }
+        if (item.avatarAutonomy) {
+            const a = item.avatarAutonomy, prefix = path + '.avatarAutonomy';
+            optional(a.enabled, prefix + '.enabled', 'boolean'); optional(a.every, prefix + '.every', 'number');
+            optional(a.condition, prefix + '.condition', 'string');
+            for (const key of ['lastCheck', 'lastUserCount']) optional(a[key], prefix + '.' + key, 'number');
+            if (a.cache !== undefined) {
+                object(a.cache, prefix + '.cache');
+                Object.entries(a.cache).forEach(([id, entry]) => {
+                    object(entry, prefix + '.cache.' + id);
+                    for (const key of ['hash', 'vision', 'description']) optional(entry[key], prefix + '.cache.' + id + '.' + key, 'string');
+                });
+            }
+        }
     };
     const list = (value, path, validate, uniqueIds = false) => {
         if (value === undefined) return;
@@ -581,9 +609,10 @@ function storageValidateModules(modules) {
             optional(member.realName, location + '.realName', 'string');
         });
         if (item.gallery !== undefined && !Array.isArray(item.gallery)) fail(path + '.gallery', '列表');
-        for (const key of ['statusPanel', 'autoMemorySettings', 'vectorMemorySettings', 'friendRelationship', 'privateSessions', 'gossipSessions', 'peekData']) {
+        for (const key of ['statusPanel', 'autoMemorySettings', 'vectorMemorySettings', 'friendRelationship', 'avatarAutonomy', 'environmentProfile', 'privateSessions', 'gossipSessions', 'peekData']) {
             if (item[key] !== undefined && item[key] !== null) object(item[key], path + '.' + key);
         }
+        derivedProfile(item, path);
         for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
         for (const key of ['privateSessions', 'gossipSessions']) {
             if (item[key]) Object.entries(item[key]).forEach(([id, session]) => {
@@ -633,8 +662,25 @@ function storageValidateModules(modules) {
             });
         }
     }
-    for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
+    for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
+    }
+    if (modules.environmentSettings !== undefined) {
+        const e = modules.environmentSettings;
+        optional(e.enabled, 'environmentSettings.enabled', 'boolean'); optional(e.service, 'environmentSettings.service', 'string');
+        environmentLocation(e.userLocation, 'environmentSettings.userLocation');
+        if (e.mcp !== undefined) {
+            object(e.mcp, 'environmentSettings.mcp');
+            optional(e.mcp.url, 'environmentSettings.mcp.url', 'string'); optional(e.mcp.token, 'environmentSettings.mcp.token', 'string');
+            if (e.mcp.tools !== undefined) {
+                object(e.mcp.tools, 'environmentSettings.mcp.tools');
+                Object.entries(e.mcp.tools).forEach(([name, tool]) => {
+                    object(tool, 'environmentSettings.mcp.tools.' + name);
+                    optional(tool.name, 'environmentSettings.mcp.tools.' + name + '.name', 'string');
+                    optional(tool.args, 'environmentSettings.mcp.tools.' + name + '.args', 'string');
+                });
+            }
+        }
     }
     for (const key of ['apiPresets', 'cotPresets', 'myPersonaPresets', 'bubbleCssPresets', 'globalCssPresets', 'fontPresets', 'statusBarPresets', 'themePresets', 'soundPresets', 'galleryPresets', 'chatFolders', 'workshopLlmPresets', 'workshopPromptPresets', 'widgetTemplates', 'addedWidgets']) list(modules[key], key, () => {});
     for (const key of ['wallpaper', 'globalCss', 'fontUrl', 'homeSignature', 'moreProfileCardBg', 'homeScreenMode']) optional(modules[key], key, 'string');

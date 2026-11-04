@@ -173,6 +173,12 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             }
         }
         if (!requestIsCurrent()) return;
+        let environmentContext = '';
+        if (typeof getEnvironmentContext === 'function') {
+            try { environmentContext = await getEnvironmentContext(chat, generationController?.signal); }
+            catch (error) { if (generationController?.signal.aborted) throw error; console.warn('Environment lookup unavailable'); }
+        }
+        if (!requestIsCurrent()) return;
         const buildBasePrompt = () => {
             if (chatType === 'private') {
                 systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
@@ -195,6 +201,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
 
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
+        if (environmentContext) systemPrompt += environmentContext;
 
         const lastContextMessage = historySlice[historySlice.length - 1];
         // 检查系统提示词中是否包含聊天记录占位符
@@ -553,7 +560,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let tokenEstimate = null;
         try {
-            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody);
+            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody, environmentContext);
         } catch (error) { console.warn('Token 分类估算失败，不影响本轮聊天:', error.message); }
         // 格式化打印日志
         let logText = "========== [发送给 AI 的请求内容] ==========\n";
@@ -670,6 +677,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         chatGenerationRequests.delete(generationRequest);
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
+        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterAvatar === 'function') {
+            checkCharacterAvatar(chat).catch(error => console.warn('Character avatar check failed:', error.message));
+        }
         if (replyDelivered && chatType === 'private' && typeof checkCharacterBlacklist === 'function') {
             checkCharacterBlacklist(chat).catch(error => console.warn('Character relationship check failed:', error.message));
         }
