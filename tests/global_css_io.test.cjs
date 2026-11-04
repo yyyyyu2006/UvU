@@ -7,13 +7,14 @@ const source = fs.readFileSync(path.join(__dirname, '../js/modules/global_css_io
 
 function fixture({ failSave = false } = {}) {
     const handlers = new Map(), downloads = [], toasts = [], applied = [];
-    const button = id => ({ id, addEventListener(type, handler) { handlers.set(id + ':' + type, handler); }, click() { return handlers.get(id + ':click')?.({ target: this }); } });
+    const button = id => ({ id, attributes: {}, addEventListener(type, handler) { handlers.set(id + ':' + type, handler); }, setAttribute(name, value) { this.attributes[name] = String(value); }, click() { return handlers.get(id + ':click')?.({ target: this }); } });
     const textarea = { value: '.old { color: red; }' };
     const input = { files: [], value: '', clicks: 0, addEventListener(type, handler) { handlers.set('input:' + type, handler); }, click() { this.clicks++; } };
-    const nodes = Object.fromEntries(['global-css-document-import', 'global-css-document-export-txt', 'global-css-document-export-docx'].map(id => [id, button(id)]));
+    const nodes = Object.fromEntries(['global-css-document-import', 'global-css-document-export', 'global-css-document-export-txt', 'global-css-document-export-docx'].map(id => [id, button(id)]));
+    const exportMenu = { hidden: true };
     const modal = { dataset: {}, querySelector(selector) { return ({ '#global-beautification-css': textarea, '#global-css-document-input': input,
         '#global-css-document-import': nodes['global-css-document-import'], '#global-css-document-export-txt': nodes['global-css-document-export-txt'],
-        '#global-css-document-export-docx': nodes['global-css-document-export-docx'] })[selector]; } };
+        '#global-css-document-export-docx': nodes['global-css-document-export-docx'], '#global-css-document-export': nodes['global-css-document-export'], '#global-css-export-menu': exportMenu })[selector]; } };
     let observer;
     class MutationObserver { constructor(callback) { observer = callback; } observe() {} }
     const context = vm.createContext({ Blob, TextEncoder, DataView, Uint8Array, MutationObserver, console: { error() {} },
@@ -63,6 +64,10 @@ test('global CSS DOCX export creates a valid stored Open XML ZIP and escapes CSS
 
 test('global CSS document controls export current text and import TXT or DOCX directly into persisted style', async () => {
     const f = fixture(); f.context.window.GlobalCssIO.setup();
+    f.nodes['global-css-document-export'].click();
+    assert.equal(f.nodes['global-css-document-export'].attributes['aria-expanded'], 'true');
+    assert.equal(f.modal.querySelector('#global-css-export-menu').hidden, false);
+    assert.equal(f.handlers.has('global-css-document-export:click'), true);
     f.textarea.value = '.current { color: green; }';
     f.nodes['global-css-document-export-txt'].click();
     assert.equal(f.downloads[0].blob.type, 'text/plain;charset=utf-8');

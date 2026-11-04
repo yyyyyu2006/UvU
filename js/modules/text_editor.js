@@ -123,8 +123,10 @@ function setupExpandedEditors() {
             ? host?.querySelector('.global-css-document-tools')
             : null;
         if (documentTools) {
-            // Keep the global CSS editor's four document actions in one compact row.
+            // Keep the global CSS editor's three primary actions in one compact row.
             documentTools.insertBefore(expand, documentTools.firstChild);
+            const exportButton = documentTools.querySelector('#global-css-document-export');
+            if (exportButton) documentTools.insertBefore(exportButton, documentTools.querySelector('#global-css-export-menu'));
         } else if (host?.classList.contains('form-group') && host.children.length === 1) host.appendChild(toolbar);
         else target.insertAdjacentElement('afterend', toolbar);
     });

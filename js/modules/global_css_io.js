@@ -51,11 +51,21 @@ function setupGlobalCssDocumentTools() {
     modal.dataset.documentToolsBound = 'true';
 
     modal.querySelector('#global-css-document-import').addEventListener('click', () => input.click());
+    const exportButton = modal.querySelector('#global-css-document-export');
+    const exportMenu = modal.querySelector('#global-css-export-menu');
+    exportButton.addEventListener('click', () => {
+        exportMenu.hidden = !exportMenu.hidden;
+        exportButton.setAttribute('aria-expanded', String(!exportMenu.hidden));
+    });
     modal.querySelector('#global-css-document-export-txt').addEventListener('click', () => {
         downloadGlobalCssDocument(new Blob([textarea.value], { type: 'text/plain;charset=utf-8' }), 'global-css.txt');
+        exportMenu.hidden = true;
+        exportButton.setAttribute('aria-expanded', 'false');
     });
     modal.querySelector('#global-css-document-export-docx').addEventListener('click', () => {
         downloadGlobalCssDocument(globalCssCreateDocx(textarea.value), 'global-css.docx');
+        exportMenu.hidden = true;
+        exportButton.setAttribute('aria-expanded', 'false');
     });
     input.addEventListener('change', async () => {
         const file = input.files?.[0];

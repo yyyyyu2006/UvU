@@ -505,9 +505,12 @@ function renderCustomizeForm() {
                     </div>
                     <textarea id="global-beautification-css" class="form-group" rows="8" placeholder="在此输入CSS代码..." style="width:100%; border:1px solid #eee; border-radius:8px; padding:10px; font-family: monospace; font-size: 12px;"></textarea>
                     <div class="global-css-document-tools">
-                        <button type="button" id="global-css-document-import" class="btn btn-small">导入 DOCX / TXT</button>
-                        <button type="button" id="global-css-document-export-txt" class="btn btn-small">导出 TXT</button>
-                        <button type="button" id="global-css-document-export-docx" class="btn btn-small">导出 DOCX</button>
+                        <button type="button" id="global-css-document-import" class="btn btn-small" title="导入 DOCX 或 TXT">导入</button>
+                        <button type="button" id="global-css-document-export" class="btn btn-small" aria-expanded="false">导出</button>
+                        <div class="global-css-export-menu" id="global-css-export-menu" hidden>
+                            <button type="button" id="global-css-document-export-txt" class="btn btn-small">导出 TXT</button>
+                            <button type="button" id="global-css-document-export-docx" class="btn btn-small">导出 DOCX</button>
+                        </div>
                         <input type="file" id="global-css-document-input" accept=".docx,.txt" hidden>
                     </div>
                 </div>
