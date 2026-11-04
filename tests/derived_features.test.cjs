@@ -193,10 +193,11 @@ test('new environment settings and archive extensions survive the existing backu
     const { c, chat } = fixture(); vm.runInContext(source('storage.js'), c);
     c.db.environmentSettings = { enabled: true, userLocation: shanghai };
     chat.environmentProfile = { aiEnabled: false, remoteEnabled: true, charLocation: ny };
-    chat.avatarAutonomy = { enabled: true, every: 5 };
+    chat.avatarAutonomy = { enabled: true, every: 5, initiative: 'active', cooldownHours: 48, lastChangedAt: 1700000000000 };
     const backup = c.storageExportChat(chat, true, true);
     assert.deepEqual(plain(backup.environmentProfile), chat.environmentProfile);
     assert.equal(backup.avatarAutonomy.enabled, true);
+    assert.equal(backup.avatarAutonomy.initiative, 'active');
     const contact = c.storageExportChat(chat, true, false); assert.equal(contact.avatarAutonomy, undefined);
     c.storageValidateModules({ characters: [backup], environmentSettings: c.db.environmentSettings });
 });
@@ -209,6 +210,8 @@ test('deep validation rejects corrupt new fields before import without rejecting
         { environmentSettings: { userLocation: { latitude: 91 } } },
         { environmentSettings: { mcp: { tools: { weather: 'not an object' } } } },
         { characters: [{ id: 'a', avatarAutonomy: { cache: { img: { description: [] } } } }] },
+        { characters: [{ id: 'a', avatarAutonomy: { initiative: 'unbounded' } }] },
+        { characters: [{ id: 'a', avatarAutonomy: { cooldownHours: 'soon' } }] },
         { characters: [{ id: 'a', archives: [{ id: 'b', data: { environmentProfile: { aiEnabled: 'yes' } } }] }] }
     ]) assert.throws(() => c.storageValidateModules(payload));
 });
@@ -336,6 +339,43 @@ test('routine, revoked, rejected and forwarded text cannot become an explicit av
     const history = [{ id: 'a', role: 'user', content: '换头像吧' }, { id: 'b', role: 'user', content: '不要换头像' }, { id: 'c', role: 'user', content: '你用男生' }];
     assert.equal(c.characterAvatarRequest(history), null);
     assert.equal(c.characterAvatarRequest([{ id: 'a', role: 'user', content: '换头像吧' }, { id: 'b', role: 'user', content: '你好' }]), null);
+});
+
+test('avatar request recognition accepts indirect photo assignments and image selection follow-ups', () => {
+    const { c } = fixture();
+    const indirect = c.characterAvatarRequest([{ id: 'photo', role: 'user', content: '这张挺适合你，就归你啦' }]);
+    assert.equal(indirect.intent, 'indirect');
+    assert.equal(indirect.text, '这张挺适合你，就归你啦');
+    for (const content of ['这个给你吧', '刚才那张就是你的', '我觉得你会喜欢这张']) {
+        assert.equal(c.characterAvatarRequest([{ id: 'photo-' + content, role: 'user', content }]).intent, 'indirect');
+    }
+    const followup = c.characterAvatarRequest([
+        { id: 'ask', role: 'user', content: '我们换头像吧' },
+        { id: 'select', role: 'user', content: '你用戴眼镜的那张' }
+    ]);
+    assert.equal(followup.intent, 'followup');
+    assert.equal(followup.previousRequest, '我们换头像吧');
+    assert.equal(c.characterAvatarRequest([
+        { id: 'image', role: 'user', parts: [{ type: 'image', data: 'data:image/png;base64,YQ==' }] },
+        { id: 'choice', role: 'user', content: '你喜欢哪张？' }
+    ]).intent, 'image_selection');
+});
+
+test('a newly received image can trigger one proactive avatar decision before the routine interval', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    let decisions = 0, descriptions = 0;
+    f.c.recognizeStickerImage = async () => { descriptions++; return '照片里的人戴着眼镜'; };
+    f.c.fetchAiResponse = async (_, body) => {
+        decisions++;
+        const request = JSON.parse(body.messages[1].content);
+        assert.equal(request.triggerReason, 'new_image');
+        assert.equal(request.explicitRequest, null);
+        assert.equal(request.initiative, 'balanced');
+        return '{"action":"keep"}';
+    };
+    assert.equal(await f.c.checkCharacterAvatar(f.chat), false);
+    assert.equal(await f.c.checkCharacterAvatar(f.chat), false);
+    assert.equal(decisions, 1); assert.equal(descriptions, 1);
 });
 
 test('in-flight avatar decisions coalesce a newer request and discard the stale result', async () => {

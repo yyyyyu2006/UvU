@@ -502,6 +502,9 @@ function storageValidateModules(modules) {
         if (item.avatarAutonomy) {
             const a = item.avatarAutonomy, prefix = path + '.avatarAutonomy';
             optional(a.enabled, prefix + '.enabled', 'boolean'); optional(a.every, prefix + '.every', 'number');
+            optional(a.initiative, prefix + '.initiative', 'string'); optional(a.cooldownHours, prefix + '.cooldownHours', 'number');
+            optional(a.lastChangedAt, prefix + '.lastChangedAt', 'number');
+            if (a.initiative !== undefined && !['conservative', 'balanced', 'active'].includes(a.initiative)) fail(prefix + '.initiative', '有效的自主判断档位');
             optional(a.condition, prefix + '.condition', 'string');
             optional(a.lastRequestKey, prefix + '.lastRequestKey', 'string');
             for (const key of ['lastCheck', 'lastUserCount']) optional(a[key], prefix + '.' + key, 'number');
