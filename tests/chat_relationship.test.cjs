@@ -63,6 +63,49 @@ test('manual recovery is default and never calls an API', async () => {
     assert.equal(f.requests.length, 0);
 });
 
+test('character-led blacklist is opt-in, rate-limited, and only evaluates delivered context', async () => {
+    const f = fixture();
+    f.chat.history = [
+        { role: 'user', content: 'A' }, { role: 'assistant', content: 'a' },
+        { role: 'user', content: 'B' }, { role: 'user', content: 'rejected', relationshipDelivery: 'blocked' },
+        { role: 'assistant', content: '<thinking>hidden reasoning</thinking>', isThinking: true }
+    ];
+    assert.equal(await f.c.checkCharacterBlacklist(f.chat), false);
+    assert.equal(f.requests.length, 0);
+    f.chat.friendRelationship = { autonomy: { enabled: true, everyUserMessages: 2 } };
+    f.c.fetchAiResponse = async (_config, body) => { f.requests.push(body); return '{"block":true}'; };
+    assert.equal(await f.c.checkCharacterBlacklist(f.chat), true);
+    assert.equal(f.c.relationshipCanChat(f.chat), false);
+    const sent = JSON.stringify(f.requests[0]);
+    assert.match(sent, /acceptedHistory/);
+    assert.doesNotMatch(sent, /rejected|hidden reasoning/);
+    assert.equal(f.chat.friendRelationship.peer.blocked, true);
+    assert.equal(await f.c.checkCharacterBlacklist(f.chat), false);
+    assert.equal(f.requests.length, 1);
+});
+
+test('character blacklist decisions reject malformed and stale API results', async () => {
+    for (const stale of [false, true]) {
+        const f = fixture();
+        f.chat.history = [{ role: 'user', content: 'one' }];
+        f.chat.friendRelationship = { autonomy: { enabled: true, everyUserMessages: 1 } };
+        if (!stale) f.c.fetchAiResponse = async () => '{"block":"true"}';
+        else {
+            let finish, started;
+            const ready = new Promise(resolve => started = resolve);
+            f.c.fetchAiResponse = async () => { started(); return new Promise(resolve => finish = resolve); };
+            const pending = f.c.checkCharacterBlacklist(f.chat);
+            await ready;
+            f.chat.activeArchiveId = 'b';
+            f.chat.history.push({ role: 'user', content: 'new message while judging' });
+            finish('{"block":true}');
+            assert.equal(await pending, false);
+        }
+        if (!stale) assert.equal(await f.c.checkCharacterBlacklist(f.chat), false);
+        assert.equal(f.chat.friendRelationship.peer?.blocked, false);
+    }
+});
+
 test('timed recovery restores peer relation without clearing my blacklist or deleting history', async () => {
     const f = fixture(); const history = f.chat.history;
     f.chat.friendRelationship = { self: { blocked: true }, peer: { blocked: true, deleted: true }, recovery: { mode: 'timer', restoreAt: Date.now() - 1 } };

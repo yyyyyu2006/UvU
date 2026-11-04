@@ -53,20 +53,6 @@ function worldBookSection(plan, position) {
     return plan.filter(w => (w.position === position || (position === 'before' && w.position === 'chat')) && !w.rules?.unsupportedPosition)
         .map(w => w.content).join('\n');
 }
-function insertDepthWorldBooks(history, plan) {
-    const slots = new Map();
-    plan.filter(w => w.position === 'chat' && !w.rules?.unsupportedPosition).forEach(w => {
-        const index = Math.max(0, history.length - Math.floor(worldBookNumber(w.rules?.chatDepth, 4, 0, 10000)));
-        if (!slots.has(index)) slots.set(index, []);
-        slots.get(index).push({ role: ['system', 'user', 'assistant'].includes(w.rules?.role) ? w.rules.role : 'system', content: w.content, worldBookInjection: true });
-    });
-    const result = [];
-    for (let i = 0; i <= history.length; i++) {
-        result.push(...(slots.get(i) || []));
-        if (i < history.length) result.push(history[i]);
-    }
-    return result;
-}
 function importWorldBookJson(value, parentId) {
     const source = value?.data?.character_book || value?.character_book || value;
     const entries = Array.isArray(source) ? source : source?.entries;
@@ -76,7 +62,8 @@ function importWorldBookJson(value, parentId) {
         const ext = e.extensions || {};
         const rawPosition = ext.position ?? e.position ?? 'before';
         const positions = { 0: 'before', 1: 'after', 4: 'chat', before_char: 'before', after_char: 'after' };
-        const position = Object.hasOwn(positions, rawPosition) ? positions[rawPosition] : (['before', 'after', 'limit_break', 'guidelines', 'chat'].includes(rawPosition) ? rawPosition : 'before');
+        const importedPosition = Object.hasOwn(positions, rawPosition) ? positions[rawPosition] : (['before', 'after', 'limit_break', 'guidelines', 'chat'].includes(rawPosition) ? rawPosition : 'before');
+        const position = importedPosition === 'chat' ? 'before' : importedPosition;
         const unsupported = !Object.hasOwn(positions, rawPosition) && !['before', 'after', 'limit_break', 'guidelines', 'chat'].includes(rawPosition);
         if (unsupported) warnings.push(`${e.comment || e.name || index + 1}：插入位置 ${rawPosition} 暂不支持，已停用`);
         const supplied = e.rules;

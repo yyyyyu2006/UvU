@@ -575,3 +575,20 @@ test('range retry can finish a failed merge even when every source floor was alr
     assert.equal(f.chat.memoryJournals.at(-1).autoMemory.kind, 'merged');
     assert.equal((await f.run({ range })).count, 0);
 });
+
+test('summary and vector settings update independently without overwriting each other', () => {
+    const f = fixture(1, { enabled: true, hideSummarized: false, vectorSearchEnabled: true, vectorRerankEnabled: true, vectorTopK: 7, vectorThreshold: 0.61 });
+    const initial = JSON.parse(JSON.stringify(f.context.getAutoMemorySettings(f.chat)));
+    const summary = f.context.mergeAutoMemorySettings(initial, { hideSummarized: true, keepRecent: 42 });
+    assert.equal(summary.hideSummarized, true);
+    assert.equal(summary.keepRecent, 42);
+    assert.equal(summary.vectorSearchEnabled, true);
+    assert.equal(summary.vectorRerankEnabled, true);
+    assert.equal(summary.vectorTopK, 7);
+    assert.equal(summary.vectorThreshold, 0.61);
+    const vector = f.context.mergeAutoMemorySettings(summary, { vectorSearchEnabled: false, vectorTopK: 2 });
+    assert.equal(vector.vectorSearchEnabled, false);
+    assert.equal(vector.vectorTopK, 2);
+    assert.equal(vector.hideSummarized, true);
+    assert.equal(vector.keepRecent, 42);
+});

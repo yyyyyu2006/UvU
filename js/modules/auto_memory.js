@@ -56,6 +56,10 @@ function getAutoMemorySettings(chat) {
     return settings;
 }
 
+function mergeAutoMemorySettings(current, updates) {
+    return getAutoMemorySettings({ autoMemorySettings: { ...getAutoMemorySettings({ autoMemorySettings: current }), ...updates } });
+}
+
 function autoMemoryKey(chat, type) { return `${type}:${chat.id}:${chat.activeArchiveId || 'default'}`; }
 function findAutoMemoryChat(id, type) { return (type === 'private' ? db.characters : db.groups)?.find(chat => chat.id === id); }
 function autoMemoryFingerprint(value) {
@@ -811,6 +815,8 @@ function setupAutoMemory() {
     if (!button || !vectorButton || !modal || !form) return;
     let editing = null;
     const fields = Object.keys(AUTO_MEMORY_DEFAULTS);
+    const vectorSettingKeys = ['vectorSearchEnabled', 'vectorRerankEnabled', 'vectorTopK', 'vectorThreshold'];
+    const summarySettingKeys = fields.filter(name => !vectorSettingKeys.includes(name));
     const vectorFields = { provider: 'provider', url: 'url', key: 'key', embeddingModel: 'embedding-model', rerankModel: 'rerank-model',
         rerankMode: 'rerank-mode', rerankUrl: 'rerank-url', rerankKey: 'rerank-key', batchSize: 'batch-size', timeoutSec: 'timeout',
         queryPrefix: 'query-prefix', documentPrefix: 'document-prefix', embeddingTaskMode: 'task-mode' };
@@ -911,30 +917,32 @@ function setupAutoMemory() {
             showToast('当前存档已改变，请重新打开自动记忆设置。'); return false;
         }
         if (!form.reportValidity()) return false;
-        const raw = {};
-        for (const name of fields) {
+        const vectorOnly = modal.classList.contains('vector-settings-mode');
+        const raw = { ...getAutoMemorySettings(editing.chat) };
+        for (const name of vectorOnly ? vectorSettingKeys : summarySettingKeys) {
             const input = form.elements.namedItem(name);
             raw[name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
         }
-        if (raw.enabled && !raw.useMemory) { showToast('开启自动整理时，请同时开启“使用自动记忆”。'); return false; }
+        if (!vectorOnly && raw.enabled && !raw.useMemory) { showToast('开启自动整理时，请同时开启“使用自动记忆”。'); return false; }
         const before = editing.chat.autoMemorySettings;
         const apiBefore = db.memoryApiSettings;
         const vectorApiBefore = db.vectorMemoryApiSettings;
         const memoryApi = {};
         for (const name of ['provider', 'url', 'key', 'model']) memoryApi[name] = document.getElementById(`memory-api-${name}`).value.trim();
-        const vectorApi = readVectorApi();
-        if (raw.vectorSearchEnabled && (!vectorApi.url || !vectorApi.key || !vectorApi.embeddingModel)) { showToast('启用向量检索前，请填写独立向量 API 地址、密钥与嵌入模型。'); return false; }
-        if (raw.vectorSearchEnabled && raw.vectorRerankEnabled && !vectorApi.rerankModel) { showToast('启用二次重排前，请填写独立向量 API 的重排模型。'); return false; }
-        if (raw.apiSource === 'memory' && (!memoryApi.url || !memoryApi.key || !memoryApi.model)) {
+        const vectorApi = vectorOnly ? readVectorApi() : vectorApiBefore;
+        if (vectorOnly && raw.vectorSearchEnabled && (!vectorApi.url || !vectorApi.key || !vectorApi.embeddingModel)) { showToast('启用向量检索前，请填写独立向量 API 地址、密钥与嵌入模型。'); return false; }
+        if (vectorOnly && raw.vectorSearchEnabled && raw.vectorRerankEnabled && !vectorApi.rerankModel) { showToast('启用二次重排前，请填写独立向量 API 的重排模型。'); return false; }
+        if (!vectorOnly && raw.apiSource === 'memory' && (!memoryApi.url || !memoryApi.key || !memoryApi.model)) {
             showToast('请完整填写独立记忆 API 地址、密钥与模型。'); return false;
         }
-        if ([memoryApi.url, vectorApi.url].some(url => url && typeof BLOCKED_API_DOMAINS !== 'undefined' && BLOCKED_API_DOMAINS.some(domain => url.includes(domain)))) {
+        if ((!vectorOnly && memoryApi.url && typeof BLOCKED_API_DOMAINS !== 'undefined' && BLOCKED_API_DOMAINS.some(domain => memoryApi.url.includes(domain))) || (vectorOnly && vectorApi.url && typeof BLOCKED_API_DOMAINS !== 'undefined' && BLOCKED_API_DOMAINS.some(domain => vectorApi.url.includes(domain)))) {
             showToast('该记忆 API 站点已被屏蔽。'); return false;
         }
         const target = editing;
-        editing.chat.autoMemorySettings = getAutoMemorySettings({ autoMemorySettings: raw });
-        db.memoryApiSettings = memoryApi;
-        db.vectorMemoryApiSettings = vectorApi;
+        const changes = Object.fromEntries((vectorOnly ? vectorSettingKeys : summarySettingKeys).map(key => [key, raw[key]]));
+        editing.chat.autoMemorySettings = mergeAutoMemorySettings(target.chat.autoMemorySettings, changes);
+        if (!vectorOnly) db.memoryApiSettings = memoryApi;
+        if (vectorOnly) db.vectorMemoryApiSettings = vectorApi;
         try { await saveData(); }
         catch (_) {
             if (target.chat.activeArchiveId === target.archiveId) target.chat.autoMemorySettings = before;
@@ -986,12 +994,13 @@ function setupAutoMemory() {
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
+        const vectorOnly = modal.classList.contains('vector-settings-mode');
         if (await saveSettings()) {
             modal.classList.remove('visible');
-            showToast(modal.classList.contains('vector-settings-mode') ? '向量记忆设置已保存' : '自动总结设置已保存');
+            showToast(vectorOnly ? '向量记忆设置已保存' : '自动总结设置已保存');
             modal.classList.remove('vector-settings-mode');
             document.getElementById('auto-memory-heading').textContent = '自动记忆 / 大总结';
-            scheduleAutoMemory(editing.chat.id, editing.type);
+            if (!vectorOnly) scheduleAutoMemory(editing.chat.id, editing.type);
         }
     });
     document.getElementById('auto-memory-run').addEventListener('click', async () => {

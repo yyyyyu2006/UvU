@@ -49,26 +49,25 @@ test('scan depth zero and finite depth exclude older trigger messages', () => {
     assert.equal(c.buildWorldBookPlan(chat).length, 0); book.rules.scanDepth = 2; assert.equal(c.buildWorldBookPlan(chat).length, 1);
     book.rules.scanDepth = 0; assert.equal(c.buildWorldBookPlan(chat).length, 0);
 });
-test('depth insertion counts original messages, preserves role and order without mutating history', () => {
-    const c = fixture(), history = ['A', 'B', 'C'].map(content => ({ content, role: 'user' }));
-    const plan = [{ position: 'chat', content: 'tail', rules: { chatDepth: 0, role: 'assistant' } }, { position: 'chat', content: 'middle', rules: { chatDepth: 2 } }, { position: 'chat', content: 'first', rules: { chatDepth: 999 } }];
-    const result = c.insertDepthWorldBooks(history, plan);
-    assert.deepEqual(plain(result).map(m => m.content), ['first', 'A', 'middle', 'B', 'C', 'tail']);
-    assert.equal(result.at(-1).role, 'assistant'); assert.equal(history.length, 3);
-});
-test('chat-depth worldbook entries use the original system-reference injection point', () => {
+test('legacy chat-position worldbooks use the original system-reference injection point', () => {
     const c = fixture();
     const plan = [{ position: 'chat', content: 'depth book', rules: { chatDepth: 0 } }];
     assert.equal(c.worldBookSection(plan, 'before'), 'depth book');
     assert.equal(c.worldBookSection(plan, 'after'), '');
+    assert.equal(typeof c.insertDepthWorldBooks, 'undefined');
 });
 test('SillyTavern and character-book imports preserve keys, zero values, roles and original fields', () => {
     const c = fixture(), source = { entries: { 7: { comment: '测试', content: '内容', key: ['猫'], constant: false, selective: true, keysecondary: ['开心'], position: 4, depth: 0, order: 0, probability: 0, role: 2, cooldown: 5 } } };
     const book = c.importWorldBookJson(source, 'folder').books[0];
-    assert.equal(book.position, 'chat'); assert.equal(book.rules.chatDepth, 0); assert.equal(book.rules.order, 0); assert.equal(book.rules.probability, 0); assert.equal(book.rules.role, 'assistant'); assert.equal(book.importSource.cooldown, 5);
+    assert.equal(book.position, 'before'); assert.equal(book.rules.chatDepth, 0); assert.equal(book.rules.order, 0); assert.equal(book.rules.probability, 0); assert.equal(book.rules.role, 'assistant'); assert.equal(book.importSource.cooldown, 5);
     const card = c.importWorldBookJson({ data: { character_book: { entries: [{ name: '角色书', content: '文本', keys: ['key'], extensions: { position: 4, depth: 2, role: 1 } }] } } }, null).books[0];
     assert.equal(card.rules.role, 'user'); assert.equal(card.rules.chatDepth, 2);
     assert.throws(() => c.importWorldBookJson({ bad: true }, null), /entries/);
+});
+test('worldbook editor no longer offers chat injection position or writes chat-depth controls', () => {
+    const editor = fs.readFileSync(path.join(__dirname, '../js/modules/worldbook_editor.js'), 'utf8');
+    assert.doesNotMatch(editor, /value="chat"|wb-chat-depth|wb-role/);
+    assert.match(editor, /book\.position === 'chat' \? 'before'/);
 });
 test('unsupported tavern positions are preserved and disabled instead of silently injected', () => {
     const c = fixture(), result = c.importWorldBookJson({ entries: { a: { content: 'unsupported', position: 7, constant: true } } }, null);

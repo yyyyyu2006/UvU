@@ -36,7 +36,7 @@
     <link rel="stylesheet" href="css/modules/moments.css">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
-    <link rel="stylesheet" href="css/modules/journal.css?v=20261104-vector-settings">
+    <link rel="stylesheet" href="css/modules/journal.css?v=20261104-memory-settings-split">
     <link rel="stylesheet" href="css/modules/chat_archives.css">
     <link rel="stylesheet" href="css/modules/steps.css">
     <link rel="stylesheet" href="css/modules/more.css">
@@ -211,7 +211,6 @@
             </button>
         </nav>
     <div id="chat-room-screen" class="screen"></div> <!-- 这里是 chat-room-screen 的结束标签 -->
-            
 
     <!-- 新增：管理菜单 (点击右上角菜单键出现) -->
     <div id="sticker-menu-actionsheet" class="action-sheet-overlay">
@@ -2765,16 +2764,16 @@
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261103-notifications-backup"></script>
-<script src="js/modules/worldbook_rules.js?v=20261104-worldbook-count"></script>
+<script src="js/modules/worldbook_rules.js?v=20261104-worldbook-position"></script>
 <script src="js/modules/document_import.js?v=20261103-documents"></script>
 <script src="js/modules/global_css_io.js?v=20261104-global-css-docs"></script>
 <script src="js/modules/text_editor.js?v=20261103-chat-controls"></script>
-<script src="js/modules/worldbook_editor.js?v=20261103-documents"></script>
+<script src="js/modules/worldbook_editor.js?v=20261104-worldbook-position"></script>
 <script src="js/modules/sticker_assist.js?v=20261103-chat-controls"></script>
 <link rel="stylesheet" href="css/modules/document_features.css?v=20261103-vector-viewport">
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
-<link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261103-friends">
-<script src="js/modules/chat_relationship.js?v=20261103-friends"></script>
+<link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
+<script src="js/modules/chat_relationship.js?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_render.js?v=20261103-friends"></script>
 <script src="js/modules/chat_archives.js?v=20261103-documents"></script>
     <script src="js/modules/chat_ai_airdrop.js"></script>
@@ -2812,7 +2811,6 @@
         <form id="auto-memory-form">
             <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
             <label class="auto-memory-check"><input name="useMemory" type="checkbox"> 使用自动记忆，替代已总结原文进入上下文</label>
-            <label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 聊天界面折叠已总结楼层</label>
             <p class="auto-memory-help">关闭“使用自动记忆”可恢复原文进入上下文（仍受原有上下文条数限制）；关闭自动整理仅停止后续调用。</p>
             <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">下方独立记忆 API</option></select></label>
             <details id="memory-api-panel"><summary>独立总结 API 配置（全局共用）</summary>
@@ -2823,7 +2821,7 @@
                 <label>模型名称<input id="memory-api-model" type="text" list="memory-api-models" autocomplete="off" placeholder="输入模型名或拉取后选择"><datalist id="memory-api-models"></datalist></label>
                 <button type="button" class="btn btn-secondary" id="memory-api-fetch-models">拉取模型列表</button>
             </details>
-            <fieldset><legend>楼层记忆</legend><div class="auto-memory-grid">
+            <fieldset><legend>楼层记忆</legend><label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 聊天界面折叠已总结楼层</label><div class="auto-memory-grid">
                 <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
                 <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
                 <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
@@ -2888,7 +2886,7 @@
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261104-vector-settings"></script>
+<script src="js/modules/auto_memory.js?v=20261104-memory-settings-split"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261103-notifications-backup"></script>   <!-- 存储空间分析图表 -->

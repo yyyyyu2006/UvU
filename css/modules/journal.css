@@ -38,6 +38,7 @@
 #auto-memory-modal.vector-settings-mode .auto-memory-actions { grid-template-columns: 1fr; }
 #auto-memory-modal.vector-settings-mode #auto-memory-run { display: none; }
 #auto-memory-modal.vector-settings-mode .auto-memory-heading h2 { font-size: 16px; }
+#auto-memory-modal:not(.vector-settings-mode) .vector-memory-fieldset { display: none; }
 
 #memory-journal-screen .content {
     padding: 15px;

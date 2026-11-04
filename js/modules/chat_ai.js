@@ -147,6 +147,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         messageArea.scrollTop = messageArea.scrollHeight;
     }
 
+    let replyDelivered = false;
     try {
         const memoryArchiveId = chat.activeArchiveId;
         const relationshipRevision = chat.friendRelationship?.revision;
@@ -616,7 +617,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
         
         if (streamEnabled) {
-            await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal);
+            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal) === true;
         } else {
             let result;
             try {
@@ -649,6 +650,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
+            replyDelivered = true;
         }
 
     } catch (error) {
@@ -658,6 +660,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         chatGenerationRequests.delete(generationRequest);
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
+        if (replyDelivered && chatType === 'private' && typeof checkCharacterBlacklist === 'function') {
+            checkCharacterBlacklist(chat).catch(error => console.warn('Character relationship check failed:', error.message));
+        }
     }
 }
 
@@ -679,6 +684,7 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
 
     // ===================
     await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal);
+    return true;
 }
 
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal) {
