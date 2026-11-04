@@ -353,6 +353,8 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
         charPersona: 0,
         userPersona: 0,
         memory: 0,
+        cot: 0,
+        vectorMemory: 0,
         history: 0,
         total: 0
     };
@@ -400,15 +402,24 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
         memoryText = `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
     }
 
+    let cotText = '';
+    const cotSettings = db.cotSettings;
+    if (cotSettings?.callEnabled) {
+        const activePresetId = chat.exclusiveCotPreset || cotSettings.activeCallPresetId || 'default_call';
+        const preset = (db.cotPresets || []).find(item => item.id === activePresetId);
+        cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
+    }
+
     // 3. 计算各部分 Token
     breakdown.worldBook = countTextTokens(worldBookText);
     breakdown.charPersona = countTextTokens(charPersonaText);
     breakdown.userPersona = countTextTokens(userPersonaText);
     breakdown.memory = countTextTokens(memoryText);
+    breakdown.cot = countTextTokens(cotText);
 
     // 4. 基础系统词 = 总系统提示词 - 动态部分
     const totalSystemTokens = countTextTokens(systemPrompt);
-    breakdown.baseSystem = Math.max(0, totalSystemTokens - breakdown.worldBook - breakdown.charPersona - breakdown.userPersona - breakdown.memory);
+    breakdown.baseSystem = Math.max(0, totalSystemTokens - breakdown.worldBook - breakdown.charPersona - breakdown.userPersona - breakdown.memory - breakdown.cot);
 
     // 5. 聊天记录
     let historySlice = getAutoMemoryContextHistory(chat);
@@ -427,7 +438,83 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
     breakdown.history = countTextTokens(historyText);
 
     // 6. 总计
-    breakdown.total = totalSystemTokens + breakdown.history;
+    breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.history;
+    breakdown.floorCount = historySlice.filter(message => message && !message.isThinking && !message.isContextDisabled && message.role !== 'system').length;
 
     return breakdown;
+}
+
+const chatTokenUsageSnapshots = new Map();
+function chatTokenUsageKey(chatId, chatType = 'private', archiveId = '') {
+    return `${chatType}:${chatId}:${archiveId || ''}`;
+}
+
+function normalizeChatTokenUsage(usage, provider = '') {
+    if (!usage || typeof usage !== 'object') return null;
+    const prompt = Number(usage.prompt_tokens ?? usage.promptTokenCount ?? usage.input_tokens);
+    const completion = Number(usage.completion_tokens ?? usage.candidatesTokenCount ?? usage.output_tokens);
+    const total = Number(usage.total_tokens ?? usage.totalTokenCount);
+    const reasoning = Number(usage.reasoning_tokens ?? usage.thoughtsTokenCount ?? usage.completion_tokens_details?.reasoning_tokens);
+    const hasValue = [prompt, completion, total, reasoning].some(Number.isFinite);
+    if (!hasValue) return null;
+    return {
+        promptTokens: Number.isFinite(prompt) ? prompt : null,
+        completionTokens: Number.isFinite(completion) ? completion : null,
+        totalTokens: Number.isFinite(total) ? total : null,
+        reasoningTokens: Number.isFinite(reasoning) ? reasoning : null,
+        provider
+    };
+}
+
+function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = [], vectorContext = '') {
+    if (!chat) return null;
+    const breakdown = calculateTokenBreakdown(chat.id, chatType) || {};
+    const history = historySlice.length ? historySlice : (chat.history || []);
+    const historyText = history.map(message => {
+        const parts = (message.parts || []).filter(part => part.type === 'text' || part.type === 'html').map(part => part.text || '').join('');
+        return `${message.content || ''}${parts}`;
+    }).join('\n');
+    breakdown.history = countTextTokens(historyText);
+    breakdown.vectorMemory = countTextTokens(vectorContext);
+    const systemEstimate = countTextTokens(systemPrompt);
+    const knownParts = breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory;
+    breakdown.baseSystem = Math.max(0, systemEstimate - knownParts);
+    breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.history;
+    breakdown.promptTokens = breakdown.total;
+    breakdown.completionTokens = 0;
+    breakdown.totalTokens = breakdown.total;
+    breakdown.actual = false;
+    breakdown.source = '本地估算';
+    breakdown.floorCount = history.filter(message => message && !message.isThinking && !message.isContextDisabled && message.role !== 'system').length;
+    return breakdown;
+}
+
+function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, estimate = null) {
+    if (!chat) return null;
+    const normalized = normalizeChatTokenUsage(reportedUsage, db.apiSettings?.provider || '');
+    const base = estimate || estimateChatTokenUsage(chat, chatType, '', chat.history || []);
+    const promptTokens = normalized?.promptTokens ?? base?.promptTokens ?? base?.total ?? 0;
+    const completionTokens = normalized?.completionTokens ?? base?.completionTokens ?? 0;
+    const totalTokens = normalized?.totalTokens ?? (promptTokens + completionTokens);
+    const snapshot = {
+        ...(base || {}),
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        reasoningTokens: normalized?.reasoningTokens ?? 0,
+        actual: Boolean(normalized),
+        source: normalized ? 'API 总量 / 分项估算' : '本地估算',
+        floorCount: base?.floorCount ?? 0,
+        timestamp: Date.now()
+    };
+    chatTokenUsageSnapshots.set(chatTokenUsageKey(chat.id, chatType, chat.activeArchiveId), snapshot);
+    if (typeof window !== 'undefined' && typeof window.refreshCurrentTokenUsagePanel === 'function') window.refreshCurrentTokenUsagePanel();
+    return snapshot;
+}
+
+function getChatTokenUsageSnapshot(chatId, chatType = 'private') {
+    const chat = (chatType === 'private' ? db.characters : db.groups).find(item => item.id === chatId);
+    if (!chat) return null;
+    return chatTokenUsageSnapshots.get(chatTokenUsageKey(chatId, chatType, chat.activeArchiveId)) ||
+        estimateChatTokenUsage(chat, chatType, '', chat.history || []);
 }

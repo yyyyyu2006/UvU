@@ -49,6 +49,20 @@ test('stream parser handles LF, CRLF, no space, split Unicode and trailing event
         assert.equal(await f.c.readStreamResponse(response, 'newapi'), '测试回复🌸');
     }
 });
+test('stream parser reports provider token usage without changing reply text', async () => {
+    const f = fixture('newapi'); const usage = [];
+    const chunks = [
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: '回复' } }] }) + '\n\n',
+        'data: ' + JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 } }) + '\n\n',
+        'data: [DONE]\n\n'
+    ].map(value => new TextEncoder().encode(value));
+    const response = { body: { getReader: () => ({ read: async () => chunks.length ? { done: false, value: chunks.shift() } : { done: true }, releaseLock() {} }) } };
+    assert.equal(await f.c.readStreamResponse(response, 'newapi', value => usage.push(value)), '回复');
+    assert.equal(usage.length, 1);
+    assert.equal(usage[0].prompt_tokens, 12);
+    assert.equal(usage[0].completion_tokens, 5);
+    assert.equal(usage[0].total_tokens, 17);
+});
 test('main streaming reply is discarded if archive changes while reading', async () => {
     const f = fixture(); f.c.db.apiSettings.streamEnabled = true; let finish, started; const ready = new Promise(r => started = r); let read = false;
     f.c.fetch = async () => ({ ok: true, body: { getReader: () => ({ read: async () => { if (read) return { done: true }; read = true; started(); return new Promise(r => finish = r); }, releaseLock() {} }) } });

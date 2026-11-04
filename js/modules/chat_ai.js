@@ -551,6 +551,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             };
         }
         
+        const tokenEstimate = typeof estimateChatTokenUsage === 'function'
+            ? estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext)
+            : null;
         // 格式化打印日志
         let logText = "========== [发送给 AI 的请求内容] ==========\n";
         if (requestBody.messages) {
@@ -616,13 +619,15 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             throw error;
         }
         
+        let reportedUsage = null;
         if (streamEnabled) {
-            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal) === true;
+            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }) === true;
         } else {
             let result;
             try {
                 result = await response.json();
                 console.log('【API完整响应数据】:', result);
+                reportedUsage = result.usage || result.usageMetadata || null;
             } catch (e) {
                 throw new Error('API返回了无法解析的JSON数据，请检查API地址及响应格式。');
             }
@@ -652,6 +657,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
             replyDelivered = true;
         }
+        if (typeof recordChatTokenUsage === 'function') recordChatTokenUsage(chat, chatType, reportedUsage, tokenEstimate);
 
     } catch (error) {
         if (!isBackground && !generationController?.signal.aborted) showApiError(error);
@@ -666,8 +672,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal) {
-    let fullResponse = await readStreamResponse(response, apiType);
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage) {
+    let fullResponse = await readStreamResponse(response, apiType, onUsage);
     if (!requestIsCurrent()) return;
     if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
     // === 【补丁：补全流式输出时丢失的开头标签】 ===

@@ -75,6 +75,61 @@ window.showRedPacketDetails = function(message, chat) {
     modal.classList.add('visible');
 };
 
+function renderTokenUsagePanel(container, chat, chatType = 'private') {
+    if (!container || !chat) return;
+    const snapshot = typeof getChatTokenUsageSnapshot === 'function'
+        ? getChatTokenUsageSnapshot(chat.id, chatType)
+        : null;
+    const data = snapshot || { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, history: 0, totalTokens: 0, floorCount: 0, source: '暂无数据' };
+    container.replaceChildren();
+
+    const heading = document.createElement('div');
+    heading.className = 'status-token-heading';
+    const title = document.createElement('strong');
+    title.textContent = '本轮 Token 消耗';
+    const source = document.createElement('span');
+    source.textContent = data.source || '本地估算';
+    heading.append(title, source);
+
+    const summary = document.createElement('div');
+    summary.className = 'status-token-summary';
+    const floor = document.createElement('span');
+    floor.textContent = `当前聊天楼层 ${chat.history?.length || 0}`;
+    const total = document.createElement('b');
+    total.textContent = `${Number(data.totalTokens || data.total || 0).toLocaleString()} token`;
+    summary.append(floor, total);
+
+    const context = document.createElement('p');
+    context.className = 'status-token-context';
+    context.textContent = `本轮上下文楼层 ${data.floorCount || 0} · 输入 ${Number(data.promptTokens || 0).toLocaleString()} · 输出 ${Number(data.completionTokens || 0).toLocaleString()}`;
+
+    const list = document.createElement('div');
+    list.className = 'status-token-list';
+    const items = [
+        ['提示词 / 系统基础', data.baseSystem],
+        ['思维链指令', data.cot],
+        ['世界书', data.worldBook],
+        ['角色人设', data.charPersona],
+        ['用户人设', data.userPersona],
+        ['记忆总结', data.memory],
+        ['向量记忆', data.vectorMemory],
+        ['聊天记录', data.history],
+        ['思维链输出', data.reasoningTokens],
+        ['本轮输出', data.completionTokens]
+    ];
+    items.forEach(([name, value]) => {
+        const row = document.createElement('div');
+        row.className = 'status-token-row';
+        const label = document.createElement('span');
+        label.textContent = name;
+        const amount = document.createElement('b');
+        amount.textContent = `${Number(value || 0).toLocaleString()}`;
+        row.append(label, amount);
+        list.appendChild(row);
+    });
+    container.append(heading, summary, context, list);
+}
+
 function setupChatRoom() {
     // 重新获取 DOM 元素，因为它们可能是动态注入的
     chatRoomScreen = document.getElementById('chat-room-screen');
@@ -94,7 +149,6 @@ function setupChatRoom() {
     messageInput = document.getElementById('message-input');
     getReplyBtn = document.getElementById('get-reply-btn');
     regenerateBtn = document.getElementById('regenerate-btn');
-    setupChatReplyActionsLayout();
     const stopAiButton = document.getElementById('stop-ai-btn');
     if (stopAiButton) stopAiButton.addEventListener('click', () => {
         if (typeof stopAiReply === 'function' && stopAiReply()) showToast('已请求停止 AI 回复');
@@ -126,8 +180,41 @@ function setupChatRoom() {
                 slidesData = [{ html: char.statusPanel.currentStatusHtml, timestamp: Date.now() }];
             }
 
+            const flipShell = document.createElement('div');
+            flipShell.className = 'status-flip-shell';
+            const flipCard = document.createElement('div');
+            flipCard.className = 'status-flip-card';
+            const front = document.createElement('div');
+            front.className = 'status-flip-face status-flip-front';
+            const back = document.createElement('div');
+            back.className = 'status-flip-face status-flip-back';
+            const frontToggle = document.createElement('button');
+            frontToggle.type = 'button';
+            frontToggle.className = 'status-token-toggle';
+            frontToggle.dataset.tokenFlip = 'true';
+            frontToggle.textContent = 'Token';
+            frontToggle.setAttribute('aria-label', '查看本轮 Token 消耗');
+            front.appendChild(frontToggle);
+            const backToggle = document.createElement('button');
+            backToggle.type = 'button';
+            backToggle.className = 'status-token-toggle';
+            backToggle.dataset.tokenFlip = 'true';
+            backToggle.textContent = '返回状态';
+            backToggle.setAttribute('aria-label', '返回状态栏');
+            back.appendChild(backToggle);
+            const tokenPanel = document.createElement('div');
+            tokenPanel.className = 'status-token-panel';
+            back.appendChild(tokenPanel);
+            renderTokenUsagePanel(tokenPanel, char, 'private');
+            flipCard.append(front, back);
+            flipShell.appendChild(flipCard);
+            statusContent.appendChild(flipShell);
+
             if (slidesData.length === 0) {
-                statusContent.innerHTML = '<p style="text-align:center; color:#999;">暂无状态信息</p>';
+                const empty = document.createElement('p');
+                empty.className = 'status-empty-message';
+                empty.textContent = '暂无状态信息';
+                front.appendChild(empty);
                 statusOverlay.classList.add('visible');
                 return;
             }
@@ -174,8 +261,8 @@ function setupChatRoom() {
             indicator.className = 'status-indicator';
             indicator.textContent = `${slidesData.length} / ${slidesData.length}`;
 
-            statusContent.appendChild(swiper);
-            statusContent.appendChild(indicator);
+            front.appendChild(swiper);
+            front.appendChild(indicator);
 
             // Initial Load: Load the last slide (newest) and previous ones
             const lastIndex = slidesData.length - 1;
@@ -227,6 +314,12 @@ function setupChatRoom() {
     // 状态栏交互事件委托
     if (statusContent) {
         statusContent.addEventListener('click', (e) => {
+            const tokenToggle = e.target.closest('[data-token-flip]');
+            if (tokenToggle) {
+                const card = tokenToggle.closest('.status-flip-card');
+                if (card) card.classList.toggle('is-flipped');
+                return;
+            }
             const target = e.target.closest('[data-send-msg]');
             if (target) {
                 const msg = target.dataset.sendMsg;
@@ -242,6 +335,12 @@ function setupChatRoom() {
             }
         });
     }
+
+    window.refreshCurrentTokenUsagePanel = () => {
+        const panel = document.querySelector('#char-status-content .status-token-panel');
+        const chat = currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : null;
+        if (panel && chat) renderTokenUsagePanel(panel, chat, 'private');
+    };
 
     if (toggleExpansionBtn) {
         toggleExpansionBtn.addEventListener('click', () => {
@@ -493,32 +592,6 @@ function setupChatRoom() {
         document.getElementById('capture-result-modal').classList.remove('visible');
     });
     document.getElementById('cancel-reply-btn').addEventListener('click', cancelQuoteReply);
-}
-
-function setupChatReplyActionsLayout() {
-    const area = document.getElementById('message-input-default');
-    const actions = document.getElementById('chat-reply-actions');
-    if (!area || !actions || actions.dataset.layoutBound) return;
-    actions.dataset.layoutBound = 'true';
-    const guardStyleId = 'chat-action-layout-guard';
-    if (!document.getElementById(guardStyleId) && document.head) {
-        const style = document.createElement('style');
-        style.id = guardStyleId;
-        style.textContent = '#chat-reply-actions{position:relative!important;display:inline-flex!important;flex:0 0 auto!important;min-width:30px!important;height:30px!important;align-items:center!important;justify-content:flex-end!important;gap:5px!important;isolation:isolate!important}#chat-reply-actions>.icon-btn{flex:0 0 30px!important;width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#chat-reply-actions.chat-reply-actions--overlay{width:30px!important}#chat-reply-actions.chat-reply-actions--overlay #stop-ai-btn:not([hidden]){position:absolute!important;inset:0!important;z-index:2!important;display:inline-flex!important}';
-        document.head.appendChild(style);
-    }
-    const update = () => {
-        const width = area.getBoundingClientRect().width;
-        actions.classList.toggle('chat-reply-actions--overlay', width > 0 && width < 340);
-    };
-    update();
-    if (typeof ResizeObserver === 'function') {
-        const observer = new ResizeObserver(update);
-        observer.observe(area);
-        actions._layoutObserver = observer;
-    } else {
-        window.addEventListener('resize', update, { passive: true });
-    }
 }
 
 function openChatRoom(chatId, type) {

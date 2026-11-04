@@ -840,7 +840,7 @@ async function fetchAiResponse(settings, requestBody, headers, endpoint, forceSt
     }
 }
 
-async function readStreamResponse(response, provider) {
+async function readStreamResponse(response, provider, onUsage) {
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let buffer = '', fullResponse = '';
     const consume = event => {
@@ -849,6 +849,8 @@ async function readStreamResponse(response, provider) {
         if (!data || data.trim() === '[DONE]') return;
         try {
             const json = JSON.parse(data);
+            const usage = json.usage || json.usageMetadata;
+            if (usage && typeof onUsage === 'function') onUsage(usage);
             fullResponse += provider === 'gemini'
                 ? (json.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')
                 : json.choices?.[0]?.delta?.content || '';
@@ -872,7 +874,12 @@ async function readStreamResponse(response, provider) {
                 buffer.split(/\r?\n\r?\n/).forEach(consume);
             } else {
                 const data = JSON.parse(buffer);
-                fullResponse = (Array.isArray(data) ? data : [data]).map(item =>
+                const items = Array.isArray(data) ? data : [data];
+                if (typeof onUsage === 'function') items.forEach(item => {
+                    const usage = item.usage || item.usageMetadata;
+                    if (usage) onUsage(usage);
+                });
+                fullResponse = items.map(item =>
                     (item.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')).join('');
             }
         } else if (buffer.trim()) consume(buffer);
