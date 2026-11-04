@@ -80,8 +80,14 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     const snapshot = typeof getChatTokenUsageSnapshot === 'function'
         ? getChatTokenUsageSnapshot(chat.id, chatType)
         : null;
-    const data = snapshot || { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, history: 0, totalTokens: 0, floorCount: 0, source: '暂无数据' };
+    const data = snapshot || { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, history: 0, worldBookDetails: [], totalTokens: 0, floorCount: 0, source: '暂无数据' };
     container.replaceChildren();
+
+    const formatTokens = value => Number(value || 0).toLocaleString();
+    const formatSignedTokens = value => `${value > 0 ? '+' : ''}${formatTokens(value)}`;
+    const worldBookDetails = Array.isArray(data.worldBookDetails)
+        ? data.worldBookDetails.filter(item => item && item.triggered !== false)
+        : [];
 
     const heading = document.createElement('div');
     heading.className = 'status-token-heading';
@@ -96,19 +102,20 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     const floor = document.createElement('span');
     floor.textContent = `当前聊天楼层 ${chat.history?.length || 0}`;
     const total = document.createElement('b');
-    total.textContent = `${Number(data.totalTokens || data.total || 0).toLocaleString()} token`;
+    total.textContent = `${formatTokens(data.totalTokens || data.total || 0)} token`;
     summary.append(floor, total);
 
     const context = document.createElement('p');
     context.className = 'status-token-context';
-    context.textContent = `本轮上下文楼层 ${data.floorCount || 0} · 输入 ${Number(data.promptTokens || 0).toLocaleString()} · 输出 ${Number(data.completionTokens || 0).toLocaleString()}`;
+    const inputLabel = data.actual ? 'API 实际输入' : '输入估算';
+    const outputLabel = data.actual ? 'API 实际输出' : '输出估算';
+    context.textContent = `本轮上下文楼层 ${data.floorCount || 0} · ${inputLabel} ${formatTokens(data.promptTokens || 0)} · ${outputLabel} ${formatTokens(data.completionTokens || 0)}`;
 
     const list = document.createElement('div');
     list.className = 'status-token-list';
     const items = [
         ['提示词 / 系统基础', data.baseSystem],
         ['思维链指令', data.cot],
-        ['世界书', data.worldBook],
         ['角色人设', data.charPersona],
         ['用户人设', data.userPersona],
         ['记忆总结', data.memory],
@@ -117,16 +124,55 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         ['思维链输出', data.reasoningTokens],
         ['本轮输出', data.completionTokens]
     ];
-    items.forEach(([name, value]) => {
+    const appendRow = (name, value, valueText = formatTokens(value), extraClass = '') => {
         const row = document.createElement('div');
-        row.className = 'status-token-row';
+        row.className = `status-token-row${extraClass ? ` ${extraClass}` : ''}`;
         const label = document.createElement('span');
         label.textContent = name;
         const amount = document.createElement('b');
-        amount.textContent = `${Number(value || 0).toLocaleString()}`;
+        amount.textContent = valueText;
         row.append(label, amount);
         list.appendChild(row);
-    });
+    };
+    items.forEach(([name, value]) => appendRow(name, value));
+
+    if (worldBookDetails.length) {
+        const worldBookSection = document.createElement('div');
+        worldBookSection.className = 'status-token-worldbook';
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'status-token-worldbook-toggle';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.textContent = `世界书（${worldBookDetails.length} 本，点击查看）`;
+        const details = document.createElement('div');
+        details.className = 'status-token-worldbook-details';
+        details.hidden = true;
+        worldBookDetails.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'status-token-worldbook-row';
+            const name = document.createElement('span');
+            name.textContent = item.name || '未命名世界书';
+            const triggered = document.createElement('span');
+            triggered.textContent = item.triggered ? '已触发' : '未触发';
+            const amount = document.createElement('b');
+            amount.textContent = `${formatTokens(item.tokenEstimate)} token`;
+            row.append(name, triggered, amount);
+            details.appendChild(row);
+        });
+        toggle.addEventListener('click', () => {
+            details.hidden = !details.hidden;
+            toggle.setAttribute('aria-expanded', String(!details.hidden));
+        });
+        worldBookSection.append(toggle, details);
+        list.appendChild(worldBookSection);
+    }
+
+    if (data.actual) {
+        const estimatedInput = [data.baseSystem, data.cot, data.worldBook, data.charPersona, data.userPersona, data.memory, data.vectorMemory, data.history]
+            .reduce((sum, value) => sum + Number(value || 0), 0);
+        const difference = Number(data.promptTokens || 0) - estimatedInput;
+        if (difference !== 0) appendRow('未分类 / 协议差异', difference, `${formatSignedTokens(difference)} token`, 'status-token-difference');
+    }
     container.append(heading, summary, context, list);
 }
 

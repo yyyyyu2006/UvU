@@ -552,7 +552,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
         
         const tokenEstimate = typeof estimateChatTokenUsage === 'function'
-            ? estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext)
+            ? estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan)
             : null;
         // 格式化打印日志
         let logText = "========== [发送给 AI 的请求内容] ==========\n";

@@ -343,7 +343,21 @@ function estimateChatTokens(chatId, chatType = 'private') {
 }
 
 // 计算 Token 详细占比
-function calculateTokenBreakdown(chatId, chatType = 'private') {
+function getWorldBookTokenDetails(chat, worldBookPlan) {
+    if (!chat) return [];
+    const plan = Array.isArray(worldBookPlan)
+        ? worldBookPlan
+        : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, chat.history || []) : []);
+    return plan.filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && String(book.content || '').trim()).map(book => ({
+        id: book.id,
+        name: book.name || '未命名世界书',
+        triggered: true,
+        tokenEstimate: countTextTokens(book.content || '')
+    }));
+}
+
+// worldBookPlan 是发送本轮请求时已经算出的激活结果；传入它可以避免统计时重新判断。
+function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return null;
 
@@ -356,26 +370,33 @@ function calculateTokenBreakdown(chatId, chatType = 'private') {
         cot: 0,
         vectorMemory: 0,
         history: 0,
+        worldBookDetails: [],
         total: 0
     };
+
+    const activeWorldBookPlan = Array.isArray(worldBookPlan)
+        ? worldBookPlan
+        : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, chat.history || []) : undefined);
+    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, activeWorldBookPlan);
 
     // 1. 获取完整的系统提示词
     let systemPrompt = '';
     if (chatType === 'private') {
         if (typeof generatePrivateSystemPrompt === 'function') {
-            systemPrompt = generatePrivateSystemPrompt(chat);
+            systemPrompt = generatePrivateSystemPrompt(chat, activeWorldBookPlan);
         }
     } else {
         if (typeof generateGroupSystemPrompt === 'function') {
-            systemPrompt = generateGroupSystemPrompt(chat);
+            systemPrompt = generateGroupSystemPrompt(chat, activeWorldBookPlan);
         }
     }
 
     // 2. 提取各动态部分的文本
-    const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksBefore = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksAfter = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksGuidelines = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const planForSections = Array.isArray(activeWorldBookPlan) ? activeWorldBookPlan : [];
+    const worldBooksLimitBreak = worldBookSection(planForSections, 'limit_break');
+    const worldBooksBefore = worldBookSection(planForSections, 'before');
+    const worldBooksAfter = worldBookSection(planForSections, 'after');
+    const worldBooksGuidelines = worldBookSection(planForSections, 'guidelines');
     const worldBookText = worldBooksLimitBreak + '\n' + worldBooksBefore + '\n' + worldBooksAfter + '\n' + worldBooksGuidelines;
     
     let charPersonaText = '';
@@ -466,9 +487,9 @@ function normalizeChatTokenUsage(usage, provider = '') {
     };
 }
 
-function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = [], vectorContext = '') {
+function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = [], vectorContext = '', worldBookPlan) {
     if (!chat) return null;
-    const breakdown = calculateTokenBreakdown(chat.id, chatType) || {};
+    const breakdown = calculateTokenBreakdown(chat.id, chatType, worldBookPlan) || {};
     const history = historySlice.length ? historySlice : (chat.history || []);
     const historyText = history.map(message => {
         const parts = (message.parts || []).filter(part => part.type === 'text' || part.type === 'html').map(part => part.text || '').join('');
@@ -476,7 +497,10 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     }).join('\n');
     breakdown.history = countTextTokens(historyText);
     breakdown.vectorMemory = countTextTokens(vectorContext);
-    const systemEstimate = countTextTokens(systemPrompt);
+    const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
+        ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, worldBookPlan) : '')
+        : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, worldBookPlan) : ''));
+    const systemEstimate = countTextTokens(effectiveSystemPrompt);
     const knownParts = breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory;
     breakdown.baseSystem = Math.max(0, systemEstimate - knownParts);
     breakdown.total = breakdown.baseSystem + breakdown.worldBook + breakdown.charPersona + breakdown.userPersona + breakdown.memory + breakdown.cot + breakdown.vectorMemory + breakdown.history;
@@ -501,8 +525,10 @@ function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, 
         promptTokens,
         completionTokens,
         totalTokens,
+        estimatedPromptTokens: base?.promptTokens ?? base?.total ?? null,
+        estimatedCompletionTokens: base?.completionTokens ?? 0,
         reasoningTokens: normalized?.reasoningTokens ?? 0,
-        actual: Boolean(normalized),
+        actual: Boolean(normalized && (normalized.promptTokens != null || normalized.completionTokens != null || normalized.totalTokens != null)),
         source: normalized ? 'API 总量 / 分项估算' : '本地估算',
         floorCount: base?.floorCount ?? 0,
         timestamp: Date.now()

@@ -498,7 +498,7 @@ function renderCustomizeForm() {
                     <h3 style="margin: 0;">全局CSS美化</h3>
                     <button class="icon-btn-simple" onclick="document.getElementById('global-css-modal').classList.remove('visible')">✕</button>
                 </div>
-                <div class="form-group" style="margin-top: 15px; margin-bottom: 15px;">
+                <div class="form-group global-css-editor-group" style="margin-top: 15px; margin-bottom: 15px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <label for="global-beautification-css" style="font-weight: bold; font-size: 14px; color: var(--primary-color); margin-bottom: 0;">CSS代码</label>
                         <button type="button" id="apply-global-css-now-btn" class="btn btn-primary btn-small" style="width:auto;">立即应用</button>
