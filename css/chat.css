@@ -2227,6 +2227,7 @@
 .status-token-worldbook-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-token-worldbook-chevron { flex: 0 0 auto; margin-left: 8px; color: #777; font-size: 14px; line-height: 1; }
 .status-token-worldbook-details { display: flex; flex-direction: column; gap: 4px; padding: 0 0 6px 12px; }
+.status-token-worldbook-details[hidden] { display: none !important; }
 .status-token-worldbook-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; min-height: 24px; color: #555; font-size: 11px; }
 .status-token-worldbook-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-token-worldbook-row span:nth-child(2) { color: #16803c; }
