@@ -135,6 +135,48 @@
     cursor: default;
 }
 
+#uvu-story-bridge-screen .uvu-bridge-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-actions .btn {
+    flex: 1 1 150px;
+    min-width: 0;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-guide {
+    display: block;
+    padding: 16px;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-guide h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-guide ol {
+    margin: 0;
+    padding-left: 22px;
+    line-height: 1.65;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-guide li + li {
+    margin-top: 8px;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-guide code {
+    overflow-wrap: anywhere;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-note {
+    margin: 14px 0 0;
+    color: #666;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
 .kkt-item-subtitle {
     color: #888;
     font-size: calc(13px * var(--app-font-scale));

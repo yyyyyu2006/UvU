@@ -29,7 +29,7 @@
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261104-minimax-tts">
-    <link rel="stylesheet" href="css/settings.css?v=20261104-global-css-token-toolbar">
+    <link rel="stylesheet" href="css/settings.css?v=20261104-story-bridge-page">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
@@ -563,24 +563,6 @@
                     </button>
                 </form>
 
-                <div class="kkt-group" id="uvu-story-bridge-settings">
-                    <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
-                        <div class="kkt-item-content">
-                            <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
-                            <div class="kkt-item-subtitle">连接同设备运行的酒馆。需先安装并启动 UvU Story Bridge 服务端插件。</div>
-                        </div>
-                        <label>酒馆本机桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8000/api/plugins/uvu-story-bridge"></label>
-                        <label>一次性配对码<input id="uvu-bridge-pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="在酒馆桥接面板生成"></label>
-                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 将酒馆剧情记忆加入后续上下文</label>
-                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
-                            <button type="button" class="btn btn-secondary" id="uvu-bridge-sync">收取酒馆记忆</button>
-                            <button type="button" class="btn btn-neutral" id="uvu-bridge-disconnect">断开连接</button>
-                        </div>
-                        <output id="uvu-bridge-status" aria-live="polite">未连接</output>
-                    </div>
-                </div>
-
                 <div class="kkt-group minimax-tts-settings" id="minimax-tts-settings">
                     <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
                         <div class="kkt-item-content">
@@ -659,6 +641,47 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </main>
+    </div>
+    <div id="uvu-story-bridge-screen" class="screen">
+        <header class="app-header">
+            <button class="back-btn" data-target="home-screen">‹</button>
+            <div class="title-container"><h1 class="title">酒馆互通</h1></div>
+            <div class="placeholder"></div>
+        </header>
+        <main class="content uvu-bridge-page">
+            <div class="kkt-settings-container">
+                <div class="kkt-group" id="uvu-story-bridge-settings">
+                    <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
+                        <div class="kkt-item-content">
+                            <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
+                            <div class="kkt-item-subtitle">UvU 负责线上手机聊天，酒馆负责线下剧情。两边通过本机桥接同步剧情记忆。</div>
+                        </div>
+                        <label>酒馆本机桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8000/api/plugins/uvu-story-bridge"></label>
+                        <label>一次性配对码<input id="uvu-bridge-pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="在酒馆桥接面板生成"></label>
+                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 将酒馆剧情记忆加入后续上下文</label>
+                        <div class="uvu-bridge-actions">
+                            <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
+                            <button type="button" class="btn btn-secondary" id="uvu-bridge-sync">收取酒馆记忆</button>
+                            <button type="button" class="btn btn-neutral" id="uvu-bridge-disconnect">断开连接</button>
+                        </div>
+                        <output id="uvu-bridge-status" aria-live="polite">未连接</output>
+                    </div>
+                </div>
+                <section class="kkt-group uvu-bridge-guide" aria-labelledby="uvu-bridge-guide-title">
+                    <h2 id="uvu-bridge-guide-title">连接教程</h2>
+                    <ol>
+                        <li><strong>安装酒馆扩展：</strong>在 SillyTavern 的扩展管理器中添加 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code>，安装后刷新酒馆页面。</li>
+                        <li><strong>安装本机服务：</strong>把同一仓库克隆到酒馆目录的 <code>plugins/uvu-story-bridge</code>，在 <code>config.yaml</code> 开启 <code>enableServerPlugins: true</code>，然后重启酒馆。</li>
+                        <li><strong>设置跨域来源：</strong>在酒馆插件目录中，将 <code>server/config.example.json</code> 复制为 <code>server/config.json</code>，确认允许来源包含当前 UvU 页面域名。不要将酒馆端口暴露到公网。</li>
+                        <li><strong>生成配对码：</strong>在酒馆的 UvU Story Bridge 面板创建一次性配对码；在本页填写桥接地址和配对码，再点“连接 / 配对”。地址中的端口要与酒馆实际端口一致。</li>
+                        <li><strong>绑定角色并开始剧情：</strong>在酒馆扩展中将当前角色绑定到对应的 UvU 角色 ID。酒馆开始线下场景后会拦截 UvU 自动回复；需要发手机消息时使用酒馆里的“拿出手机”。</li>
+                        <li><strong>收取线下记忆：</strong>回到对应的 UvU 私聊，页面前台时会自动同步，也可点“收取酒馆记忆”。剧情先保存为角色回忆草稿；勾选上方选项后才会沿用现有收藏记忆方式加入后续上下文。</li>
+                    </ol>
+                    <p class="uvu-bridge-note">GitHub Pages 是 HTTPS，而本机酒馆通常是 HTTP。首次连接请在页面前台点击配对，并按浏览器提示允许本地网络访问。不同 Android 浏览器可能有差异；若连接失败，请检查酒馆插件已启用、端口正确、CORS 来源匹配，并确认手机与酒馆运行在同一设备。</p>
+                    <p class="uvu-bridge-note">酒馆服务端插件具有服务器端权限，请只安装可信代码。酒馆剧情默认不会注入提示词；开启记忆选项后才会改变该角色后续请求中的记忆上下文。</p>
+                </section>
             </div>
         </main>
     </div>
@@ -2819,7 +2842,7 @@
 <script src="js/db.js?v=20261104-minimax-tts"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
-<script src="js/ui.js?v=20261103-vector-viewport"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
+<script src="js/ui.js?v=20261104-story-bridge-page"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261104-chat-css-reset"></script>
