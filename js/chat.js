@@ -573,6 +573,9 @@ function setupChatRoom() {
                 if (transcript) {
                     transcript.classList.toggle('active');
                 }
+                if (voiceBubble.dataset.voiceText && typeof MiniMaxTTS !== 'undefined') {
+                    MiniMaxTTS.play(voiceBubble, voiceBubble.dataset.voiceText);
+                }
             }
             
             const bilingualBubble = e.target.closest('.bilingual-bubble');

@@ -51,6 +51,170 @@ function sendMyVoiceMessage(text) {
     });
 }
 
+const MiniMaxTTS = (() => {
+    let activeAudio = null;
+    let activeUrl = null;
+    let activeBubble = null;
+    let pendingBubble = null;
+    let pendingRequest = null;
+    let playbackToken = 0;
+    const audioCache = new Map();
+    const maxCachedAudio = 8;
+
+    function getSettings() {
+        return db.minimaxTtsSettings || {};
+    }
+
+    function decodeHexAudio(hex) {
+        if (typeof hex !== 'string' || !/^(?:[\da-f]{2})+$/i.test(hex)) {
+            throw new Error('语音服务返回了无法识别的音频数据');
+        }
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+        return new Blob([bytes], { type: 'audio/mpeg' });
+    }
+
+    function cacheAudio(key, blob) {
+        audioCache.delete(key);
+        audioCache.set(key, blob);
+        while (audioCache.size > maxCachedAudio) audioCache.delete(audioCache.keys().next().value);
+    }
+
+    async function synthesize(text, settings = getSettings(), signal) {
+        const apiKey = String(settings.apiKey || '').trim();
+        const endpoint = String(settings.endpoint || 'https://api.minimaxi.com/v1/t2a_v2').trim();
+        const model = String(settings.model || 'speech-2.8-hd').trim();
+        const voiceId = String(settings.voiceId || '').trim();
+        if (!apiKey || !voiceId) throw new Error('请先在 API 设置中填写 MiniMax 密钥和音色 ID');
+        if (!/^https:\/\//i.test(endpoint)) throw new Error('MiniMax API 地址必须使用 HTTPS');
+        if (!text || text.length > 10000) throw new Error('语音文本不能为空，且不能超过 10000 个字符');
+
+        const cacheKey = JSON.stringify([endpoint, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
+        if (audioCache.has(cacheKey)) return audioCache.get(cacheKey);
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            signal,
+            body: JSON.stringify({
+                model,
+                text,
+                stream: false,
+                output_format: 'hex',
+                voice_setting: {
+                    voice_id: voiceId,
+                    speed: Number(settings.speed) || 1,
+                    vol: 1,
+                    pitch: Number(settings.pitch) || 0
+                },
+                audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
+            })
+        });
+        let result;
+        try {
+            result = await response.json();
+        } catch {
+            throw new Error(`MiniMax 返回了无效响应 (${response.status})`);
+        }
+        if (!response.ok || (result.base_resp && result.base_resp.status_code !== 0)) {
+            const detail = result.base_resp?.status_msg || result.message || `HTTP ${response.status}`;
+            throw new Error(`MiniMax 语音生成失败：${detail}`);
+        }
+        const blob = decodeHexAudio(result.data?.audio);
+        cacheAudio(cacheKey, blob);
+        return blob;
+    }
+
+    async function play(bubble, text) {
+        if (activeBubble === bubble && activeAudio && !activeAudio.paused) {
+            activeAudio.pause();
+            bubble.classList.remove('voice-playing');
+            return;
+        }
+        if (pendingBubble === bubble) {
+            stop();
+            return;
+        }
+        stop();
+        const token = playbackToken;
+        pendingRequest = new AbortController();
+        pendingBubble = bubble;
+        bubble.classList.add('voice-loading');
+        bubble.setAttribute('aria-busy', 'true');
+        try {
+            const blob = await synthesize(text, getSettings(), pendingRequest.signal);
+            if (token !== playbackToken) return;
+            pendingRequest = null;
+            pendingBubble = null;
+            activeUrl = URL.createObjectURL(blob);
+            activeAudio = new Audio(activeUrl);
+            activeBubble = bubble;
+            activeAudio.addEventListener('ended', stop, { once: true });
+            activeAudio.addEventListener('error', () => {
+                stop();
+                showToast('音频播放失败，请检查浏览器音频支持');
+            }, { once: true });
+            await activeAudio.play();
+            bubble.classList.add('voice-playing');
+        } catch (error) {
+            if (token === playbackToken) {
+                stop();
+                if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
+            }
+        } finally {
+            if (token === playbackToken) {
+                bubble.classList.remove('voice-loading');
+                bubble.removeAttribute('aria-busy');
+            }
+        }
+    }
+
+    function stop() {
+        playbackToken++;
+        if (pendingRequest) pendingRequest.abort();
+        pendingRequest = null;
+        if (pendingBubble) {
+            pendingBubble.classList.remove('voice-loading');
+            pendingBubble.removeAttribute('aria-busy');
+        }
+        if (activeAudio) {
+            activeAudio.pause();
+            activeAudio.src = '';
+        }
+        if (activeUrl) URL.revokeObjectURL(activeUrl);
+        if (activeBubble) activeBubble.classList.remove('voice-playing', 'voice-loading');
+        activeAudio = activeUrl = activeBubble = null;
+        pendingBubble = null;
+    }
+
+    return { play, synthesize };
+})();
+
+async function previewMiniMaxVoice() {
+    const settings = {
+        apiKey: document.getElementById('minimax-tts-key')?.value.trim(),
+        endpoint: document.getElementById('minimax-tts-endpoint')?.value.trim(),
+        model: document.getElementById('minimax-tts-model')?.value.trim(),
+        voiceId: document.getElementById('minimax-tts-voice')?.value.trim(),
+        speed: document.getElementById('minimax-tts-speed')?.value,
+        pitch: document.getElementById('minimax-tts-pitch')?.value
+    };
+    const button = document.getElementById('minimax-tts-preview');
+    if (button) button.disabled = true;
+    try {
+        const blob = await MiniMaxTTS.synthesize('你好，这是角色语音试听。', settings);
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
+        audio.addEventListener('error', () => URL.revokeObjectURL(url), { once: true });
+        await audio.play();
+    } catch (error) {
+        showToast(error?.message || '语音试听失败');
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
 function setupPhotoVideoSystem() {
     const photoVideoBtn = document.getElementById('photo-video-btn');
     const sendPvForm = document.getElementById('send-pv-form');

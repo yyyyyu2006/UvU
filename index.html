@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
 
     <!-- CSS Split: Core Features -->
-    <link rel="stylesheet" href="css/chat.css?v=20261104-derived-features">
+    <link rel="stylesheet" href="css/chat.css?v=20261104-minimax-tts">
     <link rel="stylesheet" href="css/settings.css?v=20261104-global-css-token-toolbar">
 
     <!-- CSS Split: Modules -->
@@ -562,6 +562,43 @@
                         <div class="spinner"></div>
                     </button>
                 </form>
+
+                <div class="kkt-group minimax-tts-settings" id="minimax-tts-settings">
+                    <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
+                        <div class="kkt-item-content">
+                            <div class="kkt-item-title">MiniMax 角色语音</div>
+                            <div class="kkt-item-subtitle">点击聊天中的语音气泡时生成并播放。MiniMax 会按账户规则计费。</div>
+                        </div>
+                        <label class="minimax-tts-field">API 地址
+                            <input id="minimax-tts-endpoint" type="url" inputmode="url" autocomplete="url" placeholder="https://api.minimaxi.com/v1/t2a_v2">
+                        </label>
+                        <label class="minimax-tts-field">API 密钥
+                            <input id="minimax-tts-key" type="password" autocomplete="new-password" placeholder="MiniMax API Key">
+                        </label>
+                        <div class="kkt-item-subtitle">密钥仅保存在此浏览器，不会写入普通备份。</div>
+                        <div class="minimax-tts-field-row">
+                            <label class="minimax-tts-field">模型
+                                <input id="minimax-tts-model" type="text" autocomplete="off" value="speech-2.8-hd">
+                            </label>
+                            <label class="minimax-tts-field">音色 ID
+                                <input id="minimax-tts-voice" type="text" autocomplete="off" placeholder="填入 MiniMax voice_id">
+                            </label>
+                        </div>
+                        <div class="minimax-tts-field-row">
+                            <label class="minimax-tts-field">语速 <output id="minimax-tts-speed-value">1.0</output>
+                                <input id="minimax-tts-speed" type="range" min="0.5" max="2" step="0.1" value="1">
+                            </label>
+                            <label class="minimax-tts-field">音调 <output id="minimax-tts-pitch-value">0</output>
+                                <input id="minimax-tts-pitch" type="range" min="-12" max="12" step="1" value="0">
+                            </label>
+                        </div>
+                        <div class="minimax-tts-actions">
+                            <button type="button" class="btn btn-secondary" id="minimax-tts-preview">试听</button>
+                            <button type="button" class="btn btn-primary" id="minimax-tts-save">保存语音设置</button>
+                        </div>
+                        <div class="kkt-item-subtitle" id="minimax-tts-status" aria-live="polite"></div>
+                    </div>
+                </div>
     
                 <!-- 预设管理 -->
                 <div class="kkt-group" style="margin-top: 16px;">
@@ -2758,7 +2795,7 @@
 
 <!-- [1. 基础层] -->
 <script src="js/utils.js?v=20261103-friends"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
-<script src="js/db.js?v=20261104-derived-features"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
+<script src="js/db.js?v=20261104-minimax-tts"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
 <script src="js/ui.js?v=20261103-vector-viewport"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
@@ -2775,21 +2812,21 @@
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261104-autonomous-block"></script>
-<script src="js/modules/chat_render.js?v=20261103-friends"></script>
+<script src="js/modules/chat_render.js?v=20261104-minimax-tts"></script>
 <script src="js/modules/chat_archives.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
     <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
     <script src="js/modules/chat_ai.js?v=20261104-derived-features"></script>
-<script src="js/modules/chat_features.js?v=20261104-chat-controls-camera"></script>
+<script src="js/modules/chat_features.js?v=20261104-minimax-tts"></script>
 <script src="js/modules/chat_ops.js?v=20261103-chat-safety"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
 <script src="js/modules/character_avatar.js?v=20261104-avatar-location"></script>
 <script src="js/modules/environment.js?v=20261104-derived-features"></script>
 <script src="js/modules/environment_ui.js?v=20261104-avatar-location"></script>
-<link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-derived-features">
-<script src="js/chat.js?v=20261104-derived-features"></script>     <!-- 聊天核心入口 -->
+<link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-minimax-tts">
+<script src="js/chat.js?v=20261104-minimax-tts"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261104-chat-stop-compatible"></script> <!-- 聊天室HTML注入 -->
@@ -2799,7 +2836,7 @@
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
 <script src="js/modules/settings_chat.js?v=20261104-worldbook-count"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
-<script src="js/modules/settings_api.js?v=20261103-documents"></script> <!-- API 设置与预设 -->
+<script src="js/modules/settings_api.js?v=20261104-minimax-tts"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261104-global-css-token-toolbar"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->

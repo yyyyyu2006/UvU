@@ -824,6 +824,12 @@
 
 .voice-transcript.active { display: block; }
 
+.voice-bubble { cursor: pointer; }
+.voice-bubble.voice-loading { opacity: 0.65; }
+.voice-bubble.voice-loading .play-icon { animation: voice-loading-pulse 0.8s ease-in-out infinite alternate; }
+.voice-bubble.voice-playing .play-icon { transform: scale(0.9); }
+@keyframes voice-loading-pulse { to { opacity: 0.35; } }
+
 .message-wrapper.sent .voice-transcript {
     align-self: flex-end;
     margin-right: 44px;

@@ -883,6 +883,17 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     } else if (voiceMatch) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'voice-bubble';
+        if (!isSent) {
+            bubbleElement.dataset.voiceText = voiceMatch[1].trim();
+            bubbleElement.setAttribute('role', 'button');
+            bubbleElement.setAttribute('tabindex', '0');
+            bubbleElement.setAttribute('aria-label', '播放语音消息');
+            bubbleElement.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                MiniMaxTTS.play(bubbleElement, bubbleElement.dataset.voiceText);
+            });
+        }
         if (!chat.useCustomBubbleCss) {
             bubbleElement.style.backgroundColor = bubbleTheme.bg;
             bubbleElement.style.color = bubbleTheme.text;

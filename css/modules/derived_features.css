@@ -33,3 +33,37 @@
 .derived-settings .environment-day.is-offday { background: #fff0ef; color: #b5463b; }
 .derived-settings .environment-day.is-workday { background: #f0f3f8; color: #65758b; }
 .derived-settings .environment-day.is-selected { border-color: #4385d4; }
+.minimax-tts-settings .kkt-item-content { width: 100%; }
+.minimax-tts-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text-color, #444);
+    font-size: 13px;
+}
+.minimax-tts-field input:not([type="range"]) {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    background: var(--input-bg, #fff);
+    color: var(--text-color, #333);
+    font-size: 14px;
+}
+.minimax-tts-field-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.minimax-tts-field input[type="range"] { width: 100%; accent-color: var(--primary-color); }
+.minimax-tts-field output { float: right; color: var(--primary-color); }
+.minimax-tts-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.minimax-tts-actions .btn { width: auto; margin: 0; padding: 8px 14px; }
+@media (max-width: 380px) {
+    .minimax-tts-field-row { grid-template-columns: minmax(0, 1fr); }
+    .minimax-tts-actions .btn { flex: 1; padding-inline: 8px; }
+}

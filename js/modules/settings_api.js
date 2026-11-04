@@ -1,6 +1,7 @@
 // --- API 设置与预设管理逻辑 ---
 
 function setupApiSettingsApp() {
+    setupMiniMaxTtsSettings();
     const e = document.getElementById('api-form'), t = document.getElementById('fetch-models-btn'),
         a = document.getElementById('api-model'), n = document.getElementById('api-provider'),
         r = document.getElementById('api-url'), s = document.getElementById('api-key'), c = {
@@ -180,6 +181,59 @@ function setupApiSettingsApp() {
         await saveData();
         showToast('API设置已保存！')
     })
+}
+
+function setupMiniMaxTtsSettings() {
+    const fields = {
+        endpoint: document.getElementById('minimax-tts-endpoint'),
+        apiKey: document.getElementById('minimax-tts-key'),
+        model: document.getElementById('minimax-tts-model'),
+        voiceId: document.getElementById('minimax-tts-voice'),
+        speed: document.getElementById('minimax-tts-speed'),
+        pitch: document.getElementById('minimax-tts-pitch')
+    };
+    const saveButton = document.getElementById('minimax-tts-save');
+    const previewButton = document.getElementById('minimax-tts-preview');
+    if (!saveButton || !previewButton || saveButton.dataset.listenerBound === 'true') return;
+
+    const saved = db.minimaxTtsSettings || {};
+    fields.endpoint.value = saved.endpoint || 'https://api.minimaxi.com/v1/t2a_v2';
+    fields.apiKey.value = saved.apiKey || '';
+    fields.model.value = saved.model || 'speech-2.8-hd';
+    fields.voiceId.value = saved.voiceId || '';
+    fields.speed.value = saved.speed || '1';
+    fields.pitch.value = saved.pitch ?? '0';
+
+    const updateRangeLabels = () => {
+        document.getElementById('minimax-tts-speed-value').textContent = Number(fields.speed.value).toFixed(1);
+        document.getElementById('minimax-tts-pitch-value').textContent = fields.pitch.value;
+    };
+    fields.speed.addEventListener('input', updateRangeLabels);
+    fields.pitch.addEventListener('input', updateRangeLabels);
+    updateRangeLabels();
+    document.getElementById('minimax-tts-status').textContent = saved.apiKey
+        ? (saved.voiceId ? '设置已保存，可以试听或点击聊天语音播放。' : '密钥已保存，请填写音色 ID 后试听。')
+        : '尚未设置 MiniMax 语音服务。';
+
+    saveButton.dataset.listenerBound = 'true';
+    saveButton.addEventListener('click', async () => {
+        const endpoint = fields.endpoint.value.trim();
+        if (endpoint && !/^https:\/\//i.test(endpoint)) return showToast('MiniMax API 地址必须使用 HTTPS');
+        db.minimaxTtsSettings = {
+            endpoint: endpoint || 'https://api.minimaxi.com/v1/t2a_v2',
+            apiKey: fields.apiKey.value.trim(),
+            model: fields.model.value.trim() || 'speech-2.8-hd',
+            voiceId: fields.voiceId.value.trim(),
+            speed: Number(fields.speed.value),
+            pitch: Number(fields.pitch.value)
+        };
+        await saveData();
+        document.getElementById('minimax-tts-status').textContent = db.minimaxTtsSettings.apiKey
+            ? (db.minimaxTtsSettings.voiceId ? '设置已保存，可以试听或点击聊天语音播放。' : '密钥已保存，请填写音色 ID 后试听。')
+            : '设置已保存，请填写 MiniMax API 密钥和音色 ID。';
+        showToast('MiniMax 语音设置已保存');
+    });
+    previewButton.addEventListener('click', previewMiniMaxVoice);
 }
 
 function getDefaultSecondaryApiRoutes() {
