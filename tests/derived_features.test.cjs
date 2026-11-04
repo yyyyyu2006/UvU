@@ -294,3 +294,95 @@ test('archive switch during asynchronous avatar compression cannot save the new 
     assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
     assert.equal(saves, 0); assert.equal(f.chat.avatar, 'https://test.invalid/old.png');
 });
+
+test('explicit avatar requests bypass interval 100 once, with the exact selection sent independently', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    let decisions = 0;
+    f.c.fetch = async () => ({ ok: true, blob: async () => new Blob(['x'], { type: 'image/png' }) });
+    f.c.compressImage = async () => 'data:image/png;base64,Yg=='; f.c.refreshCharacterAvatar = () => {};
+    f.chat.history.push({ id: 'ask', role: 'user', content: '[用户的消息：我们换这对情头吧]' });
+    const original = JSON.stringify(f.chat.history);
+    f.c.fetchAiResponse = async (_, body) => {
+        decisions++;
+        const data = JSON.parse(body.messages[1].content);
+        assert.equal(data.explicitRequest.text, '我们换这对情头吧');
+        return '{"action":"set_avatar","imageId":"message:u:0"}';
+    };
+    assert.equal(await f.c.checkCharacterAvatar(f.chat), true);
+    await f.c.checkCharacterAvatar(f.chat);
+    assert.equal(decisions, 1); assert.equal(JSON.stringify(f.chat.history), original);
+    assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
+    assert.ok(f.chat.avatarAutonomy.lastRequestKey.includes('ask'));
+    f.chat.history.push({ id: 'pick', role: 'user', content: '[用户的消息：你用男生]' });
+    f.c.fetchAiResponse = async (_, body) => {
+        decisions++;
+        const data = JSON.parse(body.messages[1].content);
+        assert.equal(data.explicitRequest.text, '你用男生');
+        assert.equal(data.explicitRequest.previousRequest, '我们换这对情头吧');
+        return '{"action":"keep"}';
+    };
+    await f.c.checkCharacterAvatar(f.chat);
+    assert.equal(decisions, 2);
+});
+
+test('routine, revoked, rejected and forwarded text cannot become an explicit avatar request', () => {
+    const { c } = fixture();
+    for (const content of ['今天好累', '不要换头像', '别用这张头像', '你用男生']) {
+        assert.equal(c.characterAvatarRequest([{ id: 'a', role: 'user', content }]), null);
+    }
+    for (const extra of [{ role: 'assistant' }, { role: 'user', isWithdrawn: true }, { role: 'user', isContextDisabled: true }, { role: 'user', relationshipDelivery: 'blocked' }, { role: 'user', type: 'forwarded-chat' }]) {
+        assert.equal(c.characterAvatarRequest([{ id: 'x', content: '我们换这对情头吧', ...extra }]), null);
+    }
+    const history = [{ id: 'a', role: 'user', content: '换头像吧' }, { id: 'b', role: 'user', content: '不要换头像' }, { id: 'c', role: 'user', content: '你用男生' }];
+    assert.equal(c.characterAvatarRequest(history), null);
+    assert.equal(c.characterAvatarRequest([{ id: 'a', role: 'user', content: '换头像吧' }, { id: 'b', role: 'user', content: '你好' }]), null);
+});
+
+test('in-flight avatar decisions coalesce a newer request and discard the stale result', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    f.chat.history.push({ id: 'ask', role: 'user', content: '换这对情头吧' });
+    let release, entered, decisions = 0;
+    const started = new Promise(resolve => { entered = resolve; });
+    f.c.fetchAiResponse = async (_, body) => {
+        decisions++;
+        if (decisions === 1) { entered(); await new Promise(resolve => { release = resolve; }); }
+        else assert.equal(JSON.parse(body.messages[1].content).explicitRequest.text, '你用男生');
+        return '{"action":"keep"}';
+    };
+    const first = f.c.checkCharacterAvatar(f.chat); await started;
+    f.chat.history.push({ id: 'pick', role: 'user', content: '你用男生' });
+    await f.c.checkCharacterAvatar(f.chat); release(); await first;
+    assert.equal(decisions, 2); assert.ok(f.chat.avatarAutonomy.lastRequestKey.includes('pick'));
+});
+
+test('queued avatar work never replays across an archive switch', async () => {
+    const f = fixture(); enableAvatar(f);
+    let release, entered, calls = 0;
+    const started = new Promise(resolve => { entered = resolve; });
+    f.c.fetchAiResponse = async () => { calls++; entered(); await new Promise(resolve => { release = resolve; }); return '{"action":"keep"}'; };
+    const first = f.c.checkCharacterAvatar(f.chat, true); await started;
+    await f.c.checkCharacterAvatar(f.chat, true);
+    f.chat.activeArchiveId = 'b'; f.chat.history = []; release(); await first;
+    assert.equal(calls, 1); assert.equal(f.chat.avatarAutonomy.lastCheck, undefined);
+});
+
+test('failed explicit avatar calls cool down but a new selection request can retry immediately', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    f.chat.history.push({ id: 'ask', role: 'user', content: '换这对情头吧' });
+    let calls = 0;
+    f.c.fetchAiResponse = async () => { calls++; throw Error('API unavailable'); };
+    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /unavailable/);
+    await f.c.checkCharacterAvatar(f.chat); assert.equal(calls, 1);
+    f.chat.history.push({ id: 'pick', role: 'user', content: '你用男生' });
+    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /unavailable/);
+    assert.equal(calls, 2); assert.equal(f.chat.avatarAutonomy.lastRequestKey, undefined);
+});
+
+test('explicit requests remain unconsumed if avatar persistence rolls back', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    f.chat.history.push({ id: 'ask', role: 'user', content: '换这张头像吧' });
+    const before = JSON.stringify(f.chat.avatarAutonomy);
+    f.c.saveData = async () => { throw Error('quota exceeded'); };
+    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /保存失败/);
+    assert.equal(JSON.stringify(f.chat.avatarAutonomy), before);
+});

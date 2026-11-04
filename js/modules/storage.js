@@ -503,6 +503,7 @@ function storageValidateModules(modules) {
             const a = item.avatarAutonomy, prefix = path + '.avatarAutonomy';
             optional(a.enabled, prefix + '.enabled', 'boolean'); optional(a.every, prefix + '.every', 'number');
             optional(a.condition, prefix + '.condition', 'string');
+            optional(a.lastRequestKey, prefix + '.lastRequestKey', 'string');
             for (const key of ['lastCheck', 'lastUserCount']) optional(a[key], prefix + '.' + key, 'number');
             if (a.cache !== undefined) {
                 object(a.cache, prefix + '.cache');

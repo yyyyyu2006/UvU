@@ -15,7 +15,13 @@ const root = path.join(__dirname, '..');
             return fs.existsSync(file) ? route.fulfill({ contentType: relative.endsWith('.json') ? 'application/json' : 'application/javascript', body: fs.readFileSync(file) }) : route.abort();
         });
         await page.route('https://geocoding-api.open-meteo.com/**', route => route.fulfill({ json: { results: [{ name: '上海', latitude: 31.23, longitude: 121.47, country_code: 'CN', timezone: 'Asia/Shanghai' }] } }));
+        await page.route('https://api.bigdatacloud.net/**', route => route.fulfill({ json: { city: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai' } }));
+        await page.route('https://api.bigdatacloud.net/**', route => route.fulfill({ json: { city: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai' } }));
         await page.route('https://api.open-meteo.com/**', route => { apiCalls.push(route.request().url()); return route.fulfill({ json: { current: { temperature_2m: 21, weather_code: 2, time: '2026-11-04T12:00' } } }); });
+        await context.grantPermissions(['geolocation']);
+        await context.setGeolocation({ latitude: 31.23, longitude: 121.47 });
+        await context.grantPermissions(['geolocation']);
+        await context.setGeolocation({ latitude: 31.23, longitude: 121.47 });
         await page.goto('https://uvu-derived.test/');
         for (const file of ['css/chat.css', 'css/modules/derived_features.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
         await page.evaluate(() => {
@@ -64,6 +70,8 @@ const root = path.join(__dirname, '..');
             await page.locator('#environment-settings button[type="submit"]').click();
             await page.waitForFunction(() => db.environmentSettings?.enabled === true);
             assert.equal(await page.evaluate(() => db.characters[0].environmentProfile.aiEnabled), false);
+            await page.locator('[data-service] summary').click();
+            await page.locator('[name=service]').selectOption('mcp');
             await page.locator('[data-mcp] summary').click();
             metrics = await page.locator('#environment-settings .message-forward-dialog').evaluate(e => ({ width: e.clientWidth, scrollWidth: e.scrollWidth, height: e.clientHeight, viewport: innerHeight }));
             assert.ok(metrics.scrollWidth <= metrics.width); assert.ok(metrics.height < metrics.viewport);
@@ -71,6 +79,7 @@ const root = path.join(__dirname, '..');
             await page.locator('#environment-settings .message-forward-close').click();
             await page.evaluate(() => openEnvironmentCalendar());
             await page.waitForFunction(() => document.querySelector('.environment-calendar .derived-help')?.textContent.includes('21'));
+            assert.equal(await page.locator('.environment-calendar .derived-help a[href="https://open-meteo.com/"]').count(), 1);
             await page.getByRole('button', { name: '今天', exact: true }).click();
             assert.ok(await page.locator('.environment-day').count() >= 28);
             metrics = await page.locator('.environment-calendar').evaluate(e => ({ width: e.clientWidth, scrollWidth: e.scrollWidth }));
@@ -81,6 +90,36 @@ const root = path.join(__dirname, '..');
             await page.locator('#environment-calendar .message-forward-close').click();
             layout.push({ width, noOverflow: true, settingsSaved: true });
         }
+        // Default public path: location authorization saves and reads weather without Save/MCP.
+        await page.evaluate(() => { delete db.environmentSettings; openEnvironmentSettings(true); });
+        assert.equal(await page.locator('[data-service]').evaluate(e => e.open), false);
+        assert.equal(await page.locator('[data-mcp]').isVisible(), false);
+        await page.locator('[data-service] summary').click();
+        await page.locator('[name=service]').selectOption('mcp');
+        // Unsaved character controls must not be persisted by the location shortcut.
+        await page.locator('[name=remoteEnabled]').check();
+        await page.locator('[name=aiEnabled]').check();
+        await page.locator('[data-locate]').click();
+        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('无需再点保存'));
+        const saved = await page.evaluate(() => ({ settings: db.environmentSettings, profile: db.characters[0].environmentProfile }));
+        assert.equal(saved.settings.enabled, true); assert.equal(saved.settings.service, 'public');
+        assert.equal(saved.settings.userLocation.name, '上海'); assert.equal(saved.profile.aiEnabled, false);
+        assert.equal(saved.profile.remoteEnabled, false);
+        assert.ok(apiCalls.some(url => url.includes('api.open-meteo.com')), 'built-in weather works without configuring MCP');
+        await page.locator('#environment-settings .message-forward-close').click();
+        // Save failure keeps the original global configuration and reports failure.
+        await page.evaluate(() => { window.savedEnvironment = JSON.stringify(db.environmentSettings); window.saveData = async () => { throw Error('存储不足'); }; openEnvironmentSettings(); });
+        await page.locator('[data-locate]').click();
+        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('存储不足'));
+        assert.equal(await page.evaluate(() => JSON.stringify(db.environmentSettings) === window.savedEnvironment), true);
+        await page.locator('#environment-settings .message-forward-close').click();
+        // Denied permission is visible and leaves manual city selection available.
+        await context.clearPermissions();
+        await page.evaluate(() => { window.saveData = async () => {}; openEnvironmentSettings(); });
+        await page.locator('[data-locate]').click();
+        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('定位失败或未授权'));
+        assert.equal(await page.locator('[data-place=user] .derived-search button').isEnabled(), true);
+        await page.locator('#environment-settings .message-forward-close').click();
         assert.deepEqual(errors, []);
         console.log(JSON.stringify({ touchHistory: { initial, previous, flipPreservesPosition: true }, layout, weatherRequests: apiCalls.length, errors }, null, 2));
     } finally { await browser.close(); }
