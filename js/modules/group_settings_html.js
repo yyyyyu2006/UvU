@@ -163,7 +163,7 @@ const groupSettingsHtml = `
                             </div>
                             <div id="group-bound-worldbooks-wrapper" style="display: none; padding-bottom: 10px;">
                                 <div id="group-bound-worldbooks-toggle" style="font-size: 12px; color: #999; cursor: pointer; display: flex; align-items: center; gap: 4px;">
-                                    <span>已绑定世界书 (<span id="group-bound-count">0</span>)</span>
+                                    <span>已绑定世界书 (<span id="group-bound-count">0，开启 0</span>) <span id="group-bound-missing"></span></span>
                                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.3s;"><polyline points="6 9 12 15 18 9"></polyline></svg>
                                 </div>
                                 <div id="group-bound-worldbooks-container" style="display: none; padding-top: 8px;">

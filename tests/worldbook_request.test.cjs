@@ -34,15 +34,18 @@ for (const provider of ['newapi','gemini']) for (const placeholder of [false,tru
         await f.c.getAiReply(f.chat.id,type);
         assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),1);
         const body=f.requests[0], text=JSON.stringify(body), sequence=provider==='gemini'?body.contents:body.messages;
+        const systemText=provider==='gemini'?body.system_instruction.parts.map(part=>part.text).join('\n'):
+            body.messages.filter(message=>message.role==='system').map(message=>message.content).join('\n');
         for(const word of ['WORLD_HEAD','WORLD_MIDDLE','WORLD_TAIL'])assert.equal(text.split(word).length-1,1,text);
         assert.ok(!text.includes('SHOULD_NOT_APPEAR'));assert.ok(!text.includes('worldBookInjection'));
         assert.equal(JSON.stringify(f.chat.history),original);
-        assert.ok(text.indexOf('WORLD_MIDDLE')>text.indexOf('FLOOR_B'),text);
-        assert.ok(text.indexOf('WORLD_MIDDLE')<text.indexOf('FLOOR_C'),text);
+        assert.ok(systemText.includes('WORLD_HEAD')&&systemText.includes('WORLD_MIDDLE')&&systemText.includes('WORLD_TAIL'),text);
+        assert.ok(!sequence.some(m=>m.worldBookInjection));
         const latest=sequence.find(m=>JSON.stringify(m).includes('FLOOR_D'));
         assert.ok(JSON.stringify(latest).includes('<user_input>'),text);
-        assert.ok(text.indexOf('WORLD_TAIL')>text.indexOf('FLOOR_D'),text);
-        if(provider==='newapi')assert.equal(sequence.at(-1).role,role);
+        assert.ok(!JSON.stringify(sequence.filter(message=>message.role!=='system')).includes('WORLD_MIDDLE'));
+        assert.ok(systemText.indexOf('WORLD_MIDDLE')<systemText.indexOf('ORIGINAL_END')||!placeholder,text);
+        if(provider==='newapi')assert.equal(sequence.at(-1).role,'user');
     });
 }
 for (const provider of ['newapi','gemini']) test('call summary applies activation and excludes disabled books: ' + provider, async () => {

@@ -196,8 +196,6 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
 
         const lastContextMessage = historySlice[historySlice.length - 1];
-        if (worldBookPlan) historySlice = insertDepthWorldBooks(historySlice, worldBookPlan);
-
         // 检查系统提示词中是否包含聊天记录占位符
         const hasHistoryPlaceholder = systemPrompt.includes('【动态插入: 聊天记录】');
         

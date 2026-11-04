@@ -6,6 +6,13 @@ function worldBookNumber(value, fallback, min = 0, max = 9999) {
 function worldBookKeys(value) {
     return (Array.isArray(value) ? value : String(value || '').split(/[,，\n]/)).map(String).map(s => s.trim()).filter(Boolean);
 }
+function getWorldBookBindingStats(ids) {
+    const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(id => typeof id === 'string') : [])];
+    const entries = uniqueIds.map(id => db.worldBooks.find(book => book.id === id)).filter(book => book && book.type !== 'folder');
+    const validIds = new Set(entries.map(book => book.id));
+    return { entries, missingIds: uniqueIds.filter(id => !validIds.has(id)),
+        enabled: entries.filter(book => book.rules?.enabled !== false).length };
+}
 function escapeWorldBookHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -43,7 +50,8 @@ function buildWorldBookPlan(chat, history = chat.history || [], random = Math.ra
     }).sort((a, b) => worldBookNumber(a.rules?.order, a.depth || 100) - worldBookNumber(b.rules?.order, b.depth || 100));
 }
 function worldBookSection(plan, position) {
-    return plan.filter(w => w.position === position && !w.rules?.unsupportedPosition).map(w => w.content).join('\n');
+    return plan.filter(w => (w.position === position || (position === 'before' && w.position === 'chat')) && !w.rules?.unsupportedPosition)
+        .map(w => w.content).join('\n');
 }
 function insertDepthWorldBooks(history, plan) {
     const slots = new Map();

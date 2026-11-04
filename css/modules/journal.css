@@ -1,7 +1,7 @@
 /* --- 记忆日记 (Memory Journal) 样式 --- */
 
-.auto-memory-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(52px, 1fr); align-items: stretch; gap: 8px; margin-bottom: 15px; }
-#memory-journal-screen .auto-memory-entry .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 52px; height: 100%; margin: 0; padding: 10px 12px; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; color: #444; }
+.auto-memory-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(44px, 1fr); align-items: stretch; gap: 7px; margin-bottom: 15px; }
+#memory-journal-screen .auto-memory-entry .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; height: 100%; margin: 0; padding: 6px 8px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; color: #444; }
 #auto-memory-modal { z-index: 2100; padding: 14px; box-sizing: border-box; }
 #auto-memory-modal .auto-memory-dialog { width: 100%; max-width: 560px; max-height: 88dvh; overflow-y: auto; box-sizing: border-box; padding: 20px; color: #333; background: #fff; overscroll-behavior: contain; }
 .auto-memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -18,8 +18,8 @@
 .auto-memory-help { font-size: 12px; line-height: 1.65; color: #666; margin: 10px 0; }
 #auto-memory-status { font-size: 13px; line-height: 1.6; padding: 10px; background: #f6f3ef; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 #auto-memory-status.memory-error { color: #9b332d; }
-.auto-memory-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(56px, 1fr); gap: 8px; margin-top: 18px; align-items: stretch; }
-#auto-memory-modal .auto-memory-actions .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 56px; height: 100%; margin: 0; padding: 10px 12px; display: flex; align-items: center; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; color: #333; }
+.auto-memory-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(44px, 1fr); gap: 7px; margin-top: 14px; align-items: stretch; }
+#auto-memory-modal .auto-memory-actions .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; height: 100%; margin: 0; padding: 7px 8px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; color: #333; }
 .auto-memory-fold-notice { display: block; margin: 12px auto; padding: 8px 12px; border: 1px solid #ddd; border-radius: 14px; font-size: 12px; background: #f8f6f3; color: #666; max-width: 95%; }
 .auto-memory-badge { font-size: 11px; color: #705b45; margin-top: 6px; }
 .auto-memory-range { border: 1px solid #ddd; border-radius: 10px; padding: 12px; margin-top: 18px; min-width: 0; }
@@ -31,6 +31,13 @@
 #vector-api-status.memory-error { color: #9b332d; }
 #auto-memory-range-preview { white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
 @media (max-width: 380px) { .auto-memory-actions { grid-template-columns: 1fr; } }
+
+#auto-memory-modal.vector-settings-mode .auto-memory-dialog > p,
+#auto-memory-modal.vector-settings-mode #auto-memory-form > :not(.vector-memory-fieldset):not(.auto-memory-actions),
+#auto-memory-modal.vector-settings-mode .auto-memory-range { display: none; }
+#auto-memory-modal.vector-settings-mode .auto-memory-actions { grid-template-columns: 1fr; }
+#auto-memory-modal.vector-settings-mode #auto-memory-run { display: none; }
+#auto-memory-modal.vector-settings-mode .auto-memory-heading h2 { font-size: 16px; }
 
 #memory-journal-screen .content {
     padding: 15px;

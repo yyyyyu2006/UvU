@@ -16,6 +16,13 @@ test('legacy worldbooks retain binding order and old depth sorting with no extra
     assert.equal(c.worldBookSection(c.buildWorldBookPlan(chat), 'before'), 'B\nA');
     assert.deepEqual(books, [{ id: 'a', position: 'before', content: 'A', depth: 20 }, { id: 'b', position: 'before', content: 'B', depth: 10 }, { id: 'c', type: 'folder' }]);
 });
+test('worldbook counts deduplicate real entries, exclude folders, identify stale bindings, and count enabled entries', () => {
+    const books = [{ id: 'on', rules: { enabled: true } }, { id: 'off', rules: { enabled: false } }, { id: 'folder', type: 'folder' }];
+    const c = fixture(books), stats = c.getWorldBookBindingStats(['on', 'on', 'off', 'folder', 'deleted']);
+    assert.deepEqual(plain(stats.entries.map(book => book.id)), ['on', 'off']);
+    assert.equal(stats.enabled, 1);
+    assert.deepEqual(plain(stats.missingIds), ['folder', 'deleted']);
+});
 test('activation honors constant, disabled, exact probability boundaries and secondary logic', () => {
     const books = [0, 1, 2, 3].map(n => ({ id: '' + n, content: '' + n, rules: { constant: false, keys: ['猫'], secondaryKeys: ['开心', '晚安'], selectiveLogic: n, probability: 100 } }));
     const c = fixture(books), chat = { worldBookIds: books.map(b => b.id), history: [{ content: '猫很开心' }] };
@@ -48,6 +55,12 @@ test('depth insertion counts original messages, preserves role and order without
     const result = c.insertDepthWorldBooks(history, plan);
     assert.deepEqual(plain(result).map(m => m.content), ['first', 'A', 'middle', 'B', 'C', 'tail']);
     assert.equal(result.at(-1).role, 'assistant'); assert.equal(history.length, 3);
+});
+test('chat-depth worldbook entries use the original system-reference injection point', () => {
+    const c = fixture();
+    const plan = [{ position: 'chat', content: 'depth book', rules: { chatDepth: 0 } }];
+    assert.equal(c.worldBookSection(plan, 'before'), 'depth book');
+    assert.equal(c.worldBookSection(plan, 'after'), '');
 });
 test('SillyTavern and character-book imports preserve keys, zero values, roles and original fields', () => {
     const c = fixture(), source = { entries: { 7: { comment: '测试', content: '内容', key: ['猫'], constant: false, selective: true, keysecondary: ['开心'], position: 4, depth: 0, order: 0, probability: 0, role: 2, cooldown: 5 } } };

@@ -29,14 +29,14 @@
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261103-notifications-backup">
-    <link rel="stylesheet" href="css/settings.css?v=20261103-notification-test">
+    <link rel="stylesheet" href="css/settings.css?v=20261104-global-css-docs">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
     <link rel="stylesheet" href="css/modules/moments.css">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
-    <link rel="stylesheet" href="css/modules/journal.css?v=20261103-vector-viewport">
+    <link rel="stylesheet" href="css/modules/journal.css?v=20261104-vector-settings">
     <link rel="stylesheet" href="css/modules/chat_archives.css">
     <link rel="stylesheet" href="css/modules/steps.css">
     <link rel="stylesheet" href="css/modules/more.css">
@@ -1593,7 +1593,8 @@
         </header>
         <main class="content">
             <div class="auto-memory-entry">
-                <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn">自动记忆 / 大总结设置</button>
+                <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn">自动总结设置</button>
+                <button type="button" class="btn btn-secondary" id="vector-memory-settings-btn">向量记忆设置</button>
                 <button type="button" class="btn btn-secondary" id="auto-memory-show-original">显示 / 折叠原楼层</button>
             </div>
             <ul class="list-container" id="journal-list-container">
@@ -2764,8 +2765,9 @@
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261103-notifications-backup"></script>
-<script src="js/modules/worldbook_rules.js?v=20261103-documents"></script>
+<script src="js/modules/worldbook_rules.js?v=20261104-worldbook-count"></script>
 <script src="js/modules/document_import.js?v=20261103-documents"></script>
+<script src="js/modules/global_css_io.js?v=20261104-global-css-docs"></script>
 <script src="js/modules/text_editor.js?v=20261103-chat-controls"></script>
 <script src="js/modules/worldbook_editor.js?v=20261103-documents"></script>
 <script src="js/modules/sticker_assist.js?v=20261103-chat-controls"></script>
@@ -2787,15 +2789,15 @@
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261103-chat-controls"></script> <!-- 聊天室HTML注入 -->
-<script src="js/modules/chat_settings_html.js"></script> <!-- 聊天设置HTML注入 -->
-<script src="js/modules/group_settings_html.js"></script> <!-- 群聊设置HTML注入 -->
+<script src="js/modules/chat_settings_html.js?v=20261104-worldbook-count"></script> <!-- 聊天设置HTML注入 -->
+<script src="js/modules/group_settings_html.js?v=20261104-worldbook-count"></script> <!-- 群聊设置HTML注入 -->
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
-<script src="js/modules/settings_chat.js?v=20261103-friends"></script> <!-- 聊天设置与管理 -->
+<script src="js/modules/settings_chat.js?v=20261104-worldbook-count"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/settings_api.js?v=20261103-documents"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
-<script src="js/modules/settings_customize.js"></script> <!-- 个性化与外观设置 -->
+<script src="js/modules/settings_customize.js?v=20261104-global-css-docs"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
@@ -2835,7 +2837,7 @@
                     <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
                 </div><p class="auto-memory-help">严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；6 篇大总结才进一步压缩。手动整理同样遵守阈值。已被合并的摘要不重复计数。</p>
             </fieldset>
-            <fieldset><legend>向量记忆检索</legend>
+            <fieldset class="vector-memory-fieldset"><legend>向量记忆检索</legend>
                 <label class="auto-memory-check"><input name="vectorSearchEnabled" type="checkbox"> 启用嵌入检索相关记忆（会调用独立向量 API）</label>
                 <label class="auto-memory-check"><input name="vectorRerankEnabled" type="checkbox"> 使用重排模型对候选结果进行二次排序（额外调用）</label>
                 <details id="vector-api-panel"><summary>独立向量 API、嵌入与重排模型</summary>
@@ -2886,7 +2888,7 @@
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261103-notifications-backup"></script>
+<script src="js/modules/auto_memory.js?v=20261104-vector-settings"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261103-notifications-backup"></script>   <!-- 存储空间分析图表 -->

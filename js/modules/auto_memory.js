@@ -805,9 +805,10 @@ function renderAutoMemoryStatus() {
 
 function setupAutoMemory() {
     const button = document.getElementById('auto-memory-settings-btn');
+    const vectorButton = document.getElementById('vector-memory-settings-btn');
     const modal = document.getElementById('auto-memory-modal');
     const form = document.getElementById('auto-memory-form');
-    if (!button || !modal || !form) return;
+    if (!button || !vectorButton || !modal || !form) return;
     let editing = null;
     const fields = Object.keys(AUTO_MEMORY_DEFAULTS);
     const vectorFields = { provider: 'provider', url: 'url', key: 'key', embeddingModel: 'embedding-model', rerankModel: 'rerank-model',
@@ -817,9 +818,11 @@ function setupAutoMemory() {
         const input = document.getElementById(`vector-api-${suffix}`);
         return [name, input.type === 'number' ? Number(input.value) : name.endsWith('Prefix') ? input.value : input.value.trim()];
     }));
-    button.addEventListener('click', () => {
+    const openSettings = vectorOnly => {
         const chat = getCurrentAutoMemoryChat();
         if (!chat) return;
+        modal.classList.toggle('vector-settings-mode', vectorOnly);
+        document.getElementById('auto-memory-heading').textContent = vectorOnly ? '向量记忆设置' : '自动总结设置';
         editing = { chat, type: currentChatType, archiveId: chat.activeArchiveId };
         const settings = getAutoMemorySettings(chat);
         for (const name of fields) {
@@ -843,10 +846,16 @@ function setupAutoMemory() {
         document.getElementById('auto-memory-range-parts').value = '5';
         updateRangePreview();
         document.getElementById('memory-api-panel').open = settings.apiSource === 'memory';
+        document.getElementById('vector-api-panel').open = vectorOnly || settings.vectorSearchEnabled;
         renderAutoMemoryStatus();
         modal.classList.add('visible');
+    };
+    button.addEventListener('click', () => openSettings(false));
+    vectorButton.addEventListener('click', () => openSettings(true));
+    document.getElementById('auto-memory-close').addEventListener('click', () => {
+        modal.classList.remove('visible', 'vector-settings-mode');
+        document.getElementById('auto-memory-heading').textContent = '自动记忆 / 大总结';
     });
-    document.getElementById('auto-memory-close').addEventListener('click', () => modal.classList.remove('visible'));
     form.elements.namedItem('apiSource').addEventListener('change', event => {
         if (event.target.value === 'memory') document.getElementById('memory-api-panel').open = true;
     });
@@ -979,7 +988,9 @@ function setupAutoMemory() {
         event.preventDefault();
         if (await saveSettings()) {
             modal.classList.remove('visible');
-            showToast('自动记忆设置已保存');
+            showToast(modal.classList.contains('vector-settings-mode') ? '向量记忆设置已保存' : '自动总结设置已保存');
+            modal.classList.remove('vector-settings-mode');
+            document.getElementById('auto-memory-heading').textContent = '自动记忆 / 大总结';
             scheduleAutoMemory(editing.chat.id, editing.type);
         }
     });

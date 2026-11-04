@@ -283,13 +283,17 @@ function renderBoundWorldBooks(type, worldBookIds) {
     
     if (!wrapper || !list) return;
 
-    if (!worldBookIds || worldBookIds.length === 0) {
+    const bindingStats = typeof getWorldBookBindingStats === 'function'
+        ? getWorldBookBindingStats(worldBookIds) : { entries: (worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id)).filter(Boolean), missingIds: [], enabled: (worldBookIds || []).length };
+    if (!bindingStats.entries.length && !bindingStats.missingIds.length) {
         wrapper.style.display = 'none';
         return;
     }
 
     wrapper.style.display = 'block';
-    if (countSpan) countSpan.textContent = worldBookIds.length;
+    if (countSpan) countSpan.textContent = `${bindingStats.entries.length}，开启 ${bindingStats.enabled}`;
+    const missingSpan = document.getElementById(type === 'private' ? 'private-bound-missing' : 'group-bound-missing');
+    if (missingSpan) missingSpan.textContent = bindingStats.missingIds.length ? `（失效 ${bindingStats.missingIds.length}）` : '';
     list.innerHTML = '';
 
     // 绑定折叠/展开事件 (确保只绑定一次)
@@ -305,18 +309,22 @@ function renderBoundWorldBooks(type, worldBookIds) {
         });
     }
 
-    worldBookIds.forEach(id => {
-        const wb = db.worldBooks.find(b => b.id === id);
-        if (wb) {
+    const renderRow = (id, name, enabled = true) => {
             const card = document.createElement('div');
             // 使用内联样式实现下划线、紧凑、灰色文字
             card.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px; color: #666;';
-            card.innerHTML = `
-                <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${wb.name}</span>
-                <button class="bound-wb-unbind-btn" data-id="${id}" style="background: none; border: none; color: #999; font-size: 12px; padding: 2px 6px; cursor: pointer;">解绑</button>
-            `;
+            const nameSpan = document.createElement('span');
+            nameSpan.style.cssText = 'flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+            nameSpan.textContent = name;
+            if (!enabled) nameSpan.textContent += '（已停用）';
+            const unbindButton = document.createElement('button');
+            unbindButton.className = 'bound-wb-unbind-btn';
+            unbindButton.dataset.id = id;
+            unbindButton.textContent = '解绑';
+            unbindButton.style.cssText = 'background: none; border: none; color: #999; font-size: 12px; padding: 2px 6px; cursor: pointer;';
+            card.append(nameSpan, unbindButton);
             
-            card.querySelector('.bound-wb-unbind-btn').addEventListener('click', async (e) => {
+            unbindButton.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const targetId = e.target.dataset.id;
                 if (type === 'private') {
@@ -337,8 +345,9 @@ function renderBoundWorldBooks(type, worldBookIds) {
             });
             
             list.appendChild(card);
-        }
-    });
+    };
+    bindingStats.entries.forEach(book => renderRow(book.id, book.name, book.rules?.enabled !== false));
+    bindingStats.missingIds.forEach(id => renderRow(id, '无效绑定：' + id, false));
 }
 
 function loadSettingsToSidebar() {

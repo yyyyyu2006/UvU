@@ -504,6 +504,12 @@ function renderCustomizeForm() {
                         <button type="button" id="apply-global-css-now-btn" class="btn btn-primary btn-small" style="width:auto;">立即应用</button>
                     </div>
                     <textarea id="global-beautification-css" class="form-group" rows="8" placeholder="在此输入CSS代码..." style="width:100%; border:1px solid #eee; border-radius:8px; padding:10px; font-family: monospace; font-size: 12px;"></textarea>
+                    <div class="global-css-document-tools">
+                        <button type="button" id="global-css-document-import" class="btn btn-small">导入 DOCX / TXT</button>
+                        <button type="button" id="global-css-document-export-txt" class="btn btn-small">导出 TXT</button>
+                        <button type="button" id="global-css-document-export-docx" class="btn btn-small">导出 DOCX</button>
+                        <input type="file" id="global-css-document-input" accept=".docx,.txt" hidden>
+                    </div>
                 </div>
                 <div style="background:#f9f9f9; padding:10px; border-radius:8px; border: 1px solid #f0f0f0;">
                     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -617,4 +623,5 @@ function renderCustomizeForm() {
     if (globalCssTextarea) {
         globalCssTextarea.value = db.globalCss || '';
     }
+    if (window.GlobalCssIO) window.GlobalCssIO.setup();
 }

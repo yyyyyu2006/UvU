@@ -852,3 +852,5 @@ input:checked + .kkt-slider:before {
     padding-top: 8px;
     animation: fadeIn 0.2s ease-out;
 }
+.global-css-document-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.global-css-document-tools .btn { min-height: 34px; margin: 0; padding: 5px 8px; font-size: 12px; letter-spacing: 0; }
