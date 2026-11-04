@@ -904,3 +904,11 @@ input:checked + .kkt-slider:before {
 .global-css-document-tools .global-css-export-menu { position: absolute; z-index: 2; left: 0; bottom: calc(100% + 4px); top: auto; right: auto; display: flex; gap: 4px; padding: 5px; border: 1px solid #e2e5e9; border-radius: 8px; background: #fff; box-shadow: 0 3px 10px #0002; }
 .global-css-document-tools .global-css-export-menu[hidden] { display: none; }
 .global-css-document-tools .global-css-export-menu .btn { flex: 0 0 auto; min-height: 28px; padding: 4px 7px; }
+
+#uvu-story-bridge-screen .uvu-bridge-handoff, #uvu-story-bridge-screen .uvu-bridge-review { display:grid; gap:8px; width:100%; padding:10px 0; border-top:1px solid #8884; }
+#uvu-story-bridge-screen .uvu-bridge-range { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+#uvu-story-bridge-screen .uvu-bridge-review-items { display:grid; gap:8px; max-height:55vh; overflow:auto; }
+#uvu-story-bridge-screen .uvu-bridge-review-items label { display:grid; grid-template-columns:24px minmax(0,1fr); gap:8px; align-items:start; }
+#uvu-story-bridge-screen .uvu-bridge-review-items textarea { width:100%; min-height:72px; box-sizing:border-box; resize:vertical; }
+#uvu-story-bridge-screen #uvu-bridge-review-list details { padding:8px 0; border-top:1px solid #8884; }
+#uvu-story-bridge-screen #uvu-bridge-review-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:45vh; overflow:auto; }

@@ -24,11 +24,15 @@ function harness(fetchImpl, permissionState = 'granted') {
         navigator: { permissions: { query: async () => ({ state: permissionState }) } },
         fetch: fetchImpl,
         structuredClone,
+        crypto,
+        TextEncoder,
+        AbortSignal,
         saveData: async () => {},
         setInterval: () => 1,
         clearInterval() {},
         console
     });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_text.js'), 'utf8'), context);
     const source = fs.readFileSync(path.join(__dirname, '../js/modules/story_bridge.js'), 'utf8');
     vm.runInContext(source, context);
     return { bridge: context.window.UvUStoryBridge, db, chat, output };
@@ -65,6 +69,19 @@ test('paired UvU sends stable character IDs and clear names to the local directo
     assert.match(calls[0].url, /\/client\/characters$/);
     assert.equal(calls[0].options.method, 'PUT');
     assert.deepEqual(JSON.parse(calls[0].options.body), { characters: [{ id: 'char-1', name: '角色甲' }] });
+});
+
+test('large outgoing messages label each part so SillyTavern can reassemble them', async () => {
+    const calls = [];
+    const { bridge, chat } = harness(async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, json: async () => ({}) };
+    });
+    await bridge.publishTurn(chat, null, [{ id: 'long-1', text: '一'.repeat(5001), createdAt: 10 }]);
+    const sent = calls.filter(call => call.url.endsWith('/client/events')).map(call => JSON.parse(call.options.body));
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent.map(event => [event.payload.messages[0].messagePart, event.payload.messages[0].messagePartCount]), [[1, 2], [2, 2]]);
+    assert.equal(sent[0].payload.messages[0].sourceMessageId, sent[1].payload.messages[0].sourceMessageId);
 });
 
 test('scene transcript parts form one draft memory before the event cursor is acknowledged', async () => {
@@ -117,4 +134,45 @@ test('a dropped queue range is reported without advancing the local cursor', asy
     assert.equal(chat.memoryJournals.length, 0);
     assert.equal(db.uvuStoryBridgeSettings.cursorByCharacter?.['char-1'], undefined);
     assert.match(output.textContent, /不能确认剧情完整/);
+});
+
+test('bridge review text removes reasoning and code blocks while preserving story prose', () => {
+    const helper = require('../js/modules/bridge_text.js');
+    assert.equal(helper.clean('<style>.card{color:red}</style><div>两人在车站见面。</div><thinking>内部推理</thinking>'), '两人在车站见面。');
+    assert.equal(helper.clean('他们约好下周见。\n```javascript\nrenderStatus();\n```'), '他们约好下周见。');
+    assert.equal(helper.clean('<thinking>没有闭合的思维链'), '');
+});
+
+test('unreviewed or unchecked Tavern journals are blocked from injection', () => {
+    const { bridge, chat } = harness(async () => ({ ok: true, json: async () => ({}) }));
+    const journal = { source: 'sillytavern', isFavorited: true, content: '剧情', bridgeReview: { status: 'pending', items: [{ selected: true, text: '剧情' }] } };
+    assert.equal(bridge.allowedMemory(chat, journal), false);
+    journal.bridgeReview.status = 'approved';
+    journal.bridgeReview.items[0].selected = false;
+    assert.equal(bridge.allowedMemory(chat, journal), false);
+    journal.bridgeReview.items[0].selected = true;
+    assert.equal(bridge.allowedMemory(chat, journal), true);
+});
+
+test('incomplete or noncontiguous scene parts are never committed', async () => {
+    const { bridge, chat, db } = harness(async () => ({ ok: true, json: async () => ({ events: [
+        { seq: 1, characterKey: 'char-1', kind: 'scene_transcript', sceneId: 'bad-parts', createdAt: 1, payload: { part: 1, partCount: 2, text: '第一段' } },
+        { seq: 2, characterKey: 'char-1', kind: 'scene_transcript', sceneId: 'bad-parts', createdAt: 1, payload: { part: 3, partCount: 2, text: '越界片段' } }
+    ] }) }));
+    await assert.rejects(bridge.syncIncoming('char-1'), /分段格式无效/);
+    assert.equal(chat.memoryJournals.length, 0);
+    assert.equal(db.uvuStoryBridgeSettings.cursorByCharacter?.['char-1'], undefined);
+});
+
+test('archive switch during receive cannot write scene data into the new archive', async () => {
+    let resolveFetch;
+    const pending = new Promise(resolve => { resolveFetch = resolve; });
+    const { bridge, chat, db } = harness(async () => pending);
+    chat.activeArchiveId = 'archive-a';
+    const running = bridge.syncIncoming('char-1');
+    chat.activeArchiveId = 'archive-b';
+    resolveFetch({ ok: true, json: async () => ({ events: [{ seq: 1, characterKey: 'char-1', kind: 'scene_transcript', sceneId: 'scene-a', createdAt: 1, payload: { part: 1, partCount: 1, text: '不能写入新存档' } }] }) });
+    await assert.rejects(running, /存档已切换/);
+    assert.equal(chat.memoryJournals.length, 0);
+    assert.equal(db.uvuStoryBridgeSettings.cursorByCharacter?.['char-1'], undefined);
 });

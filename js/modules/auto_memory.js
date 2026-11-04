@@ -156,7 +156,7 @@ function getContextMemoryJournals(chat) {
     const settings = getAutoMemorySettings(chat);
     const active = settings.useMemory ? getAutoMemoryState(chat).active : [];
     // 自动记忆的下层摘要即使被收藏也不重复注入；暂停记忆时恢复全部原楼层。
-    return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited), ...active].filter(journal => !journal.vectorSupersededBy);
+    return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal))), ...active].filter(journal => !journal.vectorSupersededBy);
 }
 function getAutoMemoryContextHistory(chat, limit = chat.maxMemory) {
     const covered = getAutoMemorySettings(chat).useMemory ? getAutoMemoryState(chat).covered : new Set();
@@ -417,7 +417,7 @@ function getVectorMemoryCandidates(chat) {
     const state = getAutoMemoryState(chat);
     const settings = getAutoMemorySettings(chat);
     const covered = settings.useMemory ? state.covered : new Set();
-    const journals = (chat.memoryJournals || []).filter(journal => !journal.vectorSupersededBy &&
+    const journals = (chat.memoryJournals || []).filter(journal => (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal)) && !journal.vectorSupersededBy &&
         (!journal.autoMemory || state.active.some(active => active.id === journal.id)))
         .map(journal => ({ ...journal, content: cleanVectorStoryText(chat, journal.content) }));
     const eligible = (chat.history || []).map((message, index) => ({ message, floor: index + 1 }))

@@ -336,6 +336,7 @@ function setupMemoryJournalScreen() {
         }
 
         if (target.closest('.favorite-journal-btn')) {
+            if (journal.source === 'sillytavern' && journal.bridgeReview?.status !== 'approved') { showToast('请到酒馆互通页逐条审核后应用这场剧情。'); return; }
             journal.isFavorited = !journal.isFavorited;
             await saveData();
             target.closest('.favorite-journal-btn').classList.toggle('favorited', journal.isFavorited);
