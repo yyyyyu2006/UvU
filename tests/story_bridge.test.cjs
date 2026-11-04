@@ -13,6 +13,7 @@ function harness(fetchImpl) {
     const db = { characters: [chat], uvuStoryBridgeSettings: { baseUrl: 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge' } };
     const context = vm.createContext({
         window: {},
+        URL,
         db,
         document: { visibilityState: 'visible', getElementById: () => output, addEventListener() {} },
         localStorage: {
@@ -43,6 +44,7 @@ test('bridge mode lookup uses the paired bearer token and requested character ke
     assert.equal(mode.mode, 'offline');
     assert.match(calls[0].url, /\/client\/state\?characterKey=char-1$/);
     assert.equal(calls[0].options.headers.Authorization, 'Bearer paired-token');
+    assert.equal(calls[0].options.targetAddressSpace, 'loopback');
 });
 
 test('paired UvU sends stable character IDs and clear names to the local directory', async () => {

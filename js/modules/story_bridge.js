@@ -27,6 +27,15 @@
         return String(settings().baseUrl || DEFAULT_URL).trim().replace(/\/+$/, '');
     }
 
+    function targetAddressSpace() {
+        try {
+            const hostname = new URL(baseUrl()).hostname.toLowerCase();
+            if (hostname === 'localhost' || hostname === '::1' || hostname === '[::1]' || /^127\./.test(hostname)) return 'loopback';
+            if (hostname.endsWith('.local') || /^(10\.|192\.168\.|169\.254\.)/.test(hostname) || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return 'local';
+        } catch {}
+        return undefined;
+    }
+
     async function request(path, { method = 'GET', body, auth = true } = {}) {
         const headers = { Accept: 'application/json' };
         const token = readToken();
@@ -35,11 +44,13 @@
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         let response;
         try {
+            const addressSpace = targetAddressSpace();
             response = await fetch(`${baseUrl()}/v1${path}`, {
-                method, headers, body: body === undefined ? undefined : JSON.stringify(body)
+                method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+                ...(addressSpace ? { targetAddressSpace: addressSpace } : {})
             });
         } catch (error) {
-            throw new Error('无法连接同设备上的酒馆。请确认服务端插件已启用，并允许浏览器访问本地网络。', { cause: error });
+            throw new Error('浏览器未能连接酒馆：请允许此网站访问本地网络，并确认酒馆桥接配置已允许当前 UvU 网站来源。', { cause: error });
         }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `桥接请求失败（HTTP ${response.status}）`);
