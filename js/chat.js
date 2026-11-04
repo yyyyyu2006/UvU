@@ -94,6 +94,7 @@ function setupChatRoom() {
     messageInput = document.getElementById('message-input');
     getReplyBtn = document.getElementById('get-reply-btn');
     regenerateBtn = document.getElementById('regenerate-btn');
+    setupChatReplyActionsLayout();
     const stopAiButton = document.getElementById('stop-ai-btn');
     if (stopAiButton) stopAiButton.addEventListener('click', () => {
         if (typeof stopAiReply === 'function' && stopAiReply()) showToast('已请求停止 AI 回复');
@@ -492,6 +493,32 @@ function setupChatRoom() {
         document.getElementById('capture-result-modal').classList.remove('visible');
     });
     document.getElementById('cancel-reply-btn').addEventListener('click', cancelQuoteReply);
+}
+
+function setupChatReplyActionsLayout() {
+    const area = document.getElementById('message-input-default');
+    const actions = document.getElementById('chat-reply-actions');
+    if (!area || !actions || actions.dataset.layoutBound) return;
+    actions.dataset.layoutBound = 'true';
+    const guardStyleId = 'chat-action-layout-guard';
+    if (!document.getElementById(guardStyleId) && document.head) {
+        const style = document.createElement('style');
+        style.id = guardStyleId;
+        style.textContent = '#chat-reply-actions{position:relative!important;display:inline-flex!important;flex:0 0 auto!important;min-width:30px!important;height:30px!important;align-items:center!important;justify-content:flex-end!important;gap:5px!important;isolation:isolate!important}#chat-reply-actions>.icon-btn{flex:0 0 30px!important;width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#chat-reply-actions.chat-reply-actions--overlay{width:30px!important}#chat-reply-actions.chat-reply-actions--overlay #stop-ai-btn:not([hidden]){position:absolute!important;inset:0!important;z-index:2!important;display:inline-flex!important}';
+        document.head.appendChild(style);
+    }
+    const update = () => {
+        const width = area.getBoundingClientRect().width;
+        actions.classList.toggle('chat-reply-actions--overlay', width > 0 && width < 340);
+    };
+    update();
+    if (typeof ResizeObserver === 'function') {
+        const observer = new ResizeObserver(update);
+        observer.observe(area);
+        actions._layoutObserver = observer;
+    } else {
+        window.addEventListener('resize', update, { passive: true });
+    }
 }
 
 function openChatRoom(chatId, type) {

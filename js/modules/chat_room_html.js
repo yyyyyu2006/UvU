@@ -66,6 +66,7 @@ const chatRoomHtml = `
                         <img src="https://i.postimg.cc/prRC31Gk/retouch-2025110902080890.png" alt="表情">
                     </button>
                 </div>
+                <div id="chat-reply-actions" class="chat-reply-actions" aria-label="回复控制">
                 <button id="get-reply-btn" class="icon-btn">
                     <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="12" cy="12" r="12" fill="#F0F0F0"/>
@@ -84,6 +85,7 @@ const chatRoomHtml = `
                 <button id="stop-ai-btn" type="button" class="icon-btn circle-bg" title="停止 AI 回复" aria-label="停止 AI 回复" hidden>
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                 </button>
+                </div>
             </div>
         </div>
         
@@ -109,6 +111,12 @@ const chatRoomHtml = `
                             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.58,16.09L19.66,18L18.24,16.58L21,13.83C21.39,13.44 22,13.44 22.39,13.83L23.17,14.61C23.56,15 23.56,15.64 23.17,16.03L21.58,17.62M20.13,12.25L18.71,13.66L20.41,15.36L21.83,13.94L20.13,12.25M5.93,19H5C3.9,19 3,18.1 3,17V5C3,3.9 3.9,3 5,3H19C20.1,3 21,3.9 21,5V11.08L19,13.08V5H5V17H5.93L13.5,9.43L16.29,12.21L12.08,16.42L5.93,19Z"/></svg>
                         </div>
                         <span class="expansion-item-name">识图</span>
+                    </div>
+                    <div class="expansion-item" id="camera-photo-btn">
+                        <div class="expansion-item-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 4 7.5 6H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-2.5L15 4H9Zm3 4.5A4.5 4.5 0 1 1 12 17a4.5 4.5 0 0 1 0-8.5Zm0 2A2.5 2.5 0 1 0 12 15a2.5 2.5 0 0 0 0-4.5Z"/></svg>
+                        </div>
+                        <span class="expansion-item-name">拍照发图</span>
                     </div>
                     <div class="expansion-item" id="voice-message-btn">
                         <div class="expansion-item-icon">

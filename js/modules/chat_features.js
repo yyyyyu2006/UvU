@@ -102,29 +102,33 @@ function sendMyPhotoVideo(text) {
 function setupImageRecognition() {
     const imageRecognitionBtn = document.getElementById('image-recognition-btn');
     const imageUploadInput = document.getElementById('image-upload-input');
+    const cameraPhotoBtn = document.getElementById('camera-photo-btn');
+    const cameraUploadInput = document.getElementById('camera-upload-input');
 
-    imageRecognitionBtn.addEventListener('click', () => {
-        imageUploadInput.click();
-    });
-    imageUploadInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const target = captureChatSendTarget();
-            try {
-                const compressedUrl = await compressImage(file, {
-                    quality: 0.8,
-                    maxWidth: 1024,
-                    maxHeight: 1024
-                });
-                await sendImageForRecognition(compressedUrl, target);
-            } catch (error) {
-                console.error('Image compression failed:', error);
-                showToast('图片处理失败，请重试');
-            } finally {
-                e.target.value = null;
-            }
+    const processImageFile = async (file, input) => {
+        if (!file) return;
+        const target = captureChatSendTarget();
+        try {
+            if (file.type && !file.type.startsWith('image/')) throw new Error('请选择图片文件');
+            if (Number.isFinite(file.size) && file.size > 15 * 1024 * 1024) throw new Error('图片不能超过 15MB');
+            const compressedUrl = await compressImage(file, {
+                quality: 0.8,
+                maxWidth: 1024,
+                maxHeight: 1024
+            });
+            await sendImageForRecognition(compressedUrl, target);
+        } catch (error) {
+            console.error('Image processing failed:', error);
+            showToast(error.message || '图片处理失败，请重试');
+        } finally {
+            if (input) input.value = null;
         }
-    });
+    };
+
+    if (imageRecognitionBtn && imageUploadInput) imageRecognitionBtn.addEventListener('click', () => imageUploadInput.click());
+    if (imageUploadInput) imageUploadInput.addEventListener('change', e => processImageFile(e.target.files?.[0], imageUploadInput));
+    if (cameraPhotoBtn && cameraUploadInput) cameraPhotoBtn.addEventListener('click', () => cameraUploadInput.click());
+    if (cameraUploadInput) cameraUploadInput.addEventListener('change', e => processImageFile(e.target.files?.[0], cameraUploadInput));
 }
 
 async function sendImageForRecognition(base64Data, target = captureChatSendTarget()) {
