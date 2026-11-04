@@ -392,6 +392,7 @@ function loadSettingsToSidebar() {
         document.getElementById('setting-char-realname').value = e.realName || '';
         document.getElementById('setting-char-remark').value = e.remarkName;
         document.getElementById('setting-char-persona').value = e.persona;
+        document.getElementById('setting-char-tts-voice-id').value = e.minimaxTtsVoiceId || '';
         
         const stickerGroupsContainer = document.getElementById('setting-char-sticker-groups-container');
         stickerGroupsContainer.innerHTML = '';
@@ -746,6 +747,7 @@ async function saveSettingsFromSidebar() {
 
         e.remarkName = document.getElementById('setting-char-remark').value;
         e.persona = document.getElementById('setting-char-persona').value;
+        e.minimaxTtsVoiceId = document.getElementById('setting-char-tts-voice-id').value.trim();
         
         const selectedGroups = Array.from(document.querySelectorAll('#setting-char-sticker-groups-container .sticker-group-tag.selected'))
             .map(tag => tag.dataset.group)

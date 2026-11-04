@@ -8,10 +8,11 @@ function loadTts(fetch) {
     const context = vm.createContext({
         Blob,
         Map,
+        URL,
         Uint8Array,
         fetch,
         window: {},
-        db: { minimaxTtsSettings: { apiKey: 'test-key', voiceId: 'test-voice' } }
+        db: { minimaxTtsSettings: { apiKey: 'test-key', voiceId: 'test-voice', groupId: '' } }
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/chat_features.js'), 'utf8'), context);
     return vm.runInContext('MiniMaxTTS', context);
@@ -46,4 +47,17 @@ test('MiniMax TTS surfaces service errors and rejects malformed audio', async ()
         json: async () => ({ base_resp: { status_code: 0 }, data: { audio: 'not-hex' } })
     }));
     await assert.rejects(malformedAudio.synthesize('你好'), /音频数据/);
+});
+
+test('MiniMax TTS adds GroupId only when configured and prefers character voice IDs', async () => {
+    let requestUrl;
+    const tts = loadTts(async (url) => {
+        requestUrl = url;
+        return { ok: true, status: 200, json: async () => ({ base_resp: { status_code: 0 }, data: { audio: '0001' } }) };
+    });
+    const settings = { apiKey: 'test-key', voiceId: 'default-voice', groupId: 'group-123' };
+    await tts.synthesize('你好', settings);
+    assert.equal(new URL(requestUrl).searchParams.get('GroupId'), 'group-123');
+    assert.equal(tts.resolveVoiceId('character-voice', settings), 'character-voice');
+    assert.equal(tts.resolveVoiceId('', settings), 'default-voice');
 });

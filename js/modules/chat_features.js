@@ -89,10 +89,13 @@ const MiniMaxTTS = (() => {
         if (!/^https:\/\//i.test(endpoint)) throw new Error('MiniMax API 地址必须使用 HTTPS');
         if (!text || text.length > 10000) throw new Error('语音文本不能为空，且不能超过 10000 个字符');
 
-        const cacheKey = JSON.stringify([endpoint, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
+        const requestUrl = new URL(endpoint);
+        const groupId = String(settings.groupId || '').trim();
+        if (groupId) requestUrl.searchParams.set('GroupId', groupId);
+        const cacheKey = JSON.stringify([requestUrl.href, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
         if (audioCache.has(cacheKey)) return audioCache.get(cacheKey);
 
-        const response = await fetch(endpoint, {
+        const response = await fetch(requestUrl.href, {
             method: 'POST',
             headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             signal,
@@ -142,7 +145,12 @@ const MiniMaxTTS = (() => {
         bubble.classList.add('voice-loading');
         bubble.setAttribute('aria-busy', 'true');
         try {
-            const blob = await synthesize(text, getSettings(), pendingRequest.signal);
+            const savedSettings = getSettings();
+            const ttsSettings = {
+                ...savedSettings,
+                voiceId: resolveVoiceId(bubble.dataset.voiceId, savedSettings)
+            };
+            const blob = await synthesize(text, ttsSettings, pendingRequest.signal);
             if (token !== playbackToken) return;
             pendingRequest = null;
             pendingBubble = null;
@@ -151,15 +159,17 @@ const MiniMaxTTS = (() => {
             activeBubble = bubble;
             activeAudio.addEventListener('ended', stop, { once: true });
             activeAudio.addEventListener('error', () => {
+                const mediaErrorCode = activeAudio?.error?.code || 0;
                 stop();
-                showToast('音频播放失败，请检查浏览器音频支持');
+                showToast(getAudioPlaybackErrorMessage(mediaErrorCode));
             }, { once: true });
             await activeAudio.play();
             bubble.classList.add('voice-playing');
         } catch (error) {
             if (token === playbackToken) {
                 stop();
-                if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
+                if (error?.name === 'NotAllowedError') showToast('浏览器拦截了音频播放，请再次点击语音气泡播放');
+                else if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
             }
         } finally {
             if (token === playbackToken) {
@@ -187,13 +197,28 @@ const MiniMaxTTS = (() => {
         pendingBubble = null;
     }
 
-    return { play, synthesize };
+    function resolveVoiceId(characterVoiceId, settings = getSettings()) {
+        return String(characterVoiceId || settings.voiceId || '').trim();
+    }
+
+    return { play, synthesize, resolveVoiceId };
 })();
+
+function getAudioPlaybackErrorMessage(code) {
+    const messages = {
+        1: '音频播放已取消',
+        2: '语音已生成，但浏览器读取音频失败，请检查网络或重试',
+        3: '语音已生成，但浏览器无法解码音频；请确认 MiniMax 返回格式为 MP3',
+        4: '语音已生成，但当前浏览器不支持返回的音频格式'
+    };
+    return messages[code] || '语音已生成，但浏览器播放失败；请再次点击重试并检查浏览器音频支持';
+}
 
 async function previewMiniMaxVoice() {
     const settings = {
         apiKey: document.getElementById('minimax-tts-key')?.value.trim(),
         endpoint: document.getElementById('minimax-tts-endpoint')?.value.trim(),
+        groupId: document.getElementById('minimax-tts-group-id')?.value.trim(),
         model: document.getElementById('minimax-tts-model')?.value.trim(),
         voiceId: document.getElementById('minimax-tts-voice')?.value.trim(),
         speed: document.getElementById('minimax-tts-speed')?.value,

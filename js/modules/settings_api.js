@@ -187,6 +187,7 @@ function setupMiniMaxTtsSettings() {
     const fields = {
         endpoint: document.getElementById('minimax-tts-endpoint'),
         apiKey: document.getElementById('minimax-tts-key'),
+        groupId: document.getElementById('minimax-tts-group-id'),
         model: document.getElementById('minimax-tts-model'),
         voiceId: document.getElementById('minimax-tts-voice'),
         speed: document.getElementById('minimax-tts-speed'),
@@ -199,6 +200,7 @@ function setupMiniMaxTtsSettings() {
     const saved = db.minimaxTtsSettings || {};
     fields.endpoint.value = saved.endpoint || 'https://api.minimaxi.com/v1/t2a_v2';
     fields.apiKey.value = saved.apiKey || '';
+    fields.groupId.value = saved.groupId || '';
     fields.model.value = saved.model || 'speech-2.8-hd';
     fields.voiceId.value = saved.voiceId || '';
     fields.speed.value = saved.speed || '1';
@@ -222,6 +224,7 @@ function setupMiniMaxTtsSettings() {
         db.minimaxTtsSettings = {
             endpoint: endpoint || 'https://api.minimaxi.com/v1/t2a_v2',
             apiKey: fields.apiKey.value.trim(),
+            groupId: fields.groupId.value.trim(),
             model: fields.model.value.trim() || 'speech-2.8-hd',
             voiceId: fields.voiceId.value.trim(),
             speed: Number(fields.speed.value),

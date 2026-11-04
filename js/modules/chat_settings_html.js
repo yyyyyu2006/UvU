@@ -46,6 +46,12 @@ const chatSettingsHtml = `
                                 <div class="kkt-item-label" style="margin-bottom:8px;">角色人设</div>
                                 <textarea id="setting-char-persona" style="width:100%; border:1px solid #eee; border-radius:8px; padding:8px; min-height:80px;" placeholder="详细描述角色的性格..."></textarea>
                             </div>
+                            <div class="kkt-item">
+                                <div class="kkt-item-label">MiniMax 音色 ID</div>
+                                <div class="kkt-item-control">
+                                    <input type="text" id="setting-char-tts-voice-id" autocomplete="off" style="text-align:right; border:none; background:transparent;" placeholder="留空使用 API 默认音色">
+                                </div>
+                            </div>
                              <!-- 表情包分组 -->
                             <div class="kkt-item" style="flex-direction:column; align-items:flex-start;">
                                 <div class="kkt-item-label" style="margin-bottom:8px;">可用表情包分组</div>
