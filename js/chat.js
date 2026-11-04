@@ -143,10 +143,19 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         toggle.type = 'button';
         toggle.className = 'status-token-worldbook-toggle';
         toggle.setAttribute('aria-expanded', 'false');
-        toggle.textContent = `世界书（${worldBookDetails.length} 本，点击查看）`;
+        const toggleLabel = document.createElement('span');
+        toggleLabel.className = 'status-token-worldbook-label';
+        toggleLabel.textContent = `世界书（${worldBookDetails.length} 本） · 展开`;
+        const toggleIcon = document.createElement('span');
+        toggleIcon.className = 'status-token-worldbook-chevron';
+        toggleIcon.setAttribute('aria-hidden', 'true');
+        toggleIcon.textContent = '▸';
+        toggle.append(toggleLabel, toggleIcon);
         const details = document.createElement('div');
         details.className = 'status-token-worldbook-details';
         details.hidden = true;
+        details.id = `status-token-worldbook-details-${Date.now()}`;
+        toggle.setAttribute('aria-controls', details.id);
         worldBookDetails.forEach(item => {
             const row = document.createElement('div');
             row.className = 'status-token-worldbook-row';
@@ -162,6 +171,8 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         toggle.addEventListener('click', () => {
             details.hidden = !details.hidden;
             toggle.setAttribute('aria-expanded', String(!details.hidden));
+            toggleLabel.textContent = `世界书（${worldBookDetails.length} 本） · ${details.hidden ? '展开' : '收起'}`;
+            toggleIcon.textContent = details.hidden ? '▸' : '▾';
         });
         worldBookSection.append(toggle, details);
         list.appendChild(worldBookSection);

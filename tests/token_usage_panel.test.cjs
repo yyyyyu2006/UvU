@@ -43,3 +43,12 @@ test('global CSS document tools are compact and anchored to the editor corner', 
     assert.match(css, /global-css-document-tools \.btn \{[^}]*flex: 0 0 auto;/s);
     assert.doesNotMatch(css, /global-css-document-tools \.btn,[\s\S]*?flex: 1 1 0/);
 });
+
+test('worldbook token section exposes an explicit expand and collapse control', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../js/chat.js'), 'utf8');
+    assert.match(source, /status-token-worldbook-toggle/);
+    assert.match(source, /aria-expanded/);
+    assert.match(source, /details\.hidden = !details\.hidden/);
+    assert.match(source, /展开/);
+    assert.match(source, /收起/);
+});
