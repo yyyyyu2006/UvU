@@ -37,6 +37,21 @@ async function deleteChatEntity(chat, type) {
     return true;
 }
 
+async function restoreDefaultChatBeautification(chat, type) {
+    if (!(type === 'private' ? db.characters : db.groups).includes(chat)) return false;
+    if (!chat.useCustomBubbleCss && !chat.customBubbleCss) { showToast('此对话已使用默认美化'); return true; }
+    const mutation = beginChatMutation(chat, type, [], ['useCustomBubbleCss', 'customBubbleCss']);
+    chat.useCustomBubbleCss = false;
+    chat.customBubbleCss = '';
+    if (!await saveChatMutation(mutation, '恢复默认美化未保存，已恢复原设置，请重试')) return false;
+    if (currentChatId === chat.id && currentChatType === type && typeof updateCustomBubbleStyle === 'function') {
+        updateCustomBubbleStyle(chat.id, '', false);
+    }
+    renderChatList();
+    showToast('已恢复此对话的默认美化');
+    return true;
+}
+
 // --- 聊天列表与文件夹管理模块 ---
 
 // 聊天列表屏幕逻辑
@@ -361,6 +376,14 @@ function handleChatListLongPress(chatId, chatType, x, y) {
             action: async () => {
                 const archiveId = chatItem.activeArchiveId;
                 if (confirm(`确定清空“${itemName}”当前存档的聊天、通话、记忆及偷看记录吗？角色设定、提示词、好友关系和其他存档保留。此操作不可恢复。`)) await clearChatHistory(chatItem, chatType, archiveId);
+            }
+        },
+        {
+            label: '恢复默认对话美化',
+            action: async () => {
+                if (confirm(`确定清除“${itemName}”的自定义对话美化并恢复默认样式吗？只影响此${chatType === 'private' ? '角色' : '群聊'}。`)) {
+                    await restoreDefaultChatBeautification(chatItem, chatType);
+                }
             }
         },
         {
