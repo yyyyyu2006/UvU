@@ -47,7 +47,7 @@ const root = path.join(__dirname, '..');
             assert.ok(metrics.scrollWidth <= metrics.width, JSON.stringify(metrics));
             await page.screenshot({path: path.join(root, '../uvu-verification-deps/floor-review-' + width + '.png'), fullPage: true});
         }
-        await page.getByRole('button', {name: '保存审核并加入记忆', exact: true}).click();
+        await page.getByRole('button', {name: '原文直接加入记忆', exact: true}).click();
         const result = await page.evaluate(() => ({journal: saved.characters[0].memoryJournals[0], allowed: UvUStoryBridge.allowedMemory(db.characters[0], db.characters[0].memoryJournals[0])}));
         assert.equal(result.allowed, true); assert.equal(result.journal.category, '酒馆线下剧情');
         assert.match(result.journal.content, /审核后修改的完整一层/); assert.doesNotMatch(result.journal.content, /User 的回答/);
@@ -65,7 +65,7 @@ const root = path.join(__dirname, '..');
         assert.equal(await page.locator('.uvu-bridge-review-floor').count(), 1);
         assert.equal(await page.locator('.uvu-bridge-review-floor textarea').inputValue(), '第一段。\n\n第二段。');
         await page.getByRole('checkbox', {name: '全选本场剧情', exact: true}).check();
-        await page.getByRole('button', {name: '保存审核并加入记忆', exact: true}).click();
+        await page.getByRole('button', {name: '原文直接加入记忆', exact: true}).click();
         assert.equal(await page.evaluate(() => saved.characters[0].memoryJournals[0].bridgeReview.items[0].floor.speaker), '角色');
         assert.equal(await page.getByRole('button', {name: '按旧原文重新整理楼层', exact: true}).count(), 0);
         assert.deepEqual(errors, []);

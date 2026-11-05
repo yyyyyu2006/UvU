@@ -15,10 +15,13 @@
     let reconnecting = false;
     let pairingBusy = false;
     let automaticBusy = false;
+    let channelSwitchBusy = false;
+    let publishingCount = 0;
 
-    function settings() {
+    function channelId() {return db.uvuStoryBridgeSettings?.channel === 'tt' ? 'tt' : 'st';}
+    function settings(channel = channelId()) {
         db.uvuStoryBridgeSettings = db.uvuStoryBridgeSettings || {};
-        const value = db.uvuStoryBridgeSettings;
+        const value = channel === 'tt' ? (db.uvuStoryBridgeSettings.ttSettings ||= {}) : db.uvuStoryBridgeSettings;
         value.cursorByCharacter = value.cursorByCharacter || {};
         value.relayByCharacter = value.relayByCharacter || {};
         value.recoveryByCharacter = value.recoveryByCharacter || {};
@@ -32,23 +35,24 @@
         return value;
     }
 
-    function isEnabled() { return settings().bridgeEnabled !== false; }
+    function isEnabled() { return !channelSwitchBusy && settings().bridgeEnabled !== false; }
+    function tokenKey() {return STORAGE_KEY + (channelId() === 'tt' ? '.tt' : '');}
 
     function readToken() {
-        try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').token || ''; }
+        try { return JSON.parse(localStorage.getItem(tokenKey()) || '{}').token || ''; }
         catch { return ''; }
     }
 
     function saveToken(token, device) {
-        if (token) localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, baseUrl:baseUrl(), device }));
-        else localStorage.removeItem(STORAGE_KEY);
+        if (token) localStorage.setItem(tokenKey(), JSON.stringify({ token, baseUrl:baseUrl(), device }));
+        else localStorage.removeItem(tokenKey());
         connection = {phase:token ? 'idle' : 'unpaired',failures:0,nextAttempt:0};
     }
 
     function bindTokenAddress(address) {
-        const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        const stored = JSON.parse(localStorage.getItem(tokenKey()) || '{}');
         if (stored.baseUrl && stored.baseUrl !== address) throw Object.assign(new Error('桥接地址已改变，原绑定只用于原地址。请恢复地址，或在新地址重新配对。'),{code:'ADDRESS_CHANGED'});
-        if (!stored.baseUrl && stored.token) localStorage.setItem(STORAGE_KEY,JSON.stringify({...stored,baseUrl:address}));
+        if (!stored.baseUrl && stored.token) localStorage.setItem(tokenKey(),JSON.stringify({...stored,baseUrl:address}));
     }
 
     function connectionSnapshot() { return {...connection}; }
@@ -59,6 +63,7 @@
 
     function baseUrl() {
         const saved = String(settings().baseUrl || '').trim().replace(/\/+$/, '');
+        if(channelId()==='tt')return saved;
         if (!saved || saved === PREVIOUS_DEFAULT_URL) {
             settings().baseUrl = DEFAULT_URL;
             return DEFAULT_URL;
@@ -83,10 +88,16 @@
     }
 
     async function request(path, { method = 'GET', body, auth = true } = {}) {
+        if(channelSwitchBusy)throw new Error('请等待通道切换完成。');
+        const epoch = generation;
         const headers = { Accept: 'application/json' };
         const token = readToken();
         if (auth && !token) throw new Error('尚未配对酒馆桥接服务。');
         const address = baseUrl();
+        if (channelId()==='tt') {
+            let url;try{url=new URL(address);}catch{throw new Error('请先设置 TT HTTPS 桥接地址，或使用文件交接。');}
+            if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash)throw new Error('TT 通道需要不含账户、查询参数和片段的 HTTPS 地址。');
+        }
         if (auth) bindTokenAddress(address);
         if (auth) headers.Authorization = `Bearer ${token}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -112,6 +123,7 @@
             throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
         const data = await response.json().catch(() => ({}));
+        if(epoch!==generation)throw new Error('互通通道或开关已变更，未应用旧请求。');
         if (!response.ok) {
             const help = { 401: '配对码无效或令牌失效，请重新配对', 403: '来源白名单、回环地址或接口权限不通过', 404: '接口不存在，请更新服务端并重启酒馆', 413: '剧情数据超过限制' };
             if (auth && response.status === 401 && token === readToken() && address === baseUrl()) {
@@ -142,14 +154,26 @@
             ? db.characters.find(item => item.id === currentChatId) : null;
     }
     function selectedBridgeChat() {
-        const id = document.getElementById('uvu-bridge-handoff-character')?.value;
-        return db.characters.find(chat => String(chat.id) === id) || currentBridgeChat();
+        const id = document.getElementById('uvu-bridge-handoff-character')?.value || settings().handoffCharacterId;
+        return id ? db.characters.find(chat => String(chat.id) === String(id)) || null : currentBridgeChat();
+    }
+
+    async function saveHandoffCharacter() {
+        if(channelSwitchBusy)throw new Error('请等待通道切换完成。');
+        const chat = selectedBridgeChat();
+        if (!chat) throw new Error('请选择有效角色；原保存角色可能已删除。');
+        const state = settings(), before = state.handoffCharacterId;
+        state.handoffCharacterId = String(chat.id);
+        try { await saveData(); }
+        catch (error) { if (before === undefined) delete state.handoffCharacterId; else state.handoffCharacterId = before; throw error; }
+        status('已保存交接角色：' + (chat.realName || chat.name || chat.id) + '；再次进入不会跟随其他聊天。');
     }
 
     function allowedMemory(chat, journal) {
-        return journal.source !== 'sillytavern' || (isEnabled() && journal.isFavorited === true &&
+        const state=settings(journal.bridgeReview?.channel || 'st');
+        return journal.source !== 'sillytavern' || (state.bridgeEnabled !== false && journal.isFavorited === true &&
             journal.bridgeReview?.status === 'approved' && journal.bridgeReview.items?.some(item => item.selected && item.text) &&
-            settings().injectionByCharacter[String(chat.id)] !== false);
+            state.injectionByCharacter[String(chat.id)] !== false);
     }
 
     function turnStart(chat) {
@@ -200,7 +224,8 @@
         }
     }
 
-    function refreshHandoffContext() { renderHandoffCharacters(true); renderReview(true); }
+    function refreshHandoffContext() { renderHandoffCharacters(true); updateHandoffRange(true); renderReview(true); }
+    function readSelectedHandoffContext() { renderHandoffCharacters(); updateHandoffRange(true); renderReview(true); }
 
     async function handoffCurrent() {
         const chat = selectedBridgeChat();
@@ -214,12 +239,13 @@
     }
 
     async function pair() {
+        if(channelSwitchBusy)throw new Error('请等待通道切换完成。');
         if (pairingBusy || reconnecting) throw new Error('连接操作正在进行，请稍候。');
         pairingBusy=true;
         try {
         const urlInput = document.getElementById('uvu-bridge-url');
         const codeInput = document.getElementById('uvu-bridge-pair-code');
-        settings().baseUrl = (urlInput?.value || DEFAULT_URL).trim().replace(/\/+$/, '');
+        settings().baseUrl = (urlInput?.value || (channelId()==='tt' ? '' : DEFAULT_URL)).trim().replace(/\/+$/, '');
         const address=baseUrl(),epoch=++generation;
         let result;
         try {
@@ -354,6 +380,8 @@
 
     async function publishTurn(chat, mode, explicitRecords, handoff) {
         if (!isEnabled()) throw new Error('酒馆互通插件已停用，请先开启后再交接剧情。');
+        publishingCount++;
+        try {
         const archiveId = String(chat.activeArchiveId || 'default');
         const archiveName = String(chat.archives?.find(item => item.id === chat.activeArchiveId)?.name || '默认存档').slice(0, 160);
         const key = String(chat.id) + ':' + archiveId;
@@ -382,6 +410,7 @@
         try { await saveData(); } catch(error) { const ids = new Set(events.map(event => event.eventId)); settings().outbox = settings().outbox.filter(event => !ids.has(event.eventId)); throw error; }
         await flushOutbox();
         return { queued: records.length, pending: settings().outbox.length, archiveId, archiveName, handoff };
+        } finally {publishingCount--;}
     }
 
     async function verifyPart(text, hash) {
@@ -394,26 +423,26 @@
 
     function finishSceneIfReady(chat, sceneId, scene, journals) {
         if (scene.imported || !Array.from({ length: scene.partCount }, (_, index) => index + 1).every(part => Object.hasOwn(scene.parts, part))) return false;
-        if (journals.some(item => item.externalSceneId === sceneId)) { scene.imported = true; return false; }
+        if (journals.some(item => item.externalSceneId === sceneId && (item.bridgeReview?.channel || 'st') === channelId())) { scene.imported = true; return false; }
         if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default')) return false;
         const items = scene.sceneFormat === 'floors-v1'
             ? globalThis.UvUBridgeText.floorItems(scene.parts, scene.floorParts)
             : globalThis.UvUBridgeText.legacyFloorItems(Array.from({ length: scene.partCount }, (_, index) => scene.parts[index + 1]).join('\n\n'));
         const content = globalThis.UvUBridgeText.memoryText(items.map(item => ({...item, selected: true})));
         if (!content) throw new Error('剧情过滤后为空，请回酒馆核对正文和排除标签。');
-        journals.push({ id: 'st_scene_' + sceneId, externalSceneId: sceneId, source: 'sillytavern',
+        journals.push({ id: (channelId()==='tt' ? 'tt_scene_' : 'st_scene_') + sceneId, externalSceneId: sceneId, source: 'sillytavern',
             title: (chat.realName || chat.remarkName || chat.name || '当前角色') + ' · ' + scene.title,
             content, range: { start: 0, end: 0 }, createdAt: scene.createdAt,
             chatId: chat.id, chatType: 'private', isFavorited: false,
-            bridgeReview: { version: 2, sceneFormat: scene.sceneFormat || 'legacy', status: 'pending', archiveId: String(chat.activeArchiveId || 'default'),
+            bridgeReview: { version: 2, channel:channelId(), sceneFormat: scene.sceneFormat || 'legacy', status: 'pending', archiveId: String(chat.activeArchiveId || 'default'),
                 sourceText: content, stCharacterKey: scene.stCharacterKey || '', items }
         });
         scene.imported = true;
         return true;
     }
 
-    async function syncIncoming(characterKey = '', pageBudget = 20, recover = false) {
-        if (!isEnabled() || !isConnected() || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
+    async function syncIncoming(characterKey = '', pageBudget = 20, recover = false, fileBatch = null) {
+        if (!isEnabled() || (!fileBatch && !isConnected()) || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
         const chat = db.characters.find(item => String(item.id) === String(characterKey));
         if (!chat) return 0;
         syncBusy = true;
@@ -433,7 +462,7 @@
             const result = { events: [], gapDetected: false };
             let pageCursor = recover ? 0 : cursor;
             for (let page = 0; page < pageBudget; page++) {
-                const batch = await request('/client/events?after=' + pageCursor + '&characterKey=' + encodeURIComponent(characterKey) + '&limit=100');
+                const batch = fileBatch || await request('/client/events?after=' + pageCursor + '&characterKey=' + encodeURIComponent(characterKey) + '&limit=100');
                 assertCurrent();
                 result.relayId = batch.relayId || result.relayId;
                 result.latestSeq = batch.latestSeq;
@@ -444,7 +473,7 @@
                 }
                 result.gapDetected = result.gapDetected || batch.gapDetected;
                 const events = batch.events || []; result.events.push(...events);
-                if (events.length < 100 || (batch.gapDetected && !recover)) break;
+                if (fileBatch || events.length < 100 || (batch.gapDetected && !recover)) break;
                 const next = Math.max(...events.map(item => Number(item.seq) || 0));
                 if (next <= pageCursor) throw new Error('桥接分页游标没有前进，请检查服务端版本。');
                 pageCursor = next;
@@ -455,7 +484,7 @@
             if ((result.events || []).some(item => String(item.characterKey) !== String(characterKey))) { status('收到角色 ID 不匹配的剧情，已停止导入。', true); return 0; }
             let nextCursor = recover ? 0 : cursor;
             for (const event of result.events || []) {
-                nextCursor = Math.max(nextCursor, Number(event.seq) || 0);
+                if (!fileBatch) nextCursor = Math.max(nextCursor, Number(event.seq) || 0);
                 if (event.kind === 'handoff_receipt') {
                     const payload = event.payload || {};
                     if (typeof payload.handoffId === 'string' && typeof payload.archiveId === 'string') handoffs[String(characterKey) + ':' + payload.handoffId] = {...payload, characterKey: String(characterKey)};
@@ -488,7 +517,7 @@
             }
             assertCurrent();
             // Build once against a mutable draft so only complete, correctly targeted scenes enter journals.
-            const draft = (chat.memoryJournals || []).filter(item => !(item.source === 'sillytavern' && receipts[String(characterKey) + ':' + item.externalSceneId]?.cancelled && item.bridgeReview?.status !== 'approved'));
+            const draft = (chat.memoryJournals || []).filter(item => !(item.source === 'sillytavern' && (item.bridgeReview?.channel || 'st') === channelId() && receipts[String(characterKey) + ':' + item.externalSceneId]?.cancelled && item.bridgeReview?.status !== 'approved'));
             for (const [key, scene] of Object.entries(staged)) {
                 if (!key.startsWith(String(characterKey) + ':') || receipts[key]) continue;
                 scene.imported = false;
@@ -515,7 +544,7 @@
                 if (oldRelay === undefined) delete state.relayByCharacter[characterKey]; else state.relayByCharacter[characterKey] = oldRelay;
                 throw error;
             }
-            if (nextCursor > cursor) await request('/client/ack', { method: 'POST', body: { seq: nextCursor, characterKey } }).catch(error => console.warn('Bridge acknowledgement:', error.message));
+            if (!fileBatch && nextCursor > cursor) await request('/client/ack', { method: 'POST', body: { seq: nextCursor, characterKey } }).catch(error => console.warn('Bridge acknowledgement:', error.message));
             if (imported) status('已接收 ' + imported + ' 场剧情，请在下方审核；未勾选的内容不会进入上下文。');
             else status((result.events || []).some(event => event.kind === 'handoff_receipt') ? '已更新酒馆接收回执，请核对交接状态。' : '已保存剧情分段；若目标是其他存档，请切回对应存档收取。');
             renderReview(); return imported;
@@ -537,6 +566,7 @@
         });
         const content = globalThis.UvUBridgeText.memoryText(next);
         journal.bridgeReview = { ...review, version: 2, items: next, status: content ? 'approved' : 'pending' };
+        journal.bridgeReview.memoryMode = 'raw'; delete journal.bridgeReview.summaryDraft;
         journal.content = content || review.sourceText; journal.isFavorited = Boolean(content);
         if (content) { journal.category ||= '酒馆线下剧情'; journal.timeline ||= new Date(journal.createdAt || Date.now()).toISOString().slice(0, 10); }
         try { await saveData(); }
@@ -548,7 +578,62 @@
         }
     }
 
+    function assertReviewTarget(chat, journal) {
+        if (!db.characters.includes(chat) || !(chat.memoryJournals || []).includes(journal) ||
+            (journal.bridgeReview?.channel || 'st') !== channelId() ||
+            String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || 'default'))
+            throw new Error('审核角色或存档已变更，请返回原存档重试。');
+        if (settings().receipts[String(chat.id) + ':' + journal.externalSceneId]?.cancelled && journal.bridgeReview?.status !== 'approved')
+            throw new Error('酒馆已取消本场导出，未保存总结。');
+    }
+    async function saveJournalChange(chat, journal, mutate) {
+        assertReviewTarget(chat, journal);
+        const before = structuredClone(journal), archiveId = chat.activeArchiveId;
+        mutate();
+        try {await saveData();}
+        catch(error) {
+            const restore = value => {for(const key of Object.keys(value))if(!Object.hasOwn(before,key))delete value[key];Object.assign(value,structuredClone(before));};
+            if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) restore(journal);
+            const archived=chat.archives?.find(item=>item.id===archiveId)?.data?.memoryJournals?.find(item=>item.id===journal.id);
+            if(archived)restore(archived);
+            throw error;
+        }
+    }
+    async function summarizeReview(chat, journal, items, options = {}) {
+        assertReviewTarget(chat, journal);
+        const epoch = generation, archiveId = chat.activeArchiveId, history = chat.history, selected = selectedBridgeChat();
+        const revision = JSON.stringify(journal.bridgeReview?.items), selection = globalThis.UvUBridgeSummary.signature(items);
+        const check = () => {
+            assertReviewTarget(chat, journal);
+            if (generation !== epoch || selectedBridgeChat() !== selected || chat.activeArchiveId !== archiveId || chat.history !== history || JSON.stringify(journal.bridgeReview?.items) !== revision ||
+                globalThis.UvUBridgeSummary.signature(options.currentItems?.() || items) !== selection)
+                throw new Error('剧情选择、原文或目标已修改，未应用旧摘要，请重新生成。');
+        };
+        const result = await globalThis.UvUBridgeSummary.generate(chat, structuredClone(items), {...options, assertCurrent: check});
+        check();
+        await saveJournalChange(chat, journal, () => {
+            journal.bridgeReview.summaryDraft = {...result, reviewItems: structuredClone(items), sourceRevision: revision};
+        });
+        return result;
+    }
+    async function confirmSummary(chat, journal, items, edited = {}) {
+        assertReviewTarget(chat, journal);
+        const draft = journal.bridgeReview?.summaryDraft;
+        if (!draft || draft.sourceRevision !== JSON.stringify(journal.bridgeReview.items) ||
+            draft.sourceSignature !== globalThis.UvUBridgeSummary.signature(items)) throw new Error('总结来源或勾选已修改，请重新生成摘要。');
+        const content = String(edited.content ?? draft.content).trim(), title = String(edited.title ?? draft.title).trim();
+        if (!content || content.length > 200000) throw new Error('摘要内容为空或过长。');
+        await saveJournalChange(chat, journal, () => {
+            journal.title = title || journal.title; journal.content = content; journal.isFavorited = true;
+            journal.category ||= '酒馆线下剧情';
+            journal.bridgeReview = {...journal.bridgeReview, version:2, status:'approved', memoryMode:'summary',
+                items:structuredClone(draft.reviewItems), summaryMeta:{createdAt:draft.createdAt,batchCount:draft.batchCount,sourceSignature:draft.sourceSignature}};
+            delete journal.bridgeReview.summaryDraft;
+        });
+    }
+
     function renderReview(force = false) {
+        if (reviewBusy) return;
         const host = document.getElementById('uvu-bridge-review-list');
         if (!host?.replaceChildren) return;
         const current = selectedBridgeChat();
@@ -559,10 +644,10 @@
             : '暂无酒馆接收回执；“服务已接收”只表示进入桥接队列，请到酒馆刷新、审核并保存。';
         const entries = [];
         for (const chat of (db.characters || [])) {
-            for (const journal of (chat.memoryJournals || []).filter(item => item.source === 'sillytavern')) entries.push({ chat, journal });
+            for (const journal of (chat.memoryJournals || []).filter(item => item.source === 'sillytavern' && (item.bridgeReview?.channel || 'st') === channelId())) entries.push({ chat, journal });
             for (const archive of chat.archives || []) {
                 if (archive.id === chat.activeArchiveId) continue;
-                for (const journal of (archive.data?.memoryJournals || []).filter(item => item.source === 'sillytavern')) entries.push({ chat, journal, archived: archive.id });
+                for (const journal of (archive.data?.memoryJournals || []).filter(item => item.source === 'sillytavern' && (item.bridgeReview?.channel || 'st') === channelId())) entries.push({ chat, journal, archived: archive.id });
             }
         }
         const pending = Object.values(settings().pendingScenes).filter(item => item?.characterKey);
@@ -601,7 +686,8 @@
             const key = draftKey(chat, journal), sourceSignature = JSON.stringify(originalItems);
             let draft = reviewDrafts.get(key);
             if (!draft || draft.sourceSignature !== sourceSignature) {
-                draft = {sourceSignature, items: structuredClone(originalItems)};
+                const savedSummary=journal.bridgeReview?.summaryDraft;
+                draft = {sourceSignature, items: structuredClone(savedSummary?.sourceRevision === sourceSignature ? savedSummary.reviewItems : originalItems), summary: savedSummary ? structuredClone(savedSummary) : null, cache: new Map()};
                 reviewDrafts.set(key, draft);
             }
             const items = draft.items;
@@ -646,14 +732,44 @@
                 check.setAttribute('aria-label', '允许这条剧情加入上下文'); row.append(check, floorDetail); list.append(row); fields.push({ item, check, text });
             });
             updateSelection();
-            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入记忆';
+            const readFields = () => fields.map(({item,check,text})=>({...item,text:text.value,selected:check.checked}));
+            const summaryOptions=document.createElement('div');summaryOptions.className='uvu-bridge-summary-options';
+            const apiLabel=document.createElement('label'),apiSelect=document.createElement('select');apiLabel.textContent='总结 API';
+            for(const [value,label] of [['follow','日记 / 记忆路由'],['memory','独立记忆 API']]){const option=document.createElement('option');option.value=value;option.textContent=label;apiSelect.append(option);}apiLabel.append(apiSelect);
+            const lengthLabel=document.createElement('label'),length=document.createElement('input');lengthLabel.textContent='目标字数';length.type='number';length.min='100';length.max='5000';length.value='600';lengthLabel.append(length);
+            summaryOptions.append(apiLabel,lengthLabel);
+            const summaryActions=document.createElement('div');summaryActions.className='uvu-bridge-actions';
+            const generate=document.createElement('button'),cancel=document.createElement('button'),summaryStatus=document.createElement('output');
+            generate.type='button';generate.className='btn btn-secondary';generate.textContent='生成摘要';cancel.type='button';cancel.className='btn btn-neutral';cancel.textContent='取消总结';cancel.hidden=true;
+            const preview=document.createElement('details'),previewTitle=document.createElement('summary'),summaryTitle=document.createElement('input'),summaryText=document.createElement('textarea'),confirmSummaryButton=document.createElement('button');
+            preview.className='uvu-bridge-summary-preview';previewTitle.textContent='摘要预览（确认前不替换现有记忆）';summaryTitle.setAttribute('aria-label','摘要标题');summaryText.setAttribute('aria-label','编辑摘要');
+            confirmSummaryButton.type='button';confirmSummaryButton.className='btn btn-secondary';confirmSummaryButton.textContent='确认摘要并加入记忆';
+            const showPreview=()=>{const value=draft.summary || journal.bridgeReview?.summaryDraft;preview.hidden=!value;if(value){summaryTitle.value=value.title;summaryText.value=value.content;preview.open=true;}};
+            summaryTitle.addEventListener('input',()=>{if(draft.summary)draft.summary.title=summaryTitle.value;});summaryText.addEventListener('input',()=>{if(draft.summary)draft.summary.content=summaryText.value;});
+            preview.append(previewTitle,summaryTitle,summaryText,confirmSummaryButton);showPreview();
+            let summaryController;
+            generate.addEventListener('click',async()=>{
+                if(reviewBusy)return;reviewBusy=true;generate.disabled=true;cancel.hidden=false;summaryController=new AbortController();
+                try {await summarizeReview(chat,journal,readFields(),{apiSource:apiSelect.value,targetLength:length.value,cache:draft.cache,signal:summaryController.signal,currentItems:()=>draft.items,onProgress:message=>{summaryStatus.textContent=message;}});
+                    draft.summary=structuredClone(journal.bridgeReview.summaryDraft);showPreview();summaryStatus.textContent='摘要已保存为待确认草稿；核对后加入记忆。';}
+                catch(error){summaryStatus.textContent=error.message;status(error.message,true);}
+                finally{reviewBusy=false;generate.disabled=false;cancel.hidden=true;summaryController=null;}
+            });
+            cancel.addEventListener('click',()=>summaryController?.abort());
+            confirmSummaryButton.addEventListener('click',async()=>{
+                if(reviewBusy)return;reviewBusy=true;confirmSummaryButton.disabled=true;
+                try{await confirmSummary(chat,journal,readFields(),{title:summaryTitle.value,content:summaryText.value});reviewDrafts.delete(key);status('摘要已加入该角色原存档的记忆；原文保留，仅摘要作为本篇记忆使用。');}
+                catch(error){status(error.message,true);}finally{reviewBusy=false;confirmSummaryButton.disabled=false;renderReview(true);}
+            });
+            summaryActions.append(generate,cancel);summaryOptions.append(summaryActions,summaryStatus);
+            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '原文直接加入记忆';
             save.addEventListener('click', async () => {
                 if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('目标存档已切换，请打开原存档后审核。', true);
                 if (JSON.stringify(journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content)) !== sourceSignature) return status('原文已更新，请刷新后重新审核。', true);
                 if (reviewBusy) return; reviewBusy = true; save.disabled = true;
                 try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); reviewDrafts.delete(key); renderReview(true); status('已审核并保存到当前角色日记 / 记忆管理；只有勾选内容通过原有记忆开关参与后续上下文和向量候选。'); }
                 catch (error) { status(error.message, true); }
-                finally { reviewBusy = false; save.disabled = false; }
+                finally { reviewBusy = false; save.disabled = false; renderReview(true); }
             });
             if (journal.bridgeReview?.version !== 2 && journal.bridgeReview?.status !== 'approved') {
                 const regroup = document.createElement('button'); regroup.type = 'button'; regroup.className = 'btn btn-secondary'; regroup.textContent = '按旧原文重新整理楼层';
@@ -664,7 +780,7 @@
                 });
                 toolbar.append(regroup);
             }
-            detail.append(toolbar, list, save); host.append(detail);
+            detail.append(toolbar, list, summaryOptions, preview, save); host.append(detail);
         }
         for (const scene of pending) {
             const chat = db.characters.find(item => String(item.id) === String(scene.characterKey));
@@ -689,12 +805,15 @@
         }
     }
 
-    function renderHandoffCharacters(followCurrent = false) {
+    function renderHandoffCharacters(restoreSaved = false) {
         const select = document.getElementById('uvu-bridge-handoff-character');
         if (!select?.replaceChildren) return;
-        const selected=(followCurrent ? String(currentBridgeChat()?.id || '') : '') || select.value || String(currentBridgeChat()?.id || ''); select.replaceChildren();
+        const selected=(restoreSaved ? settings().handoffCharacterId : '') || select.value || settings().handoffCharacterId || String(currentBridgeChat()?.id || ''); select.replaceChildren();
         for (const chat of db.characters) { const option=document.createElement('option');option.value=String(chat.id);option.textContent=chat.realName||chat.name||chat.id;select.append(option); }
-        select.value=db.characters.some(chat=>String(chat.id)===selected) ? selected : String(db.characters[0]?.id || '');
+        if (selected && !db.characters.some(chat=>String(chat.id)===selected)) {
+            const missing=document.createElement('option');missing.value=selected;missing.textContent='已保存角色不存在，请重新选择';select.append(missing);
+        }
+        select.value=selected || String(db.characters[0]?.id || '');
         updateHandoffRange();
     }
 
@@ -722,6 +841,55 @@
         try { await saveData(); } catch(error) { if(previous===undefined)delete settings().injectionByCharacter[key];else settings().injectionByCharacter[key]=previous;throw error; }
     }
 
+    async function importSceneFile(text) {
+        if(!isEnabled())throw new Error('请先启用互通，再导入待审核剧情。');
+        if(syncBusy || reviewBusy)throw new Error('请等待接收或总结完成。');
+        const chat=selectedBridgeChat();if(!chat)throw new Error('请先选择文件对应的角色与存档。');
+        const epoch=generation,archiveId=String(chat.activeArchiveId || 'default'),history=chat.history;
+        const file=await globalThis.UvUBridgeFile.validate(text,{direction:'to-uvu',characterKey:String(chat.id),archiveId});
+        if(epoch!==generation || !db.characters.includes(chat) || String(chat.activeArchiveId || 'default')!==archiveId || chat.history!==history || selectedBridgeChat()!==chat)
+            throw new Error('文件校验期间目标角色或存档已变更。');
+        return syncIncoming(String(chat.id),1,false,{events:file.events});
+    }
+
+    async function createHandoffFile() {
+        const chat=selectedBridgeChat();if(!chat)throw new Error('请先选择角色。');
+        updateHandoffRange();
+        const start=Number(document.getElementById('uvu-bridge-handoff-start')?.value),end=Number(document.getElementById('uvu-bridge-handoff-end')?.value);
+        if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>(chat.history||[]).length)throw new Error('请选择有效的消息范围。');
+        const archiveId=String(chat.activeArchiveId || 'default'),records=messageRecords(chat,start-1,end),events=[];
+        const handoff={id:eventId(),at:Date.now(),start,end,count:records.length,totalMessages:(chat.history||[]).length,latestMessageAt:records.at(-1)?.createdAt||0};
+        for(const record of records){
+            const points=Array.from(record.text),count=Math.ceil(points.length/5000),revision=globalThis.UvUBridgeText.fingerprint(record.text);
+            for(let part=0;part<count;part++){
+                const text=points.slice(part*5000,(part+1)*5000).join('');
+                events.push({source:'uvu',eventId:eventId(),kind:'memory_packet',characterKey:String(chat.id),createdAt:Date.now(),payload:{archiveId,
+                    archiveName:chat.archives?.find(item=>item.id===chat.activeArchiveId)?.name||'默认存档',handoff,messages:[{...record,revision,sourceMessageId:record.id,
+                        id:record.id+(count>1?':part-'+(part+1):''),text,...(count>1?{messagePart:part+1,messagePartCount:count}:{})}],text}});
+            }
+        }
+        const file={format:'uvu-bridge-file',version:1,direction:'to-tavern',characterKey:String(chat.id),archiveId,events};
+        return globalThis.UvUBridgeFile.validate(JSON.stringify(file),{direction:'to-tavern',characterKey:String(chat.id),archiveId});
+    }
+
+    function downloadBridgeFile(value) {
+        const url=URL.createObjectURL(new Blob([JSON.stringify(value)],{type:'application/json'})),link=document.createElement('a');
+        link.href=url;link.download='uvu-handoff-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+
+    async function changeChannel(value) {
+        if(!['st','tt'].includes(value))throw new Error('不支持的酒馆通道。');
+        if(channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
+        const root=db.uvuStoryBridgeSettings ||= {}, before=root.channel;
+        channelSwitchBusy=true;generation++;
+        root.channel=value;
+        try{await saveData();}catch(error){if(before===undefined)delete root.channel;else root.channel=before;throw error;}finally{channelSwitchBusy=false;}
+        reviewSignature='';reviewDrafts.clear();connection={phase:readToken()?'idle':'unpaired',failures:0,nextAttempt:0};
+        const input=document.getElementById('uvu-bridge-url');if(input)input.value=baseUrl();
+        const enabled=document.getElementById('uvu-bridge-enabled');if(enabled)enabled.checked=isEnabled();
+        refreshHandoffContext();connectionStatus(value==='tt' ? 'TT 通道：配置 HTTPS 中转并配对，或使用文件交接。' : '原版酒馆通道');
+    }
+
     function setupUvUStoryBridge() {
         const urlInput = document.getElementById('uvu-bridge-url');
         const codeInput = document.getElementById('uvu-bridge-pair-code');
@@ -732,6 +900,18 @@
         const enabledCheckbox = document.getElementById('uvu-bridge-enabled');
         if (!urlInput || !pairButton || pairButton.dataset.bound === 'true') return;
         urlInput.value = baseUrl();
+        const channelSelect=document.getElementById('uvu-bridge-channel');
+        if(channelSelect){channelSelect.value=channelId();channelSelect.addEventListener('change',async()=>{try{await changeChannel(channelSelect.value);}catch(error){channelSelect.value=channelId();status(error.message,true);}});}
+        document.getElementById('uvu-bridge-export-file')?.addEventListener('click',async event=>{
+            event.target.disabled=true;try{downloadBridgeFile(await createHandoffFile());status('交接文件已导出，去 TT 对应角色 / 聊天导入并审核；文件交接不控制另一端的线上 / 线下状态。');}catch(error){status(error.message,true);}finally{event.target.disabled=false;}
+        });
+        const fileInput=document.getElementById('uvu-bridge-import-file-input');
+        document.getElementById('uvu-bridge-import-file')?.addEventListener('click',()=>fileInput?.click());
+        fileInput?.addEventListener('change',async()=>{
+            try{const file=fileInput.files?.[0];if(!file)return;if(file.size>globalThis.UvUBridgeFile.MAX_BYTES)throw new Error('交接文件超过 16 MiB。');
+                const imported=await importSceneFile(await file.text());status(imported?'已导入 '+imported+' 场待审核剧情；请生成摘要并确认。':'文件已核对，没有新的完整剧情。');
+            }catch(error){status(error.message,true);}finally{fileInput.value='';}
+        });
         if (enabledCheckbox) {
             enabledCheckbox.checked = isEnabled();
             enabledCheckbox.addEventListener('change', async () => {
@@ -753,7 +933,11 @@
                 wasActive = active;
             }).observe(screen, { attributes: true, attributeFilter: ['class'] });
         }
-        document.getElementById('uvu-bridge-use-current')?.addEventListener('click', refreshHandoffContext);
+        document.getElementById('uvu-bridge-use-current')?.addEventListener('click', readSelectedHandoffContext);
+        document.getElementById('uvu-bridge-save-character')?.addEventListener('click', async event => {
+            event.target.disabled=true;
+            try {await saveHandoffCharacter();} catch(error) {status('角色保存失败：' + error.message,true);} finally {event.target.disabled=false;}
+        });
         document.getElementById('uvu-bridge-handoff-character')?.addEventListener('change', () => { updateHandoffRange(true); renderReview(true); });
         for (const id of ['uvu-bridge-handoff-start', 'uvu-bridge-handoff-end']) document.getElementById(id)?.addEventListener('input', () => { document.getElementById('uvu-bridge-handoff-start').dataset.manual = 'true'; });
         document.getElementById('uvu-bridge-latest')?.addEventListener('click', () => updateHandoffRange(true));
@@ -825,6 +1009,6 @@
         });
     }
 
-    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, getMode, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
+    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

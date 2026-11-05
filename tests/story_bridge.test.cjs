@@ -33,10 +33,55 @@ function harness(fetchImpl, permissionState = 'granted') {
         console
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_text.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_summary.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_file.js'), 'utf8'), context);
     const source = fs.readFileSync(path.join(__dirname, '../js/modules/story_bridge.js'), 'utf8');
-    vm.runInContext(source.replace('window.setupUvUStoryBridge =', 'window.__bridgeTest = {automaticSync, disconnect}; window.setupUvUStoryBridge ='), context);
+    vm.runInContext(source.replace('window.setupUvUStoryBridge =', 'window.__bridgeTest = {automaticSync, disconnect, pair}; window.setupUvUStoryBridge ='), context);
     return { bridge: context.window.UvUStoryBridge, db, chat, output, context };
 }
+
+test('saved handoff character survives reentry and refresh never follows a different open chat', async () => {
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ const other={id:'char-2',history:[{role:'user',content:'OTHER'}],activeArchiveId:'b'};f.db.characters.push(other);
+ f.chat.history=[{role:'user',content:'PINNED'}];f.chat.activeArchiveId='a';
+ f.context.currentChatType='private';f.context.currentChatId=other.id;
+ const select={value:f.chat.id,replaceChildren(){},append(){}};
+ const start={value:'',dataset:{}},end={value:''};
+ f.context.document.createElement=()=>({});
+ f.context.document.getElementById=id=>({'uvu-bridge-handoff-character':select,'uvu-bridge-handoff-start':start,'uvu-bridge-handoff-end':end}[id]||null);
+ await f.bridge.saveHandoffCharacter();
+ select.value='';f.bridge.refreshHandoffContext();assert.equal(select.value,f.chat.id);
+ assert.equal(start.dataset.identity,'char-1:a');
+ select.value=other.id;f.context.saveData=async()=>{throw new Error('quota');};
+ await assert.rejects(f.bridge.saveHandoffCharacter(),/quota/);
+ assert.equal(f.db.uvuStoryBridgeSettings.handoffCharacterId,f.chat.id);
+});
+
+test('scene summary preview stays gated until confirmed, replaces one journal and rolls back failed saves',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ const items=[{id:'f',text:'原剧情',selected:true,floor:{speaker:'甲',createdAt:0}}];
+ const journal={id:'j',source:'sillytavern',externalSceneId:'s',content:'原剧情',isFavorited:false,
+  bridgeReview:{version:2,archiveId:'default',status:'pending',sourceText:'原剧情',items}};f.chat.memoryJournals=[journal];
+ f.context.UvUBridgeSummary.generate=async()=>({title:'摘要标题',content:'第三人称摘要',sourceSignature:f.context.UvUBridgeSummary.signature(items),items,batchCount:1});
+ await f.bridge.summarizeReview(f.chat,journal,items,{});
+ assert.equal(journal.content,'原剧情');assert.equal(f.bridge.allowedMemory(f.chat,journal),false);
+ assert.equal(journal.bridgeReview.summaryDraft.content,'第三人称摘要');
+ await assert.rejects(f.bridge.confirmSummary(f.chat,journal,[{...items[0],text:'后来修改'}]),/变更|修改/);
+ const before=JSON.stringify(journal);f.context.saveData=async()=>{throw new Error('quota');};
+ await assert.rejects(f.bridge.confirmSummary(f.chat,journal,items),/quota/);assert.equal(JSON.stringify(journal),before);
+ f.context.saveData=async()=>{};await f.bridge.confirmSummary(f.chat,journal,items);
+ assert.equal(journal.content,'第三人称摘要');assert.equal(journal.bridgeReview.memoryMode,'summary');
+ assert.equal(f.bridge.allowedMemory(f.chat,journal),true);assert.equal(f.chat.memoryJournals.length,1);
+ assert.equal(journal.bridgeReview.sourceText,'原剧情');
+});
+
+test('late scene summary cannot apply after archive change or source edit',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ const items=[{id:'f',text:'剧情',selected:true}],journal={id:'j',source:'sillytavern',content:'剧情',bridgeReview:{version:2,archiveId:'default',items}};f.chat.memoryJournals=[journal];
+ let release;f.context.UvUBridgeSummary.generate=async()=>new Promise(resolve=>release=()=>resolve({title:'摘要',content:'旧结果',sourceSignature:f.context.UvUBridgeSummary.signature(items),items}));
+ const pending=f.bridge.summarizeReview(f.chat,journal,items,{});f.chat.activeArchiveId='other';release();
+ await assert.rejects(pending,/存档|变更/);assert.equal(journal.bridgeReview.summaryDraft,undefined);
+});
 
 test('latest handoff range counts 50 eligible messages rather than hidden history slots', () => {
     const f = harness(async () => ({ok:true,json:async()=>({})}));
@@ -263,16 +308,59 @@ function handoffDom(f) {
     return elements;
 }
 
-test('entering bridge follows current private chat instead of the startup character selection', () => {
+test('reading handoff selection keeps the selected role even when another private chat is open', () => {
     const f=harness(async()=>({ok:true,json:async()=>({})})), dom=handoffDom(f);
     f.chat.activeArchiveId='main'; f.chat.history=[];
     const branch={id:'char-2',realName:'B',activeArchiveId:'branch',history:[{id:'new',role:'user',content:'CURRENT_BRANCH'}],archives:[{id:'main',name:'主存档',data:{history:[]}},{id:'branch',name:'当前分支',data:{history:[]}}]};
     f.db.characters.push(branch); dom['uvu-bridge-handoff-character'].value='char-1';
-    f.context.currentChatId='char-2'; f.context.currentChatType='private';
+    dom['uvu-bridge-handoff-character'].value='char-2';
+    f.context.currentChatId='char-1'; f.context.currentChatType='private';
     f.bridge.refreshHandoffContext();
     assert.equal(dom['uvu-bridge-handoff-character'].value,'char-2');
     assert.equal(Number(dom['uvu-bridge-handoff-end'].value),1);
     assert.match(dom['uvu-bridge-handoff-source'].textContent,/当前分支.*branch/);
+});
+test('switching transport blocks concurrent pairing and receive until the channel save finishes',async()=>{
+ const f=harness(async()=>{throw new Error('must not request');});let release;
+ f.context.saveData=()=>new Promise(resolve=>release=resolve);
+ const changing=f.bridge.changeChannel('tt');
+ await assert.rejects(f.bridge.changeChannel('st'),/等待|切换/);
+ await assert.rejects(f.context.window.__bridgeTest.pair(),/切换|等待/);
+ assert.equal(f.bridge.isEnabled(),false);
+ release();await changing;assert.equal(f.bridge.isEnabled(),true);
+});
+test('queued handoff save pins its transport until publishing completes',async()=>{
+ const calls=[],f=harness(async(url,options)=>{calls.push(url);return {ok:true,json:async()=>({})};});let release;
+ f.context.saveData=()=>new Promise(resolve=>release=()=>{f.context.saveData=async()=>{};resolve();});
+ const publishing=f.bridge.publishTurn(f.chat,null,[{id:'m',text:'ST_SOURCE',createdAt:1}]);
+ await assert.rejects(f.bridge.changeChannel('tt'),/等待/);
+ release();await publishing;assert.equal(f.db.uvuStoryBridgeSettings.channel,undefined);assert.ok(calls.every(url=>url.startsWith('http://127.0.0.1:8765/')));
+});
+
+test('TT and original channels isolate addresses credentials and scene queues',async()=>{
+ const calls=[],f=harness(async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({mode:'online'})};});
+ f.db.uvuStoryBridgeSettings.ttSettings={baseUrl:'https://relay.example.test/bridge',outbox:[{id:'tt-only'}]};
+ await f.bridge.changeChannel('tt');assert.equal(f.bridge.isConnected(),false);
+ f.context.localStorage.setItem('uvu-story-bridge.v1.tt',JSON.stringify({token:'tt-device',baseUrl:'https://relay.example.test/bridge'}));
+ await f.bridge.getMode('char-1');assert.match(calls[0].url,/https:\/\/relay.example.test/);assert.equal(calls[0].options.headers.Authorization,'Bearer tt-device');
+ await f.bridge.changeChannel('st');await f.bridge.getMode('char-1');
+ assert.equal(calls[1].options.headers.Authorization,'Bearer paired-token');assert.equal(f.db.uvuStoryBridgeSettings.ttSettings.outbox.length,1);
+});
+
+test('file handoff receives complete checked floors once without touching relay cursor or requiring pairing',async()=>{
+ const f=harness(async()=>{throw new Error('network must not be used');});
+ f.context.document.getElementById=id=>id==='uvu-bridge-handoff-character'?{value:'char-1'}:null;
+ f.context.localStorage.removeItem('uvu-story-bridge.v1');
+ const text='文件剧情',partHash=await f.context.UvUBridgeFile.hash(text);
+ const file={format:'uvu-bridge-file',version:1,direction:'to-uvu',characterKey:'char-1',archiveId:'default',events:[{
+  eventId:'file:1',source:'sillytavern',kind:'scene_transcript',characterKey:'char-1',sceneId:'file-scene',createdAt:1,
+  payload:{part:1,partCount:1,text,partHash,uvuArchiveId:'default',sceneFormat:'floors-v1',floor:{id:'f',number:1,speaker:'甲',role:'assistant',createdAt:0,part:1,partCount:1,extraction:'plain',bodyTag:''}}
+ }]};
+ f.db.uvuStoryBridgeSettings.cursorByCharacter={'char-1':99};
+ assert.equal(await f.bridge.importSceneFile(JSON.stringify(file)),1);
+ assert.equal(f.chat.memoryJournals[0].isFavorited,false);assert.equal(f.db.uvuStoryBridgeSettings.cursorByCharacter['char-1'],99);
+ await f.bridge.importSceneFile(JSON.stringify(file));assert.equal(f.chat.memoryJournals.length,1);
+ file.archiveId='wrong';await assert.rejects(f.bridge.importSceneFile(JSON.stringify(file)),/存档|目标/);
 });
 
 test('handoff uses live active branch history, labels its range and resets stale manual range on archive switch', async () => {
