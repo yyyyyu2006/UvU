@@ -35,8 +35,52 @@ function harness(fetchImpl, permissionState = 'granted') {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_text.js'), 'utf8'), context);
     const source = fs.readFileSync(path.join(__dirname, '../js/modules/story_bridge.js'), 'utf8');
     vm.runInContext(source, context);
-    return { bridge: context.window.UvUStoryBridge, db, chat, output };
+    return { bridge: context.window.UvUStoryBridge, db, chat, output, context };
 }
+
+test('disabled service and a different archive cannot pause ordinary UvU replies', async () => {
+    let state = { mode: 'offline', enabled: false, archiveId: 'a' };
+    const f = harness(async () => ({ ok:true, json:async()=>state }));
+    f.chat.activeArchiveId='a';
+    assert.equal((await f.bridge.getMode('char-1')).mode, 'online');
+    state={ mode:'offline', enabled:true, archiveId:'b' };
+    assert.equal((await f.bridge.getMode('char-1')).mode, 'online');
+});
+
+test('disabled during receive never saves or acknowledges the late scene', async () => {
+    let finish; const pending = new Promise(resolve => finish=resolve);
+    const f=harness(async()=>pending); const running=f.bridge.syncIncoming('char-1');
+    f.db.uvuStoryBridgeSettings.bridgeEnabled=false;
+    finish({ok:true,json:async()=>({events:[{seq:1,characterKey:'char-1',kind:'scene_transcript',sceneId:'s',payload:{part:1,partCount:1,text:'late'}}]})});
+    await assert.rejects(running,/互通已暂停/);
+    assert.equal(f.chat.memoryJournals.length,0); assert.equal(f.db.uvuStoryBridgeSettings.cursorByCharacter['char-1'],undefined);
+});
+
+test('receive drains more than one page and only commits complete scenes', async () => {
+    const events=Array.from({length:101},(_,i)=>({seq:i+1,characterKey:'char-1',kind:'scene_transcript',sceneId:'s',payload:{part:i+1,partCount:101,text:'段'+i}}));
+    const cursors=[]; const f=harness(async url=>{
+        const after=Number(new URL(url).searchParams.get('after'));
+        if(url.includes('/client/events')) { cursors.push(after); return {ok:true,json:async()=>({events:events.filter(e=>e.seq>after).slice(0,100)})}; }
+        return {ok:true,json:async()=>({})};
+    });
+    assert.equal(await f.bridge.syncIncoming('char-1'),1);
+    assert.deepEqual(cursors,[0,100]); assert.equal(f.chat.memoryJournals.length,1);
+    assert.equal(f.chat.memoryJournals[0].bridgeReview.status,'pending');
+});
+
+test('global inbox receives a different character while another chat is open', async () => {
+    const f=harness(async url=>({ok:true,json:async()=>url.endsWith('/client/inbox')?{characters:[{characterKey:'char-2',latestSeq:1}]}:url.includes('/client/events')?{events:[{seq:1,characterKey:'char-2',kind:'scene_transcript',sceneId:'s',payload:{part:1,partCount:1,text:'角色二剧情'}}]}:{}}));
+    f.db.characters.push({id:'char-2',memoryJournals:[]}); f.context.currentChatId='char-1'; f.context.currentChatType='private';
+    await f.bridge.syncInbox();
+    assert.equal(f.chat.memoryJournals.length,0); assert.equal(f.db.characters[1].memoryJournals.length,1);
+});
+
+test('cancelling an export retracts unreviewed drafts while preserving approved memories', async () => {
+    const f=harness(async url=>({ok:true,json:async()=>url.includes('/client/events')?{events:[{seq:1,characterKey:'char-1',kind:'scene_cancelled',sceneId:'s',payload:{}}]}:{}}));
+    f.chat.memoryJournals=[{id:'draft',source:'sillytavern',externalSceneId:'s',bridgeReview:{status:'pending'}},{id:'approved',source:'sillytavern',externalSceneId:'s',bridgeReview:{status:'approved'}}];
+    await f.bridge.syncIncoming('char-1');
+    assert.deepEqual(f.chat.memoryJournals.map(j=>j.id),['approved']);
+});
 
 test('bridge mode lookup uses the paired bearer token and requested character key', async () => {
     const calls = [];

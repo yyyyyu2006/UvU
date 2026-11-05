@@ -1,0 +1,43 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+const baseline = process.env.UVU_1900_ROOT || 'C:/Users/15271130817/Desktop/1900版uwu';
+const available = fs.existsSync(path.join(baseline, 'js/modules/chat_ai_prompt.js'));
+const current = path.join(__dirname, '..');
+function fixture(root, provider, version, type) {
+    const requests = [], errors = [];
+    const chat = { id: 'c', activeArchiveId: 'a', realName: '晴', remarkName: '晴', myName: '我', name: '测试群', status: '在线',
+        persona: '人物设定', myPersona: '用户设定', maxMemory: 20, me: { nickname: '我', persona: '用户设定' }, members: [{ id: 'm', realName: '晴', groupNickname: '晴', persona: '人物设定' }],
+        worldBookIds: ['before2', 'before1', 'after', 'limit', 'guidelines'], memoryJournals: [{ id: 'j', title: '约定', content: '周六见', isFavorited: true }],
+        history: [{ id: 'm1', role: 'assistant', content: '历史消息', timestamp: 1700000000000 }, { id: 'm2', role: 'user', content: '最新消息', timestamp: 1700000001000 }] };
+    class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [1793808000000])); } static now() { return 1793808000000; } }
+    const c = vm.createContext({ window: {}, Date: FixedDate, console: { log(){}, warn(){}, error(){} }, AbortController, setTimeout, clearTimeout,
+        document: { addEventListener(){}, getElementById(){ return null; } },
+        db: { characters: [chat], groups: [chat], worldBooks: [
+            { id:'before1', position:'before', depth:2, content:'BEFORE_2' }, { id:'before2', position:'before', depth:1, content:'BEFORE_1' },
+            { id:'after', position:'after', content:'AFTER' }, { id:'limit', position:'limit_break', content:'LIMIT' }, { id:'guidelines', position:'guidelines', content:'GUIDELINES' }
+        ], myStickers: [], cotSettings: { promptVersion: version }, apiSettings: { provider, url:'https://test.invalid', key:'test', model:'model', streamEnabled:false } },
+        currentChatId:'c', currentChatType:type, isGenerating:false, AudioManager:{ unlock(){} }, getReplyBtn:{}, regenerateBtn:{}, typingIndicator:{style:{}}, messageArea:{},
+        filterHistoryForAI:(_chat, history)=>structuredClone(history), pad:n=>String(n).padStart(2,'0'), getRandomValue:v=>v,
+        fetch:async (_url, init)=> { requests.push(JSON.parse(init.body)); return { ok:true, json:async()=>provider==='gemini'?{ candidates:[{content:{parts:[{text:'回复'}]}}] }:{choices:[{message:{content:'回复'}}]} }; },
+        showApiError:error=>errors.push(error.message) });
+    if (root === current) for (const file of ['modules/auto_memory.js', 'modules/worldbook_rules.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    c.handleAiReplyContent=async()=>{};
+    return { c,chat,requests,errors };
+}
+for (const version of ['uwu','tt']) for (const type of ['private','group']) {
+    test('1900 prompt equality with additions off: '+version+'/'+type,{skip:!available},()=>{
+        const a=fixture(baseline,'newapi',version,type), b=fixture(current,'newapi',version,type);
+        const fn=type==='private'?'generatePrivateSystemPrompt':'generateGroupSystemPrompt';
+        assert.equal(b.c[fn](b.chat),a.c[fn](a.chat));
+    });
+}
+for (const provider of ['newapi','gemini']) for (const type of ['private','group']) {
+    test('1900 request equality with additions off: '+provider+'/'+type,{skip:!available},async()=>{
+        const a=fixture(baseline,provider,'uwu',type), b=fixture(current,provider,'uwu',type);
+        await a.c.getAiReply('c',type); await b.c.getAiReply('c',type);
+        assert.deepEqual(a.errors,[]); assert.deepEqual(b.errors,[]); assert.equal(a.requests.length,1);
+        assert.deepEqual(b.requests,a.requests);
+    });
+}

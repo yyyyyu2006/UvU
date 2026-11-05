@@ -532,13 +532,13 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
         return false;
     };
     claim(environmentContext, 'environment');
-    // A vector hit replaces whole-journal injection for this request only.
-    claim(vectorContext, 'vectorMemory');
+    // Count the deduplicated text actually appended; fixed favorites keep their own category.
+    claim(typeof getInjectedVectorMemoryContext === 'function' ? getInjectedVectorMemoryContext(chat, vectorContext) : vectorContext, 'vectorMemory');
     for (const book of plan) claim(book.content, 'worldBook');
     claim(chatType === 'private' ? chat.persona : null, 'charPersona');
     claim(chatType === 'private' ? chat.myPersona : chat.me?.persona, 'userPersona');
     if (chatType !== 'private') (chat.members || []).forEach(member => claim(member.persona, 'charPersona'));
-    if (!vectorContext) getContextMemoryJournals(chat).forEach(journal => claim(`标题：${journal.title}\n内容：${journal.content}`, 'memory'));
+    getContextMemoryJournals(chat).forEach(journal => claim(`标题：${journal.title}\n内容：${journal.content}`, 'memory'));
     const preset = (db.cotPresets || []).find(item => item.id === (chat.exclusiveCotPreset || db.cotSettings?.activePresetId || 'default'));
     const cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
     if (db.cotSettings?.enabled && cotText) claim(cotText, 'cot');

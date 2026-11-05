@@ -8,6 +8,8 @@
     let sendBusy = false;
     let reviewBusy = false;
     let reviewSignature = '';
+    let generation = 0;
+    let inboxBusy = false;
 
     function settings() {
         db.uvuStoryBridgeSettings = db.uvuStoryBridgeSettings || {};
@@ -86,7 +88,10 @@
             throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || `桥接请求失败（HTTP ${response.status}）`);
+        if (!response.ok) {
+            const help = { 401: '配对码无效或令牌失效，请重新配对', 403: '来源白名单、回环地址或接口权限不通过', 404: '接口不存在，请更新服务端并重启酒馆', 413: '剧情数据超过限制' };
+            throw new Error(`HTTP ${response.status} · ${help[response.status] || '桥接请求失败'}：${data.error || '未提供详细原因'}`);
+        }
         return data;
     }
 
@@ -107,6 +112,10 @@
     function currentBridgeChat() {
         return typeof currentChatType !== 'undefined' && currentChatType === 'private'
             ? db.characters.find(item => item.id === currentChatId) : null;
+    }
+    function selectedBridgeChat() {
+        const id = document.getElementById('uvu-bridge-handoff-character')?.value;
+        return db.characters.find(chat => String(chat.id) === id) || currentBridgeChat();
     }
 
     function allowedMemory(chat, journal) {
@@ -152,7 +161,7 @@
     }
 
     async function publishCharacterDirectory(force = false) {
-        if (!isConnected()) return;
+        if (!isEnabled() || !isConnected()) return;
         const characters = (db.characters || []).filter(character => character?.id != null).map(character => ({
             id: String(character.id),
             name: String(character.realName || character.name || character.remarkName || '未命名角色').trim().slice(0, 120)
@@ -170,14 +179,20 @@
     }
 
     async function getMode(characterKey) {
-        return request(`/client/state?characterKey=${encodeURIComponent(String(characterKey || ''))}`);
+        if (!isEnabled() || !isConnected()) return { mode: 'online' };
+        const epoch = generation;
+        const chat = db.characters.find(item => String(item.id) === String(characterKey));
+        const archiveId = String(chat?.activeArchiveId || 'default');
+        const mode = await request(`/client/state?characterKey=${encodeURIComponent(String(characterKey || ''))}`);
+        if (!isEnabled() || generation !== epoch || mode.enabled === false || (mode.archiveId && mode.archiveId !== archiveId) || String(chat?.activeArchiveId || 'default') !== archiveId) return { mode: 'online' };
+        return mode;
     }
 
     async function flushOutbox() {
         if (!isEnabled() || sendBusy || !isConnected()) return;
         sendBusy = true;
         try {
-            while (settings().outbox.length) {
+            while (isEnabled() && settings().outbox.length) {
                 const event = settings().outbox[0];
                 await request('/client/events', { method: 'POST', body: event });
                 const key = event.characterKey + ':' + event.payload.archiveId;
@@ -240,27 +255,46 @@
         return true;
     }
 
-    async function syncIncoming(characterKey = '') {
+    async function syncIncoming(characterKey = '', pageBudget = 20) {
         if (!isEnabled() || !isConnected() || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
         const chat = db.characters.find(item => String(item.id) === String(characterKey));
         if (!chat) return 0;
         syncBusy = true;
+        const epoch = generation;
         const archiveId = chat.activeArchiveId, history = chat.history;
         const assertCurrent = () => {
+            if (!isEnabled() || epoch !== generation) throw new Error('互通已暂停，未应用旧请求的结果。');
             if (!db.characters.includes(chat) || chat.activeArchiveId !== archiveId || chat.history !== history) throw new Error('接收期间角色或存档已切换；未写入剧情，请返回原存档重试。');
         };
         const state = settings(), cursor = Number(state.cursorByCharacter[characterKey] || 0);
         let imported = 0, committed = false, addedIds = [];
         const previousScenes = state.pendingScenes, previousReceipts = state.receipts;
+        let removedJournals = [];
         const staged = structuredClone(previousScenes), receipts = { ...previousReceipts };
         try {
-            const result = await request('/client/events?after=' + cursor + '&characterKey=' + encodeURIComponent(characterKey) + '&limit=100');
+            const result = { events: [], gapDetected: false };
+            let pageCursor = cursor;
+            for (let page = 0; page < pageBudget; page++) {
+                const batch = await request('/client/events?after=' + pageCursor + '&characterKey=' + encodeURIComponent(characterKey) + '&limit=100');
+                assertCurrent();
+                result.gapDetected = result.gapDetected || batch.gapDetected;
+                const events = batch.events || []; result.events.push(...events);
+                if (events.length < 100 || batch.gapDetected) break;
+                const next = Math.max(...events.map(item => Number(item.seq) || 0));
+                if (next <= pageCursor) throw new Error('桥接分页游标没有前进，请检查服务端版本。');
+                pageCursor = next;
+            }
             assertCurrent();
             if (result.gapDetected) { status('桥接队列已有过期记录，不能确认剧情完整；请在酒馆重新导出。', true); return 0; }
             if ((result.events || []).some(item => String(item.characterKey) !== String(characterKey))) { status('收到角色 ID 不匹配的剧情，已停止导入。', true); return 0; }
             let nextCursor = cursor;
             for (const event of result.events || []) {
                 nextCursor = Math.max(nextCursor, Number(event.seq) || 0);
+                if (event.kind === 'scene_cancelled') {
+                    const key = String(characterKey) + ':' + String(event.sceneId || '');
+                    delete staged[key]; receipts[key] = { cancelled: true, at: Date.now() };
+                    continue;
+                }
                 if (event.kind !== 'scene_transcript') continue;
                 const payload = event.payload || {}, id = String(event.sceneId || ''), part = Number(payload.part), count = Number(payload.partCount);
                 if (!id || !Number.isInteger(part) || !Number.isInteger(count) || count < 1 || count > 2000 || part < 1 || part > count || typeof payload.text !== 'string') throw new Error('酒馆剧情分段格式无效；未导入。');
@@ -275,7 +309,7 @@
             }
             assertCurrent();
             // Build once against a mutable draft so only complete, correctly targeted scenes enter journals.
-            const draft = [...(chat.memoryJournals || [])];
+            const draft = (chat.memoryJournals || []).filter(item => !(item.source === 'sillytavern' && receipts[String(characterKey) + ':' + item.externalSceneId]?.cancelled && item.bridgeReview?.status !== 'approved'));
             for (const [key, scene] of Object.entries(staged)) {
                 if (!key.startsWith(String(characterKey) + ':') || receipts[key]) continue;
                 scene.imported = false;
@@ -285,14 +319,17 @@
             }
             assertCurrent();
             const before = chat.memoryJournals || [], beforeIds = new Set(before.map(item => item.id));
+            removedJournals = before.filter(item => !draft.includes(item));
             addedIds = draft.filter(item => !beforeIds.has(item.id)).map(item => item.id);
-            if (!(result.events || []).length && !imported) return 0;
+            if (!(result.events || []).length && !imported && !removedJournals.length) return 0;
             chat.memoryJournals = draft; state.pendingScenes = staged; state.receipts = receipts; state.cursorByCharacter[characterKey] = nextCursor;
             try { await saveData(); committed = true; }
             catch (error) {
                 if (chat.activeArchiveId === archiveId) chat.memoryJournals = (chat.memoryJournals || []).filter(item => !addedIds.includes(item.id));
+                if (chat.activeArchiveId === archiveId) for (const item of removedJournals) if (!chat.memoryJournals.some(entry => entry.id === item.id)) chat.memoryJournals.push(item);
                 const archive = chat.archives?.find(item => item.id === archiveId);
                 if (archive?.data?.memoryJournals) archive.data.memoryJournals = archive.data.memoryJournals.filter(item => !addedIds.includes(item.id));
+                if (archive?.data?.memoryJournals) for (const item of removedJournals) if (!archive.data.memoryJournals.some(entry => entry.id === item.id)) archive.data.memoryJournals.push(structuredClone(item));
                 state.pendingScenes = previousScenes; state.receipts = previousReceipts; state.cursorByCharacter[characterKey] = cursor;
                 throw error;
             }
@@ -304,6 +341,8 @@
     }
 
     async function persistReview(chat, journal, items) {
+        if (settings().receipts[String(chat.id) + ':' + journal.externalSceneId]?.cancelled && journal.bridgeReview?.status !== 'approved') throw new Error('本场导出已在酒馆取消，未加入日记。');
+        if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) throw new Error('审核目标存档已切换，请打开原存档后重试。');
         const archiveId = chat.activeArchiveId;
         const before = structuredClone(journal);
         const review = journal.bridgeReview || { version: 1, sourceText: journal.content, archiveId: String(archiveId || 'default') };
@@ -323,15 +362,19 @@
     function renderReview(force = false) {
         const host = document.getElementById('uvu-bridge-review-list');
         if (!host?.replaceChildren) return;
-        const current = currentBridgeChat();
+        const current = selectedBridgeChat();
         const entries = [];
         for (const chat of (db.characters || [])) {
             for (const journal of (chat.memoryJournals || []).filter(item => item.source === 'sillytavern')) entries.push({ chat, journal });
+            for (const archive of chat.archives || []) {
+                if (archive.id === chat.activeArchiveId) continue;
+                for (const journal of (archive.data?.memoryJournals || []).filter(item => item.source === 'sillytavern')) entries.push({ chat, journal, archived: archive.id });
+            }
         }
         const pending = Object.values(settings().pendingScenes).filter(item => item?.characterKey);
         const signature = JSON.stringify([
             current?.id, current?.activeArchiveId,
-            entries.map(({ chat, journal }) => [chat.id, journal.id, journal.isFavorited, journal.bridgeReview?.status, journal.bridgeReview?.items?.length, journal.content]),
+            entries.map(({ chat, journal, archived }) => [chat.id, chat.activeArchiveId, archived, journal.id, journal.isFavorited, journal.bridgeReview?.status, journal.bridgeReview?.items?.length, journal.content]),
             pending.map(scene => [scene.characterKey, scene.title, scene.partCount, Object.keys(scene.parts || {}).length])
         ]);
         if (!force && signature === reviewSignature) return;
@@ -340,13 +383,23 @@
         const gate = document.getElementById('uvu-bridge-inject-scenes'); if (gate && current) gate.checked = settings().injectionByCharacter[String(current.id)] !== false;
         const count = document.getElementById('uvu-bridge-review-count'); if (count) count.textContent = `${entries.length + pending.length} 项`;
         if (!entries.length && !pending.length) { host.textContent = '还没有收到酒馆线下剧情。结束并导出后点击“收取酒馆记忆”。'; return; }
-        for (const { chat, journal } of entries) {
+        for (const { chat, journal, archived } of entries) {
             const detail = document.createElement('details'), title = document.createElement('summary');
             const archiveName = chat.archives?.find(item => item.id === journal.bridgeReview?.archiveId)?.name || journal.bridgeReview?.archiveId || '默认存档';
             title.textContent = `${chat.realName || chat.name || chat.id} · ${archiveName} · ${journal.title} · ` + (journal.isFavorited && journal.bridgeReview?.status === 'approved' ? '已应用' : '待审核 / 已停用');
             const source = document.createElement('details'), sourceTitle = document.createElement('summary'), pre = document.createElement('pre');
             sourceTitle.textContent = '查看过滤后的完整原文（酒馆保留原始消息）'; pre.textContent = journal.bridgeReview?.sourceText || journal.content;
             source.append(sourceTitle, pre); detail.append(title, source);
+            if (archived) {
+                const open = document.createElement('button'); open.type = 'button'; open.className = 'btn btn-secondary'; open.textContent = '打开此角色的原存档审核';
+                open.addEventListener('click', async () => {
+                    open.disabled = true;
+                    try { openChatRoom(chat.id, 'private'); await switchChatArchive(archived); switchScreen('uvu-story-bridge-screen'); renderReview(true); }
+                    catch (error) { status('打开原存档失败：' + error.message, true); }
+                    finally { open.disabled = false; }
+                });
+                detail.append(open); host.append(detail); continue;
+            }
             const items = structuredClone(journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content));
             const list = document.createElement('div'); list.className = 'uvu-bridge-review-items';
             const fields = [];
@@ -357,7 +410,7 @@
             });
             const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入日记';
             save.addEventListener('click', async () => {
-                if (currentBridgeChat() !== chat || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('角色或存档已切换，请刷新审核列表。', true);
+                if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('目标存档已切换，请打开原存档后审核。', true);
                 if (reviewBusy) return; reviewBusy = true; save.disabled = true;
                 try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); renderReview(true); status('已审核并保存到当前角色日记；只有勾选内容会进入后续上下文和向量候选。'); }
                 catch (error) { status(error.message, true); }
@@ -372,6 +425,19 @@
             title.textContent = `${chat?.realName || chat?.name || scene.characterKey} · ${scene.title || '酒馆线下剧情'} · 待收取${complete ? '' : `（${Object.keys(scene.parts || {}).length}/${scene.partCount} 段）`}`;
             note.textContent = complete ? '剧情已完整接收，但目标存档与当前打开的存档不同；切换到对应角色和存档后点击“收取酒馆记忆”。' : '剧情尚未完整接收，暂不能加入日记；请回酒馆完成导出后再重试。';
             detail.append(title, note); host.append(detail);
+            if (complete && chat) {
+                const open = document.createElement('button'); open.type = 'button'; open.className = 'btn btn-secondary'; open.textContent = '打开目标存档并收取';
+                open.addEventListener('click', async () => {
+                    open.disabled = true;
+                    try {
+                        if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default') && !chat.archives?.some(item => item.id === scene.archiveId)) throw new Error('目标存档不存在，请保留草稿并核对备份。');
+                        openChatRoom(chat.id, 'private');
+                        if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default')) await switchChatArchive(scene.archiveId);
+                        await syncIncoming(chat.id); switchScreen('uvu-story-bridge-screen'); renderReview(true);
+                    } catch (error) { status(error.message, true); } finally { open.disabled = false; }
+                });
+                detail.append(open);
+            }
         }
     }
 
@@ -380,11 +446,28 @@
         if (!select?.replaceChildren) return;
         const selected=select.value || String(currentBridgeChat()?.id || ''); select.replaceChildren();
         for (const chat of db.characters) { const option=document.createElement('option');option.value=String(chat.id);option.textContent=chat.realName||chat.name||chat.id;select.append(option); }
-        select.value=selected;
+        select.value=db.characters.some(chat=>String(chat.id)===selected) ? selected : String(db.characters[0]?.id || '');
+    }
+
+    async function syncInbox() {
+        if (!isEnabled() || !isConnected() || inboxBusy || document.visibilityState !== 'visible') return 0;
+        inboxBusy = true;
+        try {
+            let imported = 0;
+            // Receive from the global queue without coupling delivery to the open chat.
+            const snapshot = await request('/client/inbox');
+            const keys = new Set((snapshot.characters || []).filter(item => Number(item.latestSeq) > Number(settings().cursorByCharacter[item.characterKey] || 0)).map(item => String(item.characterKey)));
+            for (const scene of Object.values(settings().pendingScenes)) if (scene?.characterKey) keys.add(String(scene.characterKey));
+            const selected = document.getElementById('uvu-bridge-handoff-character')?.value;
+            if (selected) keys.add(selected);
+            for (const key of keys) { if (!isEnabled()) break; imported += await syncIncoming(key); }
+            renderReview();
+            return imported;
+        } finally { inboxBusy = false; }
     }
 
     async function setSceneInjection(enabled) {
-        const chat=currentBridgeChat(); if (!chat) throw new Error('请先打开对应角色私聊。');
+        const chat=selectedBridgeChat(); if (!chat) throw new Error('请先在交接角色列表选择角色。');
         const key=String(chat.id), previous=settings().injectionByCharacter[key];
         settings().injectionByCharacter[key]=Boolean(enabled);
         try { await saveData(); } catch(error) { if(previous===undefined)delete settings().injectionByCharacter[key];else settings().injectionByCharacter[key]=previous;throw error; }
@@ -404,13 +487,15 @@
             enabledCheckbox.checked = isEnabled();
             enabledCheckbox.addEventListener('change', async () => {
                 settings().bridgeEnabled = enabledCheckbox.checked;
+                generation++;
                 await saveData();
                 status(enabledCheckbox.checked ? '酒馆互通已启用。' : '酒馆互通已停用；原聊天、提示词和日记数据不受修改。');
                 renderReview(true);
             });
         }
-        injectCheckbox.checked = settings().injectionByCharacter[String(currentBridgeChat()?.id)] !== false;
+        injectCheckbox.checked = settings().injectionByCharacter[String(selectedBridgeChat()?.id)] !== false;
         renderHandoffCharacters(); renderReview();
+        document.getElementById('uvu-bridge-handoff-character')?.addEventListener('change', () => { renderReview(true); });
         status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
         if (isConnected()) publishCharacterDirectory().catch(error => status(`角色列表同步失败：${error.message}`, true));
         pairButton.dataset.bound = 'true';
@@ -421,11 +506,10 @@
             finally { pairButton.disabled = false; }
         });
         syncButton.addEventListener('click', async () => {
-            if (currentChatType !== 'private' || !currentChatId) return status('请先打开要同步的角色私聊。', true);
             syncButton.disabled = true;
             try {
-                const imported = await syncIncoming(currentChatId);
-                if (!imported) renderReview();
+                const imported = await syncInbox();
+                if (!imported) { renderReview(); status('收件箱已检查。暂无可加入当前存档的新完整剧情；其他存档和未完成分段见下方清单。'); }
             }
             catch (error) { status(error.message, true); }
             finally { syncButton.disabled = false; }
@@ -458,15 +542,15 @@
             renderReview();
             flushOutbox().catch(error=>console.warn('Bridge outbox:',error.message));
             publishCharacterDirectory().catch(error => console.warn('UvU Story Bridge character directory sync failed:', error.message));
-            if (currentChatType === 'private' && currentChatId) syncIncoming(currentChatId).catch(error => status(error.message, true));
+            syncInbox().catch(error => status(error.message, true));
         }, 8000);
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && currentChatType === 'private' && currentChatId) {
-                syncIncoming(currentChatId).catch(error => status(error.message, true));
+            if (document.visibilityState === 'visible') {
+                syncInbox().catch(error => status(error.message, true));
             }
         });
     }
 
-    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, publishCharacterDirectory, syncIncoming, allowedMemory, persistReview, renderReview, flushOutbox };
+    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

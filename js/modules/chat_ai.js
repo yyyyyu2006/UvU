@@ -81,10 +81,12 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
+    const bridgeArchive = chat.activeArchiveId, bridgeHistory = chat.history;
     let storyBridgeMode = null;
     if (chatType === 'private' && globalThis.UvUStoryBridge?.isEnabled?.() !== false && globalThis.UvUStoryBridge?.isConnected()) {
         try {
             storyBridgeMode = await globalThis.UvUStoryBridge.getMode(chatId);
+            if (chat.activeArchiveId !== bridgeArchive || chat.history !== bridgeHistory || getChatGeneration(chatId, chatType)) return;
             if (storyBridgeMode.mode === 'offline') {
                 if (!isBackground) showToast('当前处于酒馆线下剧情模式；拿出手机后才能让 UvU 回复。');
                 return;
@@ -94,6 +96,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             console.warn('UvU Story Bridge mode check failed; continuing with normal reply:', error.message);
         }
     }
+    if (chat.activeArchiveId !== bridgeArchive || chat.history !== bridgeHistory || getChatGeneration(chatId, chatType)) return;
     if (chatType === 'private' && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat, chatType)) {
         const archiveId = chat.activeArchiveId;
         if (!isBackground && typeof checkRelationshipRecovery === 'function') {
@@ -679,7 +682,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
             replyDelivered = true;
         }
-        if (replyDelivered && storyBridgeMode && globalThis.UvUStoryBridge) {
+        if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
             try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode); }
             catch (error) { console.warn('UvU Story Bridge sync failed:', error.message); }
         }

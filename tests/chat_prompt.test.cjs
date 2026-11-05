@@ -99,3 +99,12 @@ test('token accounting failures never block chat delivery or change its request 
     assert.deepEqual(after.requests, before.requests);
     assert.deepEqual(after.errors, []);
 });
+
+test('bridge mode lookup finishing after an archive switch never starts a reply in the new archive', async () => {
+    const f=fixture([{id:'u',role:'user',content:'旧存档',timestamp:1700000000000}]);
+    let finish;
+    f.context.UvUStoryBridge={isEnabled:()=>true,isConnected:()=>true,getMode:()=>new Promise(resolve=>finish=resolve)};
+    const pending=f.context.getAiReply(f.chat.id,'private');
+    f.chat.activeArchiveId='another'; f.chat.history=[]; finish({mode:'online'});
+    await pending; assert.equal(f.requests.length,0);
+});

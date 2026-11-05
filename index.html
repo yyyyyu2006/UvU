@@ -28,8 +28,8 @@
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
 
     <!-- CSS Split: Core Features -->
-    <link rel="stylesheet" href="css/chat.css?v=20261104-minimax-tts">
-    <link rel="stylesheet" href="css/settings.css?v=20261104-story-bridge-page">
+    <link rel="stylesheet" href="css/chat.css?v=20261105-bridge-isolation">
+    <link rel="stylesheet" href="css/settings.css?v=20261105-bridge-isolation">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
@@ -660,8 +660,8 @@
                         </div>
                         <label>酒馆本机桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8765/api/plugins/uvu-story-bridge"></label>
                         <label>一次性配对码<input id="uvu-bridge-pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="在酒馆桥接面板生成"></label>
-                        <label><input id="uvu-bridge-enabled" type="checkbox" checked> 启用酒馆互通插件</label>
-                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 将酒馆剧情记忆加入后续上下文</label>
+                        <label><input id="uvu-bridge-enabled" type="checkbox" checked> 启用本页互通（酒馆端另有插件总开关）</label>
+                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 所选角色使用已审核的酒馆剧情记忆</label>
                         <div class="uvu-bridge-actions">
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-sync">收取酒馆记忆</button>
@@ -680,7 +680,7 @@
                         </section>
                         <section class="uvu-bridge-review" aria-labelledby="uvu-bridge-review-title">
                             <div class="uvu-bridge-review-heading"><h3 id="uvu-bridge-review-title">酒馆线下剧情 → UvU 日记</h3><span id="uvu-bridge-review-count">0 项</span></div>
-                            <p class="uvu-bridge-review-help">这里集中显示所有角色收到的酒馆剧情。逐条勾选并保存后，选中的内容才会进入当前角色日记、后续上下文和向量候选。</p>
+                            <p class="uvu-bridge-review-help">这里集中显示各角色及存档收到的酒馆剧情。无需一直打开该角色聊天；展开核对原文、逐条勾选并保存后，仅所标角色和存档的日记生效。其他存档可点“打开原存档审核”。未审核或未勾选内容不会进入上下文。</p>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-refresh-review">刷新审核清单</button>
                             <div id="uvu-bridge-review-list" aria-live="polite"></div>
                         </section>
@@ -691,9 +691,13 @@
                         <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行 <code>cd plugins</code>、<code>git clone https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge.git uvu-story-bridge</code>、<code>cd uvu-story-bridge</code>、<code>node setup-server-plugin.js</code>。脚本展示将启用的服务端插件和允许的 UvU 来源；输入 <code>APPLY</code> 才会修改，并会先备份配置。完成后重启酒馆。</li>
                         <li><strong>生成配对码：</strong>保持 UvU 本页在前台，在酒馆扩展面板点“生成配对码”；将 6 位一次性码填入本页并点“连接 / 配对”。首次连接按浏览器提示允许访问本机网络。</li>
                         <li><strong>绑定角色：</strong>在酒馆打开目标角色私聊，不要在群聊里绑定；选择对应 UvU 角色并核对名称和 ID。人设、用户设定、头像不会自动复制。</li>
-                        <li><strong>交接与审核：</strong>在 UvU 选择角色、存档和消息范围，交接后回酒馆展开清单；选择来源存档，逐条查看、编辑、勾选并点“保存审核并加入日记”。只有勾选内容进入当前角色日记、后续上下文和向量候选。</li>
+                        <li><strong>UvU → 酒馆：</strong>在上方选择角色，确认该角色当前存档，填写起止消息编号（从 1 起，包含用户、角色及特殊消息的位置，发送时只保留有效剧情），点“交接所选范围”。回酒馆展开“线上记忆审核”，选择来源存档、核对并勾选、点“保存勾选与编辑”。这一步保存在酒馆插件内，不会加入 UvU 日记，也不复制两边人设。酒馆只有主动开启记忆注入并开始本场后才会使用。</li>
                         <li><strong>开始和结束线下：</strong>点“开始线下剧情”后手动发送开场；“拿出手机”进入 UvU 手机模式，“收起手机”回到酒馆。结束时回原角色私聊点“结束并导出”；如果中途切换到其他聊天，原场景会保留保护，回原聊天后即可继续导出，已冻结的导出内容可安全重试。</li>
-                        <li><strong>插件开关：</strong>取消“启用酒馆互通插件”会停止同步和记忆注入，但不删除聊天、日记或原有提示词；重新开启后再点“收取酒馆记忆”即可继续。</li>
+                        <li><strong>酒馆 → UvU 日记：</strong>酒馆“结束并导出”后，回本页点“收取酒馆记忆”，在上面的“酒馆线下剧情 → UvU 日记”展开记录，核对角色、存档、日期与过滤后的完整原文，逐条编辑、勾选，再点“保存审核并加入日记”。关闭所有勾选并保存可暂停该篇；“刷新审核清单”只刷新本地列表，不联网收取。多角色可以同时聊天，剧情按冻结的目标接收。目标存档不同会保留草稿，点“打开目标存档并收取”后审核。</li>
+                        <li><strong>开关与场景保护：</strong>本页开关控制 UvU 同步及酒馆日记注入；酒馆扩展顶部总开关同时停止后台请求、清除该扩展注入并恢复 UvU 线上模式。重新开启后须回酒馆原角色、原聊天点“继续本场”。其他角色、同卡其他聊天和其他存档不使用本场记忆。开始/继续不会替你发送开场，也不会替代原来的回复 API。</li>
+                        <li><strong>按钮与连接状态：</strong>“连接 / 配对”保存本机令牌；有令牌只代表已配对，不代表酒馆正在运行。“断开连接”撤销令牌，失败时保留配置供重试。“收取酒馆记忆”检查各目标收件箱、分批收取，完整且校验通过才进入审核草稿。401 重新配对；403 检查来源白名单或接口权限；404 更新服务端并重启；连接超时或网络错误不能单凭它判定为未授权。</li>
+                        <li><strong>版本更新：</strong>酒馆点“检查版本 / 更新”可查看扩展、运行中服务端和协议版本。扩展在酒馆扩展管理中更新并刷新页面；服务端在 Termux 的 SillyTavern/plugins/SillyTavern-UvU-Bridge 目录执行 git pull，再到运行酒馆的终端按 Ctrl+C 停止并用原来的启动命令重启。只刷新网页不会更新运行中的服务端，不要仅大退 Termux。版本检查失败不阻断普通聊天。</li>
+                        <li><strong>与 1900 原版的关系：</strong>互通只把审核通过的剧情追加为记忆资料，不改写原始消息、基础提示词和人设。关闭互通后酒馆剧情不参与上下文；普通收藏记忆保持原注入，向量命中不会挤掉收藏项，重复来源只发送一次。开启记忆后模型多了往事资料，回复可能变化；这不代表两边回复会完全相同。</li>
                     </ol>
                     <p class="uvu-bridge-note">GitHub Pages 通过 HTTPS 访问本机桥接 HTTP 接口，首次配对必须在页面前台完成并允许本地网络访问。已审核记忆才会进入上下文；桥接不改写基础提示词正文。</p>
                 </section>
@@ -2873,10 +2877,10 @@
 <script src="js/modules/chat_render.js?v=20261104-minimax-voice-fix"></script>
 <script src="js/modules/chat_archives.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
-    <script src="js/modules/chat_ai_prompt.js?v=20261104-derived-features"></script>
+    <script src="js/modules/chat_ai_prompt.js?v=20261105-bridge-isolation"></script>
     <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
     <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
-    <script src="js/modules/chat_ai.js?v=20261104-derived-features"></script>
+    <script src="js/modules/chat_ai.js?v=20261105-bridge-isolation"></script>
 <script src="js/modules/chat_features.js?v=20261104-minimax-voice-fix"></script>
 <script src="js/modules/chat_ops.js?v=20261103-chat-safety"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
@@ -2884,7 +2888,7 @@
 <script src="js/modules/environment.js?v=20261104-derived-features"></script>
 <script src="js/modules/environment_ui.js?v=20261104-avatar-location"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-minimax-tts">
-<script src="js/chat.js?v=20261104-minimax-tts"></script>     <!-- 聊天核心入口 -->
+<script src="js/chat.js?v=20261105-bridge-isolation"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261104-chat-stop-compatible"></script> <!-- 聊天室HTML注入 -->
@@ -2987,9 +2991,9 @@
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261104-memory-safety"></script>
+<script src="js/modules/auto_memory.js?v=20261105-bridge-isolation"></script>
 <script src="js/modules/bridge_text.js?v=20261104-reviewed-sync"></script>
-<script src="js/modules/story_bridge.js?v=20261104-reviewed-sync"></script>
+<script src="js/modules/story_bridge.js?v=20261105-bridge-isolation"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261104-avatar-location"></script>   <!-- 存储空间分析图表 -->

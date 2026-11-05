@@ -113,14 +113,25 @@ test('vector history library filters reasoning, status blocks and excluded conte
     assert.equal(JSON.stringify(f.chat.history), before);
 });
 
-test('successful vector retrieval replaces whole-journal injection only during prompt construction', () => {
+test('successful vector retrieval preserves explicitly favorited legacy memories', () => {
     const f = fixture(1);
     f.chat.memoryJournals.push({ id: 'favorite', title: '旧事', content: '整篇旧记忆', isFavorited: true });
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
     const prompt = f.context.buildPromptWithVectorMemory(f.chat,
         () => `base:${f.context.getContextMemoryJournals(f.chat).length}`, '\n向量片段');
-    assert.equal(prompt, 'base:0\n向量片段');
+    assert.equal(prompt, 'base:1\n向量片段');
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
+});
+
+test('retrieved favorite is injected once and its token context is deduplicated', async () => {
+    const f=fixture(1,{vectorSearchEnabled:true,vectorThreshold:0});
+    f.chat.memoryJournals.push({id:'fixed',title:'固定往事',content:'固定往事正文',isFavorited:true});
+    f.context.db.vectorMemoryApiSettings={provider:'newapi',url:'https://vectors.test/v1',key:'test',embeddingModel:'embed'};
+    f.context.fetch=async()=>({ok:true,json:async()=>({data:[{embedding:[1,0]}]})});
+    const retrieved=await f.context.getVectorMemoryContext(f.chat,'话题');
+    const final=f.context.buildPromptWithVectorMemory(f.chat,()=>f.context.getContextMemoryJournals(f.chat).map(j=>j.content).join('\n'),retrieved);
+    assert.equal(final,'固定往事正文');
+    assert.equal(f.context.getInjectedVectorMemoryContext(f.chat,retrieved),'');
 });
 
 test('vector results rank distinct memory entries before applying Top K', async () => {

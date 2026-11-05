@@ -269,17 +269,6 @@ function setupChatRoom() {
             const frontActions = document.createElement('div');
             frontActions.className = 'status-panel-actions';
             frontActions.appendChild(frontToggle);
-            front.appendChild(frontActions);
-            const backToggle = document.createElement('button');
-            backToggle.type = 'button';
-            backToggle.className = 'status-token-toggle';
-            backToggle.dataset.tokenFlip = 'true';
-            backToggle.textContent = '↩';
-            backToggle.setAttribute('aria-label', '返回状态栏');
-            const backActions = document.createElement('div');
-            backActions.className = 'status-panel-actions';
-            backActions.appendChild(backToggle);
-            back.appendChild(backActions);
             const tokenPanel = document.createElement('div');
             tokenPanel.className = 'status-token-panel';
             back.appendChild(tokenPanel);
@@ -287,6 +276,8 @@ function setupChatRoom() {
             flipCard.append(front, back);
             flipShell.appendChild(flipCard);
             statusContent.appendChild(flipShell);
+            // Controls live outside both scrolling faces and the transformed card.
+            statusContent.appendChild(frontActions);
 
             if (slidesData.length === 0) {
                 const empty = document.createElement('p');
@@ -394,7 +385,7 @@ function setupChatRoom() {
         statusContent.addEventListener('click', (e) => {
             const tokenToggle = e.target.closest('[data-token-flip]');
             if (tokenToggle) {
-                const card = tokenToggle.closest('.status-flip-card');
+                const card = statusContent.querySelector('.status-flip-card');
                 if (card) {
                     const flipped = card.classList.toggle('is-flipped');
                     const front = card.querySelector('.status-flip-front');
@@ -402,7 +393,9 @@ function setupChatRoom() {
                     front.inert = flipped; back.inert = !flipped;
                     front.setAttribute('aria-hidden', String(flipped));
                     back.setAttribute('aria-hidden', String(!flipped));
-                    (flipped ? back : front).querySelector('[data-token-flip]')?.focus({ preventScroll: true });
+                    tokenToggle.textContent = flipped ? '↩' : 'T';
+                    tokenToggle.setAttribute('aria-label', flipped ? '返回状态栏' : '查看本轮 Token 消耗');
+                    tokenToggle.setAttribute('aria-pressed', String(flipped));
                 }
                 return;
             }
