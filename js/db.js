@@ -88,7 +88,7 @@ const defaultIcons = {
     'storage-analysis-screen': {name: '存储分析', url: 'https://i.postimg.cc/J0F3Lt0T/chan-107.png'},
     'widget-market-screen': {name: '小组件', url: 'https://i.postimg.cc/NG2k67zS/ji-lichan-(138).png'},
     'reader-bookshelf-screen': {name: '阅读器', url: 'https://i.postimg.cc/FHkvm6WG/ji-lichan-(41).png'},
-    'placeholder-app': {name: '<3', url: 'https://i.postimg.cc/kGSN7qSq/ji-lichan-(136).png'}
+    'placeholder-app': {name: '酒馆', url: 'https://i.postimg.cc/kGSN7qSq/ji-lichan-(136).png'}
 };
 
 const peekScreenApps = {

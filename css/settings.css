@@ -170,6 +170,26 @@
     overflow-wrap: anywhere;
 }
 
+#uvu-story-bridge-screen .uvu-bridge-command {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 8px 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(127, 127, 127, 0.1);
+    overflow-x: auto;
+    white-space: pre;
+    font: 12px/1.65 ui-monospace, monospace;
+    user-select: text;
+}
+
+#uvu-story-bridge-screen .uvu-bridge-command code {
+    white-space: inherit;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
 #uvu-story-bridge-screen .uvu-bridge-note {
     margin: 14px 0 0;
     color: #666;
