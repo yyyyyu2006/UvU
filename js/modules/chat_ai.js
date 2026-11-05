@@ -197,6 +197,12 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             catch (error) { if (generationController?.signal.aborted) throw error; console.warn('Environment lookup unavailable'); }
         }
         if (!requestIsCurrent()) return;
+        let mcpContext = '';
+        if (typeof prepareMcpChatContext === 'function') {
+            try { mcpContext = await prepareMcpChatContext(chat, chatType, generationController?.signal); }
+            catch (error) { if (generationController?.signal.aborted) throw error; console.warn('MCP reference unavailable; continuing ordinary reply'); }
+        }
+        if (!requestIsCurrent()) return;
         const buildBasePrompt = () => {
             if (chatType === 'private') {
                 systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
@@ -220,6 +226,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
         if (environmentContext) systemPrompt += environmentContext;
+        if (mcpContext) systemPrompt += mcpContext;
 
         const lastContextMessage = historySlice[historySlice.length - 1];
         // 检查系统提示词中是否包含聊天记录占位符
@@ -578,7 +585,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let tokenEstimate = null;
         try {
-            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody, environmentContext);
+            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody, environmentContext, mcpContext);
         } catch (error) { console.warn('Token 分类估算失败，不影响本轮聊天:', error.message); }
         // 格式化打印日志
         let logText = "========== [发送给 AI 的请求内容] ==========\n";
@@ -623,7 +630,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             });
         }
         logText += "============================================";
-        console.log(logText);
+        console.log(mcpContext ? logText.split(mcpContext).join('[MCP 外部资料已隐藏，具体调用状态请查看 MCP 服务中心]') : logText);
 
         const endpoint = (provider === 'gemini')
             ? `${url}/v1beta/models/${model}:${streamEnabled ? 'streamGenerateContent' : 'generateContent'}?key=${getRandomValue(key)}`

@@ -30,7 +30,7 @@ function normalizeEnvironmentLocation(raw) {
 function getEnvironmentSettings() {
     const raw = db.environmentSettings || {};
     return { enabled: raw.enabled === true, userLocation: normalizeEnvironmentLocation(raw.userLocation), service: raw.service === 'mcp' ? 'mcp' : 'public',
-        mcp: { url: String(raw.mcp?.url || ''), token: String(raw.mcp?.token || ''), tools: Object.fromEntries(Object.entries(ENVIRONMENT_TOOL_DEFAULTS).map(([key, value]) => [key, { ...value, ...raw.mcp?.tools?.[key] }])) } };
+        mcp: { centerServiceId: String(raw.mcp?.centerServiceId || ''), url: String(raw.mcp?.url || ''), token: String(raw.mcp?.token || ''), tools: Object.fromEntries(Object.entries(ENVIRONMENT_TOOL_DEFAULTS).map(([key, value]) => [key, { ...value, ...raw.mcp?.tools?.[key] }])) } };
 }
 
 function getChatEnvironmentProfile(chat) {
@@ -39,7 +39,7 @@ function getChatEnvironmentProfile(chat) {
 }
 
 function environmentSettingsKey(settings = getEnvironmentSettings()) {
-    return JSON.stringify([settings.service, settings.mcp.url, settings.mcp.token, settings.mcp.tools]);
+    return JSON.stringify([settings.service, settings.mcp.url, settings.mcp.token, settings.mcp.tools, settings.mcp.centerServiceId || '', settings.mcp.centerServiceId && window.MCPServices ? window.MCPServices.stamp() : '']);
 }
 
 function environmentCacheKey(kind, data, settings) {
@@ -178,6 +178,12 @@ async function getEnvironmentMcpSession(settings, signal) {
 async function callEnvironmentMcp(operation, values, settings, signal, retry = true) {
     const key = environmentSettingsKey(settings), tool = settings.mcp.tools[operation];
     if (!tool?.name?.trim()) throw new Error('请配置对应 MCP 工具名');
+    if (settings.mcp.centerServiceId) {
+        if (!window.MCPServices) throw new Error('MCP 服务中心尚未加载，请刷新页面');
+        const result = await window.MCPServices.call(settings.mcp.centerServiceId, tool.name.trim(), environmentToolArguments(tool.args, values), { signal, readOnly: true });
+        let data; try { data = JSON.parse(result.text); } catch (_) { throw new Error('环境工具需返回 JSON 数据，请检查工具映射'); }
+        return data?.data ?? data;
+    }
     try {
         const state = await getEnvironmentMcpSession(settings, signal);
         const result = await environmentMcpRpc(state, 'tools/call', { name: tool.name.trim(), arguments: environmentToolArguments(tool.args, values) }, signal);

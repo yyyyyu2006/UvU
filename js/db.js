@@ -164,7 +164,7 @@ const globalSettingKeys = [
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
     'workshopSettings', 'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder',
     'homeLayoutPages', 'widgetTemplates', 'addedWidgets', 'backupReminderSettings',
-    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'uvuStoryBridgeSettings'
+    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'uvuStoryBridgeSettings', 'mcpSettings'
 ];
 
 
@@ -684,6 +684,7 @@ const loadData = async () => {
         const defaultValue = {
             apiSettings: {},
             uvuStoryBridgeSettings: {},
+            mcpSettings: {},
             wallpaper: 'https://i.postimg.cc/W4Z9R9x4/ins-1.jpg',
             homeScreenMode: 'night',
             fontUrl: '',

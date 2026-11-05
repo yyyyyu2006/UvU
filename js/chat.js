@@ -152,6 +152,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
         ['记忆总结（估算）', data.memory],
         ['向量记忆（估算）', data.vectorMemory],
         ...(data.environment ? [['真实环境（估算）', data.environment]] : []),
+        ...(data.mcp ? [['MCP 外部资料（估算）', data.mcp]] : []),
         ['世界书合计（估算）', data.worldBook],
         ['聊天记录（估算）', data.history]
     ];

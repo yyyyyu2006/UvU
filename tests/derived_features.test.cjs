@@ -25,6 +25,13 @@ test('environment and avatar defaults are disabled and do not make network calls
     assert.equal(await c.getEnvironmentContext(chat), ''); assert.equal(await c.checkCharacterAvatar(chat), false);
     assert.equal(requests.length, 0); assert.equal(chat.environmentProfile, undefined);
 });
+
+test('environment can explicitly use centrally managed read-only MCP tools without legacy initialization', async () => {
+    const {c}=fixture();let called;
+    c.window.MCPServices={stamp:()=> 'x',call:async(id,name,args,options)=>{called={id,name,args,options};return {text:'{"temperature":18,"text":"晴","observedAt":"2026-11-05T00:00:00Z"}'};}};
+    const settings={service:'mcp',mcp:{centerServiceId:'central',tools:{weather:{name:'weather',args:'{"city":"{{name}}"}'}}}};
+    assert.equal((await c.callEnvironmentMcp('weather',{name:'上海'},settings)).temperature,18);assert.equal(called.id,'central');assert.equal(called.options.readOnly,true);
+});
 test('environment coordinates, country, timezone and endpoints are validated', () => {
     const { c } = fixture();
     assert.equal(c.normalizeEnvironmentLocation({ ...shanghai, latitude: '31' }), null);

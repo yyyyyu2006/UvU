@@ -1,0 +1,26 @@
+/* Only MCP panels and their new entry; no original chat/beautification selectors. */
+.mcp-entry { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; margin: 0 0 12px; border: 1px solid #e4e8ee; border-radius: 10px; font-size: 13px; background: #fff; color: #333; }
+.mcp-entry button { flex: 0 0 auto; padding: 5px 10px; font-size: 12px; border: 1px solid #dce3eb; border-radius: 7px; background: #f7f9fc; }
+.mcp-settings { width: min(460px, calc(100vw - 24px)); max-height: 88vh; max-height: 88dvh; padding: 14px; color: #30343b; background: #fff; gap: 10px; }
+.mcp-settings .mcp-body { overflow: auto; overscroll-behavior: contain; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 0 2px 4px; }
+.mcp-settings .mcp-body > * { flex-shrink: 0; }
+.mcp-settings section, .mcp-settings details { min-width: 0; border: 1px solid #e4e8ee; border-radius: 9px; padding: 9px; }
+.mcp-settings section > *, .mcp-settings details > * { margin-bottom: 8px; }
+.mcp-settings label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.mcp-settings input:not([type=checkbox]), .mcp-settings select, .mcp-settings textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid #dce3eb; padding: 6px 8px; border-radius: 6px; font: inherit; font-size: 13px; color: #30343b; background: #fff; }
+.mcp-settings textarea { resize: vertical; min-height: 70px; }
+.mcp-settings label.mcp-check { flex-direction: row; align-items: center; gap: 7px; }
+.mcp-settings input[type=checkbox] { flex: 0 0 auto; width: 16px; height: 16px; margin: 0; }
+.mcp-settings button { width: auto; min-height: 30px; flex: 0 0 auto; padding: 4px 8px; border: 1px solid #dce3eb; border-radius: 7px; background: #f4f7fb; color: #30343b; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.mcp-settings button:disabled { opacity: .5; cursor: default; }
+.mcp-settings .mcp-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.mcp-settings .mcp-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mcp-settings .mcp-status { flex: 1; min-width: 0; max-height: 72px; overflow: auto; margin: 0; color: #426484; font-size: 12px; overflow-wrap: anywhere; }
+.mcp-settings .mcp-help { margin: 5px 0 9px; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: #6a7482; }
+.mcp-settings .mcp-tool { padding: 8px 0; border-bottom: 1px solid #edf0f4; }
+.mcp-settings .mcp-tool > * { margin-bottom: 7px; }
+.mcp-settings strong, .mcp-settings summary { font-size: 13px; overflow-wrap: anywhere; }
+.mcp-settings summary { cursor: pointer; }
+.mcp-settings pre { max-width: 100%; min-width: 0; max-height: 230px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; margin: 0; border-radius: 7px; background: #f4f6f9; font-size: 12px; line-height: 1.6; }
+.mcp-settings pre.mcp-result { min-height: 70px; }
+.mcp-settings [hidden] { display: none !important; }

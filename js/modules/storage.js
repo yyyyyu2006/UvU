@@ -12,7 +12,7 @@ const STORAGE_CATEGORIES = [
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
-    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'mcpSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
@@ -457,6 +457,10 @@ function storagePrepareImport(selection, modules) {
     Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).forEach(([category, keys]) => {
         if (selection[category]) keys.forEach(key => { if (modules[key] !== undefined) pending[key] = modules[key]; });
     });
+    if (pending.mcpSettings !== undefined) {
+        if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');
+        pending.mcpSettings = window.MCPServices.normalize(pending.mcpSettings, true);
+    }
     if (selection.other && modules.mediaCache) {
         for (const key of ['characters', 'groups']) {
             const galleries = modules.mediaCache[key];
@@ -668,6 +672,10 @@ function storageValidateModules(modules) {
     }
     for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
+    }
+    if (modules.mcpSettings !== undefined) {
+        if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');
+        window.MCPServices.normalize(modules.mcpSettings, true);
     }
     if (modules.environmentSettings !== undefined) {
         const e = modules.environmentSettings;

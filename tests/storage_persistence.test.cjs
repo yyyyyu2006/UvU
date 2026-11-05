@@ -44,6 +44,18 @@ test('unchanged save writes no records; in-place mutations save only affected re
     assert.deepEqual(await f.database.globalSettings.get('cotPresets'), { key: 'cotPresets', value: [{ content: 'original prompt' }] });
 });
 
+test('MCP settings persist alone and restore disabled without credentials, grants or prompt changes', async t => {
+    const f = await fixture(t);
+    f.c.URL=URL;f.c.TextEncoder=TextEncoder;f.c.window.MCPTransport={endpoint:v=>new URL(v).href};
+    vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/mcp_services.js'),'utf8'),f.c);
+    await f.c.window.MCPServices.save({enabled:true,services:[{id:'m',url:'https://mcp.test',enabled:true}],policies:[]});
+    assert.equal((await f.database.globalSettings.get('mcpSettings')).value.enabled,true);
+    assert.deepEqual(f.writes,['globalSettings:mcpSettings']);f.writes.length=0;
+    await f.c.storageCommitImport({settings:true},{mcpSettings:{enabled:true,token:'private',services:[{id:'m',url:'https://mcp.test',enabled:true,token:'private'}],policies:[]}});
+    const saved=(await f.database.globalSettings.get('mcpSettings')).value;assert.equal(saved.enabled,false);assert.equal(saved.services[0].enabled,false);assert.ok(!JSON.stringify(saved).includes('private'));
+    assert.equal(f.c.db.apiSettings.model,'original-model');assert.equal(f.c.db.cotPresets[0].content,'original prompt');assert.ok(f.writes.every(x=>x==='globalSettings:mcpSettings'));
+});
+
 test('optional media migration round-trips galleries, archived galleries and all cache tables without writing prompts', async t => {
     const f = await fixture(t), chat = f.c.db.characters[0];
     chat.gallery = [{ url: 'data:image/png;base64,AA==' }];

@@ -14,6 +14,13 @@ function openEnvironmentSettings(forChat = false) {
     const form = environmentNode('form', undefined, 'derived-body'); dialog.panel.appendChild(form);
     form.innerHTML = '<label class="derived-check"><input type="checkbox" name="enabled">开启真实日历与天气</label><p class="derived-help">默认使用内置免密钥服务，无需配置 API 或 MCP。点击“定位并获取天气”即可启用；char 的城市由你设定。公共服务受网络与限流影响，Open-Meteo 免费接口用于非商业用途。</p><details data-service><summary>高级：自定义环境服务</summary><label>环境服务<select name="service"><option value="public">内置免密钥服务（默认）</option><option value="mcp">自定义远程 MCP</option></select></label></details><p class="derived-help">手动选城市或主动授权定位。定位会将坐标发送到所选地区服务；保存位置精度约为城市附近。天气和假日仅在打开界面或启用 AI 感知时查询。</p><section data-place="user"><strong>我的位置</strong></section><section data-chat hidden><label class="derived-check"><input type="checkbox" name="remoteEnabled">开启异地模式</label><section data-place="char"><strong>char 的位置</strong></section><label class="derived-check"><input type="checkbox" name="aiEnabled">允许本角色的 AI 感知真实环境</label><p class="derived-help">独立开关，默认关闭。开启后只在原有系统提示词末尾附加环境资料，不改原提示词正文和世界书位置。增加资料会增加输入用量，也可能影响回复。char 的位置由你设定。</p></section><details data-mcp><summary>MCP 服务与工具配置</summary><label>HTTPS 服务地址<input name="mcpUrl" type="url" placeholder="https://你的服务/mcp"></label><label>访问令牌（按需）<input name="mcpToken" type="password" autocomplete="off"></label><p class="derived-help">服务需允许此 Pages 站点跨域访问，并暴露 Mcp-Session-Id 响应头。支持 JSON／SSE 响应。令牌仅保存在本机及你导出的设置备份中，请勿填写到 GitHub 源码。</p><div data-tools></div><p class="derived-help">结果使用 structuredContent 或 JSON 文本：城市搜索返回 {results:[{name,latitude,longitude,countryCode,timezone,subdivision}]}；逆定位返回同样的单个地点；天气返回 {temperature,text,observedAt}（摄氏度）；节假日返回 {days:[{date,name,isOffDay,counties}]}，日期为 YYYY-MM-DD，counties 为适用行政区代码数组；全国条目省略 counties。</p><button type="button" data-test>测试 MCP 连接和工具</button></details><p class="derived-status" aria-live="polite"></p><footer><button type="submit">保存</button></footer>';
     const fields = form.elements, settings = getEnvironmentSettings(), profile = getChatEnvironmentProfile(chat);
+    const centerLabel = environmentNode('label', '复用 MCP 服务中心（可选）'), center = environmentNode('select'); center.name = 'centerServiceId';
+    center.appendChild(new Option('原独立 MCP 配置', ''));
+    if (window.MCPServices) window.MCPServices.settings().services.forEach(service => center.appendChild(new Option(service.name, service.id)));
+    if (settings.mcp.centerServiceId && ![...center.options].some(o => o.value === settings.mcp.centerServiceId)) center.appendChild(new Option('原服务已移除，请重新选择', settings.mcp.centerServiceId));
+    centerLabel.appendChild(center); form.querySelector('[data-mcp]').prepend(centerLabel); center.value = settings.mcp.centerServiceId;
+    const updateCenter = () => { fields.mcpUrl.parentElement.hidden = !!center.value; fields.mcpToken.parentElement.hidden = !!center.value; };
+    center.onchange = updateCenter; updateCenter();
     fields.enabled.checked = settings.enabled; fields.service.value = settings.service;
     fields.mcpUrl.value = settings.mcp.url; fields.mcpToken.value = settings.mcp.token;
     fields.remoteEnabled.checked = profile.remoteEnabled; fields.aiEnabled.checked = profile.aiEnabled;
@@ -31,7 +38,7 @@ function openEnvironmentSettings(forChat = false) {
     }
     function readSettings() {
         return { enabled: fields.enabled.checked, service: fields.service.value, userLocation: places.user,
-            mcp: { url: fields.mcpUrl.value.trim(), token: fields.mcpToken.value.trim(), tools: Object.fromEntries(Object.keys(ENVIRONMENT_TOOL_DEFAULTS).map(operation => [operation, { name: fields['tool-' + operation].value.trim(), args: fields['args-' + operation].value }])) } };
+            mcp: { centerServiceId: center.value, url: fields.mcpUrl.value.trim(), token: fields.mcpToken.value.trim(), tools: Object.fromEntries(Object.keys(ENVIRONMENT_TOOL_DEFAULTS).map(operation => [operation, { name: fields['tool-' + operation].value.trim(), args: fields['args-' + operation].value }])) } };
     }
     const valid = () => !controller.signal.aborted && (!chat || (db.characters.includes(chat) && chat.activeArchiveId === archiveId));
     async function run(action) {
@@ -91,8 +98,8 @@ function openEnvironmentSettings(forChat = false) {
     }
     form.querySelector('[data-test]').onclick = () => run(async () => {
         const config = readSettings(); config.service = 'mcp'; status.textContent = '正在连接 MCP 并读取工具列表…';
-        const state = await getEnvironmentMcpSession(config, controller.signal);
-        const result = await environmentMcpRpc(state, 'tools/list', {}, controller.signal);
+        const state = config.mcp.centerServiceId ? null : await getEnvironmentMcpSession(config, controller.signal);
+        const result = config.mcp.centerServiceId ? { tools: await window.MCPServices.discover(config.mcp.centerServiceId, controller.signal, true) } : await environmentMcpRpc(state, 'tools/list', {}, controller.signal);
         const names = (result.tools || []).map(tool => tool.name);
         const missing = Object.entries(config.mcp.tools).filter(([, tool]) => !names.includes(tool.name)).map(([name]) => name);
         if (missing.length) { status.textContent = `连接成功，尚未匹配：${missing.join('、')}。服务工具：${names.join('、')}`; return; }
@@ -103,7 +110,8 @@ function openEnvironmentSettings(forChat = false) {
         if (next.enabled && !next.userLocation) throw new Error('请先选择或定位你的城市');
         if (saveProfile && chat && fields.remoteEnabled.checked && !places.char) throw new Error('请先选择 char 的城市');
         if (next.service === 'mcp') {
-        environmentEndpoint(next.mcp.url);
+        if (next.mcp.centerServiceId) window.MCPServices.service(next.mcp.centerServiceId);
+        else environmentEndpoint(next.mcp.url);
         for (const tool of Object.values(next.mcp.tools)) {
             if (!tool.name) throw new Error('请填写四类 MCP 工具名');
             environmentToolArguments(tool.args, { name: '测试', latitude: 0, longitude: 0, timezone: 'UTC', countryCode: 'CN', subdivision: '', year: 2026 });
