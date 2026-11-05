@@ -41,7 +41,7 @@ const chatRoomHtml = `
         </main>
         
         <!-- 角色状态栏覆盖层 -->
-        <div id="char-status-overlay" class="status-panel-overlay">
+        <div id="char-status-overlay" class="status-panel-overlay" role="dialog" aria-modal="true">
             <div class="status-panel-content" id="char-status-content">
                 <!-- JS 动态注入 -->
             </div>

@@ -159,7 +159,8 @@ function getContextMemoryJournals(chat) {
     return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal))), ...active].filter(journal => !journal.vectorSupersededBy);
 }
 function getAutoMemoryContextHistory(chat, limit = chat.maxMemory) {
-    const covered = getAutoMemorySettings(chat).useMemory ? getAutoMemoryState(chat).covered : new Set();
+    const settings = getAutoMemorySettings(chat);
+    const covered = settings.useMemory && settings.hideSummarized ? getAutoMemoryState(chat).covered : new Set();
     const history = (chat.history || []).filter(message => !covered.has(message.id));
     // 先排除已压缩原文，再应用原有上下文条数上限。
     return Number(limit) === 0 ? [] : history.slice(-limit);
@@ -416,7 +417,7 @@ function cleanVectorStoryText(chat, value) {
 function getVectorMemoryCandidates(chat) {
     const state = getAutoMemoryState(chat);
     const settings = getAutoMemorySettings(chat);
-    const covered = settings.useMemory ? state.covered : new Set();
+    const covered = settings.useMemory && settings.hideSummarized ? state.covered : new Set();
     const journals = (chat.memoryJournals || []).filter(journal => (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal)) && !journal.vectorSupersededBy &&
         (!journal.autoMemory || state.active.some(active => active.id === journal.id)))
         .map(journal => ({ ...journal, content: cleanVectorStoryText(chat, journal.content) }));

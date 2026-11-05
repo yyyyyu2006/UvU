@@ -1318,7 +1318,6 @@ function sendRenameNotification(group, newName) {
 }
 
 function generateGroupSystemPrompt(group, worldBookPlan) {
-    if (!worldBookPlan && typeof buildWorldBookPlan === 'function') worldBookPlan = buildWorldBookPlan(group);
     const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksAfter = worldBookPlan ? worldBookSection(worldBookPlan, 'after') : (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksGuidelines = worldBookPlan ? worldBookSection(worldBookPlan, 'guidelines') : (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');

@@ -82,7 +82,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
     let storyBridgeMode = null;
-    if (chatType === 'private' && globalThis.UvUStoryBridge?.isConnected()) {
+    if (chatType === 'private' && globalThis.UvUStoryBridge?.isEnabled?.() !== false && globalThis.UvUStoryBridge?.isConnected()) {
         try {
             storyBridgeMode = await globalThis.UvUStoryBridge.getMode(chatId);
             if (storyBridgeMode.mode === 'offline') {
@@ -90,9 +90,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 return;
             }
         } catch (error) {
-            if (!isBackground) showToast('暂时无法确认酒馆模式，本次没有发送回复。请检查本机桥接连接。');
-            console.warn('UvU Story Bridge mode check failed:', error.message);
-            return;
+            if (!isBackground) showToast('酒馆模式暂时不可用，已按普通线上聊天继续回复。');
+            console.warn('UvU Story Bridge mode check failed; continuing with normal reply:', error.message);
         }
     }
     if (chatType === 'private' && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat, chatType)) {
@@ -175,7 +174,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         let historySlice = typeof getAutoMemoryContextHistory === 'function'
             ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
-        const worldBookPlan = typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, historySlice) : undefined;
+        const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
+            ? buildWorldBookPlan(chat, historySlice) : undefined;
         let vectorContext = '';
         if (typeof getVectorMemoryContext === 'function') {
             const query = historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');

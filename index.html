@@ -678,10 +678,12 @@
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-handoff">交接所选范围</button>
                             <small>按当前存档聊天消息编号交接，只发送过滤后的角色和用户正文；酒馆中仍需审核。</small>
                         </section>
-                        <details class="uvu-bridge-review"><summary>待审核剧情：逐条勾选后用于上下文</summary>
+                        <section class="uvu-bridge-review" aria-labelledby="uvu-bridge-review-title">
+                            <div class="uvu-bridge-review-heading"><h3 id="uvu-bridge-review-title">酒馆线下剧情 → UvU 日记</h3><span id="uvu-bridge-review-count">0 项</span></div>
+                            <p class="uvu-bridge-review-help">这里集中显示所有角色收到的酒馆剧情。逐条勾选并保存后，选中的内容才会进入当前角色日记、后续上下文和向量候选。</p>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-refresh-review">刷新审核清单</button>
                             <div id="uvu-bridge-review-list" aria-live="polite"></div>
-                        </details>
+                        </section>
                 <section class="kkt-group uvu-bridge-guide" aria-labelledby="uvu-bridge-guide-title">
                     <h2 id="uvu-bridge-guide-title">连接教程</h2>
                     <ol>

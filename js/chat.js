@@ -264,7 +264,7 @@ function setupChatRoom() {
             frontToggle.type = 'button';
             frontToggle.className = 'status-token-toggle';
             frontToggle.dataset.tokenFlip = 'true';
-            frontToggle.textContent = 'Token';
+            frontToggle.textContent = 'T';
             frontToggle.setAttribute('aria-label', '查看本轮 Token 消耗');
             const frontActions = document.createElement('div');
             frontActions.className = 'status-panel-actions';
@@ -274,7 +274,7 @@ function setupChatRoom() {
             backToggle.type = 'button';
             backToggle.className = 'status-token-toggle';
             backToggle.dataset.tokenFlip = 'true';
-            backToggle.textContent = '返回状态';
+            backToggle.textContent = '↩';
             backToggle.setAttribute('aria-label', '返回状态栏');
             const backActions = document.createElement('div');
             backActions.className = 'status-panel-actions';
@@ -313,7 +313,7 @@ function setupChatRoom() {
                 const htmlContent = item.html;
                 if (htmlContent.includes('<!DOCTYPE html>') || htmlContent.includes('<html') || htmlContent.includes('<style')) {
                     const iframe = document.createElement('iframe');
-                    iframe.style.cssText = "width: 100%; height: 100%; min-height: 80vh; border: none; background: transparent; display: block;";
+                    iframe.style.cssText = "width: 100%; height: 100%; min-height: 0; border: none; background: transparent; display: block;";
                     iframe.srcdoc = processTemplate(htmlContent, char);
                     slideInner.appendChild(iframe);
                 } else {

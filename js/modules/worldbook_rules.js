@@ -31,6 +31,12 @@ function worldBookMatches(key, text, rules) {
 function worldBookUsesAdvancedRules(book) {
     return book?.rules?.advancedEnabled === true;
 }
+function chatUsesAdvancedWorldBook(chat) {
+    // Imported advanced entries carry this flag even while the feature is dormant.
+    // A plan is still deterministic in that state and preserves the legacy depth order;
+    // truly legacy books without rules keep the original static prompt path.
+    return (chat?.worldBookIds || []).some(id => Object.hasOwn(db.worldBooks.find(book => book.id === id)?.rules || {}, 'advancedEnabled'));
+}
 function buildWorldBookPlan(chat, history = chat.history || [], random = Math.random) {
     return (chat.worldBookIds || []).map(id => db.worldBooks.find(w => w.id === id)).filter(w => {
         if (!w || w.type === 'folder' || w.rules?.unsupportedPosition) return false;

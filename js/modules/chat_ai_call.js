@@ -36,7 +36,8 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
     const now = new Date();
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     
-    const worldBookPlan = typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat))) : undefined;
+    const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
+        ? buildWorldBookPlan(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat))) : undefined;
     // 获取世界书
     const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
@@ -515,7 +516,8 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
 }
 
 async function generateCallSummary(chat, callContext) {
-    const worldBookPlan = typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, callContext) : undefined;
+    const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
+        ? buildWorldBookPlan(chat, callContext) : undefined;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
