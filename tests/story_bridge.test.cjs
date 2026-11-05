@@ -34,7 +34,7 @@ function harness(fetchImpl, permissionState = 'granted') {
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/bridge_text.js'), 'utf8'), context);
     const source = fs.readFileSync(path.join(__dirname, '../js/modules/story_bridge.js'), 'utf8');
-    vm.runInContext(source, context);
+    vm.runInContext(source.replace('window.setupUvUStoryBridge =', 'window.__bridgeTest = {automaticSync, disconnect}; window.setupUvUStoryBridge ='), context);
     return { bridge: context.window.UvUStoryBridge, db, chat, output, context };
 }
 
@@ -366,4 +366,38 @@ test('forced review refresh preserves unsaved text and selection in its own arch
  f.bridge.renderReview(true);
  assert.equal(find(host,'textarea').value,'UNSAVED');assert.equal(find(host,'input').checked,true);
  assert.equal(journal.content,'ORIGINAL');
+});
+
+test('reconnect preserves binding offline, backs off, and stops automatic retries after revocation',async()=>{
+ let calls=0,mode='offline';
+ const f=harness(async url=>{calls++;if(mode==='offline')throw new Error('offline');if(mode==='revoked')return {ok:false,status:401,json:async()=>({error:'revoked'})};return {ok:true,json:async()=>url.endsWith('/client/session')?{paired:true,device:{id:'a',name:'手机'}}:{characters:[]}};});
+ assert.equal(typeof f.bridge.reconnect,'function');
+ await f.bridge.reconnect();assert.equal(f.bridge.isConnected(),true);assert.equal(f.bridge.connectionSnapshot().phase,'waiting');
+ const after=calls;await f.bridge.reconnect();assert.equal(calls,after);
+ mode='online';await f.bridge.reconnect({force:true});assert.equal(f.bridge.connectionSnapshot().phase,'connected');
+ mode='revoked';await f.bridge.reconnect({force:true});assert.equal(f.bridge.connectionSnapshot().phase,'revoked');
+ const revokedCalls=calls;await f.bridge.reconnect();assert.equal(calls,revokedCalls);assert.equal(f.bridge.isConnected(),true);
+});
+
+test('credentials are never forwarded after changing the saved bridge endpoint',async()=>{
+ const calls=[];const f=harness(async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({mode:'online'})};});
+ await f.bridge.getMode('char-1');
+ f.db.uvuStoryBridgeSettings.baseUrl='http://127.0.0.1:9999/api/plugins/uvu-story-bridge';
+ await assert.rejects(f.bridge.getMode('char-1'),/地址|绑定/);
+ assert.equal(calls.length,1);assert.equal(f.bridge.isConnected(),true);
+});
+
+
+test('late automatic failure cannot overwrite disconnected state',async()=>{
+ let rejectDirectory,started;const ready=new Promise(resolve=>started=resolve);
+ const f=harness(async url=>{
+  if(url.endsWith('/client/session'))return {ok:true,json:async()=>({paired:true})};
+  if(url.endsWith('/client/characters')){started();return new Promise((_,reject)=>rejectDirectory=reject);}
+  return {ok:true,json:async()=>({})};
+ });
+ const running=f.context.window.__bridgeTest.automaticSync();await ready;
+ await f.context.window.__bridgeTest.disconnect();
+ rejectDirectory(new Error('late offline'));await running;
+ assert.equal(f.bridge.connectionSnapshot().phase,'unpaired');
+ assert.equal(f.bridge.isConnected(),false);
 });

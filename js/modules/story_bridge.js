@@ -11,6 +11,10 @@
     const reviewDrafts = new Map();
     let generation = 0;
     let inboxBusy = false;
+    let connection = {phase:'idle',failures:0,nextAttempt:0};
+    let reconnecting = false;
+    let pairingBusy = false;
+    let automaticBusy = false;
 
     function settings() {
         db.uvuStoryBridgeSettings = db.uvuStoryBridgeSettings || {};
@@ -35,9 +39,22 @@
         catch { return ''; }
     }
 
-    function saveToken(token) {
-        if (token) localStorage.setItem(STORAGE_KEY, JSON.stringify({ token }));
+    function saveToken(token, device) {
+        if (token) localStorage.setItem(STORAGE_KEY, JSON.stringify({ token, baseUrl:baseUrl(), device }));
         else localStorage.removeItem(STORAGE_KEY);
+        connection = {phase:token ? 'idle' : 'unpaired',failures:0,nextAttempt:0};
+    }
+
+    function bindTokenAddress(address) {
+        const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        if (stored.baseUrl && stored.baseUrl !== address) throw Object.assign(new Error('桥接地址已改变，原绑定只用于原地址。请恢复地址，或在新地址重新配对。'),{code:'ADDRESS_CHANGED'});
+        if (!stored.baseUrl && stored.token) localStorage.setItem(STORAGE_KEY,JSON.stringify({...stored,baseUrl:address}));
+    }
+
+    function connectionSnapshot() { return {...connection}; }
+    function connectionStatus(message) {
+        const output=document.getElementById('uvu-bridge-connection');
+        if (output) {output.textContent=message;output.dataset.phase=connection.phase;}
     }
 
     function baseUrl() {
@@ -69,13 +86,15 @@
         const headers = { Accept: 'application/json' };
         const token = readToken();
         if (auth && !token) throw new Error('尚未配对酒馆桥接服务。');
+        const address = baseUrl();
+        if (auth) bindTokenAddress(address);
         if (auth) headers.Authorization = `Bearer ${token}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         let response;
         const signal = AbortSignal.timeout(15000);
         const addressSpace = targetAddressSpace();
         try {
-            response = await fetch(`${baseUrl()}/v1${path}`, {
+            response = await fetch(`${address}/v1${path}`, {
                 signal, method, headers, body: body === undefined ? undefined : JSON.stringify(body),
                 ...(addressSpace ? { targetAddressSpace: addressSpace } : {})
             });
@@ -95,7 +114,11 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             const help = { 401: '配对码无效或令牌失效，请重新配对', 403: '来源白名单、回环地址或接口权限不通过', 404: '接口不存在，请更新服务端并重启酒馆', 413: '剧情数据超过限制' };
-            throw new Error(`HTTP ${response.status} · ${help[response.status] || '桥接请求失败'}：${data.error || '未提供详细原因'}`);
+            if (auth && response.status === 401 && token === readToken() && address === baseUrl()) {
+                connection.phase='revoked';connection.nextAttempt=Infinity;
+                connectionStatus('绑定凭证已失效或被解除，请重新配对；本机凭证尚未清除。');
+            }
+            throw Object.assign(new Error(`HTTP ${response.status} · ${help[response.status] || '桥接请求失败'}：${data.error || '未提供详细原因'}`),{status:response.status});
         }
         return data;
     }
@@ -191,24 +214,76 @@
     }
 
     async function pair() {
+        if (pairingBusy || reconnecting) throw new Error('连接操作正在进行，请稍候。');
+        pairingBusy=true;
+        try {
         const urlInput = document.getElementById('uvu-bridge-url');
         const codeInput = document.getElementById('uvu-bridge-pair-code');
         settings().baseUrl = (urlInput?.value || DEFAULT_URL).trim().replace(/\/+$/, '');
+        const address=baseUrl(),epoch=++generation;
         let result;
         try {
-            result = await request('/client/pair', { method: 'POST', body: { code: String(codeInput?.value || '').trim() }, auth: false });
+            result = await request('/client/pair', { method: 'POST', body: { code: String(codeInput?.value || '').trim(), device:{name:String(document.getElementById('uvu-bridge-device-name')?.value || 'UvU 浏览器').trim().slice(0,80)} }, auth: false });
         } catch (error) {
             await saveData().catch(() => {});
             throw error;
         }
         if (!result.token) throw new Error('酒馆未返回配对令牌。');
-        saveToken(result.token);
+        if (epoch!==generation || address!==baseUrl()) throw new Error('连接目标已改变，请核对地址后重新配对。');
+        saveToken(result.token,result.device);
         if (codeInput) codeInput.value = '';
-        await publishCharacterDirectory(true);
         await saveData();
-        status('已配对；默认记忆上下文不变。');
-        const imported = await syncIncoming(currentChatType === 'private' ? currentChatId : '');
-        if (!imported) status('已配对；酒馆收件箱目前没有新剧情。');
+        connectionStatus('已保存长期绑定；以后可自动重连。');
+        status('配对成功，绑定已保存在当前浏览器。');
+        try { await publishCharacterDirectory(true); await reconnect({force:true}); }
+        catch(error) {status('绑定已保存，后续同步待重试：'+error.message,true);}
+        } finally {pairingBusy=false;}
+    }
+
+    async function reconnect({force=false} = {}) {
+        if (!isEnabled() || !isConnected() || document.visibilityState!=='visible' || reconnecting) return false;
+        if (!force && (connection.phase==='revoked' || Date.now()<connection.nextAttempt)) return false;
+        reconnecting=true;
+        const token=readToken(),address=baseUrl(),epoch=generation;
+        const current=()=>token===readToken() && address===baseUrl() && epoch===generation && isEnabled();
+        try {
+            connection.phase='connecting';connectionStatus('已绑定，正在连接酒馆…');
+            let session;
+            try {session=await request('/client/session');}
+            catch(error) {if(error.status!==404)throw error;await request('/client/service');session={paired:true};}
+            if (!current()) return false;
+            if(session.paired!==true) throw new Error('服务端未确认绑定，请检查插件版本。');
+            connection={phase:'connected',failures:0,nextAttempt:Date.now()+30000};
+            connectionStatus('已绑定 · 已连接'+(session.device?.name ? ' · '+session.device.name : ''));
+            return true;
+        } catch(error) {
+            if (!current()) return false;
+            const failures=connection.failures+1;
+            connection={phase:error.status===401?'revoked':error.code==='ADDRESS_CHANGED'?'address-changed':'waiting',failures,
+                nextAttempt:error.status===401?Infinity:Date.now()+Math.min(120000,5000*2**Math.min(failures-1,5))};
+            connectionStatus(connection.phase==='revoked'?'绑定已失效，请重新配对。':connection.phase==='address-changed'?error.message:'已绑定，等待酒馆连接；绑定已保留，将自动重试。');
+            return false;
+        } finally {reconnecting=false;}
+    }
+
+    async function automaticSync() {
+        if (automaticBusy || pairingBusy || !isEnabled() || !isConnected() || document.visibilityState!=='visible') return;
+        automaticBusy=true;
+        const token=readToken(),address=baseUrl(),epoch=generation;
+        const current=()=>token===readToken() && address===baseUrl() && epoch===generation && isEnabled();
+        try {
+            if (connection.phase!=='connected' || Date.now()>=connection.nextAttempt) {if(!await reconnect())return;}
+            if (!current()) return;
+            await publishCharacterDirectory();
+            if (!current()) return;
+            await flushOutbox();
+            if (!current()) return;
+            await syncInbox();
+        } catch(error) {
+            if (!current()) return;
+            if (connection.phase!=='revoked') {connection.phase='waiting';connection.failures++;connection.nextAttempt=Date.now()+Math.min(120000,5000*2**Math.min(connection.failures-1,5));connectionStatus('已绑定，连接中断；绑定已保留，将自动重试。');}
+            console.warn('UvU Bridge automatic sync:',error.message);
+        } finally {automaticBusy=false;}
     }
 
     async function publishCharacterDirectory(force = false) {
@@ -225,10 +300,11 @@
 
     async function disconnect() {
         let remoteError;
-        try { if (isConnected()) await request('/client/revoke', { method: 'POST', body: {} }); } catch (error) { remoteError = error; }
-        if (remoteError && !confirm('服务不可达，无法撤销服务端令牌。是否仅断开本机连接？下次配对前请在酒馆重新生成配对码。')) throw remoteError;
+        try { if (isConnected()) await request('/client/revoke', { method: 'POST', body: {} }); } catch (error) { if(error.status!==401)remoteError = error; }
+        if (remoteError && !confirm('无法确认服务端解绑。是否仅断开本机？服务端旧设备仍需在酒馆“已绑定设备”中解除。')) throw remoteError;
         saveToken(''); generation++;
-        status(remoteError ? '本机已断开；服务端令牌尚未撤销，重新配对可替换旧令牌。' : '已断开连接并撤销服务端令牌。');
+        connectionStatus('本机已解除绑定。');
+        status(remoteError ? '本机已断开；请在酒馆设备列表解除对应旧设备。' : '已解除当前设备绑定；其他设备继续有效。');
     }
 
     async function getMode(characterKey) {
@@ -624,7 +700,7 @@
         for (const id of ['uvu-bridge-handoff-start', 'uvu-bridge-handoff-end']) document.getElementById(id)?.addEventListener('input', () => { document.getElementById('uvu-bridge-handoff-start').dataset.manual = 'true'; });
         document.getElementById('uvu-bridge-latest')?.addEventListener('click', () => updateHandoffRange(true));
         status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
-        if (isConnected()) publishCharacterDirectory().catch(error => status(`角色列表同步失败：${error.message}`, true));
+        if (isConnected()) automaticSync();
         pairButton.dataset.bound = 'true';
         pairButton.addEventListener('click', async () => {
             pairButton.disabled = true;
@@ -648,10 +724,18 @@
             finally { event.target.disabled = false; }
         });
         disconnectButton.addEventListener('click', async () => {
+            if (pairingBusy) return status('配对尚未完成，请稍候。',true);
             disconnectButton.disabled = true;
             try { await disconnect(); }
             catch (error) { status(error.message, true); }
             finally { disconnectButton.disabled = false; }
+        });
+        document.getElementById('uvu-bridge-reconnect')?.addEventListener('click', async event => {
+            if (pairingBusy) return status('配对尚未完成，请稍候。',true);
+            if (!isConnected()) return status('请先输入配对码完成首次绑定。',true);
+            event.target.disabled=true;
+            try {if(await reconnect({force:true}))await automaticSync();}
+            finally {event.target.disabled=false;}
         });
         injectCheckbox.addEventListener('change', async () => {
             try {
@@ -674,17 +758,15 @@
             if (!isEnabled()) return;
             updateHandoffRange();
             renderReview();
-            flushOutbox().catch(error=>console.warn('Bridge outbox:',error.message));
-            publishCharacterDirectory().catch(error => console.warn('UvU Story Bridge character directory sync failed:', error.message));
-            syncInbox().catch(error => status(error.message, true));
+            automaticSync();
         }, 8000);
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                syncInbox().catch(error => status(error.message, true));
+                automaticSync();
             }
         });
     }
 
-    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
+    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, getMode, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();
