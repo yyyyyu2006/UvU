@@ -396,14 +396,16 @@
         if (scene.imported || !Array.from({ length: scene.partCount }, (_, index) => index + 1).every(part => Object.hasOwn(scene.parts, part))) return false;
         if (journals.some(item => item.externalSceneId === sceneId)) { scene.imported = true; return false; }
         if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default')) return false;
-        const content = cleanText(Array.from({ length: scene.partCount }, (_, index) => scene.parts[index + 1]).join('\n\n'));
+        const items = scene.sceneFormat === 'floors-v1'
+            ? globalThis.UvUBridgeText.floorItems(scene.parts, scene.floorParts)
+            : globalThis.UvUBridgeText.legacyFloorItems(Array.from({ length: scene.partCount }, (_, index) => scene.parts[index + 1]).join('\n\n'));
+        const content = globalThis.UvUBridgeText.memoryText(items.map(item => ({...item, selected: true})));
         if (!content) throw new Error('剧情过滤后为空，请回酒馆核对正文和排除标签。');
-        const items = globalThis.UvUBridgeText.segments(content);
         journals.push({ id: 'st_scene_' + sceneId, externalSceneId: sceneId, source: 'sillytavern',
             title: (chat.realName || chat.remarkName || chat.name || '当前角色') + ' · ' + scene.title,
             content, range: { start: 0, end: 0 }, createdAt: scene.createdAt,
             chatId: chat.id, chatType: 'private', isFavorited: false,
-            bridgeReview: { version: 1, status: 'pending', archiveId: String(chat.activeArchiveId || 'default'),
+            bridgeReview: { version: 2, sceneFormat: scene.sceneFormat || 'legacy', status: 'pending', archiveId: String(chat.activeArchiveId || 'default'),
                 sourceText: content, stCharacterKey: scene.stCharacterKey || '', items }
         });
         scene.imported = true;
@@ -467,13 +469,21 @@
                 if (event.kind !== 'scene_transcript') continue;
                 const payload = event.payload || {}, id = String(event.sceneId || ''), part = Number(payload.part), count = Number(payload.partCount);
                 if (!id || !Number.isInteger(part) || !Number.isInteger(count) || count < 1 || count > 2000 || part < 1 || part > count || typeof payload.text !== 'string') throw new Error('酒馆剧情分段格式无效；未导入。');
+                if (payload.sceneFormat && payload.sceneFormat !== 'floors-v1') throw new Error('不支持的剧情楼层格式，请更新 UvU。');
+                if (payload.sceneFormat === 'floors-v1') globalThis.UvUBridgeText.validateFloor(payload.floor);
                 await verifyPart(payload.text, payload.partHash); assertCurrent();
                 const key = String(characterKey) + ':' + id;
                 if (receipts[key]) continue;
                 const scene = staged[key] || (staged[key] = { characterKey: String(characterKey), title: String(payload.title || '酒馆线下剧情'), createdAt: Number(event.createdAt) || Date.now(), partCount: count, parts: {},
-                    archiveId: String(payload.uvuArchiveId || ''), stCharacterKey: String(payload.stCharacterKey || '') });
+                    archiveId: String(payload.uvuArchiveId || ''), stCharacterKey: String(payload.stCharacterKey || ''),
+                    sceneFormat: payload.sceneFormat || '', floorParts: {} });
                 if (scene.partCount !== count || (scene.archiveId || '') !== String(payload.uvuArchiveId || '') || (scene.stCharacterKey || '') !== String(payload.stCharacterKey || '')) throw new Error('同一剧情的分段身份或总数不一致；未导入。');
+                if ((scene.sceneFormat || '') !== (payload.sceneFormat || '')) throw new Error('同一剧情的楼层格式不一致；未导入。');
                 if (Object.hasOwn(scene.parts, part) && scene.parts[part] !== payload.text) throw new Error('同一剧情片段内容冲突；请回酒馆检查。');
+                if (payload.sceneFormat === 'floors-v1') {
+                    if (scene.floorParts[part] && JSON.stringify(scene.floorParts[part]) !== JSON.stringify(payload.floor)) throw new Error('同一剧情的楼层信息冲突；未导入。');
+                    scene.floorParts[part] = structuredClone(payload.floor);
+                }
                 scene.parts[part] = payload.text;
             }
             assertCurrent();
@@ -518,10 +528,17 @@
         const archiveId = chat.activeArchiveId;
         const before = structuredClone(journal);
         const review = journal.bridgeReview || { version: 1, sourceText: journal.content, archiveId: String(archiveId || 'default') };
-        const next = items.map(item => ({ id: String(item.id), text: cleanText(item.text), selected: item.selected === true }));
-        const content = next.filter(item => item.selected && item.text).map(item => item.text).join('\n\n');
-        journal.bridgeReview = { ...review, items: next, status: content ? 'approved' : 'pending' };
+        const legacyItems = review.version !== 2 ? globalThis.UvUBridgeText.legacyFloorItems(review.sourceText || journal.content) : [];
+        const next = items.map(item => {
+            const original = review.items?.find(entry => String(entry.id) === String(item.id)) || legacyItems.find(entry => entry.id === String(item.id));
+            return {id: String(item.id), text: review.version === 2 || original?.floor
+                ? String(item.text || '').replace(/\r\n/g, '\n').trim() : cleanText(item.text), selected: item.selected === true,
+                ...(original?.floor ? {floor: structuredClone(original.floor)} : {})};
+        });
+        const content = globalThis.UvUBridgeText.memoryText(next);
+        journal.bridgeReview = { ...review, version: 2, items: next, status: content ? 'approved' : 'pending' };
         journal.content = content || review.sourceText; journal.isFavorited = Boolean(content);
+        if (content) { journal.category ||= '酒馆线下剧情'; journal.timeline ||= new Date(journal.createdAt || Date.now()).toISOString().slice(0, 10); }
         try { await saveData(); }
         catch (error) {
             if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) { for (const key of Object.keys(journal)) if (!Object.hasOwn(before, key)) delete journal[key]; Object.assign(journal, before); }
@@ -588,25 +605,66 @@
                 reviewDrafts.set(key, draft);
             }
             const items = draft.items;
+            detail.open = draft.expanded === true;
+            detail.addEventListener('toggle', () => {draft.expanded = detail.open;});
+            const toolbar = document.createElement('div'); toolbar.className = 'uvu-bridge-review-toolbar';
+            const selectLabel = document.createElement('label'), selectAll = document.createElement('input'), selectedCount = document.createElement('span');
+            selectAll.type = 'checkbox'; selectAll.setAttribute('aria-label', '全选本场剧情');
+            const selectText = document.createElement('span'); selectText.textContent = '全选';
+            selectLabel.append(selectAll, selectText);
+            toolbar.append(selectLabel, selectedCount);
             const list = document.createElement('div'); list.className = 'uvu-bridge-review-items';
             const fields = [];
-            items.forEach(item => {
-                const row = document.createElement('label'), check = document.createElement('input'), text = document.createElement('textarea');
-                check.type = 'checkbox'; check.checked = item.selected; text.value = item.text;
-                check.addEventListener('change', () => { item.selected = check.checked; });
-                text.addEventListener('input', () => { item.text = text.value; });
-                check.setAttribute('aria-label', '允许这条剧情加入上下文'); row.append(check, text); list.append(row); fields.push({ item, check, text });
+            const updateSelection = () => {
+                const selected = items.filter(item => item.selected).length;
+                selectAll.checked = items.length > 0 && selected === items.length;
+                selectAll.indeterminate = selected > 0 && selected < items.length;
+                selectedCount.textContent = '已选 ' + selected + ' / ' + items.length + ' 层';
+            };
+            selectAll.addEventListener('change', () => {
+                for (const {item, check} of fields) {item.selected = selectAll.checked; check.checked = item.selected;}
+                updateSelection();
             });
-            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入日记';
+            items.forEach(item => {
+                const row = document.createElement('div'), check = document.createElement('input'), text = document.createElement('textarea');
+                row.className = 'uvu-bridge-review-row';
+                const floorDetail = document.createElement('details'), floorTitle = document.createElement('summary');
+                floorDetail.className = 'uvu-bridge-review-floor';
+                floorDetail.open = item.expanded === true;
+                floorDetail.addEventListener('toggle', () => {item.expanded = floorDetail.open;});
+                const floor = item.floor;
+                floorTitle.textContent = (floor?.number ? '第 ' + floor.number + ' 层' : '原文记录') +
+                    (floor?.speaker ? ' · ' + floor.speaker : '') + ' · ' + item.text.replace(/\s+/g, ' ').slice(0, 56);
+                check.type = 'checkbox'; check.checked = item.selected; text.value = item.text;
+                text.setAttribute('aria-label', '编辑整层剧情');
+                check.addEventListener('change', () => { item.selected = check.checked; updateSelection(); });
+                text.addEventListener('input', () => { item.text = text.value; });
+                const note = document.createElement('p'); note.className = 'uvu-bridge-review-help';
+                note.textContent = floor?.extraction === 'tagged' ? '正文标签：' + floor.bodyTag + '；可编辑本层文字。'
+                    : '未匹配正文标签或来自旧版导出，请核对是否残留状态栏、小剧场等内容。';
+                floorDetail.append(floorTitle, note, text);
+                check.setAttribute('aria-label', '允许这条剧情加入上下文'); row.append(check, floorDetail); list.append(row); fields.push({ item, check, text });
+            });
+            updateSelection();
+            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入记忆';
             save.addEventListener('click', async () => {
                 if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('目标存档已切换，请打开原存档后审核。', true);
                 if (JSON.stringify(journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content)) !== sourceSignature) return status('原文已更新，请刷新后重新审核。', true);
                 if (reviewBusy) return; reviewBusy = true; save.disabled = true;
-                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); reviewDrafts.delete(key); renderReview(true); status('已审核并保存到当前角色日记；只有勾选内容会进入后续上下文和向量候选。'); }
+                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); reviewDrafts.delete(key); renderReview(true); status('已审核并保存到当前角色日记 / 记忆管理；只有勾选内容通过原有记忆开关参与后续上下文和向量候选。'); }
                 catch (error) { status(error.message, true); }
                 finally { reviewBusy = false; save.disabled = false; }
             });
-            detail.append(list, save); host.append(detail);
+            if (journal.bridgeReview?.version !== 2 && journal.bridgeReview?.status !== 'approved') {
+                const regroup = document.createElement('button'); regroup.type = 'button'; regroup.className = 'btn btn-secondary'; regroup.textContent = '按旧原文重新整理楼层';
+                regroup.addEventListener('click', () => {
+                    if (!confirm('重新整理会替换本场未保存的编辑与勾选，保存前不影响已有记忆。旧版已删除的正文标签无法恢复。继续？')) return;
+                    draft.items = globalThis.UvUBridgeText.legacyFloorItems(journal.bridgeReview?.sourceText || journal.content);
+                    renderReview(true);
+                });
+                toolbar.append(regroup);
+            }
+            detail.append(toolbar, list, save); host.append(detail);
         }
         for (const scene of pending) {
             const chat = db.characters.find(item => String(item.id) === String(scene.characterKey));

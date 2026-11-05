@@ -354,12 +354,12 @@ test('explicit recovery preserves complete pending scenes for other archives',as
 
 test('forced review refresh preserves unsaved text and selection in its own archive',()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));
- function element(tag){return {tag,children:[],listeners:{},value:'',checked:false,dataset:{},append(...v){this.children.push(...v);},replaceChildren(){this.children=[];},setAttribute(){},addEventListener(k,v){this.listeners[k]=v;},contains(){return false;}};}
+ function element(tag){return {tag,children:[],listeners:{},attributes:{},value:'',checked:false,dataset:{},append(...v){this.children.push(...v);},replaceChildren(){this.children=[];},setAttribute(k,v){this.attributes[k]=v;},addEventListener(k,v){this.listeners[k]=v;},contains(){return false;}};}
  const host=element('host');f.context.document.createElement=element;
  f.context.document.getElementById=id=>id==='uvu-bridge-review-list'?host:null;
  const journal={id:'j',source:'sillytavern',content:'ORIGINAL',bridgeReview:{archiveId:'a',sourceText:'ORIGINAL',items:[{id:'i',text:'ORIGINAL',selected:false}]}};
  f.chat.activeArchiveId='a';f.chat.memoryJournals=[journal];
- const find=(root,tag)=>root.tag===tag?root:root.children.flatMap(c=>typeof c==='object'?[find(c,tag)]:[]).find(Boolean);
+ const find=(root,tag)=>root.tag===tag && (tag!=='input' || root.attributes?.['aria-label']==='允许这条剧情加入上下文')?root:root.children.flatMap(c=>typeof c==='object'?[find(c,tag)]:[]).find(Boolean);
  f.bridge.renderReview(true);
  let text=find(host,'textarea'),check=find(host,'input');
  text.value='UNSAVED';text.listeners.input();check.checked=true;check.listeners.change();
@@ -385,6 +385,42 @@ test('credentials are never forwarded after changing the saved bridge endpoint',
  f.db.uvuStoryBridgeSettings.baseUrl='http://127.0.0.1:9999/api/plugins/uvu-story-bridge';
  await assert.rejects(f.bridge.getMode('char-1'),/地址|绑定/);
  assert.equal(calls.length,1);assert.equal(f.bridge.isConnected(),true);
+});
+
+test('transport chunks reconstruct whole floors without merging speakers or paragraphs',async()=>{
+ const floor={id:'f1',number:12,speaker:'角色',role:'assistant',createdAt:2,extraction:'tagged',bodyTag:'content',partCount:2};
+ const events=[
+  {seq:1,characterKey:'char-1',kind:'scene_transcript',sceneId:'floors',payload:{sceneFormat:'floors-v1',part:1,partCount:3,text:'第一段。\n\n第二',floor:{...floor,part:1}}},
+  {seq:2,characterKey:'char-1',kind:'scene_transcript',sceneId:'floors',payload:{sceneFormat:'floors-v1',part:2,partCount:3,text:'段。',floor:{...floor,part:2}}},
+  {seq:3,characterKey:'char-1',kind:'scene_transcript',sceneId:'floors',payload:{sceneFormat:'floors-v1',part:3,partCount:3,text:'我答应了。',floor:{...floor,id:'f2',number:13,speaker:'User',role:'user',part:1,partCount:1}}}
+ ];
+ const f=harness(async url=>({ok:true,json:async()=>url.includes('/client/events')?{events}:{}}));
+ await f.bridge.syncIncoming('char-1');
+ const journal=f.chat.memoryJournals[0];assert.equal(journal.bridgeReview.items.length,2);
+ assert.equal(journal.bridgeReview.items[0].text,'第一段。\n\n第二段。');
+ assert.equal(journal.bridgeReview.items[0].floor.number,12);
+ assert.equal(journal.isFavorited,false);assert.equal(f.bridge.allowedMemory(f.chat,journal),false);
+ await f.bridge.persistReview(f.chat,journal,journal.bridgeReview.items.map((item,i)=>({...item,text:i?'未选择':'编辑后的完整一层 <content>字面标签 <status>例子</status>',selected:i===0})));
+ assert.match(journal.content,/角色/);assert.match(journal.content,/编辑后的完整一层/);assert.doesNotMatch(journal.content,/未选择/);
+ assert.equal(journal.bridgeReview.items[0].floor.number,12);
+ assert.equal(journal.category,'酒馆线下剧情');assert.equal(f.bridge.allowedMemory(f.chat,journal),true);
+ assert.ok(journal.content.includes('<content>字面标签 <status>例子</status>'));
+});
+
+test('conflicting floor chunks fail without saving a journal or moving cursor',async()=>{
+ const floor={id:'f',number:1,speaker:'A',role:'assistant',createdAt:1,extraction:'tagged',bodyTag:'content',partCount:2};
+ const events=[1,2].map(part=>({seq:part,characterKey:'char-1',kind:'scene_transcript',sceneId:'badfloor',payload:{sceneFormat:'floors-v1',part,partCount:2,text:'正文',floor:{...floor,part,speaker:part===1?'A':'B'}}}));
+ const f=harness(async()=>({ok:true,json:async()=>({events})}));
+ await assert.rejects(f.bridge.syncIncoming('char-1'),/楼层/);
+ assert.equal(f.chat.memoryJournals.length,0);
+ assert.equal(f.db.uvuStoryBridgeSettings.cursorByCharacter['char-1'],undefined);
+});
+
+test('old timestamp exports group paragraphs into source floors',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({events:[{seq:1,characterKey:'char-1',kind:'scene_transcript',sceneId:'legacyfloor',payload:{part:1,partCount:1,text:'[2026-11-05T00:00:00.000Z | A]\n第一段。\n\n第二段。\n\n[2026-11-05T00:01:00.000Z | User]\n回答。'}}]})}));
+ await f.bridge.syncIncoming('char-1');
+ assert.equal(f.chat.memoryJournals[0].bridgeReview.items.length,2);
+ assert.equal(f.chat.memoryJournals[0].bridgeReview.items[0].text,'第一段。\n\n第二段。');
 });
 
 

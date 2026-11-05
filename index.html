@@ -29,7 +29,7 @@
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261105-handoff-recovery">
-    <link rel="stylesheet" href="css/settings.css?v=20261105-current-archive">
+    <link rel="stylesheet" href="css/settings.css?v=20261105-floor-review">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
@@ -688,8 +688,8 @@
                             <small>按当前存档聊天消息编号交接，只发送过滤后的角色和用户正文；酒馆中仍需审核。</small>
                         </section>
                         <section class="uvu-bridge-review" aria-labelledby="uvu-bridge-review-title">
-                            <div class="uvu-bridge-review-heading"><h3 id="uvu-bridge-review-title">酒馆线下剧情 → UvU 日记</h3><span id="uvu-bridge-review-count">0 项</span></div>
-                            <p class="uvu-bridge-review-help">这里集中显示各角色及存档收到的酒馆剧情。无需一直打开该角色聊天；展开核对原文、逐条勾选并保存后，仅所标角色和存档的日记生效。其他存档可点“打开原存档审核”。未审核或未勾选内容不会进入上下文。</p>
+                            <div class="uvu-bridge-review-heading"><h3 id="uvu-bridge-review-title">酒馆线下剧情 → UvU 记忆</h3><span id="uvu-bridge-review-count">0 项</span></div>
+                            <p class="uvu-bridge-review-help">按角色和存档审核整层剧情，可全选、展开编辑后保存为日记记忆。未审核或未勾选内容不会进入上下文；其他存档可点“打开原存档审核”。</p>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-refresh-review">刷新审核清单</button>
                             <div id="uvu-bridge-review-list" aria-live="polite"></div>
                         </section>
@@ -709,7 +709,8 @@ node setup-server-plugin.js</code></pre>
                         <li><strong>UvU → 酒馆：</strong>进入本页时自动跟随最近打开的私聊和当前存档；可点“跟随当前打开的私聊”重新对齐，核对存档名称、ID、消息总数及末条正文。手动选择其他角色时读取该角色当前活动存档的实时消息，不读取主存档或旧快照。选择角色后，默认选取当前存档最近 50 条有效正文（不足 50 条则全部）；编号仍是原始消息位置，思维链、隐藏内容和状态栏不发送。可以手动填起止编号，或点“最近 50 条”恢复自动范围。点“交接所选范围”后留意新增/更新条数和待发送提示；交接后可重复发送以恢复队列副本；酒馆会合并相同正文，服务接收成功不代表酒馆已审核。回酒馆展开“线上记忆审核”点“刷新线上存档”，刷新后优先显示最近一次手动交接的存档（显示名称、ID、已接收条数及交接范围），核对勾选与编辑，再点“保存勾选与编辑”。当前来源显示 0 条但其他来源有记录时，可切换来源存档；下拉框只切换查看与审核，本场进行中也可使用；本场记忆来源和导出目标保持锁定。需要换下场来源时，先结束本场，再选择存档并点“设为下场记忆来源”，然后开始新场景。已删除副本不会通过刷新恢复。新条目默认预选最近 50 条，未保存不注入；已审核的选择保留。更新过的原文须重新审核。酒馆只有主动开启记忆注入并开始本场后才会使用，不复制两边人设，也不加入 UvU 日记。</li>
                         <li><strong>删除副本与状态栏：</strong>酒馆审核区展开一条记录可“删除这条”，也可“删除勾选副本”；仅删除酒馆接收的线上记忆，刷新不会恢复，两边原聊天保留。UvU 状态栏底部 T / × / 删 分别用于切换 Token、关闭面板和删除正在查看的单张状态栏快照，模板与原聊天保留。</li>
                         <li><strong>开始和结束线下：</strong>点“开始线下剧情”后手动发送开场；“拿出手机”进入 UvU 手机模式，“收起手机”回到酒馆。结束时回原角色私聊点“结束并导出”；如果中途切换到其他聊天，原场景会保留保护，回原聊天后即可继续导出，已冻结的导出内容可安全重试。</li>
-                        <li><strong>酒馆 → UvU 日记：</strong>酒馆“结束并导出”后，回本页点“收取酒馆记忆”，在上面的“酒馆线下剧情 → UvU 日记”展开记录，核对角色、存档、日期与过滤后的完整原文，逐条编辑、勾选，再点“保存审核并加入日记”。关闭所有勾选并保存可暂停该篇；“刷新审核清单”只刷新本地列表，不联网收取。多角色可以同时聊天，剧情按冻结的目标接收。目标存档不同会保留草稿，点“打开目标存档并收取”后审核。</li>
+                        <li><strong>酒馆 → UvU 记忆：</strong>酒馆“结束并导出”后，回本页点“收取酒馆记忆”，展开“酒馆线下剧情 → UvU 记忆”的场次。新版按酒馆整层显示，空行不会拆成多条；长楼层传输时分段、审核时合并。每层保留说话人和原楼层号，支持全选、取消单层和展开编辑。点“保存审核并加入记忆”后，所选文字保存在对应角色 / 存档的回忆日记与记忆管理中，分类为“酒馆线下剧情”；没有另建重复记忆。仍需开启本页互通和该角色“使用已审核的酒馆剧情记忆”，才通过现有记忆机制参与后续回复；向量召回仍需另行启用。全部取消并保存可暂停该篇。刷新清单保留尚未保存的勾选和编辑；跨存档请打开目标存档审核。</li>
+                        <li><strong>正文识别与旧记录：</strong>酒馆导出自动识别 content、maintext、main_text、main-text、正文、正文内容、正文部分、story、storytext、story_text、story-content、story_content、narrative、narration 等成对标签，按列表顺序取首个匹配类型；其他预设可在酒馆“正文标签”填写自定义名称。匹配后只发送标签内正文，过滤已知思考、状态栏、小剧场和代码副本。未匹配则保留无标签文字并提示核对，不会自动勾选；已识别标签没有闭合会阻止本场导出，请核对原文。任意预设的自定义结构无法保证全部自动识别。旧待审核场次可点“按旧原文重新整理楼层”，只按已有时间 / 说话人边界归并；原标签已丢失的内容需人工编辑或重新导出。已审核记忆不会被自动重写。酒馆原消息始终保留。</li>
                         <li><strong>开关与场景保护：</strong>本页开关控制 UvU 同步及酒馆日记注入；酒馆扩展顶部总开关同时停止后台请求、清除该扩展注入并恢复 UvU 线上模式。重新开启后须回酒馆原角色、原聊天点“继续本场”。其他角色、同卡其他聊天和其他存档不使用本场记忆。开始/继续不会替你发送开场，也不会替代原来的回复 API。</li>
                         <li><strong>按钮与连接状态：</strong>“连接 / 配对”保存本机独立设备凭证；以后前台自动检查并重连，无须再次输入配对码；也可点“重新连接”立即检查当前绑定。“已绑定，等待连接”通常表示酒馆未启动，绑定仍保留；401 后需重新配对。清除浏览器网站数据或删除服务端绑定数据会丢失绑定。凭证仅用于原桥接地址，换地址需重新配对。“断开连接”先尝试撤销令牌；服务不可达时可确认仅断开本机，并到酒馆设备列表解除旧设备；解绑当前设备不会影响其他设备。永久码重置、单台解绑和全部解绑在酒馆面板分别操作。“收取酒馆记忆”检查各目标收件箱、分批收取，完整且校验通过才进入审核草稿。401 重新配对；403 检查来源白名单或接口权限；404 更新服务端并重启；连接超时或网络错误不能单凭它判定为未授权。</li>
                         <li><strong>版本更新：</strong>酒馆点“检查版本”可查看扩展、运行中服务端和协议版本。扩展在酒馆扩展管理中更新并刷新页面；服务端在 Termux 的 SillyTavern/plugins/uvu-story-bridge 目录执行 git pull，再到运行酒馆的终端按 Ctrl+C 停止并用原来的启动命令重启。只刷新网页不会更新运行中的服务端，不要仅大退 Termux。版本检查失败不阻断普通聊天。</li>
@@ -3009,8 +3010,8 @@ node setup-server-plugin.js</code></pre>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/auto_memory.js?v=20261105-bridge-isolation"></script>
-<script src="js/modules/bridge_text.js?v=20261105-bridge-reliability"></script>
-<script src="js/modules/story_bridge.js?v=20261105-permanent-pairing"></script>
+<script src="js/modules/bridge_text.js?v=20261105-floor-review"></script>
+<script src="js/modules/story_bridge.js?v=20261105-floor-review"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261104-avatar-location"></script>   <!-- 存储空间分析图表 -->
