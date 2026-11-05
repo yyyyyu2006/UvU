@@ -96,3 +96,16 @@ test('MCP planner failure falls back; cancellation never continues tool calls', 
     f.c.fetch=async()=>{throw Error('network');};assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');assert.equal(f.calls.length,0);
     const ac=new AbortController();ac.abort();await assert.rejects(f.c.prepareMcpChatContext(f.chat,'private',ac.signal),/取消|abort/i);
 });
+
+
+test('MCP header discovery ignores instance data while still validating real header schemas', async () => {
+    const f=fixture();await enabled(f);
+    const literal={'x-mcp-header':'just data'};
+    f.c.window.MCPTransport.create=()=>({listTools:async()=>[
+        {name:'literal',inputSchema:{type:'object',properties:{config:{const:literal,default:literal,examples:[literal],enum:[literal]}}}},
+        {name:'bad',inputSchema:{type:'object',properties:{config:{type:'string','x-mcp-header':'Invalid Header'}}}},
+        {name:'real',inputSchema:{type:'object',properties:{config:{type:'string','x-mcp-header':'X-Trace'}}}}
+    ]});f.api.clearRuntime();
+    const tools=await f.api.discover('s');assert.equal(tools[0].unavailable,'');assert.ok(tools[1].unavailable);assert.equal(tools[2].unavailable,'');
+    assert.equal(tools[2].headers[0].name,'X-Trace');
+});

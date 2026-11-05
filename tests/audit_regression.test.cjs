@@ -73,6 +73,7 @@ test('main streaming reply is discarded if archive changes while reading', async
 test('switching archive during foreground typing delay cannot write into the new history', async () => {
     const f = fixture();
     const aiSource = source('modules/chat_ai.js');
+    vm.runInContext(source('modules/chat_ops.js'), f.c);
     vm.runInContext(aiSource.slice(aiSource.indexOf('async function handleAiReplyContent('), aiSource.indexOf('async function handleRegenerate(')), f.c);
     let finish, started; const ready = new Promise(resolve => started = resolve);
     f.c.setTimeout = callback => { finish = callback; started(); return 1; };

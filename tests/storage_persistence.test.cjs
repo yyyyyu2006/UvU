@@ -155,7 +155,7 @@ test('category restore transaction failure preserves database and live objects',
     const fail = () => { throw new Error('import failure'); };
     f.database.worldBooks.hook('creating', fail);
     await assert.rejects(f.c.storageCommitImport({ contacts: true, chats: true, worldbooks: true }, {
-        characters: [{ id: 'c', persona: 'imported', history: [{ id: 'imported' }] }], worldBooks: [{ id: 'imported-book' }]
+        characters: [{ id: 'c', persona: 'imported', history: [{ id: 'imported', content: 'imported' }] }], worldBooks: [{ id: 'imported-book' }]
     }), /import failure/);
     assert.equal(f.c.db.characters, originalCharacters);
     assert.equal(f.c.db.characters[0], originalChat);
@@ -299,3 +299,73 @@ for (const [key, type] of [["characters", "private"], ["groups", "group"]]) {
         assert.equal((await f.database[key].get(chat.id)).id, chat.id);
     });
 }
+
+test('missing message content is rejected in every imported history before atomic writes', async t => {
+    const f = await fixture(t), before = JSON.stringify(f.c.db);
+    const invalidRuntime = [
+        { history: [{ id: 'missing', role: 'user' }] },
+        { history: [{ content: 'outer', forwardedChat: { records: [{}] } }] },
+        { callHistory: [{ context: [{}] }] },
+        { privateSessions: { pair: { history: [{}] } } },
+        { gossipSessions: { pair: { history: [{}] } } },
+        { archives: [{ id: 'other', data: { history: [{}] } }] }
+    ];
+    for (const runtime of invalidRuntime) {
+        await assert.rejects(f.c.storageCommitImport({ chats: true, contacts: true, worldbooks: true }, {
+            characters: [{ id: 'c', ...runtime }], worldBooks: [{ id: 'replacement', content: 'must not write' }]
+        }), /content/);
+        assert.equal(JSON.stringify(f.c.db), before);
+    }
+    assert.deepEqual(f.writes, []);
+    assert.equal(await f.database.worldBooks.get('replacement'), undefined);
+});
+
+test('malformed consumed bindings, member, gallery and relationship fields reject before writes', async t => {
+    const f = await fixture(t), before = JSON.stringify(f.c.db);
+    const invalidRuntime = [
+        { worldBookIds: 'w' }, { worldBookIds: ['w', {}] },
+        { members: [{ realName: 'name', groupNickname: {} }] }, { me: 'broken' },
+        { gallery: [null] }, { gallery: [{ url: {} }] },
+        { friendRelationship: { self: [] } },
+        { friendRelationship: { autonomy: { lastCheckUserCount: 'broken' } } },
+        { friendRelationship: { recovery: { restoreAt: Infinity } } },
+        { archives: [{ id: 'other', data: { worldBookIds: 'w' } }] }
+    ];
+    for (const runtime of invalidRuntime) {
+        await assert.rejects(f.c.storageCommitImport({ chats: true, contacts: true }, { characters: [{ id: 'c', ...runtime }] }));
+        assert.equal(JSON.stringify(f.c.db), before);
+    }
+    await assert.rejects(f.c.storageCommitImport({ other: true }, {
+        mediaCache: { version: 1, characters: [{ id: 'c', archives: [{ id: 'other', gallery: [null] }] }], tables: {} }
+    }));
+    assert.deepEqual(f.writes, []);
+});
+
+test('1900 image and legacy optional message fields survive import with extension fields intact', async t => {
+    const f = await fixture(t);
+    const image = { id: 'image', role: 'user', content: 'data:image/png;base64,AA==', parts: [
+        { type: 'text', text: '[我发来了一张图片：]' }, { type: 'image', data: 'data:image/png;base64,AA==', futurePart: true }
+    ], timestamp: 1, extension: { future: true } };
+    const legacy = { content: 'legacy without optional id or role', futureMessage: true };
+    await f.c.storageCommitImport({ chats: true, contacts: true }, { characters: [{ id: 'c', worldBookIds: ['w'], history: [image, legacy], extension: { future: true } }] });
+    const saved = await f.database.characters.get('c');
+    assert.deepEqual(saved.history, [image, legacy]);
+    assert.deepEqual(saved.extension, { future: true });
+    assert.deepEqual(saved.worldBookIds, ['w']);
+});
+
+test('MiniMax voice settings restore only when selected and malformed settings do not write', async t => {
+    const f = await fixture(t);
+    const voice = { endpoint: 'https://voice.test/v1/t2a_v2', apiKey: 'voice-key', groupId: 'group', model: 'speech-2.8-hd', voiceId: 'voice', speed: 1.2, pitch: -2, extension: { future: true } };
+    await f.c.storageCommitImport({ settings: true }, { minimaxTtsSettings: voice, uvuStoryBridgeSettings: { pairingToken: 'must-ignore' } });
+    assert.deepEqual(await f.database.globalSettings.get('minimaxTtsSettings'), { key: 'minimaxTtsSettings', value: voice });
+    assert.equal(await f.database.globalSettings.get('uvuStoryBridgeSettings'), undefined);
+    f.writes.length = 0;
+    await f.c.storageCommitImport({ worldbooks: true }, { minimaxTtsSettings: { ...voice, voiceId: 'unselected' } });
+    assert.deepEqual(f.writes, []);
+    for (const settings of [[], { voiceId: {} }, { speed: 'bad' }, { pitch: NaN }]) {
+        await assert.rejects(f.c.storageCommitImport({ settings: true }, { minimaxTtsSettings: settings }), /minimaxTtsSettings/);
+    }
+    assert.deepEqual(f.writes, []);
+    assert.deepEqual(await f.database.globalSettings.get('minimaxTtsSettings'), { key: 'minimaxTtsSettings', value: voice });
+});

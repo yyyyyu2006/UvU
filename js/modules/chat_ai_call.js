@@ -1,6 +1,6 @@
 // --- 视频/语音通话专用 AI 逻辑 ---
 
-async function getCallReply(chat, callType, callContext, onStreamUpdate) {
+async function getCallReply(chat, callType, callContext, onStreamUpdate, signal) {
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
@@ -37,7 +37,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     
     const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
-        ? buildWorldBookPlan(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat))) : undefined;
+        ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat)), Math.random, signal) : buildWorldBookPlan(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat)))) : undefined;
     // 获取世界书
     const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
@@ -384,7 +384,8 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal
         });
 
         if (!response.ok) {
@@ -430,6 +431,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
 
             console.log('[VideoCall] Cleaned AI Response:', text);
             // 一次性回调
+            if (signal?.aborted) return null;
             onStreamUpdate(text);
             return text;
         } else {
@@ -505,10 +507,12 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
             }
 
             // 流结束后一次性回调
+            if (signal?.aborted) return null;
             onStreamUpdate(buffer);
             return buffer;
         }
     } catch (e) {
+        if (signal?.aborted) return null;
         console.error("Call API Error:", e);
         showToast("通话连接不稳定...");
         return null;
@@ -517,7 +521,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
 
 async function generateCallSummary(chat, callContext) {
     const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
-        ? buildWorldBookPlan(chat, callContext) : undefined;
+        ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, callContext) : buildWorldBookPlan(chat, callContext)) : undefined;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型

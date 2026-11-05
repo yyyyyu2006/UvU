@@ -22,7 +22,7 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
     const appliedHistory = chat.history;
     const beforeIds = new Set(state.before.map(message => message.id));
     const appliedIds = new Set(appliedHistory.map(message => message.id));
-    const added = new Set(appliedHistory.filter(message => !beforeIds.has(message.id)).map(message => message.id));
+    const added = new Map(appliedHistory.filter(message => !beforeIds.has(message.id)).map(message => [message.id, clone(message)]));
     const removed = state.before.filter(message => !appliedIds.has(message.id));
     state.messages.forEach(item => item.applied = clone(item.message));
     state.fields.forEach(item => item.applied = clone(chat[item.key]));
@@ -31,7 +31,7 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
     catch (error) {
         const restore = data => {
             if (!data || !Array.isArray(data.history)) return;
-            for (let i = data.history.length - 1; i >= 0; i--) if (added.has(data.history[i].id)) data.history.splice(i, 1);
+            for (let i = data.history.length - 1; i >= 0; i--) if (added.has(data.history[i].id) && equal(data.history[i], added.get(data.history[i].id))) data.history.splice(i, 1);
             if (removed.length) {
                 const present = new Set(data.history.map(message => message.id));
                 const removedIds = new Set(removed.map(message => message.id));

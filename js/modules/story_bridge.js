@@ -35,6 +35,46 @@
         return value;
     }
 
+    function ttMode() {
+        const state = settings('tt');
+        if (state.transportVersion !== 1) {
+            let valid = false;
+            try {
+                const url = new URL(String(state.baseUrl || ''));
+                valid = url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash && url.hostname !== 'github.io' && !url.hostname.endsWith('.github.io');
+            } catch {}
+            if (!valid) state.transport = 'file';
+            state.transportVersion = 1;
+        }
+        return state.transport === 'file' || state.transport === 'https' ? state.transport : /^https:\/\//i.test(String(state.baseUrl || '')) ? 'https' : 'file';
+    }
+    function isFileMode() { return channelId() === 'tt' && ttMode() === 'file'; }
+    function renderTransportUI() {
+        const tt = channelId() === 'tt', file = isFileMode();
+        const display = (id, visible) => { const node = document.getElementById(id); if (node) { node.hidden = !visible; if (node.style) node.style.display = visible ? '' : 'none'; } };
+        display('uvu-bridge-tt-transport', tt);
+        display('uvu-bridge-tt-guide', tt);
+        display('uvu-bridge-st-guide', !tt);
+        display('uvu-bridge-online-controls', !file);
+        display('uvu-bridge-online-actions', !file);
+        display('uvu-bridge-recover', !file);
+        display('uvu-bridge-handoff', !file);
+        const mode = document.getElementById('uvu-bridge-tt-mode'); if (mode) mode.value = ttMode();
+        const url = document.getElementById('uvu-bridge-url'); if (url) { url.value = baseUrl(); url.placeholder = tt ? '独立中继 HTTPS 基址；不是 UvU 网页地址' : DEFAULT_URL; }
+        const note = document.getElementById('uvu-bridge-intro'); if (note) note.textContent = tt ? 'TT 默认使用无需服务器的 JSON 文件交接。只有自行部署独立中继后才选择 HTTPS 实时连接。' : 'UvU 负责线上手机聊天，SillyTavern 负责线下剧情。本机桥接默认客户端端口为 8765。';
+        if (file) connectionStatus('TT 文件交接已就绪：无需地址、配对码或后端；按下方步骤导出 / 导入。');
+    }
+    async function changeTTMode(value) {
+        if (!['file', 'https'].includes(value)) throw new Error('不支持的 TT 交接方式。');
+        if (channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy) throw new Error('请等待当前收发或总结完成后切换交接方式。');
+        const state = settings('tt'), previous = state.transport;
+        channelSwitchBusy = true; generation++; state.transport = value;
+        try { await saveData(); } catch (error) { if (previous === undefined) delete state.transport; else state.transport = previous; throw error; } finally { channelSwitchBusy = false; }
+        connection = {phase: isConnected() ? 'idle' : 'unpaired', failures: 0, nextAttempt: 0};
+        renderTransportUI();
+        if (!isFileMode()) connectionStatus('HTTPS 实时模式：先部署独立中继，再填写基址与 TT 生成的配对码。');
+    }
+
     function isEnabled() { return !channelSwitchBusy && settings().bridgeEnabled !== false; }
     function tokenKey() {return STORAGE_KEY + (channelId() === 'tt' ? '.tt' : '');}
 
@@ -89,6 +129,7 @@
 
     async function request(path, { method = 'GET', body, auth = true } = {}) {
         if(channelSwitchBusy)throw new Error('请等待通道切换完成。');
+        if(isFileMode())throw new Error('TT 文件模式无需连接或配对；请使用导出 / 导入文件。');
         const epoch = generation;
         const headers = { Accept: 'application/json' };
         const token = readToken();
@@ -96,6 +137,7 @@
         const address = baseUrl();
         if (channelId()==='tt') {
             let url;try{url=new URL(address);}catch{throw new Error('请先设置 TT HTTPS 桥接地址，或使用文件交接。');}
+            if(url.hostname === 'github.io' || url.hostname.endsWith('.github.io')) throw new Error('GitHub Pages 是静态网页，不能接收桥接请求；请使用文件交接，或填写独立 HTTPS 中继地址。');
             if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash)throw new Error('TT 通道需要不含账户、查询参数和片段的 HTTPS 地址。');
         }
         if (auth) bindTokenAddress(address);
@@ -119,13 +161,13 @@
                         ? 'loopback-network 已授权；请检查酒馆桥接插件是否已启动、server/config.json 是否包含当前 UvU 来源，以及客户端端口是否与桥接地址一致。'
                         : permission === 'unavailable'
                             ? '浏览器未提供 loopback-network 权限状态；请确认已安装并启动酒馆桥接插件、server/config.json 来源白名单与客户端端口配置正确。'
-                            : '请确认酒馆桥接地址和服务状态。';
+                            : channelId() === 'tt' ? '请检查独立 HTTPS 中继是否运行、TLS 证书和 TT / UvU 精确来源白名单；UvU 网页地址不能作为中继。也可改用文件交接。' : '请确认酒馆桥接地址和服务状态。';
             throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
         const data = await response.json().catch(() => ({}));
         if(epoch!==generation)throw new Error('互通通道或开关已变更，未应用旧请求。');
         if (!response.ok) {
-            const help = { 401: '配对码无效或令牌失效，请重新配对', 403: '来源白名单、回环地址或接口权限不通过', 404: '接口不存在，请更新服务端并重启酒馆', 413: '剧情数据超过限制' };
+            const help = { 401: '配对码无效或令牌失效，请重新配对', 403: '来源白名单、回环地址或接口权限不通过', 404: '接口不存在，请检查中继基址或更新服务端', 405: '此地址不接受桥接写入；静态网页不能作为中继，请改用文件交接或独立中继', 413: '剧情数据超过限制' };
             if (auth && response.status === 401 && token === readToken() && address === baseUrl()) {
                 connection.phase='revoked';connection.nextAttempt=Infinity;
                 connectionStatus('绑定凭证已失效或被解除，请重新配对；本机凭证尚未清除。');
@@ -194,7 +236,7 @@
         }).filter(Boolean);
     }
 
-    function isConnected() { return Boolean(readToken()); }
+    function isConnected() { return !isFileMode() && Boolean(readToken()); }
 
     function latestHandoffRange(chat) {
         const history = chat.history || [];
@@ -887,7 +929,8 @@
         reviewSignature='';reviewDrafts.clear();connection={phase:readToken()?'idle':'unpaired',failures:0,nextAttempt:0};
         const input=document.getElementById('uvu-bridge-url');if(input)input.value=baseUrl();
         const enabled=document.getElementById('uvu-bridge-enabled');if(enabled)enabled.checked=isEnabled();
-        refreshHandoffContext();connectionStatus(value==='tt' ? 'TT 通道：配置 HTTPS 中转并配对，或使用文件交接。' : '原版酒馆通道');
+        refreshHandoffContext();connectionStatus(value==='tt' ? 'TT HTTPS 通道：填写独立中继地址并配对。' : '原版酒馆通道');
+        renderTransportUI();
     }
 
     function setupUvUStoryBridge() {
@@ -900,6 +943,9 @@
         const enabledCheckbox = document.getElementById('uvu-bridge-enabled');
         if (!urlInput || !pairButton || pairButton.dataset.bound === 'true') return;
         urlInput.value = baseUrl();
+        const ttModeSelect=document.getElementById('uvu-bridge-tt-mode');
+        ttModeSelect?.addEventListener('change',async()=>{try{await changeTTMode(ttModeSelect.value);}catch(error){ttModeSelect.value=ttMode();status(error.message,true);}});
+        renderTransportUI();
         const channelSelect=document.getElementById('uvu-bridge-channel');
         if(channelSelect){channelSelect.value=channelId();channelSelect.addEventListener('change',async()=>{try{await changeChannel(channelSelect.value);}catch(error){channelSelect.value=channelId();status(error.message,true);}});}
         document.getElementById('uvu-bridge-export-file')?.addEventListener('click',async event=>{
@@ -941,7 +987,7 @@
         document.getElementById('uvu-bridge-handoff-character')?.addEventListener('change', () => { updateHandoffRange(true); renderReview(true); });
         for (const id of ['uvu-bridge-handoff-start', 'uvu-bridge-handoff-end']) document.getElementById(id)?.addEventListener('input', () => { document.getElementById('uvu-bridge-handoff-start').dataset.manual = 'true'; });
         document.getElementById('uvu-bridge-latest')?.addEventListener('click', () => updateHandoffRange(true));
-        status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
+        status(isFileMode() ? 'TT 文件模式：先保存角色并导出所选范围，导入后仍须审核确认。' : isConnected() ? '已配对；正在连接桥接服务。' : '未连接');
         if (isConnected()) automaticSync();
         pairButton.dataset.bound = 'true';
         pairButton.addEventListener('click', async () => {

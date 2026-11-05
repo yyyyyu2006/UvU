@@ -103,7 +103,11 @@
             for (const [key, value] of Object.entries(node)) {
                 if (key === 'properties' && value && typeof value === 'object' && !Array.isArray(value)) {
                     for (const [property, child] of Object.entries(value)) walk(child, [...path, property], reachable);
-                } else if (value && typeof value === 'object') {
+                } else if (['$defs', 'definitions', 'patternProperties', 'dependentSchemas'].includes(key) && value && typeof value === 'object') {
+                    Object.values(value).forEach(child => walk(child, path, false));
+                } else if (['allOf', 'anyOf', 'oneOf', 'prefixItems'].includes(key) && Array.isArray(value)) {
+                    value.forEach(child => walk(child, path, false));
+                } else if (['items', 'additionalItems', 'additionalProperties', 'unevaluatedItems', 'unevaluatedProperties', 'contains', 'propertyNames', 'not', 'if', 'then', 'else'].includes(key)) {
                     if (Array.isArray(value)) value.forEach(child => walk(child, path, false)); else walk(value, path, false);
                 }
             }

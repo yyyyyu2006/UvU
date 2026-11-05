@@ -6,10 +6,16 @@ function findEditorMatches(text, query, caseSensitive = false) {
 const EXPANDED_EDITOR_SCROLL_PREFIX = 'uvu:expanded-editor-scroll:';
 function getExpandedEditorScrollKey(target) {
     if (!target) return '';
+    if (target.scrollKey) return target.scrollKey;
     const id = target.id || target.name || '';
     if (!id) return '';
-    // The field id is stable across reopening and does not include the draft text.
-    return EXPANDED_EDITOR_SCROLL_PREFIX + id;
+    let owner = target.dataset?.editorOwner || '';
+    if (!owner && id.startsWith('world-book-')) {
+        owner = 'worldbook:' + (typeof document !== 'undefined' ? document.getElementById('world-book-id')?.value || 'new' : 'new');
+    } else if (!owner && /^setting-(?:char-|my-|group-|status-|custom-bubble)/.test(id) && typeof currentChatId !== 'undefined' && currentChatId) {
+        owner = (typeof currentChatType !== 'undefined' ? currentChatType : 'private') + ':' + currentChatId;
+    }
+    return EXPANDED_EDITOR_SCROLL_PREFIX + (owner ? encodeURIComponent(owner) + ':' : '') + id;
 }
 function readExpandedEditorScroll(target) {
     const key = getExpandedEditorScrollKey(target);
@@ -52,11 +58,12 @@ function openExpandedEditor(target, importedText) {
     const draft = overlay.querySelector('.editor-draft'), find = overlay.querySelector('.editor-find'), replacement = overlay.querySelector('.editor-replace'), caseBox = overlay.querySelector('.editor-case');
     draft.value = importedText ?? original;
     overlay.querySelector('.editor-import-options').hidden = importedText === undefined;
+    const scrollTarget = { scrollKey: getExpandedEditorScrollKey(target) };
     let matches = [], active = -1;
     let scrollSaveTimer = null;
     const persistScroll = () => {
         if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
-        scrollSaveTimer = setTimeout(() => { scrollSaveTimer = null; saveExpandedEditorScroll(target, draft); }, 80);
+        scrollSaveTimer = setTimeout(() => { scrollSaveTimer = null; saveExpandedEditorScroll(scrollTarget, draft); }, 80);
     };
     const status = () => { overlay.querySelector('.editor-count').textContent = (active < 0 ? 0 : active + 1) + ' / ' + matches.length; };
     const update = () => { matches = findEditorMatches(draft.value, find.value, caseBox.checked); active = -1; status(); };
@@ -69,7 +76,7 @@ function openExpandedEditor(target, importedText) {
     };
     const close = () => {
         if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
-        saveExpandedEditorScroll(target, draft);
+        saveExpandedEditorScroll(scrollTarget, draft);
         overlay.remove(); target.focus({ preventScroll: true });
     };
     find.addEventListener('input', update); caseBox.addEventListener('change', update); draft.addEventListener('input', update); draft.addEventListener('scroll', persistScroll, { passive: true });
@@ -106,7 +113,7 @@ function openExpandedEditor(target, importedText) {
         }
     });
     document.body.appendChild(overlay); update(); draft.focus({ preventScroll: true });
-    if (importedText === undefined) restoreExpandedEditorScroll(target, draft);
+    if (importedText === undefined) restoreExpandedEditorScroll(scrollTarget, draft);
 }
 function setupExpandedEditors() {
     const attach = () => document.querySelectorAll('textarea:not([data-expanded-editor])').forEach(target => {

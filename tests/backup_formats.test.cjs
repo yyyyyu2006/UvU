@@ -88,3 +88,26 @@ test('streamed backup JSON matches the normal JSON structure', async () => {
     assert.ok(stream);
     assert.deepEqual(await new Response(stream).json(), JSON.parse(JSON.stringify(value)));
 });
+
+test('settings backup includes complete MiniMax voice configuration and excludes bridge credentials', async () => {
+    const f = fixture(); f.element('storage-export-format').value = 'json';
+    const voice = { endpoint: 'https://voice.test/v1/t2a_v2', apiKey: 'voice-key', groupId: 'group', model: 'speech-2.8-hd', voiceId: 'voice', speed: 1.2, pitch: -2, extension: { future: true } };
+    f.c.db.minimaxTtsSettings = voice;
+    f.c.db.uvuStoryBridgeSettings = { pairingToken: 'PAIRING-SECRET', adminToken: 'ADMIN-SECRET' };
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "settings");', f.c);
+    await f.c.handleExport();
+    const data = JSON.parse(await f.blobs[0].text());
+    assert.deepEqual(data.modules.minimaxTtsSettings, voice);
+    assert.equal(data.modules.uvuStoryBridgeSettings, undefined);
+    assert.ok(!JSON.stringify(data).includes('PAIRING-SECRET'));
+    assert.ok(!JSON.stringify(data).includes('ADMIN-SECRET'));
+});
+
+
+test('1900 and current group-only members retain null original character links', () => {
+    const f=fixture();
+    const modules={groups:[{id:'g',members:[{id:'member',originalCharId:null,realName:'群友',persona:'原设定'}],history:[{content:'消息'}]}]};
+    assert.doesNotThrow(()=>f.c.storageValidateModules(modules));
+    assert.equal(modules.groups[0].members[0].originalCharId,null);
+    modules.groups[0].members[0].originalCharId={bad:true};assert.throws(()=>f.c.storageValidateModules(modules),/originalCharId/);
+});

@@ -12,7 +12,7 @@ const STORAGE_CATEGORIES = [
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
-    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'mcpSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'mcpSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
@@ -533,8 +533,14 @@ function storageValidateModules(modules) {
             validate(item, location);
         });
     };
+    const gallery = (value, path) => list(value, path, (photo, location) => {
+        for (const key of ['id', 'name', 'url']) optional(photo[key], location + '.' + key, 'string');
+    });
     const message = (item, path) => {
-        for (const key of ['id', 'role', 'content', 'senderId', 'originalContent']) optional(item[key], path + '.' + key, 'string');
+        // Legacy records may omit metadata, but renderers and group sessions
+        // always consume content as text, including 1900 image messages.
+        if (typeof item.content !== 'string') fail(path + '.content', '文本');
+        for (const key of ['id', 'role', 'senderId', 'originalContent']) optional(item[key], path + '.' + key, 'string');
         optional(item.timestamp, path + '.timestamp', 'number');
         for (const key of ['isWithdrawn', 'isThinking', 'isStatusUpdate', 'isContextDisabled']) optional(item[key], path + '.' + key, 'boolean');
         list(item.parts, path + '.parts', (part, location) => {
@@ -612,13 +618,38 @@ function storageValidateModules(modules) {
                 });
             });
         }
+        if (item.worldBookIds !== undefined && (!Array.isArray(item.worldBookIds) || item.worldBookIds.some(id => typeof id !== 'string'))) fail(path + '.worldBookIds', '文本列表');
         list(item.members, path + '.members', (member, location) => {
-            optional(member.id, location + '.id', 'string');
-            optional(member.realName, location + '.realName', 'string');
+            for (const key of ['id', 'realName', 'groupNickname', 'persona', 'avatar']) optional(member[key], location + '.' + key, 'string');
+            if (member.originalCharId !== null) optional(member.originalCharId, location + '.originalCharId', 'string');
         });
-        if (item.gallery !== undefined && !Array.isArray(item.gallery)) fail(path + '.gallery', '列表');
+        if (item.me !== undefined) {
+            object(item.me, path + '.me');
+            for (const key of ['nickname', 'persona', 'avatar']) optional(item.me[key], path + '.me.' + key, 'string');
+        }
+        gallery(item.gallery, path + '.gallery');
         for (const key of ['statusPanel', 'autoMemorySettings', 'vectorMemorySettings', 'friendRelationship', 'avatarAutonomy', 'environmentProfile', 'privateSessions', 'gossipSessions', 'peekData']) {
             if (item[key] !== undefined && item[key] !== null) object(item[key], path + '.' + key);
+        }
+        if (item.friendRelationship) {
+            const relationship = item.friendRelationship, prefix = path + '.friendRelationship';
+            optional(relationship.revision, prefix + '.revision', 'number');
+            for (const key of ['self', 'peer']) if (relationship[key] !== undefined && relationship[key] !== null) {
+                object(relationship[key], prefix + '.' + key);
+                for (const flag of ['blocked', 'deleted']) optional(relationship[key][flag], prefix + '.' + key + '.' + flag, 'boolean');
+            }
+            for (const key of ['recovery', 'autonomy']) if (relationship[key] !== undefined && relationship[key] !== null) {
+                const settings = relationship[key], location = prefix + '.' + key;
+                object(settings, location);
+                optional(settings.condition, location + '.condition', 'string');
+                if (key === 'recovery') {
+                    optional(settings.mode, location + '.mode', 'string');
+                    for (const name of ['minutes', 'restoreAt', 'lastCheck']) optional(settings[name], location + '.' + name, 'number');
+                } else {
+                    optional(settings.enabled, location + '.enabled', 'boolean');
+                    for (const name of ['everyUserMessages', 'lastCheckUserCount']) optional(settings[name], location + '.' + name, 'number');
+                }
+            }
         }
         derivedProfile(item, path);
         for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
@@ -650,9 +681,10 @@ function storageValidateModules(modules) {
         object(modules.mediaCache, 'mediaCache');
         if (modules.mediaCache.version !== 1) throw new Error('相册与缓存迁移格式版本不支持');
         for (const key of ['characters', 'groups']) list(modules.mediaCache[key], 'mediaCache.' + key, (item, path) => {
-            if (item.gallery !== undefined && !Array.isArray(item.gallery)) fail(path + '.gallery', '列表');
+            gallery(item.gallery, path + '.gallery');
             list(item.archives, path + '.archives', (archive, location) => {
                 if (!Array.isArray(archive.gallery)) fail(location + '.gallery', '列表');
+                gallery(archive.gallery, location + '.gallery');
             }, true);
         }, true);
         object(modules.mediaCache.tables, 'mediaCache.tables');
@@ -670,8 +702,13 @@ function storageValidateModules(modules) {
             });
         }
     }
-    for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
+    for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
+    }
+    if (modules.minimaxTtsSettings !== undefined) {
+        const settings = modules.minimaxTtsSettings;
+        for (const key of ['endpoint', 'apiKey', 'groupId', 'model', 'voiceId']) optional(settings[key], 'minimaxTtsSettings.' + key, 'string');
+        for (const key of ['speed', 'pitch']) optional(settings[key], 'minimaxTtsSettings.' + key, 'number');
     }
     if (modules.mcpSettings !== undefined) {
         if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');

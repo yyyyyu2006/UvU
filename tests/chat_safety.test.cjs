@@ -173,3 +173,37 @@ test("large failed deletion restores original order and keeps concurrent arrival
     assert.equal(chat.history[1].id, "arrival");
     assert.deepEqual(chat.history.filter(m => m.id !== "arrival").map(m => m.id), state.before.map(m => m.id));
 });
+
+
+test("failed AI reply save restores only its messages and status, retaining concurrent arrivals", async () => {
+    for (const background of [true, false]) {
+        const f=fixture(),chat=f.chats[0];
+        chat.history.push({id:'source',role:'user',content:'hi'});
+        chat.statusPanel={enabled:true,regexPattern:'<status>(.*?)</status>',replacePattern:'$1',history:[],currentStatusRaw:'old',currentStatusHtml:'old'};
+        const oldStatus=plain(chat.statusPanel);
+        f.c.getMixedContent=text=>[{type:'text',content:text}];f.c.showIncomingMessageNotifications=()=>{};f.c.escapeMessageRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        f.c.saveData=async()=>{ f.c.syncChatActiveArchive(chat);chat.history.push({id:'during-save',role:'user',content:'new'});throw Error('quota'); };
+        const reply=f.c.handleAiReplyContent('[a的消息：reply]<status>busy</status>',chat,'a','private',background);
+        if(!background){chat.history.push({id:'during-delay',role:'user',content:'new'});while(f.timers.length)f.timers.shift()();}
+        await reply;
+        assert.deepEqual(chat.history.map(m=>m.id),background?['source','during-save']:['source','during-delay','during-save']);
+        assert.deepEqual(plain(chat.statusPanel),oldStatus);
+        assert.ok(chat.archives[0].data.history.every(m=>!m.content.includes('reply')));
+    }
+});
+
+test("failed reply save retains a later edit to the new bubble and restores unopened red packet", async () => {
+ const f=fixture(),chat=f.chats[0];
+ chat.history.push({id:'packet',role:'user',type:'red-packet',content:'packet',isRevealed:false});
+ f.c.getMixedContent=text=>[{type:'text',content:text}];f.c.showIncomingMessageNotifications=()=>{};f.c.escapeMessageRegex=s=>s;
+ f.c.saveData=async()=>{ f.c.syncChatActiveArchive(chat);chat.history.at(-1).content='NEW USER EDIT';throw Error('quota'); };
+ assert.equal(await f.c.handleAiReplyContent('[a的消息：reply]',chat,'a','private',true),false);
+ assert.equal(chat.history[0].isRevealed,false);assert.equal(chat.history.at(-1).content,'NEW USER EDIT');
+ assert.equal(chat.archives[0].data.history.length,1);assert.equal(chat.archives[0].data.history[0].isRevealed,false);
+});
+test("failed reply save never publishes bridge turns or triggers avatar/blacklist followups", async () => {
+ const f=fixture(),chat=f.chats[0];let checks=0;
+ f.c.handleAiReplyContent=async()=>false;f.c.checkCharacterAvatar=async()=>{checks++;};f.c.checkCharacterBlacklist=async()=>{checks++;};
+ f.c.fetch=async()=>({ok:true,json:async()=>({choices:[{message:{content:'[a的消息：reply]'}}]})});
+ await f.c.getAiReply('a','private',true);assert.equal(checks,0);
+});

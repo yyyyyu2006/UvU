@@ -179,7 +179,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
         const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
-            ? buildWorldBookPlan(chat, historySlice) : undefined;
+            ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, historySlice, Math.random, generationController?.signal) : buildWorldBookPlan(chat, historySlice)) : undefined;
         let vectorContext = '';
         if (typeof getVectorMemoryContext === 'function') {
             const query = historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');
@@ -687,8 +687,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal);
-            replyDelivered = true;
+            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal) !== false;
         }
         if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
             try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode, globalThis.UvUStoryBridge.messageRecords(chat, bridgeTurnStart, chat.history.length)); }
@@ -732,8 +731,7 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
     }
 
     // ===================
-    await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal);
-    return true;
+    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal) !== false;
 }
 
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal) {
@@ -750,6 +748,31 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         showIncomingMessageNotifications(chat, added, targetChatId, targetChatType);
     };
     if (!replyIsCurrent()) return;
+    let mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
+    const ownedMessages = new Map(), removedMessages = new Set();
+    const appendReplyMessage = message => {
+        chat.history.push(message);
+        ownedMessages.set(message, mutation.clone(message));
+    };
+    const rebaseReplyMutation = () => {
+        const live = new Set(chat.history);
+        mutation.before = mutation.before.filter(message => live.has(message) || removedMessages.has(message));
+        const known = new Set(mutation.before);
+        for (const message of chat.history) {
+            if ((!ownedMessages.has(message) || JSON.stringify(message) !== JSON.stringify(ownedMessages.get(message))) && !known.has(message)) {
+                mutation.before.push(message); known.add(message);
+            }
+        }
+    };
+    const savePendingReply = async () => {
+        rebaseReplyMutation();
+        const saved = await saveChatMutation(mutation, '回复保存失败，已恢复未保存内容，请检查存储空间后重试');
+        if (saved) {
+            mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
+            ownedMessages.clear(); removedMessages.clear();
+        }
+        return saved;
+    };
     const rawResponse = fullResponse;
     if (fullResponse) {
         // 1. 移除 [incipere] 标签
@@ -772,7 +795,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             };
             
             // 存入历史记录
-            chat.history.push(thinkingMsg);
+            appendReplyMessage(thinkingMsg);
 
             // 【新增】清理旧的思维链消息，仅保留最近 50 条
             const maxThinkingMsgs = 50;
@@ -789,7 +812,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
             if (idsToRemove.size > 0) {
                 for (let i = chat.history.length - 1; i >= 0; i--) {
-                    if (idsToRemove.has(chat.history[i].id)) chat.history.splice(i, 1);
+                    if (idsToRemove.has(chat.history[i].id)) { removedMessages.add(chat.history[i]); chat.history.splice(i, 1); }
                 }
                 replyHistory = chat.history;
             }
@@ -845,7 +868,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     timestamp: Date.now(),
                     isContextDisabled: true
                 };
-                chat.history.push(notificationMsg);
+                appendReplyMessage(notificationMsg);
                 addMessageBubble(notificationMsg, targetChatId, targetChatType);
             }
             else if (momentPostMatch && !momentPostWithImageMatch) { // 确保不重复匹配
@@ -870,7 +893,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     timestamp: Date.now(),
                     isContextDisabled: true
                 };
-                chat.history.push(notificationMsg);
+                appendReplyMessage(notificationMsg);
                 addMessageBubble(notificationMsg, targetChatId, targetChatType);
             } 
             else if (momentCommentMatch) {
@@ -910,7 +933,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 timestamp: Date.now(),
                                 isContextDisabled: true
                             };
-                            chat.history.push(notificationMsg);
+                            appendReplyMessage(notificationMsg);
                             addMessageBubble(notificationMsg, targetChatId, targetChatType);
                         }
                     }
@@ -934,7 +957,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     timestamp: Date.now(),
                     isContextDisabled: false
                 };
-                chat.history.push(originalCmdMsg);
+                appendReplyMessage(originalCmdMsg);
                 addMessageBubble(originalCmdMsg, targetChatId, targetChatType);
             } else {
                 remainingMessages.push(item);
@@ -947,6 +970,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         // --- 红包结算逻辑 ---
         const redPacketMsg = chat.history.find(m => m.type === 'red-packet' && !m.isRevealed);
         if (redPacketMsg) {
+            mutation.messages.push({ message: redPacketMsg, before: mutation.clone(redPacketMsg) });
             redPacketMsg.isRevealed = true;
             // 触发重新渲染红包消息
             setTimeout(() => {
@@ -976,7 +1000,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         for (const item of messages) {
             if (!replyIsCurrent()) {
                 if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
-                    await saveData();
+                    if (!await savePendingReply()) return false;
                     notifyNewMessages();
                 }
                 return;
@@ -1040,7 +1064,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     content: item.content.trim(),
                     timestamp: Date.now()
                 };
-                chat.history.push(message);
+                appendReplyMessage(message);
                 addMessageBubble(message, targetChatId, targetChatType);
                 continue; // 跳过后续处理
             }
@@ -1108,6 +1132,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             // 如果是后台模式，跳过延迟，直接处理
             if (!isBackground) {
                 const delay = firstMessageProcessed ? (900 + Math.random() * 1300) : (400 + Math.random() * 400);
+                const pacedFields = mutation.fields.map(field => ({field, value:mutation.clone(chat[field.key])}));
                 await new Promise(resolve => {
                     const timer = setTimeout(done, delay);
                     function done() { signal?.removeEventListener('abort', abort); resolve(); }
@@ -1116,12 +1141,16 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 });
                 if (!replyIsCurrent()) {
                     if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
-                        await saveData();
+                        if (!await savePendingReply()) return false;
                         notifyNewMessages();
                     }
                     return;
                 }
                 
+                for (const {field, value} of pacedFields) {
+                    if (JSON.stringify(chat[field.key]) !== JSON.stringify(value)) field.before = mutation.clone(chat[field.key]);
+                }
+                rebaseReplyMutation();
                 // 如果开启了多条消息提示音，且不是第一条消息（第一条已由系统默认逻辑播放），则播放提示音
                 if (firstMessageProcessed && db.multiMsgSoundEnabled && db.globalReceiveSound) {
                     playSound(db.globalReceiveSound);
@@ -1162,7 +1191,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                     if (isSameContent && isSameSender) {
                         console.log(`[Withdraw-Fallback] 检测到重复输出，移除上一条消息: ${lastMsg.id}`);
-                        chat.history.pop(); // 从历史记录移除
+                        removedMessages.add(chat.history.pop()); // 从历史记录移除
                         // 从 DOM 移除
                         const lastMsgEl = messageArea.querySelector(`.message-wrapper[data-id="${lastMsg.id}"]`);
                         if (lastMsgEl) lastMsgEl.remove();
@@ -1189,15 +1218,16 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     }
                 }
 
-                chat.history.push(message);
+                appendReplyMessage(message);
                 addMessageBubble(message, targetChatId, targetChatType);
                 
                 setTimeout(async () => {
                     if (!replyIsCurrent()) return;
+                    const withdrawal = beginChatMutation(chat, targetChatType, [message]);
                     message.isWithdrawn = true;
                     message.content = `[${characterName}撤回了一条消息：${originalContent}]`;
                     
-                    await saveData();
+                    if (!await saveChatMutation(withdrawal, '撤回状态保存失败，已恢复原消息')) return;
                     
                     if ((targetChatType === 'private' && currentChatId === chat.id) || 
                         (targetChatType === 'group' && currentChatId === chat.id)) {
@@ -1243,7 +1273,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 content: quotedText
                             }
                         };
-                        chat.history.push(message);
+                        appendReplyMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     } else {
                         const message = {
@@ -1255,7 +1285,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             isStatusUpdate: item.isStatusUpdate,
                             statusSnapshot: item.statusSnapshot
                         };
-                        chat.history.push(message);
+                        appendReplyMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 } else {
@@ -1278,7 +1308,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         message.giftStatus = 'sent';
                     }
 
-                    chat.history.push(message);
+                    appendReplyMessage(message);
                     addMessageBubble(message, targetChatId, targetChatType);
                 }
 
@@ -1317,7 +1347,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         timestamp: Date.now(),
                         senderId: senderId
                     };
-                    group.history.push(message);
+                    appendReplyMessage(message);
                     addMessageBubble(message, targetChatId, targetChatType);
                     continue; // 私聊消息处理完毕，跳过后续普通消息匹配
                 }
@@ -1341,7 +1371,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             senderId: sender.id,
                             transferStatus: 'pending'
                         };
-                        group.history.push(message);
+                        appendReplyMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 } else if (nameMatch || item.char) {
@@ -1357,7 +1387,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             timestamp: Date.now(),
                             senderId: sender.id
                         };
-                        group.history.push(message);
+                        appendReplyMessage(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 }
@@ -1366,12 +1396,12 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
         if (!replyIsCurrent()) {
             if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
-                await saveData();
+                if (!await savePendingReply()) return false;
                 notifyNewMessages();
             }
             return;
         }
-        await saveData();
+        if (!await savePendingReply()) return false;
         notifyNewMessages();
         renderChatList();
 
@@ -1380,6 +1410,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             window.BatteryInteraction.triggerIndependentCheck(chat);
         }
     }
+    return true;
 }
 
 async function handleRegenerate() {

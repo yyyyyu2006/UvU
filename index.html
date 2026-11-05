@@ -657,16 +657,19 @@
                     <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
                         <div class="kkt-item-content">
                             <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
-                        <div class="kkt-item-subtitle">UvU 负责线上手机聊天，酒馆负责线下剧情。两边通过本机桥接同步剧情记忆；客户端默认端口为 8765。</div>
+                        <div class="kkt-item-subtitle" id="uvu-bridge-intro">UvU 负责线上手机聊天，酒馆负责线下剧情。SillyTavern 本机桥接默认客户端端口为 8765；TT 可选择无需服务器的文件交接。</div>
                         </div>
                         <label>互通通道<select id="uvu-bridge-channel"><option value="st">SillyTavern 本机桥接</option><option value="tt">TauriTavern / iOS</option></select></label>
+                        <label id="uvu-bridge-tt-transport" hidden>TT 交接方式<select id="uvu-bridge-tt-mode"><option value="file">无需服务器的文件交接（推荐）</option><option value="https">可选：独立 HTTPS 中继实时连接</option></select></label>
+                        <div id="uvu-bridge-online-controls">
                         <label>桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="SillyTavern 本机地址 / TT 的 HTTPS 中继地址"></label>
                         <label>配对码（一次性 / 永久）<input id="uvu-bridge-pair-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="128" placeholder="粘贴酒馆生成的配对码"></label>
                         <label>本设备名称<input id="uvu-bridge-device-name" type="text" maxlength="80" placeholder="如：小米 Chrome"></label>
-                        <output id="uvu-bridge-connection" aria-live="polite">尚未检查绑定状态</output>
+                        </div>
                         <label><input id="uvu-bridge-enabled" type="checkbox" checked> 启用本页互通（酒馆端另有插件总开关）</label>
                         <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 所选角色使用已审核的酒馆剧情记忆</label>
-                        <div class="uvu-bridge-actions">
+                        <output id="uvu-bridge-connection" aria-live="polite">尚未检查绑定状态</output>
+                        <div class="uvu-bridge-actions" id="uvu-bridge-online-actions">
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-reconnect">重新连接</button>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-sync">收取酒馆记忆</button>
@@ -699,18 +702,21 @@
                         </section>
                 <section class="kkt-group uvu-bridge-guide" aria-labelledby="uvu-bridge-guide-title">
                     <h2 id="uvu-bridge-guide-title">连接教程</h2>
-                    <details><summary>TauriTavern / iOS 通道操作</summary>
-                        <p>需使用允许第三方扩展、具备 Host ABI 2 的 TT 版本；受发行策略限制的版本无法由插件解锁。先在 TT 安装并打开本扩展，选择“TauriTavern / iOS 连接”。支持两种交接方式：</p>
+                    <details id="uvu-bridge-tt-guide" open hidden><summary>TauriTavern / iOS：文件交接与可选实时连接</summary>
+                        <p>需使用允许第三方扩展、具备 Host ABI 2 的 TT 版本；受发行策略限制的版本无法由插件解锁。在 TT 的扩展管理器点“安装扩展”，粘贴 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code> 并安装；刷新 TT 后，在扩展列表打开“UvU Story Bridge”面板，选择“TauriTavern / iOS 连接”。支持两种交接方式：</p>
                         <ol>
-                            <li><strong>无需服务器的文件交接：</strong>TT 选择“离线 JSON 文件”并保存。UvU 本页选择 TT 通道，选择并保存目标角色，核对存档 ID 和消息范围，点“导出线上交接文件”。在 TT 打开对应角色私聊，填写相同 UvU 角色 ID 与存档 ID，导入文件；刷新线上审核，核对后保存勾选、设为下场记忆来源，再开始剧情。</li>
-                            <li><strong>剧情回传：</strong>TT 结束并导出后点“下载待交接剧情 JSON”，通过文件传回 UvU；本页选定对应角色当前存档，点“导入酒馆剧情文件”。在下方逐层审核，生成摘要、核对并确认加入记忆。目标不一致、缺片或校验失败将拒绝导入。重复导入同一场不会重复建记忆。</li>
+                            <li><strong>1. 选择文件模式：</strong>本页选择“TauriTavern / iOS”，交接方式保留“无需服务器的文件交接”。TT 扩展也保留“离线 JSON 文件”。普通 TT 用户无需 Termux、Node 后端、桥接地址或配对码。</li>
+                            <li><strong>2. UvU → TT：</strong>在上方选择并“保存角色”，点“读取所选角色当前存档”，核对显示的角色 ID、存档名称 / ID、消息范围，再点“导出线上交接文件”。通过系统“文件”把 JSON 交给 TT。在 TT 打开对应角色私聊，选择 JSON；TT 自动读取并校验文件中的角色 / 存档 ID，只填入表单，核对后点“导入线上交接文件”。</li>
+                            <li><strong>3. TT 审核与开场：</strong>展开“线上记忆审核”，核对来源存档与每条文字，勾选后点“保存勾选与编辑”；如需换下场来源，再点“设为下场记忆来源”。开启记忆注入并“开始线下剧情”后才会使用已审核副本；回聊天框手动发送开场。导入本身不绕过审核。</li>
+                            <li><strong>4. TT → UvU：</strong>TT 结束并导出后点“下载待交接剧情 JSON”，通过文件传回 UvU；本页选定对应角色当前存档，点“导入酒馆剧情文件”。在下方逐层审核并勾选，可生成摘要、核对预览后“确认摘要并加入记忆”，也可“原文直接加入记忆”。开启本页互通和该角色“使用已审核的酒馆剧情记忆”后才可参与上下文。目标不一致、缺片或校验失败将拒绝导入。重复导入同一场不会重复建记忆。</li>
                             <li><strong>文件方式的限制：</strong>只交接资料，不能实时控制另一端的线上 / 线下模式；线下游玩时请手动暂停对应 UvU 角色自动回复。保留交接文件直到另一端确认保存，不必清除原聊天。</li>
-                            <li><strong>实时 HTTPS 中继：</strong>需自行部署插件仓库提供的 Node 服务，通过域名和有效 HTTPS 证书连接；没有内置公共服务器。配置精确的 UvU 来源与 TT 请求来源，在 TT 保存中继地址和管理员凭证；UvU 只填写同一 HTTPS 地址及 TT 生成的配对码。管理员凭证与设备配对凭证不能混用。</li>
-                            <li><strong>中继部署入口：</strong>插件仓库 <code>docs/tt-deployment.md</code> 提供配置、HTTPS 代理、启动和更新教程。复制示例配置后设置独立管理员密钥、来源白名单与私有数据目录，再运行：</li>
+                            <li><strong>实时 HTTPS 中继：</strong>先另备常开服务器、域名和有效 TLS 证书，自行运行插件仓库提供的独立 Node 中继；TT 没有 SillyTavern Node 后端，也不会随扩展自动运行中继。只有部署完成后才在本页选择“独立 HTTPS 中继实时连接”。GitHub Pages / UvU 网页地址是静态页面，不能填写为中继，否则写入会出现 405。配置精确的 UvU 来源与 TT 请求来源，在 TT 保存中继地址和管理员凭证；UvU 只填写同一 HTTPS 地址及 TT 生成的配对码。管理员凭证与设备配对凭证不能混用。</li>
+                            <li><strong>中继部署入口：</strong><a href="https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge/blob/main/docs/tt-deployment.md" target="_blank" rel="noopener noreferrer">打开中继部署教程</a>，其中提供配置、HTTPS 代理、启动和更新教程。仅供选择实时模式时，在独立服务器上配置管理员密钥、精确来源与私有数据目录；TT 本身不运行这些服务。</li>
                         </ol>
-                        <pre class="uvu-bridge-command"><code class="language-bash">node server/relay.js</code></pre>
+                        <p>部署完成后，TT 使用独立中继 HTTPS 基址与管理员密钥；UvU 使用同一基址和 TT 生成的配对码。不要把管理员密钥填入 UvU。配置未完成请继续使用文件模式。</p>
                         <p>实时模式下两端均需联网；后台可能被 iOS 暂停，回到前台续收。ST 和 TT 的绑定、地址、角色选择及待审数据分别保存。切换通道不会替另一端自动迁移资料。iOS 真机的扩展权限、文件下载和网络来源仍需按实际 TT 版本验证。</p>
                     </details>
+                    <div id="uvu-bridge-st-guide">
                     <ol>
                         <li><strong>安装酒馆扩展：</strong>在 SillyTavern 的扩展管理器中添加 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code>，安装后刷新酒馆页面。</li>
                         <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行：
@@ -734,6 +740,7 @@ node setup-server-plugin.js</code></pre>
                         <li><strong>与 1900 原版的关系：</strong>互通只把审核通过的剧情追加为记忆资料，不改写原始消息、基础提示词和人设。关闭互通后酒馆剧情不参与上下文；普通收藏记忆保持原注入，向量命中不会挤掉收藏项，重复来源只发送一次。开启记忆后模型多了往事资料，回复可能变化；这不代表两边回复会完全相同。</li>
                     </ol>
                     <p class="uvu-bridge-note">GitHub Pages 通过 HTTPS 访问本机桥接 HTTP 接口，首次配对必须在页面前台完成并允许本地网络访问。已审核记忆才会进入上下文；桥接不改写基础提示词正文。</p>
+                    </div>
                 </section>
         </main>
     </div>
@@ -2898,10 +2905,10 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261104-chat-css-reset"></script>
-<script src="js/modules/worldbook_rules.js?v=20261104-worldbook-position"></script>
+<script src="js/modules/worldbook_rules.js?v=20261105-audit-repairs"></script>
 <script src="js/modules/document_import.js?v=20261103-documents"></script>
 <script src="js/modules/global_css_io.js?v=20261104-global-css-toolbar-menu"></script>
-<script src="js/modules/text_editor.js?v=20261104-editor-scroll-toolbar"></script>
+<script src="js/modules/text_editor.js?v=20261105-audit-repairs"></script>
 <script src="js/modules/worldbook_editor.js?v=20261104-worldbook-position"></script>
 <script src="js/modules/sticker_assist.js?v=20261104-derived-features"></script>
 <link rel="stylesheet" href="css/modules/document_features.css?v=20261103-vector-viewport">
@@ -2909,20 +2916,20 @@ node setup-server-plugin.js</code></pre>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_render.js?v=20261104-minimax-voice-fix"></script>
-<script src="js/modules/chat_archives.js?v=20261104-derived-features"></script>
+<script src="js/modules/chat_archives.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261105-mcp-center"></script>
-    <script src="js/modules/chat_ai_call.js?v=20261103-documents"></script>
+    <script src="js/modules/chat_ai_call.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
-    <script src="js/modules/chat_ai.js?v=20261105-mcp-center"></script>
+    <script src="js/modules/chat_ai.js?v=20261105-audit-repairs"></script>
 <script src="js/modules/chat_features.js?v=20261104-minimax-voice-fix"></script>
-<script src="js/modules/chat_ops.js?v=20261103-chat-safety"></script>
+<script src="js/modules/chat_ops.js?v=20261106-audit-repairs"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
 <script src="js/modules/character_avatar.js?v=20261104-avatar-location"></script>
 <link rel="stylesheet" href="css/modules/mcp.css?v=20261105-mcp-center">
 <script src="js/vendor/mcp_schema.js?v=8.17.1-3.0.1"></script>
 <script src="js/modules/mcp_transport.js?v=20261105-mcp-center"></script>
-<script src="js/modules/mcp_services.js?v=20261105-mcp-center"></script>
+<script src="js/modules/mcp_services.js?v=20261105-audit-repairs"></script>
 <script src="js/modules/mcp_chat.js?v=20261105-mcp-center"></script>
 <script src="js/modules/mcp_ui.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
@@ -2936,7 +2943,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/group_settings_html.js?v=20261104-worldbook-count"></script> <!-- 群聊设置HTML注入 -->
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
-<script src="js/modules/settings_chat.js?v=20261104-minimax-voice-fix"></script> <!-- 聊天设置与管理 -->
+<script src="js/modules/settings_chat.js?v=20261105-audit-repairs"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/settings_api.js?v=20261104-minimax-voice-fix"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
@@ -3035,10 +3042,10 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/bridge_text.js?v=20261105-floor-review"></script>
 <script src="js/modules/bridge_summary.js?v=20261105-tt-summary"></script>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
-<script src="js/modules/story_bridge.js?v=20261105-tt-summary"></script>
+<script src="js/modules/story_bridge.js?v=20261105-tt-onboarding"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
-<script src="js/modules/storage.js?v=20261105-mcp-center"></script>   <!-- 存储空间分析图表 -->
+<script src="js/modules/storage.js?v=20261105-audit-repairs"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->
 <script src="js/modules/tutorial.js"></script>  <!-- 教程、更新日志、GitHub备份 -->
@@ -3048,7 +3055,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/gallery.js"></script> <!-- 角色相册管理模块 -->
 <script src="js/modules/shop.js"></script>    <!-- 商城模块 -->
 <script src="js/modules/cot_settings.js"></script> <!-- 思维链设置模块 -->
-<script src="js/modules/video_call.js?v=20261103-friends"></script> <!-- 视频通话模块 -->
+<script src="js/modules/video_call.js?v=20261105-audit-repairs"></script> <!-- 视频通话模块 -->
 <script src="js/workshop_html.js"></script> <!-- 绘图工坊HTML注入 -->
 <script src="js/modules/image-workshop/settings.js"></script>
 <script src="js/modules/image-workshop/prompts.js"></script>

@@ -133,7 +133,55 @@ function resetArchiveRuntime(data) {
     if (data.autoReply) data.autoReply.lastTriggerTime = 0;
     if (data.privateSessions) data.privateSessions = {};
     if (data.gossipSessions) data.gossipSessions = {};
+    resetArchiveDerivedRuntime(data);
     return data;
+}
+
+function resetArchiveDerivedRuntime(data) {
+    const users = (data.history || []).filter(message => message.role === 'user' && !message.isContextDisabled && !message.relationshipDelivery && !message.isWithdrawn);
+    if (data.avatarAutonomy) {
+        const settings = data.avatarAutonomy;
+        settings.lastUserCount = Math.min(Math.max(0, Number(settings.lastUserCount) || 0), users.length);
+        settings.lastCheck = 0;
+        settings.lastChangedAt = 0;
+        settings.lastRequestKey = '';
+        settings.lastResult = '';
+        settings.currentImageId = '';
+        settings.currentAvatarFingerprint = '';
+        settings.cache = {};
+    }
+    if (data.friendRelationship?.autonomy) {
+        const autonomy = data.friendRelationship.autonomy;
+        const eligibleCount = users.filter(message => !message.isThinking && !message.isStatusUpdate).length;
+        autonomy.lastCheckUserCount = Math.min(Math.max(0, Number(autonomy.lastCheckUserCount) || 0), eligibleCount);
+    }
+    // Rebuild lazily against the new archive's retained history and journals.
+    data.memoryVectorIndex = {};
+}
+
+function archiveSelectionIsCurrent(chat, type, archiveId, history) {
+    return currentChatType === type && getCurrentChatEntity() === chat && chat.activeArchiveId === archiveId && chat.history === history;
+}
+
+function restoreFailedArchiveSwitch(chat, previousId, archiveId, history) {
+    if (chat.activeArchiveId !== archiveId || chat.history !== history) return;
+    const previous = chat.archives.find(item => item.id === previousId);
+    if (!previous) return;
+    // New arrivals belong to the attempted destination, never to the source.
+    syncChatActiveArchive(chat);
+    applyArchiveData(chat, previous);
+}
+
+async function activateCreatedArchive(chat, archive) {
+    const originalData = JSON.stringify(archive.data), originalName = archive.name;
+    chat.archives.push(archive);
+    if (await switchChatArchive(archive.id)) return true;
+    // Keep any newer work, including arrivals saved into the failed destination.
+    if (chat.activeArchiveId !== archive.id && archive.name === originalName && JSON.stringify(archive.data) === originalData) {
+        const index = chat.archives.indexOf(archive);
+        if (index >= 0) chat.archives.splice(index, 1);
+    }
+    return false;
 }
 
 function makeArchiveName(prefix) {
@@ -161,9 +209,9 @@ async function createBlankArchive() {
         origin: null,
         data: resetArchiveRuntime(cloneArchiveValue(active.data))
     };
-    chat.archives.push(archive);
-    await switchChatArchive(archive.id);
+    if (!await activateCreatedArchive(chat, archive)) return false;
     showToast('新存档已创建');
+    return true;
 }
 
 function journalBelongsToBranch(journal, includedMessageIds, cutoff) {
@@ -193,6 +241,7 @@ async function createBranchArchiveAtMessage(messageId) {
     );
     data.callHistory = (data.callHistory || []).filter(call => !call.timestamp || call.timestamp <= (data.history[branchIndex].timestamp || Infinity));
     data.lastUserMessageTimestamp = [...data.history].reverse().find(message => message.role === 'user')?.timestamp || null;
+    resetArchiveDerivedRuntime(data);
 
     const now = Date.now();
     const archive = {
@@ -208,25 +257,36 @@ async function createBranchArchiveAtMessage(messageId) {
         },
         data
     };
-    chat.archives.push(archive);
-    await switchChatArchive(archive.id);
+    if (!await activateCreatedArchive(chat, archive)) return false;
     showToast('分支存档已创建');
+    return true;
 }
 
 async function switchChatArchive(archiveId) {
     const chat = getCurrentChatEntity();
+    const type = currentChatType;
     if (!chat || chat.activeArchiveId === archiveId) {
         closeArchiveManager();
-        return;
+        return Boolean(chat);
     }
 
     syncChatActiveArchive(chat, true);
     const archive = chat.archives.find(item => item.id === archiveId);
-    if (!archive) return;
+    if (!archive) return false;
+    const previousId = chat.activeArchiveId;
     applyArchiveData(chat, archive);
-    await saveData();
-    closeArchiveManager();
-    openChatRoom(currentChatId, currentChatType);
+    const history = chat.history;
+    try { await saveData(); }
+    catch (error) {
+        restoreFailedArchiveSwitch(chat, previousId, archiveId, history);
+        showToast('存档切换保存失败，已保留原存档和新消息');
+        return false;
+    }
+    if (archiveSelectionIsCurrent(chat, type, archiveId, history)) {
+        closeArchiveManager();
+        openChatRoom(chat.id, type);
+    }
+    return true;
 }
 
 async function renameChatArchive(archiveId) {
@@ -235,10 +295,19 @@ async function renameChatArchive(archiveId) {
     if (!archive) return;
     const name = prompt('修改存档名称', archive.name);
     if (name === null || !name.trim()) return;
+    const before = { name: archive.name, updatedAt: archive.updatedAt };
     archive.name = name.trim();
     archive.updatedAt = Date.now();
-    await saveData();
-    renderArchiveManager();
+    const renamed = { name: archive.name, updatedAt: archive.updatedAt };
+    try { await saveData(); }
+    catch (error) {
+        if (archive.name === renamed.name) archive.name = before.name;
+        if (archive.updatedAt === renamed.updatedAt) archive.updatedAt = before.updatedAt;
+        showToast('存档改名保存失败');
+        return false;
+    }
+    if (getCurrentChatEntity() === chat) renderArchiveManager();
+    return true;
 }
 
 async function deleteChatArchive(archiveId) {
@@ -250,22 +319,26 @@ async function deleteChatArchive(archiveId) {
     const archive = chat.archives.find(item => item.id === archiveId);
     if (!archive || !confirm(`确定删除“${archive.name}”吗？该操作不可恢复。`)) return;
 
-    if (chat.activeArchiveId === archiveId) {
-        syncChatActiveArchive(chat, true);
-        const fallback = chat.archives.find(item => item.id !== archiveId);
-        chat.archives = chat.archives.filter(item => item.id !== archiveId);
-        applyArchiveData(chat, fallback);
-        await saveData();
-        closeArchiveManager();
-        openChatRoom(currentChatId, currentChatType);
-        showToast('存档已删除');
-        return;
+    const type = currentChatType, index = chat.archives.indexOf(archive);
+    const active = chat.activeArchiveId === archiveId;
+    if (active) syncChatActiveArchive(chat, true);
+    chat.archives.splice(index, 1);
+    const fallback = active ? chat.archives[0] : null;
+    if (active) applyArchiveData(chat, fallback);
+    const history = chat.history;
+    try { await saveData(); }
+    catch (error) {
+        if (!chat.archives.some(item => item.id === archiveId)) chat.archives.splice(Math.min(index, chat.archives.length), 0, archive);
+        if (active) restoreFailedArchiveSwitch(chat, archiveId, fallback.id, history);
+        showToast('存档删除保存失败，已恢复存档');
+        return false;
     }
-
-    chat.archives = chat.archives.filter(item => item.id !== archiveId);
-    await saveData();
-    renderArchiveManager();
+    if (active && archiveSelectionIsCurrent(chat, type, fallback.id, history)) {
+        closeArchiveManager();
+        openChatRoom(chat.id, type);
+    } else if (!active && getCurrentChatEntity() === chat) renderArchiveManager();
     showToast('存档已删除');
+    return true;
 }
 
 function formatArchiveTime(timestamp) {

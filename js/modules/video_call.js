@@ -19,6 +19,28 @@ const VideoCallModule = {
         isMinimized: false // 是否处于悬浮窗模式
     },
 
+    captureCallScope: function() {
+        const chat = this.state.currentChat;
+        if (this.state.callScope?.session === this.state.callSession) return this.state.callScope;
+        return this.state.callScope = { session: this.state.callSession, chat, archiveId: chat?.activeArchiveId, history: chat?.history, context: this.state.currentCallContext };
+    },
+
+    isCallScopeCurrent: function(scope) {
+        return Boolean(scope && this.state.isCallActive && this.state.callSession === scope.session &&
+            this.state.currentChat === scope.chat && this.state.currentCallContext === scope.context &&
+            scope.chat?.activeArchiveId === scope.archiveId && scope.chat?.history === scope.history &&
+            [...db.characters, ...(db.groups || [])].includes(scope.chat));
+    },
+
+    cancelCallRequests: function() {
+        this.state.replyController?.abort();
+        this.state.initialController?.abort();
+        this.state.replyController = null;
+        this.state.initialController = null;
+        this.state.isGenerating = false;
+        this.state.isAiSpeaking = false;
+    },
+
     init: function() {
         // 绑定悬浮窗点击恢复
         const floatWindow = document.getElementById('vc-floating-window');
@@ -457,6 +479,9 @@ const VideoCallModule = {
             return;
         }
         this.hideCallTypeModal();
+        this.cancelCallRequests();
+        this.state.callSession = {};
+        this.state.callScope = null;
         this.state.callType = type;
         this.state.isCallActive = true;
         this.state.seconds = 0;
@@ -479,6 +504,7 @@ const VideoCallModule = {
             return;
         }
         this.state.currentChat = chat;
+        const scope = this.captureCallScope();
 
         if (!isIncoming) {
             const myName = chat.myName || (chat.me ? chat.me.nickname : '我');
@@ -492,6 +518,7 @@ const VideoCallModule = {
             };
             chat.history.push(inviteMsg);
             await saveData();
+            if (!this.isCallScopeCurrent(scope)) return;
             if (typeof renderMessages === 'function') {
                 renderMessages(false, true);
             }
@@ -541,11 +568,16 @@ const VideoCallModule = {
         loadingScene.style.opacity = 1;
 
         const aiPromise = this.fetchInitialAiResponse(chat, type, isIncoming);
-        await this.runConnectionSequence(aiPromise, isIncoming);
+        await this.runConnectionSequence(aiPromise, isIncoming, scope);
     },
 
     fetchInitialAiResponse: async function(chat, type, isIncoming) {
         if (typeof getCallReply !== 'function') return null;
+        const scope = this.captureCallScope();
+        if (!this.isCallScopeCurrent(scope) || scope.chat !== chat) return null;
+        const controller = new AbortController();
+        this.state.initialController?.abort();
+        this.state.initialController = controller;
         const isPrivate = db.characters.includes(chat);
         if (isPrivate && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat)) return null;
         const relationshipRevision = chat.friendRelationship?.revision;
@@ -563,7 +595,8 @@ const VideoCallModule = {
         }];
         
         try {
-            const response = await getCallReply(chat, type, tempContext, () => {});
+            const response = await getCallReply(chat, type, tempContext, () => {}, controller.signal);
+            if (!this.isCallScopeCurrent(scope) || controller.signal.aborted) return null;
             if (isPrivate && typeof relationshipCanChat === 'function' && (!relationshipCanChat(chat) || chat.friendRelationship?.revision !== relationshipRevision)) return null;
             return response;
         } catch (e) {
@@ -572,18 +605,18 @@ const VideoCallModule = {
         }
     },
 
-    runConnectionSequence: async function(aiPromise, isIncoming) {
+    runConnectionSequence: async function(aiPromise, isIncoming, scope = this.captureCallScope()) {
         const mainText = document.getElementById('vc-status-main');
         const subText = document.getElementById('vc-status-sub');
         
         if (!isIncoming) {
-            if (!this.state.isCallActive) return;
+            if (!this.isCallScopeCurrent(scope)) return;
             mainText.textContent = "正在连线中...";
             subText.textContent = "HANDSHAKE_INIT";
             mainText.style.opacity = 1;
             await new Promise(r => setTimeout(r, 1500));
 
-            if (!this.state.isCallActive) return;
+            if (!this.isCallScopeCurrent(scope)) return;
             mainText.style.opacity = 0;
             await new Promise(r => setTimeout(r, 200));
             mainText.textContent = "对方已收到邀请";
@@ -595,9 +628,10 @@ const VideoCallModule = {
             subText.textContent = "CONNECTING...";
         }
 
-        if (!this.state.isCallActive) return;
+        if (!this.isCallScopeCurrent(scope)) return;
         mainText.style.opacity = 0;
         await new Promise(r => setTimeout(r, 200));
+        if (!this.isCallScopeCurrent(scope)) return;
         mainText.textContent = "信号接通中...";
         subText.textContent = "SYNCING_PACKETS";
         mainText.style.opacity = 1;
@@ -605,24 +639,27 @@ const VideoCallModule = {
         try {
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 300000));
             const aiResponse = await Promise.race([aiPromise, timeoutPromise]);
+            if (!this.isCallScopeCurrent(scope)) return;
             this.state.initialAiResponse = aiResponse;
         } catch (e) {
             console.warn("AI开场白等待超时或失败，将使用默认开场白", e);
         }
 
-        if (!this.state.isCallActive) return;
+        if (!this.isCallScopeCurrent(scope)) return;
         mainText.style.opacity = 0;
         await new Promise(r => setTimeout(r, 200));
+        if (!this.isCallScopeCurrent(scope)) return;
         mainText.textContent = "连接成功";
         subText.textContent = "LINK_ESTABLISHED";
         mainText.style.color = "#34c759";
         mainText.style.opacity = 1;
         
-        setTimeout(() => this.transitionToCallScene(), 800);
+        setTimeout(() => { if (this.isCallScopeCurrent(scope)) this.transitionToCallScene(); }, 800);
     },
 
     transitionToCallScene: function() {
-        if (!this.state.isCallActive) return;
+        const scope = this.captureCallScope();
+        if (!this.isCallScopeCurrent(scope)) return;
 
         const loadingScene = document.getElementById('vc-scene-loading');
         const callScene = document.getElementById('vc-scene-call');
@@ -636,10 +673,12 @@ const VideoCallModule = {
         // 2. 淡出 loading 界面
         // 稍微延迟以确保 DOM 更新
         requestAnimationFrame(() => {
+            if (!this.isCallScopeCurrent(scope)) return;
             loadingScene.style.opacity = 0;
             
             // 3. 动画结束后清理
             setTimeout(() => {
+                if (!this.isCallScopeCurrent(scope)) return;
                 loadingScene.classList.add('vc-hidden');
                 loadingScene.style.display = 'none';
                 
@@ -673,6 +712,7 @@ const VideoCallModule = {
     },
 
     sendInitialMessage: function() {
+        const scope = this.captureCallScope();
         const chat = this.state.currentChat;
         const name = currentChatType === 'private' ? chat.remarkName : chat.name;
         
@@ -681,13 +721,16 @@ const VideoCallModule = {
         } else {
             if (this.state.callType === 'video') {
                 setTimeout(() => {
+                if (!this.isCallScopeCurrent(scope)) return;
                     this.addMessage('ai', 'visual', `[ 镜头微微晃动，${name} 似乎正在调整角度 ]`);
                 }, 500);
                 setTimeout(() => {
+                if (!this.isCallScopeCurrent(scope)) return;
                     this.addMessage('ai', 'voice', `“……信号这下稳定了吗？让我看看你。”`);
                 }, 1500);
             } else {
                 setTimeout(() => {
+                if (!this.isCallScopeCurrent(scope)) return;
                     this.addMessage('ai', 'voice', `“喂？听得到吗？”`);
                 }, 1000);
             }
@@ -695,6 +738,7 @@ const VideoCallModule = {
     },
 
     parseAndAddAiResponse: function(fullText) {
+        const scope = this.captureCallScope();
         const regex = /\[(.*?)[：:]([\s\S]+?)\]/g;
         let match;
         let delay = 500;
@@ -710,6 +754,7 @@ const VideoCallModule = {
             }
             
             setTimeout(() => {
+                if (!this.isCallScopeCurrent(scope)) return;
                 this.addMessage('ai', type, content);
             }, delay);
             
@@ -892,7 +937,9 @@ const VideoCallModule = {
     },
 
     triggerAiReply: async function() {
-        const relationshipChat = this.state.currentChat;
+        const scope = this.captureCallScope();
+        if (!this.isCallScopeCurrent(scope)) return;
+        const relationshipChat = scope.chat;
         const isPrivate = db.characters.includes(relationshipChat);
         if (isPrivate && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
             showToast('当前好友关系无法通话，请先恢复好友关系');
@@ -911,6 +958,8 @@ const VideoCallModule = {
             return;
         }
 
+        const controller = new AbortController();
+        this.state.replyController = controller;
         this.state.isGenerating = true;
         this.state.isAiSpeaking = true; // 同时也标记为 speaking 以防其他操作干扰
         
@@ -926,9 +975,10 @@ const VideoCallModule = {
         try {
             if (typeof getCallReply === 'function') {
                 let fullText = "";
-                await getCallReply(this.state.currentChat, this.state.callType, this.state.currentCallContext, (chunk) => {
-                    fullText += chunk;
-                });
+                await getCallReply(scope.chat, this.state.callType, scope.context, (chunk) => {
+                    if (this.isCallScopeCurrent(scope) && !controller.signal.aborted) fullText += chunk;
+                }, controller.signal);
+                if (!this.isCallScopeCurrent(scope) || controller.signal.aborted) return;
                 
                 if (fullText) {
                     if (isPrivate && typeof relationshipCanChat === 'function' && (!relationshipCanChat(relationshipChat) || relationshipChat.friendRelationship?.revision !== relationshipRevision)) return;
@@ -936,19 +986,26 @@ const VideoCallModule = {
                 }
             }
         } catch (e) {
-            console.error("AI Reply Error:", e);
-            showToast("信号连接失败");
+            if (this.isCallScopeCurrent(scope) && !controller.signal.aborted) {
+                console.error("AI Reply Error:", e);
+                showToast("信号连接失败");
+            }
         } finally {
             // 移除处理中状态样式
-            if (avatar) avatar.classList.remove('processing');
-            this.state.isGenerating = false;
-            this.state.isAiSpeaking = false; 
+            if (this.state.replyController === controller) {
+                if (avatar) avatar.classList.remove('processing');
+                this.state.replyController = null;
+                this.state.isGenerating = false;
+                this.state.isAiSpeaking = false;
+            }
         }
     },
 
     sendUserAction: async function(text) {
         if (!text) return;
-        const relationshipChat = this.state.currentChat;
+        const scope = this.captureCallScope();
+        if (!this.isCallScopeCurrent(scope)) return;
+        const relationshipChat = scope.chat;
         if (db.characters.includes(relationshipChat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
             showToast('当前好友关系无法通话，请先恢复好友关系');
             return;
@@ -976,6 +1033,10 @@ const VideoCallModule = {
     },
 
     endCall: async function(isLoading = false) {
+        const scope = this.captureCallScope();
+        const canSaveCall = this.isCallScopeCurrent(scope);
+        this.cancelCallRequests();
+        this.state.callSession = null;
         this.state.isCallActive = false;
         this.state.isMinimized = false;
         
@@ -994,12 +1055,14 @@ const VideoCallModule = {
         if (isLoading) {
             loadingScene.style.opacity = 0;
             setTimeout(() => {
+                if (this.state.isCallActive) return;
                 loadingScene.classList.add('vc-hidden');
                 loadingScene.style.display = 'none';
             }, 500);
         } else {
             callScene.style.opacity = 0;
             setTimeout(() => {
+                if (this.state.isCallActive) return;
                 callScene.classList.add('vc-hidden');
                 callScene.style.display = 'none';
                 callScene.style.opacity = 1;
@@ -1008,7 +1071,8 @@ const VideoCallModule = {
         
         document.getElementById('vc-status-main').style.color = "rgba(255,255,255,0.9)";
 
-        if (this.state.currentCallContext.length > 0) {
+        if (!canSaveCall && scope.context?.length) showToast('通话所属存档已切换，本次记录未写入当前存档');
+        if (canSaveCall && scope.context.length > 0) {
             const startTimeDate = new Date(this.state.startTime);
             const dateStr = `${startTimeDate.getFullYear()}/${startTimeDate.getMonth()+1}/${startTimeDate.getDate()} ${startTimeDate.getHours().toString().padStart(2,'0')}:${startTimeDate.getMinutes().toString().padStart(2,'0')}`;
             const durationStr = this.formatDuration(this.state.seconds);
@@ -1018,14 +1082,14 @@ const VideoCallModule = {
                 startTime: this.state.startTime,
                 duration: this.state.seconds,
                 type: this.state.callType,
-                context: [...this.state.currentCallContext],
+                context: [...scope.context],
                 summary: ""
             };
 
-            if (!this.state.currentChat.callHistory) {
-                this.state.currentChat.callHistory = [];
+            if (!scope.chat.callHistory) {
+                scope.chat.callHistory = [];
             }
-            this.state.currentChat.callHistory.push(callRecord);
+            scope.chat.callHistory.push(callRecord);
             
             const summaryMsg = {
                 id: `msg_${Date.now()}_${Math.random()}`,
@@ -1034,31 +1098,31 @@ const VideoCallModule = {
                 timestamp: Date.now(),
                 callRecordId: callRecord.id
             };
-            this.state.currentChat.history.push(summaryMsg);
+            scope.chat.history.push(summaryMsg);
 
             await saveData();
             showToast('通话结束，正在生成总结...');
             
-            if (typeof renderMessages === 'function' && currentChatId === this.state.currentChat.id) {
+            if (typeof renderMessages === 'function' && currentChatId === scope.chat.id) {
                 renderMessages(false, true);
             }
 
             if (typeof generateCallSummary === 'function') {
-                generateCallSummary(this.state.currentChat, this.state.currentCallContext).then(async (summary) => {
-                    if (summary) {
+                generateCallSummary(scope.chat, scope.context).then(async (summary) => {
+                    if (summary && scope.chat.activeArchiveId === scope.archiveId && scope.chat.history === scope.history && scope.chat.callHistory?.includes(callRecord)) {
                         callRecord.summary = summary;
                         summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
                         
                         await saveData();
                         
-                        if (typeof renderMessages === 'function' && currentChatId === this.state.currentChat.id) {
+                        if (typeof renderMessages === 'function' && currentChatId === scope.chat.id) {
                             renderMessages(false, false);
                         }
                         showToast('通话总结已生成');
                     } else {
                         showToast('通话总结生成失败，可稍后重试');
                     }
-                });
+                }).catch(() => showToast('通话总结保存失败，请稍后重试'));
             }
         }
     },

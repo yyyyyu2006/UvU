@@ -238,6 +238,7 @@ test('late call opening response is discarded after relationship change', async 
     vm.runInContext(read('modules/video_call.js'), f.c);
     let finish;
     f.c.getCallReply = () => new Promise(resolve => finish = resolve);
+    Object.assign(f.c.window.VideoCallModule.state, {currentChat:f.chat, isCallActive:true, callSession:{}, currentCallContext:[]});
     const pending = f.c.window.VideoCallModule.fetchInitialAiResponse(f.chat, 'voice', false);
     f.chat.friendRelationship = { peer: { blocked: true }, revision: 1 };
     finish('late response');

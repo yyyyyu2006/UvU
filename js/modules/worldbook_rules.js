@@ -16,12 +16,32 @@ function getWorldBookBindingStats(ids) {
 function escapeWorldBookHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+function worldBookRegex(key) {
+    const end = key.startsWith('/') ? key.lastIndexOf('/') : -1;
+    return end > 0 ? { source: key.slice(1, end), flags: key.slice(end + 1).replace(/[gy]/g, '') } : null;
+}
+function worldBookRegexIsSafe(regex) {
+    // Synchronous callers only accept a small linear subset. All grouping,
+    // alternatives, repetition, backreferences and lookarounds require a worker.
+    if (regex.source.length > 512 || /[^dimsu]/.test(regex.flags)) return false;
+    let inClass = false;
+    for (let i = 0; i < regex.source.length; i++) {
+        const c = regex.source[i];
+        if (c === '\\') {
+            const escaped = regex.source[++i];
+            if (!escaped || /[1-9kpP]/.test(escaped)) return false;
+        } else if (inClass) {
+            if (c === ']') inClass = false;
+        } else if (c === '[') inClass = true;
+        else if ('+*?{}()|'.includes(c)) return false;
+    }
+    return !inClass;
+}
 function worldBookMatches(key, text, rules) {
-    if (key.startsWith('/')) {
-        const end = key.lastIndexOf('/');
-        if (end > 0) {
-            try { return new RegExp(key.slice(1, end), key.slice(end + 1).replace(/[gy]/g, '')).test(text); } catch (_) { return false; }
-        }
+    const regex = worldBookRegex(key);
+    if (regex) {
+        if (!worldBookRegexIsSafe(regex)) return false;
+        try { return new RegExp(regex.source, regex.flags).test(text); } catch (_) { return false; }
     }
     if (!rules.caseSensitive) { key = key.toLocaleLowerCase(); text = text.toLocaleLowerCase(); }
     if (!rules.wholeWords) return text.includes(key);
@@ -37,7 +57,7 @@ function chatUsesAdvancedWorldBook(chat) {
     // truly legacy books without rules keep the original static prompt path.
     return (chat?.worldBookIds || []).some(id => Object.hasOwn(db.worldBooks.find(book => book.id === id)?.rules || {}, 'advancedEnabled'));
 }
-function buildWorldBookPlan(chat, history = chat.history || [], random = Math.random) {
+function buildWorldBookPlan(chat, history = chat.history || [], random = Math.random, regexResults) {
     return (chat.worldBookIds || []).map(id => db.worldBooks.find(w => w.id === id)).filter(w => {
         if (!w || w.type === 'folder' || w.rules?.unsupportedPosition) return false;
         const r = w.rules;
@@ -46,10 +66,16 @@ function buildWorldBookPlan(chat, history = chat.history || [], random = Math.ra
         const count = Math.floor(worldBookNumber(r.scanDepth, 20, 0, 10000));
         const text = (count ? history.slice(-count) : []).map(m => m.content || '').join('\n');
         if (r.constant === false) {
-            if (!worldBookKeys(r.keys).some(k => worldBookMatches(k, text, r))) return false;
+            const matches = key => {
+                if (regexResults?.has(w) && regexResults.get(w).has(key)) return regexResults.get(w).get(key);
+                return worldBookMatches(key, text, r);
+            };
+            if (!worldBookKeys(r.keys).some(k => matches(k) === true)) return false;
             const secondary = worldBookKeys(r.secondaryKeys);
             if (secondary.length && r.selective !== false) {
-                const hits = secondary.map(k => worldBookMatches(k, text, r));
+                const hits = secondary.map(matches);
+                // A timed-out/unsupported regex is unknown, never a negative hit.
+                if (hits.some(hit => hit == null)) return false;
                 const mode = Number(r.selectiveLogic || 0);
                 if (!(mode === 1 ? !hits.every(Boolean) : mode === 2 ? !hits.some(Boolean) : mode === 3 ? hits.every(Boolean) : hits.some(Boolean))) return false;
             }
@@ -61,6 +87,76 @@ function buildWorldBookPlan(chat, history = chat.history || [], random = Math.ra
         const bOrder = worldBookUsesAdvancedRules(b) ? worldBookNumber(b.rules.order, b.depth || 100) : (b.depth || 100);
         return aOrder - bOrder;
     });
+}
+function worldBookRegexAbortError() {
+    const error = new Error('世界书匹配已取消');
+    error.name = 'AbortError';
+    return error;
+}
+function evaluateWorldBookRegexJobs(jobs, signal) {
+    if (signal?.aborted) return Promise.reject(worldBookRegexAbortError());
+    if (typeof Worker === 'undefined') return Promise.resolve({ results: [], warning: '世界书复杂正则暂不可用，已跳过相关触发' });
+    return new Promise((resolve, reject) => {
+        let worker, timer, settled = false;
+        const results = [];
+        const finish = (warning, error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', abort);
+            worker?.terminate();
+            if (error) reject(error);
+            else resolve({ results, warning });
+        };
+        const abort = () => finish(null, worldBookRegexAbortError());
+        signal?.addEventListener('abort', abort, { once: true });
+        try {
+            worker = new Worker('js/workers/worldbook_regex_worker.js?v=20261105-bounded-regex');
+            worker.onmessage = event => {
+                const data = event.data;
+                if (data?.done) finish();
+                else if (Number.isInteger(data?.index) && typeof data.matched === 'boolean') results[data.index] = data.matched;
+            };
+            worker.onerror = () => finish('世界书正则匹配失败，已跳过未完成的触发');
+            // One total request budget, including worker startup and every regex.
+            timer = setTimeout(() => finish('世界书正则匹配超时，已跳过未完成的触发'), 250);
+            worker.postMessage({ jobs });
+        } catch (_) { finish('世界书复杂正则暂不可用，已跳过相关触发'); }
+    });
+}
+async function buildWorldBookPlanAsync(chat, history = chat.history || [], random = Math.random, signal) {
+    if (signal?.aborted) throw worldBookRegexAbortError();
+    const regexResults = new Map(), jobs = [], targets = [];
+    for (const id of chat.worldBookIds || []) {
+        const book = db.worldBooks.find(w => w.id === id), r = book?.rules;
+        if (!book || book.type === 'folder' || r?.unsupportedPosition || !worldBookUsesAdvancedRules(book) || r.enabled === false || r.constant !== false || regexResults.has(book)) continue;
+        const count = Math.floor(worldBookNumber(r.scanDepth, 20, 0, 10000));
+        const text = (count ? history.slice(-count) : []).map(m => m.content || '').join('\n');
+        const results = new Map();
+        regexResults.set(book, results);
+        const keys = [...worldBookKeys(r.keys), ...(r.selective !== false ? worldBookKeys(r.secondaryKeys) : [])];
+        for (const key of new Set(keys)) {
+            const regex = worldBookRegex(key);
+            if (!regex || worldBookRegexIsSafe(regex)) continue;
+            results.set(key, null);
+            targets.push({ results, key });
+            jobs.push({ ...regex, text });
+        }
+    }
+    let warning;
+    if (jobs.length) {
+        const evaluated = await evaluateWorldBookRegexJobs(jobs, signal);
+        warning = evaluated.warning;
+        evaluated.results.forEach((matched, i) => targets[i]?.results.set(targets[i].key, matched));
+    }
+    if (signal?.aborted) throw worldBookRegexAbortError();
+    const plan = buildWorldBookPlan(chat, history, random, regexResults);
+    if (warning) {
+        Object.defineProperty(plan, 'regexWarnings', { value: [warning] });
+        if (typeof showToast === 'function') showToast(warning);
+        else if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn(warning);
+    }
+    return plan;
 }
 function worldBookSection(plan, position) {
     return plan.filter(w => (w.position === position || (position === 'before' && w.position === 'chat')) && !w.rules?.unsupportedPosition)
