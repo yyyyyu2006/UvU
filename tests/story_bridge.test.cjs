@@ -57,6 +57,19 @@ test('connection errors report the browser loopback permission state', async () 
     await assert.rejects(bridge.getMode('char-1'), /loopback-network: denied.*Chrome 已拒绝此网站/);
 });
 
+test('disabled bridge does not flush queued events or alter the saved queue', async () => {
+    const calls = [];
+    const { bridge, db } = harness(async (url, options) => {
+        calls.push({ url, options });
+        return { ok: true, json: async () => ({}) };
+    });
+    db.uvuStoryBridgeSettings.bridgeEnabled = false;
+    db.uvuStoryBridgeSettings.outbox = [{ characterKey: 'char-1', payload: { archiveId: 'default', messages: [{ id: 'm1' }] } }];
+    await bridge.flushOutbox();
+    assert.equal(calls.length, 0);
+    assert.equal(db.uvuStoryBridgeSettings.outbox.length, 1);
+});
+
 test('paired UvU sends stable character IDs and clear names to the local directory', async () => {
     const calls = [];
     const { bridge, db } = harness(async (url, options) => {

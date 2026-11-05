@@ -660,6 +660,7 @@
                         </div>
                         <label>酒馆本机桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="http://127.0.0.1:8765/api/plugins/uvu-story-bridge"></label>
                         <label>一次性配对码<input id="uvu-bridge-pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="在酒馆桥接面板生成"></label>
+                        <label><input id="uvu-bridge-enabled" type="checkbox" checked> 启用酒馆互通插件</label>
                         <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 将酒馆剧情记忆加入后续上下文</label>
                         <div class="uvu-bridge-actions">
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
@@ -669,23 +670,6 @@
                         <output id="uvu-bridge-status" aria-live="polite">未连接</output>
                     </div>
                 </div>
-                <section class="kkt-group uvu-bridge-guide" aria-labelledby="uvu-bridge-guide-title">
-                    <h2 id="uvu-bridge-guide-title">连接教程</h2>
-                    <ol>
-                        <li><strong>安装酒馆扩展：</strong>在 SillyTavern 的扩展管理器中添加 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code>，安装后刷新酒馆页面。</li>
-                        <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行 <code>cd plugins</code>、<code>git clone https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge.git uvu-story-bridge</code>、<code>cd uvu-story-bridge</code>、<code>node setup-server-plugin.js</code>。脚本展示将启用的服务端插件和允许的 UvU 来源；输入 <code>APPLY</code> 才会修改，并会先备份配置。完成后重启酒馆。</li>
-                        <li><strong>生成配对码：</strong>保持 UvU 本页在前台，在酒馆扩展面板点“生成配对码”；将 6 位一次性码填入本页并点“连接 / 配对”。首次连接按浏览器提示允许访问本机网络。桥接地址默认是 <code>http://127.0.0.1:8765/api/plugins/uvu-story-bridge</code>，只有修改过服务端口时才需要改地址。</li>
-                        <li><strong>绑定角色和人设：</strong>在酒馆打开目标角色私聊，不要在群聊里绑定；在酒馆扩展的“绑定到 UvU 角色”选择对应角色，检查酒馆角色名、UvU 角色名及 ID。人设、用户设定、头像不会自动复制，两边仍各自维护。</li>
-                        <li><strong>交接线上背景：</strong>选择 UvU 角色、当前存档，并填写消息起止编号（从 1 开始），点“交接所选范围”；回酒馆展开“收到的线上剧情”，选择来源存档，展开记录查看、编辑或勾选，再点“保存勾选与编辑”。未保存或未勾选内容不进入酒馆上下文。</li>
-                        <li><strong>开启酒馆记忆：</strong>在酒馆扩展勾选“在线记忆加入酒馆线下上下文”。它只允许当前绑定角色、所选存档里已审核并勾选的记录进入线下/手机模式；关闭后停止注入，审核记录仍保留。</li>
-                        <li><strong>开始线下剧情：</strong>确认酒馆当前仍是绑定的私聊，点扩展中的“开始线下剧情”，然后回聊天框手动输入并发送开场。此按钮只切换模式、记录起点，不会自动跳转角色或生成回复。</li>
-                        <li><strong>手机模式：</strong>线下剧情中点“拿出手机”，UvU 使用自己的 API 和聊天记录回复；点“收起手机”后继续在酒馆写线下剧情。酒馆旁白不会自动变成 UvU 消息。</li>
-                        <li><strong>审核线下剧情：</strong>回原酒馆聊天点“结束并导出”，再回本页点“收取酒馆记忆”；查看过滤后的原文，逐条编辑/勾选并保存。只有审核通过且勾选的条目进入普通上下文或向量候选。导出中断时回原聊天重试会发送同一份冻结内容。</li>
-                        <li><strong>过滤和恢复：</strong>桥接副本排除系统/隐藏/思维链、常见状态块、脚本样式及图片数据，保留发言者和时间；未知标签可在酒馆设置排除。过滤不改原聊天，仍应人工复核。分段有 SHA-256 校验；中断后在原聊天再次点“结束并导出”重试冻结内容。</li>
-                    </ol>
-                    <p class="uvu-bridge-note">GitHub Pages 是 HTTPS，而本机桥接接口运行在 HTTP 回环地址。首次连接请在页面前台点击配对，并按浏览器提示允许本地网络访问。若连接失败，请检查酒馆插件已启用、客户端端口为 8765（或配置的 clientPort），且手机与酒馆运行在同一设备。</p>
-                    <p class="uvu-bridge-note">已审核并勾选的记忆会增加后续请求上下文；向量检索也仅能查找获准剧情。桥接不改写基础提示词正文。手机后台可能暂停轮询，回到前台后继续同步。</p>
-                </section>
             </div>
                         <section class="uvu-bridge-handoff">
                             <h3>交接线上剧情到酒馆</h3>
@@ -698,6 +682,19 @@
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-refresh-review">刷新审核清单</button>
                             <div id="uvu-bridge-review-list" aria-live="polite"></div>
                         </details>
+                <section class="kkt-group uvu-bridge-guide" aria-labelledby="uvu-bridge-guide-title">
+                    <h2 id="uvu-bridge-guide-title">连接教程</h2>
+                    <ol>
+                        <li><strong>安装酒馆扩展：</strong>在 SillyTavern 的扩展管理器中添加 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code>，安装后刷新酒馆页面。</li>
+                        <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行 <code>cd plugins</code>、<code>git clone https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge.git uvu-story-bridge</code>、<code>cd uvu-story-bridge</code>、<code>node setup-server-plugin.js</code>。脚本展示将启用的服务端插件和允许的 UvU 来源；输入 <code>APPLY</code> 才会修改，并会先备份配置。完成后重启酒馆。</li>
+                        <li><strong>生成配对码：</strong>保持 UvU 本页在前台，在酒馆扩展面板点“生成配对码”；将 6 位一次性码填入本页并点“连接 / 配对”。首次连接按浏览器提示允许访问本机网络。</li>
+                        <li><strong>绑定角色：</strong>在酒馆打开目标角色私聊，不要在群聊里绑定；选择对应 UvU 角色并核对名称和 ID。人设、用户设定、头像不会自动复制。</li>
+                        <li><strong>交接与审核：</strong>在 UvU 选择角色、存档和消息范围，交接后回酒馆展开清单；选择来源存档，逐条查看、编辑、勾选并点“保存审核并加入日记”。只有勾选内容进入当前角色日记、后续上下文和向量候选。</li>
+                        <li><strong>开始和结束线下：</strong>点“开始线下剧情”后手动发送开场；“拿出手机”进入 UvU 手机模式，“收起手机”回到酒馆。结束时回原角色私聊点“结束并导出”；如果中途切换到其他聊天，原场景会保留保护，回原聊天后即可继续导出，已冻结的导出内容可安全重试。</li>
+                        <li><strong>插件开关：</strong>取消“启用酒馆互通插件”会停止同步和记忆注入，但不删除聊天、日记或原有提示词；重新开启后再点“收取酒馆记忆”即可继续。</li>
+                    </ol>
+                    <p class="uvu-bridge-note">GitHub Pages 通过 HTTPS 访问本机桥接 HTTP 接口，首次配对必须在页面前台完成并允许本地网络访问。已审核记忆才会进入上下文；桥接不改写基础提示词正文。</p>
+                </section>
         </main>
     </div>
     <div id="wallpaper-screen" class="screen">

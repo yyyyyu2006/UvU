@@ -21,6 +21,8 @@
         return value;
     }
 
+    function isEnabled() { return settings().bridgeEnabled !== false; }
+
     function readToken() {
         try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}').token || ''; }
         catch { return ''; }
@@ -172,7 +174,7 @@
     }
 
     async function flushOutbox() {
-        if (sendBusy || !isConnected()) return;
+        if (!isEnabled() || sendBusy || !isConnected()) return;
         sendBusy = true;
         try {
             while (settings().outbox.length) {
@@ -188,6 +190,7 @@
     }
 
     async function publishTurn(chat, mode, explicitRecords) {
+        if (!isEnabled()) throw new Error('酒馆互通插件已停用，请先开启后再交接剧情。');
         const archiveId = String(chat.activeArchiveId || 'default');
         const key = String(chat.id) + ':' + archiveId;
         const sent = new Set([...(settings().sentMessages[key] || []), ...settings().outbox.filter(event => event.characterKey === String(chat.id) && event.payload.archiveId === archiveId).flatMap(event => event.payload.messages.map(item => item.sourceMessageId || item.id))]);
@@ -238,7 +241,7 @@
     }
 
     async function syncIncoming(characterKey = '') {
-        if (!isConnected() || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
+        if (!isEnabled() || !isConnected() || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
         const chat = db.characters.find(item => String(item.id) === String(characterKey));
         if (!chat) return 0;
         syncBusy = true;
@@ -342,11 +345,11 @@
                 check.type = 'checkbox'; check.checked = item.selected; text.value = item.text;
                 check.setAttribute('aria-label', '允许这条剧情加入上下文'); row.append(check, text); list.append(row); fields.push({ item, check, text });
             });
-            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存勾选与编辑';
+            const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入日记';
             save.addEventListener('click', async () => {
                 if (currentBridgeChat() !== chat || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('角色或存档已切换，请刷新审核列表。', true);
                 if (reviewBusy) return; reviewBusy = true; save.disabled = true;
-                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); renderReview(true); status('已保存，仅勾选且通过审核的剧情可供后续上下文使用。'); }
+                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); renderReview(true); status('已审核并保存到当前角色日记；只有勾选内容会进入后续上下文和向量候选。'); }
                 catch (error) { status(error.message, true); }
                 finally { reviewBusy = false; save.disabled = false; }
             });
@@ -379,8 +382,18 @@
         const syncButton = document.getElementById('uvu-bridge-sync');
         const disconnectButton = document.getElementById('uvu-bridge-disconnect');
         const injectCheckbox = document.getElementById('uvu-bridge-inject-scenes');
+        const enabledCheckbox = document.getElementById('uvu-bridge-enabled');
         if (!urlInput || !pairButton || pairButton.dataset.bound === 'true') return;
         urlInput.value = baseUrl();
+        if (enabledCheckbox) {
+            enabledCheckbox.checked = isEnabled();
+            enabledCheckbox.addEventListener('change', async () => {
+                settings().bridgeEnabled = enabledCheckbox.checked;
+                await saveData();
+                status(enabledCheckbox.checked ? '酒馆互通已启用。' : '酒馆互通已停用；原聊天、提示词和日记数据不受修改。');
+                renderReview(true);
+            });
+        }
         injectCheckbox.checked = settings().injectionByCharacter[String(currentBridgeChat()?.id)] !== false;
         renderHandoffCharacters(); renderReview();
         status(isConnected() ? '已配对；正在连接本机酒馆。' : '未连接');
@@ -426,6 +439,7 @@
         document.getElementById('uvu-bridge-refresh-review')?.addEventListener('click',()=>{renderHandoffCharacters();renderReview(true);});
         clearInterval(pollTimer);
         pollTimer = setInterval(() => {
+            if (!isEnabled()) return;
             renderReview();
             flushOutbox().catch(error=>console.warn('Bridge outbox:',error.message));
             publishCharacterDirectory().catch(error => console.warn('UvU Story Bridge character directory sync failed:', error.message));

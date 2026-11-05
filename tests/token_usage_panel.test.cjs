@@ -54,3 +54,10 @@ test('worldbook token section exposes an explicit expand and collapse control', 
     assert.match(source, /收起/);
     assert.match(css, /status-token-worldbook-details\[hidden\][^}]*display:\s*none\s*!important/);
 });
+
+test('status panel action buttons stay below the status content instead of covering its header', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../css/chat.css'), 'utf8');
+    assert.match(css, /\.status-panel-actions \{[^}]*bottom: max\(78px, calc\(env\(safe-area-inset-bottom\) \+ 76px\)\)/);
+    assert.match(css, /\.status-panel-actions \{[^}]*pointer-events: none/);
+    assert.match(css, /\.status-token-toggle \{ position: static;/);
+});
