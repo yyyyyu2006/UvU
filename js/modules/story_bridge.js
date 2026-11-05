@@ -235,11 +235,11 @@
         const archiveId = String(chat.activeArchiveId || 'default');
         const key = String(chat.id) + ':' + archiveId;
         const sent = new Set([...(settings().sentMessages[key] || []), ...settings().outbox.filter(event => event.characterKey === String(chat.id) && event.payload.archiveId === archiveId).flatMap(event => event.payload.messages.map(item => item.sourceMessageId || item.id))]);
-        const revisions = settings().sentRevisions[key] || {};
         const queuedRecords = settings().outbox.filter(event => event.characterKey === String(chat.id) && event.payload.archiveId === archiveId).flatMap(event => event.payload.messages || []);
         const records = (explicitRecords || messageRecords(chat)).map(item => ({ ...item, revision: globalThis.UvUBridgeText.fingerprint(item.text) })).filter(item => {
             if (queuedRecords.some(record => (record.sourceMessageId || record.id) === item.id && record.revision === item.revision)) return false;
-            return explicitRecords ? revisions[item.id] !== item.revision : !sent.has(item.id);
+            // An explicit handoff is also recovery: a local sent ledger is not a receiver receipt.
+            return explicitRecords ? true : !sent.has(item.id);
         });
         if (!records.length) { await flushOutbox(); return { queued: 0, pending: settings().outbox.length }; }
         const events = [];
@@ -570,7 +570,7 @@
             event.target.disabled=true;
             try {
                 const result = await publishTurn(chat,null,messageRecords(chat,start-1,end));
-                status(result.pending ? `本次新增或更新 ${result.queued} 条，仍有 ${result.pending} 个分段待发送，请保持页面打开并恢复连接。` : result.queued ? `已向桥接服务交接 ${result.queued} 条新增或更新正文；请回酒馆点“刷新线上存档”，审核后保存。` : '所选正文此前已交接，本次没有新增或更新；请回酒馆点“刷新线上存档”查看已接收内容。');
+                status(result.pending ? `本次重新交接 ${result.queued} 条，仍有 ${result.pending} 个分段待发送，请保持页面打开并恢复连接。` : result.queued ? `已向桥接服务重新交接 ${result.queued} 条正文（包含此前发送过的内容）；请回酒馆点“刷新线上存档”，审核后保存，相同正文不会重复添加。` : '本次没有新入队正文；可能已有相同内容正在发送。若所选范围只有隐藏、状态或思考记录，请选择包含可用聊天正文的范围。');
             }
             catch(error){status(error.message,true);}finally{event.target.disabled=false;}
         });

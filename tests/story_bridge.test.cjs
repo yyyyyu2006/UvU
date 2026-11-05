@@ -46,7 +46,7 @@ test('latest handoff range counts 50 eligible messages rather than hidden histor
     assert.deepEqual(JSON.parse(JSON.stringify(f.bridge.latestHandoffRange(f.chat))), {start:0,end:0,count:0});
 });
 
-test('explicit handoff resends edited source messages and reports actual queued records', async () => {
+test('explicit handoff resends selected source messages even when the local sent ledger is already current', async () => {
     const calls=[]; const f=harness(async(url,options)=>{calls.push(JSON.parse(options.body||'{}'));return {ok:true,json:async()=>({})};});
     let result=await f.bridge.publishTurn(f.chat,null,[{id:'m',text:'原文',createdAt:1}]);
     assert.equal(result.queued,1);
@@ -54,7 +54,9 @@ test('explicit handoff resends edited source messages and reports actual queued 
     assert.equal(result.queued,1); assert.equal(calls.length,2);
     assert.notEqual(calls[0].payload.messages[0].revision,calls[1].payload.messages[0].revision);
     result=await f.bridge.publishTurn(f.chat,null,[{id:'m',text:'修改后',createdAt:1}]);
-    assert.equal(result.queued,0); assert.equal(result.pending,0);
+    assert.equal(result.queued,1); assert.equal(result.pending,0); assert.equal(calls.length,3);
+    assert.notEqual(calls[1].eventId,calls[2].eventId);
+    assert.equal(calls[1].payload.messages[0].sourceMessageId,calls[2].payload.messages[0].sourceMessageId);
 });
 
 test('disabled service and a different archive cannot pause ordinary UvU replies', async () => {

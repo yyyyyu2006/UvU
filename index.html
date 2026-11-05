@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
 
     <!-- CSS Split: Core Features -->
-    <link rel="stylesheet" href="css/chat.css?v=20261105-review-refresh">
+    <link rel="stylesheet" href="css/chat.css?v=20261105-handoff-recovery">
     <link rel="stylesheet" href="css/settings.css?v=20261105-bridge-isolation">
 
     <!-- CSS Split: Modules -->
@@ -677,7 +677,7 @@
                             <div class="uvu-bridge-range"><label>从消息<input id="uvu-bridge-handoff-start" type="number" min="1" value="1"></label><label>到消息<input id="uvu-bridge-handoff-end" type="number" min="1" value="1"></label></div>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-handoff">交接所选范围</button>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-latest">最近 50 条</button>
-                            <p class="uvu-bridge-note">默认跟随当前存档最近 50 条有效正文；手动修改编号后保留自选范围。交接只发送新增或更新内容，酒馆须刷新、审核并保存后才能使用。</p>
+                            <p class="uvu-bridge-note">默认跟随当前存档最近 50 条有效正文；手动修改编号后保留自选范围。手动交接会重新发送所选范围，相同消息按稳定 ID 合并，不会重复注入，酒馆须刷新、审核并保存后才能使用。</p>
                             <small>按当前存档聊天消息编号交接，只发送过滤后的角色和用户正文；酒馆中仍需审核。</small>
                         </section>
                         <section class="uvu-bridge-review" aria-labelledby="uvu-bridge-review-title">
@@ -693,7 +693,7 @@
                         <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行 <code>cd plugins</code>、<code>git clone https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge.git uvu-story-bridge</code>、<code>cd uvu-story-bridge</code>、<code>node setup-server-plugin.js</code>。脚本展示将启用的服务端插件和允许的 UvU 来源；输入 <code>APPLY</code> 才会修改，并会先备份配置。完成后重启酒馆。</li>
                         <li><strong>生成配对码：</strong>保持 UvU 本页在前台，在酒馆扩展面板点“生成配对码”；将 6 位一次性码填入本页并点“连接 / 配对”。首次连接按浏览器提示允许访问本机网络。</li>
                         <li><strong>绑定角色：</strong>在酒馆打开目标角色私聊，不要在群聊里绑定；选择对应 UvU 角色并核对名称和 ID。人设、用户设定、头像不会自动复制。</li>
-                        <li><strong>UvU → 酒馆：</strong>选择角色后，默认选取当前存档最近 50 条有效正文（不足 50 条则全部）；编号仍是原始消息位置，思维链、隐藏内容和状态栏不发送。可以手动填起止编号，或点“最近 50 条”恢复自动范围。点“交接所选范围”后留意新增/更新条数和待发送提示；服务接收成功不代表酒馆已审核。回酒馆展开“线上记忆审核”点“刷新线上存档”，选择来源存档、核对勾选与编辑，再点“保存勾选与编辑”。新条目默认预选最近 50 条，未保存不注入；已审核的选择保留。更新过的原文须重新审核。酒馆只有主动开启记忆注入并开始本场后才会使用，不复制两边人设，也不加入 UvU 日记。</li>
+                        <li><strong>UvU → 酒馆：</strong>选择角色后，默认选取当前存档最近 50 条有效正文（不足 50 条则全部）；编号仍是原始消息位置，思维链、隐藏内容和状态栏不发送。可以手动填起止编号，或点“最近 50 条”恢复自动范围。点“交接所选范围”后留意新增/更新条数和待发送提示；交接后可重复发送以恢复队列副本；酒馆会合并相同正文，服务接收成功不代表酒馆已审核。回酒馆展开“线上记忆审核”点“刷新线上存档”，选择来源存档、核对勾选与编辑，再点“保存勾选与编辑”。新条目默认预选最近 50 条，未保存不注入；已审核的选择保留。更新过的原文须重新审核。酒馆只有主动开启记忆注入并开始本场后才会使用，不复制两边人设，也不加入 UvU 日记。</li>
                         <li><strong>删除副本与状态栏：</strong>酒馆审核区展开一条记录可“删除这条”，也可“删除勾选副本”；仅删除酒馆接收的线上记忆，刷新不会恢复，两边原聊天保留。UvU 状态栏底部 T / × / 删 分别用于切换 Token、关闭面板和删除正在查看的单张状态栏快照，模板与原聊天保留。</li>
                         <li><strong>开始和结束线下：</strong>点“开始线下剧情”后手动发送开场；“拿出手机”进入 UvU 手机模式，“收起手机”回到酒馆。结束时回原角色私聊点“结束并导出”；如果中途切换到其他聊天，原场景会保留保护，回原聊天后即可继续导出，已冻结的导出内容可安全重试。</li>
                         <li><strong>酒馆 → UvU 日记：</strong>酒馆“结束并导出”后，回本页点“收取酒馆记忆”，在上面的“酒馆线下剧情 → UvU 日记”展开记录，核对角色、存档、日期与过滤后的完整原文，逐条编辑、勾选，再点“保存审核并加入日记”。关闭所有勾选并保存可暂停该篇；“刷新审核清单”只刷新本地列表，不联网收取。多角色可以同时聊天，剧情按冻结的目标接收。目标存档不同会保留草稿，点“打开目标存档并收取”后审核。</li>
@@ -2891,7 +2891,7 @@
 <script src="js/modules/environment.js?v=20261104-derived-features"></script>
 <script src="js/modules/environment_ui.js?v=20261104-avatar-location"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-minimax-tts">
-<script src="js/chat.js?v=20261105-review-refresh"></script>     <!-- 聊天核心入口 -->
+<script src="js/chat.js?v=20261105-handoff-recovery"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261104-chat-stop-compatible"></script> <!-- 聊天室HTML注入 -->
@@ -2996,7 +2996,7 @@
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/auto_memory.js?v=20261105-bridge-isolation"></script>
 <script src="js/modules/bridge_text.js?v=20261104-reviewed-sync"></script>
-<script src="js/modules/story_bridge.js?v=20261105-review-refresh"></script>
+<script src="js/modules/story_bridge.js?v=20261105-handoff-recovery"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261104-avatar-location"></script>   <!-- 存储空间分析图表 -->
