@@ -941,3 +941,5 @@ input:checked + .kkt-slider:before {
 #uvu-story-bridge-screen .uvu-bridge-review-items textarea { width:100%; min-height:72px; box-sizing:border-box; resize:vertical; }
 #uvu-story-bridge-screen #uvu-bridge-review-list details { padding:8px 0; border-top:1px solid #8884; }
 #uvu-story-bridge-screen #uvu-bridge-review-list pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:45vh; overflow:auto; }
+
+#uvu-story-bridge-screen #uvu-bridge-handoff-source { margin:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }

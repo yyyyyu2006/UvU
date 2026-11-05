@@ -160,6 +160,25 @@
         if (force || start.dataset.identity !== identity) start.dataset.manual = '';
         start.dataset.identity = identity;
         if (!start.dataset.manual) { const range = latestHandoffRange(chat); start.value = range.start || ''; end.value = range.end || ''; }
+        const output = document.getElementById('uvu-bridge-handoff-source');
+        if (output) {
+            const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
+            const latest = messageRecords(chat, Math.max(0, Number(end.value) - 1), Number(end.value))[0];
+            output.textContent = `${chat.realName || chat.name || chat.id} · 当前存档：${archive?.name || '默认存档'}（${chat.activeArchiveId || 'default'}） · 共 ${(chat.history || []).length} 条消息 · 交接 ${start.value || 0}–${end.value || 0}；范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
+        }
+    }
+
+    function refreshHandoffContext() { renderHandoffCharacters(true); renderReview(true); }
+
+    async function handoffCurrent() {
+        const chat = selectedBridgeChat();
+        if (!chat) throw new Error('请选择要交接的角色。');
+        updateHandoffRange();
+        const start = Number(document.getElementById('uvu-bridge-handoff-start')?.value), end = Number(document.getElementById('uvu-bridge-handoff-end')?.value);
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start || end > (chat.history || []).length) throw new Error('请输入有效楼层范围（1 到当前存档消息总数）。');
+        const records = messageRecords(chat, start - 1, end);
+        const transfer = { id: eventId(), at: Date.now(), start, end, count: records.length, totalMessages: (chat.history || []).length, latestMessageAt: records.at(-1)?.createdAt || 0 };
+        return publishTurn(chat, null, records, transfer);
     }
 
     async function pair() {
@@ -230,9 +249,10 @@
         } finally { sendBusy = false; }
     }
 
-    async function publishTurn(chat, mode, explicitRecords) {
+    async function publishTurn(chat, mode, explicitRecords, handoff) {
         if (!isEnabled()) throw new Error('酒馆互通插件已停用，请先开启后再交接剧情。');
         const archiveId = String(chat.activeArchiveId || 'default');
+        const archiveName = String(chat.archives?.find(item => item.id === chat.activeArchiveId)?.name || '默认存档').slice(0, 160);
         const key = String(chat.id) + ':' + archiveId;
         const sent = new Set([...(settings().sentMessages[key] || []), ...settings().outbox.filter(event => event.characterKey === String(chat.id) && event.payload.archiveId === archiveId).flatMap(event => event.payload.messages.map(item => item.sourceMessageId || item.id))]);
         const queuedRecords = settings().outbox.filter(event => event.characterKey === String(chat.id) && event.payload.archiveId === archiveId).flatMap(event => event.payload.messages || []);
@@ -249,7 +269,7 @@
             for (let i = 0; i < points.length; i += 5000) parts.push(points.slice(i, i + 5000).join(''));
             parts.forEach((text, index) => events.push({ source: 'uvu', eventId: eventId(),
                 kind: mode?.mode === 'phone' ? 'phone_exchange' : 'memory_packet', characterKey: String(chat.id), createdAt: Date.now(),
-                payload: { title: explicitRecords ? '手动交接线上剧情' : 'UvU 线上聊天', archiveId,
+                payload: { title: explicitRecords ? '手动交接线上剧情' : 'UvU 线上聊天', archiveId, archiveName, ...(handoff ? { handoff } : {}),
                     messages: [{ ...record, sourceMessageId: record.id, id: record.id + (parts.length > 1 ? ':part-' + (index + 1) : ''),
                         ...(parts.length > 1 ? { messagePart: index + 1, messagePartCount: parts.length } : {}), text }], text }
             }));
@@ -258,7 +278,7 @@
         settings().outbox.push(...events);
         await saveData();
         await flushOutbox();
-        return { queued: records.length, pending: settings().outbox.length };
+        return { queued: records.length, pending: settings().outbox.length, archiveId, archiveName, handoff };
     }
 
     async function verifyPart(text, hash) {
@@ -473,10 +493,10 @@
         }
     }
 
-    function renderHandoffCharacters() {
+    function renderHandoffCharacters(followCurrent = false) {
         const select = document.getElementById('uvu-bridge-handoff-character');
         if (!select?.replaceChildren) return;
-        const selected=select.value || String(currentBridgeChat()?.id || ''); select.replaceChildren();
+        const selected=(followCurrent ? String(currentBridgeChat()?.id || '') : '') || select.value || String(currentBridgeChat()?.id || ''); select.replaceChildren();
         for (const chat of db.characters) { const option=document.createElement('option');option.value=String(chat.id);option.textContent=chat.realName||chat.name||chat.id;select.append(option); }
         select.value=db.characters.some(chat=>String(chat.id)===selected) ? selected : String(db.characters[0]?.id || '');
         updateHandoffRange();
@@ -528,6 +548,16 @@
         }
         injectCheckbox.checked = settings().injectionByCharacter[String(selectedBridgeChat()?.id)] !== false;
         renderHandoffCharacters(); renderReview();
+        const screen = document.getElementById('uvu-story-bridge-screen');
+        if (screen && typeof MutationObserver === 'function') {
+            let wasActive = screen.classList.contains('active');
+            new MutationObserver(() => {
+                const active = screen.classList.contains('active');
+                if (active && !wasActive) refreshHandoffContext();
+                wasActive = active;
+            }).observe(screen, { attributes: true, attributeFilter: ['class'] });
+        }
+        document.getElementById('uvu-bridge-use-current')?.addEventListener('click', refreshHandoffContext);
         document.getElementById('uvu-bridge-handoff-character')?.addEventListener('change', () => { updateHandoffRange(true); renderReview(true); });
         for (const id of ['uvu-bridge-handoff-start', 'uvu-bridge-handoff-end']) document.getElementById(id)?.addEventListener('input', () => { document.getElementById('uvu-bridge-handoff-start').dataset.manual = 'true'; });
         document.getElementById('uvu-bridge-latest')?.addEventListener('click', () => updateHandoffRange(true));
@@ -562,15 +592,11 @@
             } catch (error) { status(error.message, true); }
         });
         document.getElementById('uvu-bridge-handoff')?.addEventListener('click', async event => {
-            const chat=db.characters.find(item=>String(item.id)===document.getElementById('uvu-bridge-handoff-character')?.value);
-            if (!chat) return status('请选择要交接的角色。',true);
-            updateHandoffRange();
-            const start=Number(document.getElementById('uvu-bridge-handoff-start').value), end=Number(document.getElementById('uvu-bridge-handoff-end').value);
-            if (!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>(chat.history||[]).length) return status('请输入有效楼层范围（1 到当前存档消息总数）。',true);
             event.target.disabled=true;
             try {
-                const result = await publishTurn(chat,null,messageRecords(chat,start-1,end));
+                const result = await handoffCurrent();
                 status(result.pending ? `本次重新交接 ${result.queued} 条，仍有 ${result.pending} 个分段待发送，请保持页面打开并恢复连接。` : result.queued ? `已向桥接服务重新交接 ${result.queued} 条正文（包含此前发送过的内容）；请回酒馆点“刷新线上存档”，审核后保存，相同正文不会重复添加。` : '本次没有新入队正文；可能已有相同内容正在发送。若所选范围只有隐藏、状态或思考记录，请选择包含可用聊天正文的范围。');
+                if (result.archiveId) status(`${result.archiveName}（${result.archiveId}）· 范围 ${result.handoff.start}–${result.handoff.end} · ${result.queued} 条正文；${result.pending ? `尚有 ${result.pending} 个分段待发送` : '服务已接收，请回酒馆刷新并核对当前交接存档'}。`);
             }
             catch(error){status(error.message,true);}finally{event.target.disabled=false;}
         });
@@ -591,6 +617,6 @@
         });
     }
 
-    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, latestHandoffRange, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
+    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

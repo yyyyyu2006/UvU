@@ -26,6 +26,7 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
   const source=fs.readFileSync(path.join(plugin,'index.js'),'utf8').split(String.fromCharCode(10)).filter(line=>!line.startsWith('import ')).join(String.fromCharCode(10));
   await page.addScriptTag({content:source});
   await page.locator('[data-action=pair]').click();
+  await page.waitForFunction(()=>document.querySelector('[data-pair-code]').textContent==='123456');
   assert.equal(await page.locator('[data-pair-code]').innerText(),'123456');
   await page.locator('[data-uvu-character]').selectOption('c');
   await page.waitForTimeout(100);

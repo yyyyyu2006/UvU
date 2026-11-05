@@ -254,3 +254,52 @@ test('archive switch during receive cannot write scene data into the new archive
     assert.equal(chat.memoryJournals.length, 0);
     assert.equal(db.uvuStoryBridgeSettings.cursorByCharacter?.['char-1'], undefined);
 });
+
+function handoffDom(f) {
+    const elements = {};
+    for (const id of ['uvu-bridge-handoff-character','uvu-bridge-handoff-start','uvu-bridge-handoff-end','uvu-bridge-handoff-source']) elements[id]={value:'',dataset:{},textContent:'',children:[],replaceChildren(){this.children=[];this.value='';},append(child){this.children.push(child);}};
+    f.context.document.getElementById=id=>elements[id] || null;
+    f.context.document.createElement=()=>({value:'',textContent:''});
+    return elements;
+}
+
+test('entering bridge follows current private chat instead of the startup character selection', () => {
+    const f=harness(async()=>({ok:true,json:async()=>({})})), dom=handoffDom(f);
+    f.chat.activeArchiveId='main'; f.chat.history=[];
+    const branch={id:'char-2',realName:'B',activeArchiveId:'branch',history:[{id:'new',role:'user',content:'CURRENT_BRANCH'}],archives:[{id:'main',name:'主存档',data:{history:[]}},{id:'branch',name:'当前分支',data:{history:[]}}]};
+    f.db.characters.push(branch); dom['uvu-bridge-handoff-character'].value='char-1';
+    f.context.currentChatId='char-2'; f.context.currentChatType='private';
+    f.bridge.refreshHandoffContext();
+    assert.equal(dom['uvu-bridge-handoff-character'].value,'char-2');
+    assert.equal(Number(dom['uvu-bridge-handoff-end'].value),1);
+    assert.match(dom['uvu-bridge-handoff-source'].textContent,/当前分支.*branch/);
+});
+
+test('handoff uses live active branch history, labels its range and resets stale manual range on archive switch', async () => {
+    const sent=[],f=harness(async(url,options)=>{if(url.endsWith('/client/events'))sent.push(JSON.parse(options.body));return {ok:true,json:async()=>({})};});
+    const dom=handoffDom(f); Object.assign(f.chat,{activeArchiveId:'branch',realName:'A',history:[{id:'new',role:'user',content:'CURRENT_LIVE',timestamp:1000}],archives:[{id:'main',name:'主存档',data:{history:[{id:'old',role:'user',content:'OLD_MAIN'}]}},{id:'branch',name:'分支一',data:{history:[{id:'stale',role:'user',content:'STALE_SNAPSHOT'}]}}]});
+    f.context.currentChatId=f.chat.id; f.context.currentChatType='private';
+    Object.assign(dom['uvu-bridge-handoff-start'],{value:'50',dataset:{manual:'true',identity:'char-1:main'}});
+    f.bridge.refreshHandoffContext();
+    assert.equal(Number(dom['uvu-bridge-handoff-start'].value),1);
+    await f.bridge.handoffCurrent();
+    assert.equal(sent.length,1); assert.equal(sent[0].payload.archiveId,'branch');
+    assert.equal(sent[0].payload.archiveName,'分支一');
+    assert.match(sent[0].payload.messages[0].text,/CURRENT_LIVE/);
+    assert.doesNotMatch(sent[0].payload.messages[0].text,/OLD_MAIN|STALE_SNAPSHOT/);
+    assert.equal(sent[0].payload.handoff.start,1); assert.equal(sent[0].payload.handoff.end,1);
+    assert.equal(sent[0].payload.handoff.count,1); assert.equal(sent[0].payload.handoff.totalMessages,1);
+    assert.equal(sent[0].payload.handoff.latestMessageAt,1000);
+});
+
+test('archive switch during persistence cannot relabel a frozen manual handoff', async () => {
+    let release; const pending=new Promise(resolve=>release=resolve),sent=[];
+    const f=harness(async(url,options)=>{if(url.endsWith('/client/events'))sent.push(JSON.parse(options.body));return {ok:true,json:async()=>({})};});
+    handoffDom(f); Object.assign(f.chat,{activeArchiveId:'branch',history:[{id:'m',role:'user',content:'BRANCH'}],archives:[{id:'branch',name:'分支'}]});
+    f.context.currentChatId=f.chat.id; f.context.currentChatType='private'; f.bridge.refreshHandoffContext();
+    f.context.saveData=async()=>pending; const running=f.bridge.handoffCurrent();
+    f.chat.activeArchiveId='other'; f.chat.history=[{id:'x',role:'user',content:'OTHER'}];
+    release(); await running;
+    assert.equal(sent[0].payload.archiveId,'branch'); assert.match(sent[0].payload.messages[0].text,/BRANCH/);
+    assert.doesNotMatch(sent[0].payload.messages[0].text,/OTHER/);
+});
