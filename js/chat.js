@@ -1,6 +1,30 @@
 // --- 核心聊天逻辑 (js/chat.js) ---
 // 此文件保留核心入口和胶水代码，具体功能已拆分至 js/modules/chat_*.js
 
+// Remove a display snapshot only; source messages and status templates remain intact.
+async function deleteStatusPanelSnapshot(chat, panel, snapshot) {
+    if (chat.statusPanel !== panel) throw new Error('存档或状态栏已切换，请重新打开。');
+    const history = panel.history || [], index = history.indexOf(snapshot);
+    if (index < 0 && (history.length || panel.currentStatusHtml !== snapshot.html)) throw new Error('状态栏已更新，请重新打开。');
+    const previous = { history: panel.history, html: panel.currentStatusHtml, raw: panel.currentStatusRaw };
+    const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
+    const previousArchivePanel = archive?.data?.statusPanel;
+    const next = index < 0 ? [] : history.filter((_, i) => i !== index);
+    panel.history = next;
+    panel.currentStatusHtml = next[0]?.html || '';
+    panel.currentStatusRaw = next[0]?.raw || '';
+    try { await saveData(); }
+    catch (error) {
+        if (panel.history === next) {
+            const added = next.filter(item => !history.includes(item));
+            panel.history = added.length ? [...added, ...history] : previous.history;
+            if (!added.length) { panel.currentStatusHtml = previous.html; panel.currentStatusRaw = previous.raw; }
+            if (archive?.data && previousArchivePanel) archive.data.statusPanel = added.length ? structuredClone(panel) : previousArchivePanel;
+        }
+        throw error;
+    }
+}
+
 // 全局函数：显示红包详情
 window.showRedPacketDetails = function(message, chat) {
     const modal = document.getElementById('red-packet-details-modal');
@@ -237,6 +261,7 @@ function setupChatRoom() {
         charStatusBtn.addEventListener('click', () => {
             const char = db.characters.find(c => c.id === currentChatId);
             if (!char || !char.statusPanel) return;
+            const openedPanel = char.statusPanel, openedArchive = char.activeArchiveId;
 
             statusContent.innerHTML = ''; // Clear previous content
 
@@ -269,6 +294,13 @@ function setupChatRoom() {
             const frontActions = document.createElement('div');
             frontActions.className = 'status-panel-actions';
             frontActions.appendChild(frontToggle);
+            const deleteStatus = document.createElement('button');
+            deleteStatus.type = 'button';
+            deleteStatus.className = 'status-token-toggle status-delete-toggle';
+            deleteStatus.textContent = '删';
+            deleteStatus.setAttribute('aria-label', '删除当前这张状态栏');
+            deleteStatus.title = '删除当前状态栏快照，保留原聊天和模板';
+            frontActions.appendChild(deleteStatus);
             const tokenPanel = document.createElement('div');
             tokenPanel.className = 'status-token-panel';
             back.appendChild(tokenPanel);
@@ -283,6 +315,7 @@ function setupChatRoom() {
                 const empty = document.createElement('p');
                 empty.className = 'status-empty-message';
                 empty.textContent = '暂无状态信息';
+                deleteStatus.disabled = true;
                 front.appendChild(empty);
                 statusOverlay.classList.add('visible');
                 return;
@@ -291,6 +324,18 @@ function setupChatRoom() {
             // Build Swiper Structure
             const swiper = document.createElement('div');
             swiper.className = 'status-swiper';
+            deleteStatus.addEventListener('click', async () => {
+                if (currentChatId !== char.id || char.activeArchiveId !== openedArchive || char.statusPanel !== openedPanel) return showToast('聊天或存档已切换，请重新打开状态栏。');
+                const index = swiper.offsetWidth ? Math.round(swiper.scrollLeft / swiper.offsetWidth) : slidesData.length - 1;
+                const snapshot = slidesData[index];
+                if (!snapshot || !confirm('删除当前这张状态栏？仅删除显示快照，原聊天、状态栏模板和 Token 记录保留。')) return;
+                deleteStatus.disabled = true;
+                try {
+                    await deleteStatusPanelSnapshot(char, openedPanel, snapshot);
+                    if (currentChatId === char.id && char.activeArchiveId === openedArchive && char.statusPanel === openedPanel) charStatusBtn.click();
+                    showToast('已删除当前状态栏');
+                } catch (error) { showToast('删除失败：' + error.message); deleteStatus.disabled = false; }
+            });
 
             // Helper function for Lazy Loading
             const loadSlideContent = (index) => {
