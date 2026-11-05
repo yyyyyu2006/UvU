@@ -303,3 +303,67 @@ test('archive switch during persistence cannot relabel a frozen manual handoff',
     assert.equal(sent[0].payload.archiveId,'branch'); assert.match(sent[0].payload.messages[0].text,/BRANCH/);
     assert.doesNotMatch(sent[0].payload.messages[0].text,/OTHER/);
 });
+
+
+test('automatic handoff retains complete multi-message turn and republishes revisions',async()=>{
+ const calls=[];const f=harness(async(url,options)=>{calls.push(JSON.parse(options.body||'{}'));return {ok:true,json:async()=>({})};});
+ f.chat.history=Array.from({length:12},(_,i)=>({id:'m'+i,role:i?'assistant':'user',content:'story'+i}));
+ await f.bridge.publishTurn(f.chat,{mode:'phone'});
+ assert.equal(calls.filter(c=>c.payload?.messages).length,12);
+ f.chat.history[11].content='edited';await f.bridge.publishTurn(f.chat,{mode:'phone'});
+ assert.equal(calls.filter(c=>c.payload?.messages).length,13);
+ assert.match(calls.at(-1).payload.messages[0].text,/edited/);
+});
+
+test('review rollback removes properties absent before failed save',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ const journal={id:'j',source:'sillytavern',content:'source',bridgeReview:{sourceText:'source',status:'pending',items:[]}};
+ f.chat.memoryJournals=[journal];f.context.saveData=async()=>{throw new Error('quota');};
+ const before=JSON.stringify(journal);
+ await assert.rejects(f.bridge.persistReview(f.chat,journal,[{id:'1',text:'story',selected:true}]),/quota/);
+ assert.equal(JSON.stringify(journal),before);
+});
+
+test('legacy status command is excluded without filtering ordinary narrative',()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ f.chat.history=[{id:'s',role:'assistant',content:'[A更新状态为：在路上]'}];
+ assert.equal(f.bridge.latestHandoffRange(f.chat).count,0);
+ f.chat.history.push({id:'m',role:'assistant',content:'他说状态很好，便继续上路。'});
+ assert.equal(f.bridge.latestHandoffRange(f.chat).count,1);
+});
+
+test('explicit recovery receives complete fresh scenes after queue gap and relay reset',async()=>{
+ const f=harness(async url=>({ok:true,json:async()=>url.includes('/events?')?{relayId:'new',latestSeq:1,gapDetected:true,events:[{seq:1,kind:'scene_transcript',characterKey:'char-1',sceneId:'fresh',payload:{part:1,partCount:1,text:'fresh story'}}]}:{}}));
+ f.db.uvuStoryBridgeSettings.cursorByCharacter={'char-1':99};
+ f.db.uvuStoryBridgeSettings.relayByCharacter={'char-1':'old'};
+ await f.bridge.syncIncoming('char-1');assert.equal(f.chat.memoryJournals.length,0);
+ await f.bridge.syncIncoming('char-1',20,true);
+ assert.equal(f.chat.memoryJournals.length,1);
+ assert.equal(f.db.uvuStoryBridgeSettings.cursorByCharacter['char-1'],1);
+ assert.equal(f.chat.memoryJournals[0].isFavorited,false);
+});
+
+
+test('explicit recovery preserves complete pending scenes for other archives',async()=>{
+ const f=harness(async url=>({ok:true,json:async()=>url.includes('/events?')?{events:[{seq:1,characterKey:'char-1',kind:'scene_transcript',sceneId:'fresh',payload:{part:1,partCount:1,text:'fresh'}}]}:{}}));
+ f.db.uvuStoryBridgeSettings.pendingScenes={'char-1:old':{characterKey:'char-1',partCount:1,parts:{1:'complete waiting story'},archiveId:'other'}};
+ await f.bridge.syncIncoming('char-1',20,true);
+ assert.equal(f.db.uvuStoryBridgeSettings.pendingScenes['char-1:old'].parts[1],'complete waiting story');
+});
+
+
+test('forced review refresh preserves unsaved text and selection in its own archive',()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ function element(tag){return {tag,children:[],listeners:{},value:'',checked:false,dataset:{},append(...v){this.children.push(...v);},replaceChildren(){this.children=[];},setAttribute(){},addEventListener(k,v){this.listeners[k]=v;},contains(){return false;}};}
+ const host=element('host');f.context.document.createElement=element;
+ f.context.document.getElementById=id=>id==='uvu-bridge-review-list'?host:null;
+ const journal={id:'j',source:'sillytavern',content:'ORIGINAL',bridgeReview:{archiveId:'a',sourceText:'ORIGINAL',items:[{id:'i',text:'ORIGINAL',selected:false}]}};
+ f.chat.activeArchiveId='a';f.chat.memoryJournals=[journal];
+ const find=(root,tag)=>root.tag===tag?root:root.children.flatMap(c=>typeof c==='object'?[find(c,tag)]:[]).find(Boolean);
+ f.bridge.renderReview(true);
+ let text=find(host,'textarea'),check=find(host,'input');
+ text.value='UNSAVED';text.listeners.input();check.checked=true;check.listeners.change();
+ f.bridge.renderReview(true);
+ assert.equal(find(host,'textarea').value,'UNSAVED');assert.equal(find(host,'input').checked,true);
+ assert.equal(journal.content,'ORIGINAL');
+});

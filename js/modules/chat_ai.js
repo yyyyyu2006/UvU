@@ -82,6 +82,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
     const bridgeArchive = chat.activeArchiveId, bridgeHistory = chat.history;
+    const bridgeTurnStart = globalThis.UvUStoryBridge?.turnStart?.(chat) ?? Math.max(0, chat.history.length - 1);
     let storyBridgeMode = null;
     if (chatType === 'private' && globalThis.UvUStoryBridge?.isEnabled?.() !== false && globalThis.UvUStoryBridge?.isConnected()) {
         try {
@@ -683,7 +684,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             replyDelivered = true;
         }
         if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
-            try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode); }
+            try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode, globalThis.UvUStoryBridge.messageRecords(chat, bridgeTurnStart, chat.history.length)); }
             catch (error) { console.warn('UvU Story Bridge sync failed:', error.message); }
         }
         if (requestIsCurrent() && typeof recordChatTokenUsage === 'function') {

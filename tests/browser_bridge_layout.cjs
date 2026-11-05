@@ -1,5 +1,6 @@
 // Optional Chromium check of the two bridge panels at mobile widths.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+let durable={revision:0,settings:null};
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-Bridge');
 (async()=>{
@@ -11,6 +12,10 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
    const url=new URL(route.request().url());
    if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:'<meta name="viewport" content="width=device-width,initial-scale=1"><div id="extensions_settings"></div>'});
    let data={};
+   if(url.pathname.endsWith('/ui/extension-state')) {
+    if(route.request().method()==='PUT'){ const body=route.request().postDataJSON(); durable={revision:durable.revision+1,settings:body.settings}; }
+    return route.fulfill({json:durable});
+   }
    if(url.pathname==='/csrf-token')data={token:'test-csrf'};
    if(url.pathname.endsWith('/ui/service'))data={enabled:true,version:'0.3.1',protocolVersion:1};
    if(url.pathname.endsWith('/ui/events'))data={events:onlineEvents.filter(event=>event.seq>Number(url.searchParams.get('after')||0))};

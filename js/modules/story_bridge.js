@@ -8,6 +8,7 @@
     let sendBusy = false;
     let reviewBusy = false;
     let reviewSignature = '';
+    const reviewDrafts = new Map();
     let generation = 0;
     let inboxBusy = false;
 
@@ -15,11 +16,14 @@
         db.uvuStoryBridgeSettings = db.uvuStoryBridgeSettings || {};
         const value = db.uvuStoryBridgeSettings;
         value.cursorByCharacter = value.cursorByCharacter || {};
+        value.relayByCharacter = value.relayByCharacter || {};
+        value.recoveryByCharacter = value.recoveryByCharacter || {};
         value.pendingScenes = value.pendingScenes || {};
         value.sentMessages = value.sentMessages || {};
         value.sentRevisions = value.sentRevisions || {};
         value.outbox = value.outbox || [];
         value.receipts = value.receipts || {};
+        value.handoffReceipts = value.handoffReceipts || {};
         value.injectionByCharacter = value.injectionByCharacter || {};
         return value;
     }
@@ -125,7 +129,12 @@
             settings().injectionByCharacter[String(chat.id)] !== false);
     }
 
-    function messageRecords(chat, start = Math.max(0, (chat.history || []).length - 8), end = (chat.history || []).length) {
+    function turnStart(chat) {
+        const index = (chat.history || []).findLastIndex(message => message?.role === 'user');
+        return Math.max(0, index);
+    }
+
+    function messageRecords(chat, start = turnStart(chat), end = (chat.history || []).length) {
         return (chat.history || []).slice(start, end).map((message, index) => {
             if (!message || !['user', 'assistant'].includes(message.role) || message.isThinking || message.isHidden || message.isWithdrawn || message.isContextDisabled || message.isStatusUpdate || message.relationshipDelivery) return null;
             const text = cleanText(message.content || (message.parts || []).filter(part => part.type === 'text').map(part => part.text).join('\n'));
@@ -215,9 +224,11 @@
     }
 
     async function disconnect() {
-        if (isConnected()) await request('/client/revoke', { method: 'POST', body: {} });
-        saveToken('');
-        status('已断开连接。');
+        let remoteError;
+        try { if (isConnected()) await request('/client/revoke', { method: 'POST', body: {} }); } catch (error) { remoteError = error; }
+        if (remoteError && !confirm('服务不可达，无法撤销服务端令牌。是否仅断开本机连接？下次配对前请在酒馆重新生成配对码。')) throw remoteError;
+        saveToken(''); generation++;
+        status(remoteError ? '本机已断开；服务端令牌尚未撤销，重新配对可替换旧令牌。' : '已断开连接并撤销服务端令牌。');
     }
 
     async function getMode(characterKey) {
@@ -235,16 +246,32 @@
         sendBusy = true;
         try {
             while (isEnabled() && settings().outbox.length) {
-                const event = settings().outbox[0];
-                await request('/client/events', { method: 'POST', body: event });
-                const key = event.characterKey + ':' + event.payload.archiveId;
-                const sent = settings().sentMessages[key] || [];
-                settings().sentMessages[key] = [...new Set([...sent, ...(event.payload.messages || []).map(item => item.sourceMessageId || item.id)])].slice(-1000);
-                const revisions = settings().sentRevisions[key] || {};
-                for (const item of event.payload.messages || []) if (item.revision) revisions[item.sourceMessageId || item.id] = item.revision;
-                settings().sentRevisions[key] = Object.fromEntries(settings().sentMessages[key].filter(id => revisions[id]).map(id => [id, revisions[id]]));
-                settings().outbox.shift();
-                await saveData();
+                const batch = settings().outbox.slice(0, 10), acknowledged = [];
+                let networkError;
+                for (const event of batch) {
+                    if (!isEnabled()) break;
+                    try { await request('/client/events', { method: 'POST', body: event }); acknowledged.push(event); }
+                    catch(error) { networkError = error; break; }
+                }
+                if (acknowledged.length) {
+                    const oldSent = structuredClone(settings().sentMessages), oldRevisions = structuredClone(settings().sentRevisions);
+                    const ids = new Set(acknowledged.map(event => event.eventId));
+                    for (const event of acknowledged) {
+                        const key = event.characterKey + ':' + event.payload.archiveId;
+                        const sent = settings().sentMessages[key] || [], revisions = settings().sentRevisions[key] || {};
+                        settings().sentMessages[key] = [...new Set([...sent, ...(event.payload.messages || []).map(item => item.sourceMessageId || item.id)])].slice(-1000);
+                        for (const item of event.payload.messages || []) if (item.revision) revisions[item.sourceMessageId || item.id] = item.revision;
+                        settings().sentRevisions[key] = Object.fromEntries(settings().sentMessages[key].filter(id => revisions[id]).map(id => [id, revisions[id]]));
+                    }
+                    settings().outbox = settings().outbox.filter(event => !ids.has(event.eventId));
+                    try { await saveData(); }
+                    catch(error) {
+                        settings().sentMessages = oldSent; settings().sentRevisions = oldRevisions;
+                        settings().outbox.unshift(...acknowledged);
+                        throw error;
+                    }
+                }
+                if (networkError) throw networkError;
             }
         } finally { sendBusy = false; }
     }
@@ -259,7 +286,7 @@
         const records = (explicitRecords || messageRecords(chat)).map(item => ({ ...item, revision: globalThis.UvUBridgeText.fingerprint(item.text) })).filter(item => {
             if (queuedRecords.some(record => (record.sourceMessageId || record.id) === item.id && record.revision === item.revision)) return false;
             // An explicit handoff is also recovery: a local sent ledger is not a receiver receipt.
-            return explicitRecords ? true : !sent.has(item.id);
+            return explicitRecords ? true : settings().sentRevisions[key]?.[item.id] !== item.revision;
         });
         if (!records.length) { await flushOutbox(); return { queued: 0, pending: settings().outbox.length }; }
         const events = [];
@@ -276,7 +303,7 @@
         }
         if (settings().outbox.length + events.length > 500) throw new Error('待发送剧情超过 500 条，请先恢复连接重试。');
         settings().outbox.push(...events);
-        await saveData();
+        try { await saveData(); } catch(error) { const ids = new Set(events.map(event => event.eventId)); settings().outbox = settings().outbox.filter(event => !ids.has(event.eventId)); throw error; }
         await flushOutbox();
         return { queued: records.length, pending: settings().outbox.length, archiveId, archiveName, handoff };
     }
@@ -307,7 +334,7 @@
         return true;
     }
 
-    async function syncIncoming(characterKey = '', pageBudget = 20) {
+    async function syncIncoming(characterKey = '', pageBudget = 20, recover = false) {
         if (!isEnabled() || !isConnected() || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
         const chat = db.characters.find(item => String(item.id) === String(characterKey));
         if (!chat) return 0;
@@ -320,28 +347,42 @@
         };
         const state = settings(), cursor = Number(state.cursorByCharacter[characterKey] || 0);
         let imported = 0, committed = false, addedIds = [];
-        const previousScenes = state.pendingScenes, previousReceipts = state.receipts;
+        const previousScenes = state.pendingScenes, previousReceipts = state.receipts, previousHandoffs = state.handoffReceipts;
+        const handoffs = {...previousHandoffs};
         let removedJournals = [];
         const staged = structuredClone(previousScenes), receipts = { ...previousReceipts };
         try {
             const result = { events: [], gapDetected: false };
-            let pageCursor = cursor;
+            let pageCursor = recover ? 0 : cursor;
             for (let page = 0; page < pageBudget; page++) {
                 const batch = await request('/client/events?after=' + pageCursor + '&characterKey=' + encodeURIComponent(characterKey) + '&limit=100');
                 assertCurrent();
+                result.relayId = batch.relayId || result.relayId;
+                result.latestSeq = batch.latestSeq;
+                const relayChanged = batch.relayId && state.relayByCharacter[characterKey] && batch.relayId !== state.relayByCharacter[characterKey];
+                if (!recover && (relayChanged || (Number.isFinite(batch.latestSeq) && batch.latestSeq < cursor))) {
+                    state.recoveryByCharacter[characterKey] = '桥接服务已重建，旧游标不适用';
+                    status('桥接服务已重建，请点击“恢复收取”核对并恢复完整剧情。', true); return 0;
+                }
                 result.gapDetected = result.gapDetected || batch.gapDetected;
                 const events = batch.events || []; result.events.push(...events);
-                if (events.length < 100 || batch.gapDetected) break;
+                if (events.length < 100 || (batch.gapDetected && !recover)) break;
                 const next = Math.max(...events.map(item => Number(item.seq) || 0));
                 if (next <= pageCursor) throw new Error('桥接分页游标没有前进，请检查服务端版本。');
                 pageCursor = next;
             }
             assertCurrent();
-            if (result.gapDetected) { status('桥接队列已有过期记录，不能确认剧情完整；请在酒馆重新导出。', true); return 0; }
+            if (result.gapDetected && !recover) { state.recoveryByCharacter[characterKey] = '队列有过期片段'; status('桥接队列已有过期记录，不能确认剧情完整；请重新导出后点击“恢复收取”，只恢复完整剧情。', true); return 0; }
+            if (recover) for (const [key, scene] of Object.entries(staged)) if (scene.characterKey === String(characterKey) && !Array.from({length: scene.partCount || 0}, (_, index) => index + 1).every(part => Object.hasOwn(scene.parts || {}, part))) delete staged[key];
             if ((result.events || []).some(item => String(item.characterKey) !== String(characterKey))) { status('收到角色 ID 不匹配的剧情，已停止导入。', true); return 0; }
-            let nextCursor = cursor;
+            let nextCursor = recover ? 0 : cursor;
             for (const event of result.events || []) {
                 nextCursor = Math.max(nextCursor, Number(event.seq) || 0);
+                if (event.kind === 'handoff_receipt') {
+                    const payload = event.payload || {};
+                    if (typeof payload.handoffId === 'string' && typeof payload.archiveId === 'string') handoffs[String(characterKey) + ':' + payload.handoffId] = {...payload, characterKey: String(characterKey)};
+                    continue;
+                }
                 if (event.kind === 'scene_cancelled') {
                     const key = String(characterKey) + ':' + String(event.sceneId || '');
                     delete staged[key]; receipts[key] = { cancelled: true, at: Date.now() };
@@ -374,20 +415,23 @@
             removedJournals = before.filter(item => !draft.includes(item));
             addedIds = draft.filter(item => !beforeIds.has(item.id)).map(item => item.id);
             if (!(result.events || []).length && !imported && !removedJournals.length) return 0;
-            chat.memoryJournals = draft; state.pendingScenes = staged; state.receipts = receipts; state.cursorByCharacter[characterKey] = nextCursor;
-            try { await saveData(); committed = true; }
+            chat.memoryJournals = draft; state.handoffReceipts = Object.fromEntries(Object.entries(handoffs).slice(-60)); state.pendingScenes = staged; state.receipts = receipts; state.cursorByCharacter[characterKey] = nextCursor;
+            const oldRelay = state.relayByCharacter[characterKey];
+            if (result.relayId) state.relayByCharacter[characterKey] = result.relayId;
+            try { await saveData(); committed = true; delete state.recoveryByCharacter[characterKey]; }
             catch (error) {
                 if (chat.activeArchiveId === archiveId) chat.memoryJournals = (chat.memoryJournals || []).filter(item => !addedIds.includes(item.id));
                 if (chat.activeArchiveId === archiveId) for (const item of removedJournals) if (!chat.memoryJournals.some(entry => entry.id === item.id)) chat.memoryJournals.push(item);
                 const archive = chat.archives?.find(item => item.id === archiveId);
                 if (archive?.data?.memoryJournals) archive.data.memoryJournals = archive.data.memoryJournals.filter(item => !addedIds.includes(item.id));
                 if (archive?.data?.memoryJournals) for (const item of removedJournals) if (!archive.data.memoryJournals.some(entry => entry.id === item.id)) archive.data.memoryJournals.push(structuredClone(item));
-                state.pendingScenes = previousScenes; state.receipts = previousReceipts; state.cursorByCharacter[characterKey] = cursor;
+                state.handoffReceipts = previousHandoffs; state.pendingScenes = previousScenes; state.receipts = previousReceipts; state.cursorByCharacter[characterKey] = cursor;
+                if (oldRelay === undefined) delete state.relayByCharacter[characterKey]; else state.relayByCharacter[characterKey] = oldRelay;
                 throw error;
             }
             if (nextCursor > cursor) await request('/client/ack', { method: 'POST', body: { seq: nextCursor, characterKey } }).catch(error => console.warn('Bridge acknowledgement:', error.message));
             if (imported) status('已接收 ' + imported + ' 场剧情，请在下方审核；未勾选的内容不会进入上下文。');
-            else status('已保存剧情分段；若目标是其他存档，请切回对应存档收取。');
+            else status((result.events || []).some(event => event.kind === 'handoff_receipt') ? '已更新酒馆接收回执，请核对交接状态。' : '已保存剧情分段；若目标是其他存档，请切回对应存档收取。');
             renderReview(); return imported;
         } finally { syncBusy = false; }
     }
@@ -404,9 +448,9 @@
         journal.content = content || review.sourceText; journal.isFavorited = Boolean(content);
         try { await saveData(); }
         catch (error) {
-            if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) Object.assign(journal, before);
+            if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) { for (const key of Object.keys(journal)) if (!Object.hasOwn(before, key)) delete journal[key]; Object.assign(journal, before); }
             const archived = chat.archives?.find(item => item.id === archiveId)?.data?.memoryJournals?.find(item => item.id === journal.id);
-            if (archived) Object.assign(archived, before);
+            if (archived) { for (const key of Object.keys(archived)) if (!Object.hasOwn(before, key)) delete archived[key]; Object.assign(archived, before); }
             throw error;
         }
     }
@@ -415,6 +459,11 @@
         const host = document.getElementById('uvu-bridge-review-list');
         if (!host?.replaceChildren) return;
         const current = selectedBridgeChat();
+        const receiptOutput = document.getElementById('uvu-bridge-handoff-receipt');
+        const receipt = Object.values(settings().handoffReceipts).filter(item => item.characterKey === String(current?.id)).sort((a,b) => (Number(b.at)||0)-(Number(a.at)||0))[0];
+        if (receiptOutput && current) receiptOutput.textContent = receipt
+            ? `酒馆回执 · ${receipt.archiveId} · 交接 ${receipt.handoffId}：预期 ${receipt.expected} 条 / 已保留 ${receipt.retained} 条 / 已审核 ${receipt.reviewed} 条 / 删除跳过 ${receipt.deleted} 条；${receipt.incomplete ? '尚不完整，请回酒馆核对或重新交接' : '接收已核对'}。${new Date(receipt.at).toLocaleString()}`
+            : '暂无酒馆接收回执；“服务已接收”只表示进入桥接队列，请到酒馆刷新、审核并保存。';
         const entries = [];
         for (const chat of (db.characters || [])) {
             for (const journal of (chat.memoryJournals || []).filter(item => item.source === 'sillytavern')) entries.push({ chat, journal });
@@ -424,6 +473,9 @@
             }
         }
         const pending = Object.values(settings().pendingScenes).filter(item => item?.characterKey);
+        const draftKey = (chat, journal, archived) => JSON.stringify([String(chat.id), String(archived || chat.activeArchiveId || 'default'), String(journal.id)]);
+        const liveDrafts = new Set(entries.map(({chat, journal, archived}) => draftKey(chat, journal, archived)));
+        for (const key of reviewDrafts.keys()) if (!liveDrafts.has(key)) reviewDrafts.delete(key);
         const signature = JSON.stringify([
             current?.id, current?.activeArchiveId,
             entries.map(({ chat, journal, archived }) => [chat.id, chat.activeArchiveId, archived, journal.id, journal.isFavorited, journal.bridgeReview?.status, journal.bridgeReview?.items?.length, journal.content]),
@@ -452,19 +504,29 @@
                 });
                 detail.append(open); host.append(detail); continue;
             }
-            const items = structuredClone(journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content));
+            const originalItems = journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content);
+            const key = draftKey(chat, journal), sourceSignature = JSON.stringify(originalItems);
+            let draft = reviewDrafts.get(key);
+            if (!draft || draft.sourceSignature !== sourceSignature) {
+                draft = {sourceSignature, items: structuredClone(originalItems)};
+                reviewDrafts.set(key, draft);
+            }
+            const items = draft.items;
             const list = document.createElement('div'); list.className = 'uvu-bridge-review-items';
             const fields = [];
             items.forEach(item => {
                 const row = document.createElement('label'), check = document.createElement('input'), text = document.createElement('textarea');
                 check.type = 'checkbox'; check.checked = item.selected; text.value = item.text;
+                check.addEventListener('change', () => { item.selected = check.checked; });
+                text.addEventListener('input', () => { item.text = text.value; });
                 check.setAttribute('aria-label', '允许这条剧情加入上下文'); row.append(check, text); list.append(row); fields.push({ item, check, text });
             });
             const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-secondary'; save.textContent = '保存审核并加入日记';
             save.addEventListener('click', async () => {
                 if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) return status('目标存档已切换，请打开原存档后审核。', true);
+                if (JSON.stringify(journal.bridgeReview?.items || globalThis.UvUBridgeText.segments(journal.content)) !== sourceSignature) return status('原文已更新，请刷新后重新审核。', true);
                 if (reviewBusy) return; reviewBusy = true; save.disabled = true;
-                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); renderReview(true); status('已审核并保存到当前角色日记；只有勾选内容会进入后续上下文和向量候选。'); }
+                try { await persistReview(chat, journal, fields.map(({item,check,text}) => ({ id:item.id,text:text.value,selected:check.checked }))); reviewDrafts.delete(key); renderReview(true); status('已审核并保存到当前角色日记；只有勾选内容会进入后续上下文和向量候选。'); }
                 catch (error) { status(error.message, true); }
                 finally { reviewBusy = false; save.disabled = false; }
             });
@@ -502,18 +564,18 @@
         updateHandoffRange();
     }
 
-    async function syncInbox() {
+    async function syncInbox(recover = false) {
         if (!isEnabled() || !isConnected() || inboxBusy || document.visibilityState !== 'visible') return 0;
         inboxBusy = true;
         try {
             let imported = 0;
             // Receive from the global queue without coupling delivery to the open chat.
             const snapshot = await request('/client/inbox');
-            const keys = new Set((snapshot.characters || []).filter(item => Number(item.latestSeq) > Number(settings().cursorByCharacter[item.characterKey] || 0)).map(item => String(item.characterKey)));
+            const keys = new Set((snapshot.characters || []).filter(item => (recover || (snapshot.relayId && snapshot.relayId !== settings().relayByCharacter[item.characterKey]) || Number(item.latestSeq) > Number(settings().cursorByCharacter[item.characterKey] || 0))).map(item => String(item.characterKey)));
             for (const scene of Object.values(settings().pendingScenes)) if (scene?.characterKey) keys.add(String(scene.characterKey));
             const selected = document.getElementById('uvu-bridge-handoff-character')?.value;
             if (selected) keys.add(selected);
-            for (const key of keys) { if (!isEnabled()) break; imported += await syncIncoming(key); }
+            for (const key of keys) { if (!isEnabled()) break; try { imported += await syncIncoming(key, 20, recover); } catch (error) { status(key + '：' + error.message, true); } }
             renderReview();
             return imported;
         } finally { inboxBusy = false; }
@@ -539,9 +601,9 @@
         if (enabledCheckbox) {
             enabledCheckbox.checked = isEnabled();
             enabledCheckbox.addEventListener('change', async () => {
-                settings().bridgeEnabled = enabledCheckbox.checked;
-                generation++;
-                await saveData();
+                const previous = settings().bridgeEnabled; settings().bridgeEnabled = enabledCheckbox.checked;
+                generation++; enabledCheckbox.disabled = true;
+                try { await saveData(); } catch(error) { settings().bridgeEnabled = previous; enabledCheckbox.checked = previous !== false; status('互通开关保存失败：' + error.message, true); return; } finally { enabledCheckbox.disabled = false; }
                 status(enabledCheckbox.checked ? '酒馆互通已启用。' : '酒馆互通已停用；原聊天、提示词和日记数据不受修改。');
                 renderReview(true);
             });
@@ -579,6 +641,12 @@
             catch (error) { status(error.message, true); }
             finally { syncButton.disabled = false; }
         });
+        document.getElementById('uvu-bridge-recover')?.addEventListener('click', async event => {
+            if (!confirm('从服务端保留的队列重新核对，只收取完整剧情；缺失片段无法恢复，请先在酒馆完成导出。已有日记保留。继续？')) return;
+            event.target.disabled = true;
+            try { await syncInbox(true); renderReview(true); } catch (error) { status(error.message, true); }
+            finally { event.target.disabled = false; }
+        });
         disconnectButton.addEventListener('click', async () => {
             disconnectButton.disabled = true;
             try { await disconnect(); }
@@ -589,7 +657,7 @@
             try {
                 await setSceneInjection(injectCheckbox.checked);
                 status(injectCheckbox.checked ? '当前角色允许使用已审核且已勾选的剧情。' : '当前角色酒馆记忆已暂停；原文和逐条选择保留。');
-            } catch (error) { status(error.message, true); }
+            } catch (error) { injectCheckbox.checked = settings().injectionByCharacter[String(selectedBridgeChat()?.id)] !== false; status(error.message, true); }
         });
         document.getElementById('uvu-bridge-handoff')?.addEventListener('click', async event => {
             event.target.disabled=true;
@@ -617,6 +685,6 @@
         });
     }
 
-    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
+    window.UvUStoryBridge = { isEnabled, isConnected, getMode, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, handoffCurrent, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();
