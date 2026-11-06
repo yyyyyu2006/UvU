@@ -3,6 +3,9 @@
 .relationship-dialog-body strong { margin-top: 10px; font-size: 13px; }
 .relationship-dialog-body label { font-size: 12px; }
 .relationship-dialog-body input, .relationship-dialog-body textarea, .relationship-dialog-body select { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px; font: inherit; font-size: 13px; min-height: 36px; background: #fff; color: #333; }
+.relationship-dialog-body .relationship-autonomy-toggle { display: flex; align-items: center; gap: 8px; min-height: 28px; margin: 0; font-size: 12px; line-height: 1.4; cursor: pointer; }
+.relationship-dialog-body .relationship-autonomy-toggle input[type="checkbox"] { appearance: auto; flex: 0 0 16px; width: 16px; height: 16px; min-height: 16px; margin: 0; padding: 0; accent-color: #35383d; }
+.relationship-dialog-body .relationship-autonomy-toggle span { min-width: 0; }
 .relationship-dialog-body textarea { min-height: 72px; resize: vertical; }
 .relationship-dialog-body [hidden] { display: none; }
 .relationship-action { box-sizing: border-box; width: 100%; min-height: 36px; margin: 0; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; background: #f6f6f6; color: #333; font-size: 13px; cursor: pointer; }

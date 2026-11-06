@@ -252,8 +252,10 @@ function openRelationshipDialog() {
         if (r.recovery.mode === 'timer' && r.recovery.restoreAt && (r.peer.blocked || r.peer.deleted)) add('p', '预定恢复：' + new Date(r.recovery.restoreAt).toLocaleString(), 'relationship-help');
         if (r.recovery.mode === 'condition') button('现在检查恢复条件', async () => { const restored = await checkRelationshipRecovery(chat, true); showToast(restored ? '对方已恢复好友关系' : '暂未满足恢复条件，或正在检查'); });
         add('strong', '角色自主决定是否拉黑我');
-        const autonomyToggle = add('input', ''); autonomyToggle.type = 'checkbox'; autonomyToggle.checked = r.autonomy.enabled; autonomyToggle.id = 'relationship-autonomy-enabled';
-        const autonomyLabel = add('label', '允许角色根据人设和聊天上下文自主拉黑我'); autonomyLabel.htmlFor = autonomyToggle.id;
+        const autonomyLabel = add('label', '', 'relationship-autonomy-toggle');
+        const autonomyToggle = document.createElement('input'); autonomyToggle.type = 'checkbox'; autonomyToggle.checked = r.autonomy.enabled; autonomyToggle.id = 'relationship-autonomy-enabled';
+        const autonomyText = document.createElement('span'); autonomyText.textContent = '允许角色根据人设和聊天上下文自主拉黑我';
+        autonomyLabel.append(autonomyToggle, autonomyText);
         const everyLabel = add('label', '每多少条有效用户消息判断一次（1–100）');
         const every = add('input', ''); every.type = 'number'; every.min = '1'; every.max = '100'; every.value = r.autonomy.everyUserMessages; everyLabel.htmlFor = every.id = 'relationship-autonomy-frequency';
         const autonomyConditionLabel = add('label', '拉黑判断补充条件（可选）');
