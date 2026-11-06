@@ -24,7 +24,8 @@ const cssFiles = [
             <div class="feature-dialog memory-library"><div class="feature-dialog-card">
                 <header><strong>记忆管理</strong></header>
                 <details class="memory-library-filter-disclosure"><summary>筛选</summary><div class="memory-library-filters"><input></div></details>
-                <div class="memory-library-toolbar"><button>添加</button><button>更多</button></div>
+                <div class="memory-library-toolbar"><button data-action="save">添加</button><button>更多</button></div>
+                <section class="memory-library-card"><span>内层卡片</span></section>
                 <div class="memory-library-list"></div>
             </div></div>
             <div class="message-wrapper"><div class="message-bubble shared-document-card"><strong>文件</strong><button>打开</button></div></div>
@@ -57,6 +58,12 @@ const cssFiles = [
                         mcpBackground: getComputedStyle(mcpSection).backgroundColor,
                         memoryBackground: getComputedStyle(memoryDialog).backgroundColor,
                         bridgeBackground: getComputedStyle(bridgeReview).backgroundColor,
+                        mainRadius: getComputedStyle(card).borderTopLeftRadius,
+                        innerRadius: getComputedStyle(document.querySelector('.memory-library-card')).borderTopLeftRadius,
+                        buttonRadius: getComputedStyle(document.querySelector('.memory-library-toolbar button')).borderTopLeftRadius,
+                        buttonShadow: getComputedStyle(document.querySelector('.memory-library-toolbar button')).boxShadow,
+                        primaryBackground: getComputedStyle(document.querySelector('.memory-library-toolbar [data-action="save"]')).backgroundColor,
+                        toolbarGap: getComputedStyle(document.querySelector('.memory-library-toolbar')).gap,
                         buttonWidth: button.getBoundingClientRect().width,
                         buttonHeight: button.getBoundingClientRect().height,
                         viewportWidth: document.documentElement.scrollWidth,
@@ -70,6 +77,11 @@ const cssFiles = [
                 assert.match(result.memoryBackground, /rgba?\(255, 255, 255/);
                 assert.match(result.bridgeBackground, /rgba?\(255, 255, 255/);
                 assert.match(result.dialogBlur, /blur\(/);
+                assert.equal(result.mainRadius, width <= 420 ? '20px' : '24px', JSON.stringify(result));
+                assert.equal(result.innerRadius, '20px', JSON.stringify(result));
+                assert.equal(result.buttonRadius, '999px', JSON.stringify(result));
+                assert.match(result.primaryBackground, /rgb\(22, 119, 190\)|rgb\(36, 132, 205\)/, JSON.stringify(result));
+                assert.match(result.toolbarGap, /8px/, JSON.stringify(result));
                 assert.ok(result.buttonWidth < width * 0.6, JSON.stringify(result));
                 assert.ok(result.buttonHeight <= 36, JSON.stringify(result));
                 assert.equal(result.viewportWidth, result.width, JSON.stringify(result));

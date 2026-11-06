@@ -231,8 +231,8 @@
             const scope = m().scope(t.chat, t.type), p = m().policy(scope);
             const archive = t.chat.archives?.find(item => item.id === scope.archive);
             const pendingCount = m().pending(scope);
-            const scopeSummary = node('p', `${t.label.replace(/^(角色|群聊) · /, '')} · ${archive?.name || '当前存档'} · 待用 ${pendingCount}`, 'mcp-help');
-            scopeSummary.title = `${t.label} · 存档 ID ${String(scope.archive || 'default')} · 待用资料 ${pendingCount} 条`;
+            const scopeSummary = node('p', `${t.label.replace(/^(角色|群聊) · /, '')} · 待用 ${pendingCount} 条`, 'mcp-help');
+            scopeSummary.title = `${t.label} · ${archive?.name || '当前存档'} · 存档 ID ${String(scope.archive || 'default')} · 待用资料 ${pendingCount} 条`;
             roleArea.append(scopeSummary);
             const enabled = check(roleArea, '允许此角色使用 MCP 外部资料', p?.enabled), auto = check(roleArea, '允许独立 API 自动判断（会增加模型调用）', p?.auto), grants = [];
             for (const svc of m().settings().services) for (const [name, rule] of Object.entries(svc.tools)) if (rule.enabled) {

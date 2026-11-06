@@ -729,12 +729,11 @@
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-latest">最近 50 条</button>
                             <div class="uvu-bridge-actions"><button type="button" class="btn btn-secondary" id="uvu-bridge-export-file">导出线上交接文件</button><button type="button" class="btn btn-secondary" id="uvu-bridge-import-file">导入酒馆剧情文件</button></div>
                             <input id="uvu-bridge-import-file-input" type="file" accept=".json,application/json" hidden>
-                            <p class="uvu-bridge-note">选择角色后点“保存角色”，再次进入恢复已保存角色。读取按钮只更新所选角色当前存档，不跟随其他正在聊天的角色。发送前核对存档名、ID 和末条正文；默认最近 50 条有效正文。切换存档重置范围，手动修改编号后保留自选范围。酒馆须刷新、审核并保存后才能使用。</p>
-                            <small>按当前存档聊天消息编号交接，只发送过滤后的角色和用户正文；酒馆中仍需审核。</small>
+                            <p class="uvu-bridge-note">读取所选角色当前存档，核对消息范围后交接；酒馆端仍需审核。</p>
                         </section>
                         <section class="uvu-bridge-review" aria-labelledby="uvu-bridge-review-title">
                             <div class="uvu-bridge-review-heading"><h3 id="uvu-bridge-review-title">酒馆线下剧情 → UvU 记忆</h3><span id="uvu-bridge-review-count">0 项</span></div>
-                            <p class="uvu-bridge-review-help">按角色和存档审核整层剧情，可全选、展开编辑。生成第三人称摘要后核对预览，再确认加入日记记忆；也可直接保存勾选原文。生成摘要会调用日记或记忆 API。未确认内容不会启用；其他存档可点“打开原存档审核”。</p>
+                            <p class="uvu-bridge-review-help">按角色和存档审核剧情，可全选、编辑后加入日记；也可先生成摘要。</p>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-refresh-review">刷新审核清单</button>
                             <div id="uvu-bridge-review-list" aria-live="polite"></div>
                         </section>
@@ -3129,7 +3128,7 @@ node setup-server-plugin.js</code></pre>
 <!-- [4. 程序入口] -->
 <link rel="stylesheet" href="css/modules/notification_preferences.css?v=20261106-feature-audit">
 <link rel="stylesheet" href="css/modules/feature_refinements.css?v=20261106-feature-audit">
-<link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261106-ui-harmony">
+<link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261106-soft-cards">
 <script src="js/modules/feature_dialogs.js?v=20261106-feature-audit"></script>
 <script src="js/main.js?v=20261106-documents"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>

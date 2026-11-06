@@ -389,8 +389,8 @@
             const latest = messageRecords(chat, Math.max(0, Number(end.value) - 1), Number(end.value))[0];
             const name = chat.realName || chat.name || '角色';
             const archiveName = archive?.name || '默认存档';
-            output.querySelector('summary').textContent = `${name} · ${archiveName} · ${(chat.history || []).length} 条 · 交接 ${start.value || 0}–${end.value || 0}`;
-            output.querySelector('.uvu-bridge-handoff-detail-body').textContent = `存档 ID：${chat.activeArchiveId || 'default'}\n范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
+            output.querySelector('summary').textContent = `${archiveName} · ${(chat.history || []).length} 条 · ${start.value || 0}–${end.value || 0}`;
+            output.querySelector('.uvu-bridge-handoff-detail-body').textContent = `${name} · 存档 ID：${chat.activeArchiveId || 'default'}\n范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
         } else if (output) {
             const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
             const latest = messageRecords(chat, Math.max(0, Number(end.value) - 1), Number(end.value))[0];
@@ -831,12 +831,29 @@
             const summary = receiptOutput.querySelector('summary'), detail = receiptOutput.querySelector('.uvu-bridge-handoff-detail-body');
             if (receipt) {
                 summary.textContent = receipt.incomplete
-                    ? `交接未完整 · 已收 ${receipt.retained}/${receipt.expected} · 已审核 ${receipt.reviewed}`
-                    : `交接已核对 · 已收 ${receipt.retained} · 已审核 ${receipt.reviewed}`;
-                detail.textContent = `存档 ID：${receipt.archiveId}\n交接 ID：${receipt.handoffId}\n预期 ${receipt.expected} 条 · 已保留 ${receipt.retained} 条 · 已审核 ${receipt.reviewed} 条 · 删除跳过 ${receipt.deleted} 条\n${new Date(receipt.at).toLocaleString()}${receipt.incomplete ? '\n请回酒馆核对或重新交接。' : ''}`;
+                    ? `未完整 · ${receipt.retained}/${receipt.expected} 条`
+                    : `已收 ${receipt.retained} 条 · 已审核 ${receipt.reviewed} 条`;
+                detail.replaceChildren();
+                const counts = document.createElement('p');
+                counts.textContent = `${receipt.reviewed} 条已审核 · ${receipt.deleted} 条已删除`;
+                const timestamp = document.createElement('p');
+                timestamp.textContent = new Date(receipt.at).toLocaleString();
+                detail.append(counts, timestamp);
+                const ids = document.createElement('details');
+                const idsSummary = document.createElement('summary');
+                idsSummary.textContent = '存档与交接编号';
+                const idsText = document.createElement('code');
+                idsText.textContent = `${receipt.archiveId}\n${receipt.handoffId}`;
+                ids.append(idsSummary, idsText);
+                detail.append(ids);
+                if (receipt.incomplete) {
+                    const retry = document.createElement('p');
+                    retry.textContent = '请回酒馆核对或重新交接。';
+                    detail.append(retry);
+                }
             } else {
                 summary.textContent = '暂无回执 · 请在酒馆刷新并保存';
-                detail.textContent = '“服务已接收”只表示剧情进入桥接队列；需在酒馆刷新、审核并保存后才会生成接收回执。';
+                detail.textContent = '剧情进入酒馆队列后，还需刷新、审核并保存。';
             }
         }
         const entries = [];

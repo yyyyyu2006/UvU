@@ -1,7 +1,11 @@
 /* Derived UI harmony. Every selector targets an added module or an added feature class. */
 :is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health) {
     --ui-gap: 8px;
-    --ui-radius: 9px;
+    --ui-radius: 24px;
+    --ui-card-radius: 20px;
+    --ui-pill-radius: 999px;
+    --ui-accent: #1677be;
+    --ui-accent-soft: #eaf5fc;
 }
 
 /* Summary and vector memory */
@@ -219,6 +223,9 @@
     margin: 8px 0;
 }
 
+#uvu-story-bridge-screen .uvu-bridge-handoff-detail-body p { margin: 4px 0; }
+#uvu-story-bridge-screen .uvu-bridge-handoff-detail-body code { display: block; margin-top: 6px; overflow-wrap: anywhere; white-space: pre-wrap; }
+
 #sticker-description-settings-open {
     width: fit-content;
     max-width: 100%;
@@ -293,5 +300,63 @@
     #sticker-description-settings-open {
         -webkit-backdrop-filter: blur(8px);
         backdrop-filter: blur(8px);
+    }
+}
+
+/* Minimal iOS-like rhythm, scoped to second-edition UI only. */
+:is(.feature-dialog-card,.derived-settings,.mcp-settings,.resource-health,.status-token-panel,.model-picker-card,.message-wrapper .shared-document-card,.incoming-message-toast,.storage-backup-extras,.avatar-candidate-preview,.sticker-suggestions,.minimax-tts-settings,#auto-memory-modal .auto-memory-dialog,#uvu-story-bridge-screen .uvu-bridge-handoff,#uvu-story-bridge-screen .uvu-bridge-review) {
+    --derived-panel-radius: 24px;
+    --derived-inner-radius: 20px;
+    --derived-pill-radius: 999px;
+    --derived-space: 8px;
+    border-radius: var(--derived-panel-radius);
+    box-shadow: 0 6px 20px rgba(20,24,30,.055), inset 0 1px rgba(255,255,255,.92);
+}
+
+:is(.memory-library-card,.memory-library-filter-disclosure,.memory-library-index-actions,.mcp-settings section,.mcp-settings details,.storage-backup-extras,.avatar-candidate-preview,.sticker-description-options,#uvu-story-bridge-screen .uvu-bridge-review-floor) {
+    border-radius: 20px;
+}
+
+:is(.memory-library-card,.mcp-settings section,.mcp-settings details,.storage-backup-extras,#uvu-story-bridge-screen .uvu-bridge-handoff,#uvu-story-bridge-screen .uvu-bridge-review) {
+    padding: 16px;
+}
+
+.mcp-settings .mcp-body { gap: 16px; }
+#auto-memory-form fieldset { margin: 16px 0; padding: 16px; }
+#auto-memory-form .auto-memory-grid { gap: 8px; }
+#auto-memory-form .auto-memory-actions { gap: 8px; margin-top: 16px; }
+#uvu-story-bridge-screen :is(.uvu-bridge-handoff,.uvu-bridge-review) { gap: 8px; }
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(button,summary) {
+    border-radius: 999px;
+}
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(.memory-library-toolbar,.mcp-actions,.derived-toolbar,.uvu-bridge-actions,.uvu-bridge-review-toolbar,.minimax-tts-actions) {
+    gap: 8px;
+}
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(button.btn-primary,button[data-action="save"],button[data-action="apply"],button[data-action="send"],button[data-action="approve"]) {
+    color: #fff;
+    background: #1677be;
+    border-color: #1677be;
+    box-shadow: 0 3px 8px rgba(22,119,190,.16);
+}
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(button.btn-primary,button[data-action="save"],button[data-action="apply"],button[data-action="send"],button[data-action="approve"]):hover {
+    background: #1267a6;
+}
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) input:is([type="checkbox"],[type="radio"]) {
+    accent-color: #1677be;
+}
+
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health,.model-picker-overlay,.environment-calendar,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(.active,[aria-pressed="true"],[aria-selected="true"]) {
+    border-color: #b7d9ef;
+    background-color: #eaf5fc;
+}
+
+@media (max-width: 420px) {
+    :is(.feature-dialog-card,.derived-settings,.mcp-settings,.resource-health,.status-token-panel,.model-picker-card,.message-wrapper .shared-document-card,.incoming-message-toast,.storage-backup-extras,.avatar-candidate-preview,.sticker-suggestions,.minimax-tts-settings,#auto-memory-modal .auto-memory-dialog,#uvu-story-bridge-screen .uvu-bridge-handoff,#uvu-story-bridge-screen .uvu-bridge-review) {
+        border-radius: 20px;
     }
 }
