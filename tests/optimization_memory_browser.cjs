@@ -6,7 +6,7 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } }), errors = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="memory-journal-screen"></main>');
-        for (const file of ['document_features.css', 'journal.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(__dirname, '../css/modules', file), 'utf8') });
+        for (const file of ['document_features.css', 'journal.css', 'ui_harmony.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(__dirname, '../css/modules', file), 'utf8') });
         await page.evaluate(() => {
             window.currentChatId = 'c'; window.currentChatType = 'private'; window.renderJournalList = () => {}; window.saveData = async () => {}; window.showToast = () => {};
             window.db = { characters: [{ id: 'c', activeArchiveId: 'a', history: [{ id: 'source', role: 'user', content: '去海边看日落', timestamp: 1700000000000 }],
@@ -19,12 +19,17 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
                 qualityReview: { status: 'pending', archiveId: 'a', warnings: ['核对时间线'] } });
             openMemoryLibrary();
         });
+        const filters = page.locator('.memory-library-filter-disclosure');
+        assert.equal(await filters.count(), 1);
+        assert.equal(await filters.locator('summary').textContent(), '筛选');
+        assert.equal(await filters.locator('.memory-library-filters').isVisible(), false);
         assert.equal(await page.locator('.memory-library-list > .memory-library-card').count(), 20);
         await page.getByRole('button', { name: '编辑并确认总结', exact: true }).click();
         const editor = page.locator('.memory-library').last();
         await editor.locator('textarea').fill('核对后的去海边看日落约定。');
         await editor.getByRole('button', { name: '确认并启用总结', exact: true }).click();
         assert.equal(await page.evaluate(() => getAutoMemoryState(db.characters[0]).covered.size), 1);
+        await filters.locator('summary').click();
         await page.locator('.memory-library-filters input[type="search"]').fill('manual44'); await page.waitForTimeout(220);
         assert.equal(await page.locator('.memory-library-list > .memory-library-card').count(), 1);
         for (const width of [320, 390, 768]) {

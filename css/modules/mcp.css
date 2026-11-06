@@ -24,3 +24,9 @@
 .mcp-settings pre { max-width: 100%; min-width: 0; max-height: 230px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; margin: 0; border-radius: 7px; background: #f4f6f9; font-size: 12px; line-height: 1.6; }
 .mcp-settings pre.mcp-result { min-height: 70px; }
 .mcp-settings [hidden] { display: none !important; }
+.mcp-settings .mcp-body { gap: 8px; }
+.mcp-settings section, .mcp-settings details { padding: 8px; }
+.mcp-settings .mcp-help { margin: 3px 0 7px; font-size: 11px; }
+.mcp-settings .mcp-actions { position: sticky; bottom: -14px; padding: 8px 0 2px; background: #fff; }
+.mcp-settings .mcp-actions button { min-height: 32px; }
+.mcp-settings .mcp-actions button:first-of-type { color: #a33a32; border-color: #e0aaa6; background: #fff7f6; }

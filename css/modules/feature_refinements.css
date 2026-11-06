@@ -1,4 +1,10 @@
 /* Derived components only. Original .btn, chat layout and player CSS are untouched. */
+:root {
+    --derived-control-height: 32px;
+    --derived-radius: 9px;
+    --derived-gap: 8px;
+    --derived-surface-muted: #f5f7fa;
+}
 :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health,.storage-backup-extras) {
     --feature-surface: var(--bg-color, #f6f8fa);
     --feature-ink: var(--text-color, #29343c);
@@ -41,3 +47,9 @@
         color-scheme: dark;
     }
 }
+
+/* Compact hierarchy for second-edition controls. Keep this scope away from 1900 chat styling. */
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(button,summary) { border-radius: var(--derived-radius); }
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button { min-height: var(--derived-control-height); padding: 5px 9px; }
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(p.feature-help,.derived-help,.mcp-help) { max-width: 62ch; }
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) > header { padding-bottom: 4px; }

@@ -115,7 +115,7 @@ function openMemoryLibrary() {
     let isCurrent = memoryLibrarySnapshot(chat), closed = false;
     const jobs = new Set();
     const overlay = document.createElement('div'); overlay.className = 'feature-dialog memory-library';
-    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>记忆管理</strong><button type="button" data-action="close">关闭</button></header><p class="feature-help">手动记忆和有效总结均可被向量检索。整合按分类分组，每组最多 6 篇；先对照原文与日期，再手动保存。旧记忆保留供追溯，确认合并后不再重复召回。历史剧情仅提取可读文字；可开启每轮建库限额，或手动续建。日期筛选优先采用剧情中的 YYYY-MM-DD，无法识别时采用创建日期。</p><div class="memory-library-toolbar"><button type="button" data-action="add">添加记忆</button><button type="button" data-action="integrate">整合所选</button><button type="button" data-action="index">续建全部缺失索引</button><button type="button" data-action="rebuild">完整重建索引</button><button type="button" data-action="pause" disabled>暂停建库</button><label>分类<select class="memory-library-filter"><option value="">全部分类</option></select></label></div><p class="memory-library-status" aria-live="polite"></p><div class="memory-library-list"></div><div class="memory-library-groups"></div></div>';
+    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>记忆管理</strong><button type="button" data-action="close">关闭</button></header><div class="memory-library-toolbar"><button type="button" data-action="add">添加</button><button type="button" data-action="integrate">整合</button><button type="button" data-action="index">续建索引</button><button type="button" data-action="rebuild">重建索引</button><button type="button" data-action="pause" disabled>暂停</button><label><span class="sr-only">分类</span><select class="memory-library-filter" aria-label="分类"><option value="">全部分类</option></select></label></div><p class="memory-library-status" aria-live="polite"></p><div class="memory-library-list"></div><div class="memory-library-groups"></div></div>';
     const list = overlay.querySelector('.memory-library-list'), status = overlay.querySelector('.memory-library-status');
     const filter = overlay.querySelector('.memory-library-filter');
     const selection = new Set();
@@ -125,6 +125,10 @@ function openMemoryLibrary() {
     const element = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; };
     const button = (text, callback) => { const el = element('button', text); el.type = 'button'; el.onclick = callback; return el; };
     const toolbar = overlay.querySelector('.memory-library-toolbar');
+    const indexActions = element('details', undefined, 'memory-library-index-actions');
+    indexActions.append(element('summary', '索引'));
+    for (const action of ['index', 'rebuild', 'pause']) indexActions.append(toolbar.querySelector(`[data-action="${action}"]`));
+    toolbar.insertBefore(indexActions, toolbar.querySelector('label'));
     const filters = element('div', undefined, 'memory-library-filters');
     const addInput = (label, type) => { const wrap = element('label', label), input = element('input'); input.type = type; wrap.append(input); filters.append(wrap); return input; };
     const search = addInput('搜索标题 / 正文 / 时间线', 'search'), from = addInput('开始日期', 'date'), to = addInput('结束日期', 'date');
@@ -133,7 +137,9 @@ function openMemoryLibrary() {
         wrap.append(select); filters.append(wrap); return select; };
     const sourceFilter = addSelect('来源', [['', '全部来源'], ['manual', '手动记忆'], ['summary', '自动总结'], ['sillytavern', '酒馆导入']]);
     const stateFilter = addSelect('索引状态', [['', '全部状态'], ...Object.entries(stateLabels)]);
-    toolbar.after(filters);
+    const filterDisclosure = element('details', undefined, 'memory-library-filter-disclosure');
+    filterDisclosure.append(element('summary', '筛选'), filters);
+    toolbar.after(filterDisclosure);
     const tuning = element('details', undefined, 'memory-library-tuning'); tuning.append(element('summary', '本存档记忆限额与总结审阅（默认关闭）'));
     const tuningInputs = {};
     const settings = getAutoMemorySettings(chat);
@@ -159,7 +165,7 @@ function openMemoryLibrary() {
             isCurrent = memoryLibrarySnapshot(chat); status.textContent = '记忆选项已保存。';
         } catch (error) { status.textContent = error.message; }
     }));
-    filters.after(tuning);
+    filterDisclosure.after(tuning);
     const diagnostics = element('details', undefined, 'memory-library-diagnostics'); diagnostics.append(element('summary', '本轮检索诊断 / 来源索引状态'));
     const diagnosticText = element('pre'); diagnostics.append(diagnosticText); tuning.after(diagnostics);
     const pagination = element('div', undefined, 'memory-library-toolbar'); list.after(pagination);
