@@ -56,6 +56,7 @@ const server = http.createServer(async (req, res) => {
         const weather=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^weather$/})});
         await weather.getByRole('checkbox',{name:'启用工具',exact:true}).check();await weather.getByRole('checkbox',{name:'我已核实为只读，允许自动调用／环境映射',exact:true}).check();await weather.getByRole('button',{name:'保存授权',exact:true}).click();
         await panel.getByRole('checkbox',{name:'允许此角色使用 MCP 外部资料',exact:true}).check();await panel.getByRole('checkbox',{name:'测试服务 / weather · 只读',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
+        const scopeSummary=await panel.locator('.mcp-body > section').nth(2).locator('p.mcp-help').textContent();assert.match(scopeSummary,/测试角色 · 当前存档 · 待用 0/);assert.doesNotMatch(scopeSummary,/archive_/);
         await weather.getByRole('button',{name:'参数 / 调用',exact:true}).click();const caller=page.locator('#mcp-tool-call');
         await caller.getByLabel('city *',{exact:true}).fill('上海');await caller.getByRole('button',{name:'调用',exact:true}).click();await caller.getByRole('button',{name:'供下轮参考',exact:true}).waitFor();
         await caller.getByRole('button',{name:'供下轮参考',exact:true}).click();assert.equal(await page.evaluate(()=>MCPServices.pending(MCPServices.scope(db.characters[0],'private'))),1);assert.equal(await page.evaluate(()=>window.injected||false),false);assert.equal(await caller.locator('img').count(),0);

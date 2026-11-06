@@ -722,8 +722,8 @@
                             <h3>交接线上剧情到酒馆</h3>
                             <label>角色<select id="uvu-bridge-handoff-character"></select></label>
                             <div class="uvu-bridge-actions"><button type="button" class="btn btn-secondary" id="uvu-bridge-save-character">保存角色</button><button type="button" class="btn btn-secondary" id="uvu-bridge-use-current">读取所选角色当前存档</button></div>
-                            <p id="uvu-bridge-handoff-receipt" class="uvu-bridge-note" aria-live="polite">暂无酒馆接收回执</p>
-                            <p id="uvu-bridge-handoff-source" class="uvu-bridge-note" aria-live="polite"></p>
+                            <details id="uvu-bridge-handoff-receipt" class="uvu-bridge-handoff-detail"><summary class="uvu-bridge-note" aria-live="polite">暂无回执</summary><div class="uvu-bridge-handoff-detail-body"></div></details>
+                            <details id="uvu-bridge-handoff-source" class="uvu-bridge-handoff-detail"><summary class="uvu-bridge-note" aria-live="polite"></summary><div class="uvu-bridge-handoff-detail-body"></div></details>
                             <div class="uvu-bridge-range"><label>从消息<input id="uvu-bridge-handoff-start" type="number" min="1" value="1"></label><label>到消息<input id="uvu-bridge-handoff-end" type="number" min="1" value="1"></label></div>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-handoff">交接所选范围</button>
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-latest">最近 50 条</button>

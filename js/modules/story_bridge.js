@@ -384,10 +384,17 @@
         start.dataset.identity = identity;
         if (!start.dataset.manual) { const range = latestHandoffRange(chat); start.value = range.start || ''; end.value = range.end || ''; }
         const output = document.getElementById('uvu-bridge-handoff-source');
-        if (output) {
+        if (typeof output?.querySelector === 'function' && output.querySelector('summary')) {
             const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
             const latest = messageRecords(chat, Math.max(0, Number(end.value) - 1), Number(end.value))[0];
-            output.textContent = `${chat.realName || chat.name || chat.id} · 当前存档：${archive?.name || '默认存档'}（${chat.activeArchiveId || 'default'}） · 共 ${(chat.history || []).length} 条消息 · 交接 ${start.value || 0}–${end.value || 0}；范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
+            const name = chat.realName || chat.name || '角色';
+            const archiveName = archive?.name || '默认存档';
+            output.querySelector('summary').textContent = `${name} · ${archiveName} · ${(chat.history || []).length} 条 · 交接 ${start.value || 0}–${end.value || 0}`;
+            output.querySelector('.uvu-bridge-handoff-detail-body').textContent = `存档 ID：${chat.activeArchiveId || 'default'}\n范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
+        } else if (output) {
+            const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
+            const latest = messageRecords(chat, Math.max(0, Number(end.value) - 1), Number(end.value))[0];
+            output.textContent = `${chat.realName || chat.name || chat.id} · 当前分支 ${archive?.name || '默认存档'}（${chat.activeArchiveId || 'default'}） · 共 ${(chat.history || []).length} 条消息 · 交接 ${start.value || 0}–${end.value || 0}；范围末条：${latest?.text.slice(-120) || '无有效正文'}`;
         }
     }
 
@@ -820,9 +827,18 @@
         const current = selectedBridgeChat();
         const receiptOutput = document.getElementById('uvu-bridge-handoff-receipt');
         const receipt = Object.values(settings().handoffReceipts).filter(item => item.characterKey === String(current?.id)).sort((a,b) => (Number(b.at)||0)-(Number(a.at)||0))[0];
-        if (receiptOutput && current) receiptOutput.textContent = receipt
-            ? `酒馆回执 · ${receipt.archiveId} · 交接 ${receipt.handoffId}：预期 ${receipt.expected} 条 / 已保留 ${receipt.retained} 条 / 已审核 ${receipt.reviewed} 条 / 删除跳过 ${receipt.deleted} 条；${receipt.incomplete ? '尚不完整，请回酒馆核对或重新交接' : '接收已核对'}。${new Date(receipt.at).toLocaleString()}`
-            : '暂无酒馆接收回执；“服务已接收”只表示进入桥接队列，请到酒馆刷新、审核并保存。';
+        if (current && typeof receiptOutput?.querySelector === 'function' && receiptOutput.querySelector('summary')) {
+            const summary = receiptOutput.querySelector('summary'), detail = receiptOutput.querySelector('.uvu-bridge-handoff-detail-body');
+            if (receipt) {
+                summary.textContent = receipt.incomplete
+                    ? `交接未完整 · 已收 ${receipt.retained}/${receipt.expected} · 已审核 ${receipt.reviewed}`
+                    : `交接已核对 · 已收 ${receipt.retained} · 已审核 ${receipt.reviewed}`;
+                detail.textContent = `存档 ID：${receipt.archiveId}\n交接 ID：${receipt.handoffId}\n预期 ${receipt.expected} 条 · 已保留 ${receipt.retained} 条 · 已审核 ${receipt.reviewed} 条 · 删除跳过 ${receipt.deleted} 条\n${new Date(receipt.at).toLocaleString()}${receipt.incomplete ? '\n请回酒馆核对或重新交接。' : ''}`;
+            } else {
+                summary.textContent = '暂无回执 · 请在酒馆刷新并保存';
+                detail.textContent = '“服务已接收”只表示剧情进入桥接队列；需在酒馆刷新、审核并保存后才会生成接收回执。';
+            }
+        }
         const entries = [];
         for (const chat of (db.characters || [])) {
             for (const journal of (chat.memoryJournals || []).filter(item => item.source === 'sillytavern' && (item.bridgeReview?.channel || 'st') === channelId())) entries.push({ chat, journal });
