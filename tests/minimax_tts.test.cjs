@@ -18,11 +18,20 @@ function loadTts(fetch) {
     return vm.runInContext('MiniMaxTTS', context);
 }
 
+function response(audio, extra = {}) {
+    return { ok: true, status: 200, json: async () => ({
+        base_resp: { status_code: 0 }, data: { audio, status: 2 },
+        extra_info: { audio_format: 'mp3' }, ...extra
+    }) };
+}
+
+const mp3Hex = 'fffb9064' + '00'.repeat(413);
+
 test('MiniMax TTS sends configured voice data and decodes returned hex audio', async () => {
     let request;
     const tts = loadTts(async (url, options) => {
         request = { url, options };
-        return { ok: true, status: 200, json: async () => ({ base_resp: { status_code: 0 }, data: { audio: '0001feff' } }) };
+        return response(mp3Hex);
     });
     const audio = await tts.synthesize('你好');
     const body = JSON.parse(request.options.body);
@@ -32,7 +41,7 @@ test('MiniMax TTS sends configured voice data and decodes returned hex audio', a
     assert.equal(body.model, 'speech-2.8-hd');
     assert.equal(body.output_format, 'hex');
     assert.equal(audio.type, 'audio/mpeg');
-    assert.equal(audio.size, 4);
+    assert.equal(audio.size, 417);
 });
 
 test('MiniMax TTS surfaces service errors and rejects malformed audio', async () => {
@@ -53,11 +62,44 @@ test('MiniMax TTS adds GroupId only when configured and prefers character voice 
     let requestUrl;
     const tts = loadTts(async (url) => {
         requestUrl = url;
-        return { ok: true, status: 200, json: async () => ({ base_resp: { status_code: 0 }, data: { audio: '0001' } }) };
+        return response(mp3Hex);
     });
     const settings = { apiKey: 'test-key', voiceId: 'default-voice', groupId: 'group-123' };
     await tts.synthesize('你好', settings);
     assert.equal(new URL(requestUrl).searchParams.get('GroupId'), 'group-123');
     assert.equal(tts.resolveVoiceId('character-voice', settings), 'character-voice');
     assert.equal(tts.resolveVoiceId('', settings), 'default-voice');
+    assert.equal(tts.resolveVoiceId('   ', settings), 'default-voice');
+});
+
+test('MiniMax rejects non-MP3 bytes, mismatched formats and unfinished responses', async () => {
+    for (const reply of [
+        response('0001feff'),
+        response('fffb9064'),
+        response(mp3Hex, { extra_info: { audio_format: 'pcm' } }),
+        response(mp3Hex, { data: { audio: mp3Hex, status: 1 } })
+    ]) {
+        const tts = loadTts(async () => reply);
+        await assert.rejects(tts.synthesize('test'), /音频|完成|MP3/);
+    }
+});
+
+test('MiniMax accepts requested 32 kHz MP3 and ID3-tagged audio without optional response metadata', async () => {
+    const frame32k = 'fffb9864' + '00'.repeat(572);
+    for (const audio of [frame32k, '49443304000000000000' + frame32k]) {
+        const tts = loadTts(async () => ({ ok: true, status: 200,
+            json: async () => ({ base_resp: { status_code: 0 }, data: { audio } }) }));
+        const blob = await tts.synthesize('test');
+        assert.equal(blob.type, 'audio/mpeg');
+        assert.equal(blob.size, audio.length / 2);
+    }
+});
+
+test('MiniMax cache does not reuse audio across API accounts', async () => {
+    let requests = 0;
+    const tts = loadTts(async () => { requests++; return response(mp3Hex); });
+    const settings = { apiKey: 'first-key', voiceId: 'voice' };
+    await tts.synthesize('test', settings);
+    await tts.synthesize('test', { ...settings, apiKey: 'second-key' });
+    assert.equal(requests, 2);
 });

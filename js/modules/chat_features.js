@@ -52,13 +52,9 @@ function sendMyVoiceMessage(text) {
 }
 
 const MiniMaxTTS = (() => {
-    let activeAudio = null;
-    let activeUrl = null;
-    let activeBubble = null;
-    let pendingBubble = null;
-    let pendingRequest = null;
-    let playbackToken = 0;
+    let activeSession = null;
     const audioCache = new Map();
+    const audioDetails = new WeakMap();
     const maxCachedAudio = 8;
 
     function getSettings() {
@@ -71,6 +67,31 @@ const MiniMaxTTS = (() => {
         }
         const bytes = new Uint8Array(hex.length / 2);
         for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+        let offset = 0;
+        if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+            if (bytes.length < 10 || bytes.slice(6, 10).some(value => value > 127)) {
+                throw new Error('语音服务返回了不完整的 MP3 音频数据');
+            }
+            offset = 10 + bytes[6] * 2097152 + bytes[7] * 16384 + bytes[8] * 128 + bytes[9];
+            if (bytes[3] === 4 && (bytes[5] & 0x10)) offset += 10;
+        }
+        // Check a complete Layer III frame, including files with an ID3 tag or padding.
+        const scanEnd = Math.min(bytes.length - 4, offset + 4096);
+        let validFrame = false;
+        for (let i = offset; i <= scanEnd; i++) {
+            if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
+            const version = (bytes[i + 1] >> 3) & 3;
+            const bitrateIndex = bytes[i + 2] >> 4;
+            const rateIndex = (bytes[i + 2] >> 2) & 3;
+            if (version === 1 || ((bytes[i + 1] >> 1) & 3) !== 1 || !bitrateIndex || bitrateIndex === 15 || rateIndex === 3) continue;
+            const bitrates = version === 3
+                ? [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
+                : [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+            const sampleRate = [44100, 48000, 32000][rateIndex] / (version === 3 ? 1 : version === 2 ? 2 : 4);
+            const frameSize = Math.floor((version === 3 ? 144000 : 72000) * bitrates[bitrateIndex] / sampleRate) + ((bytes[i + 2] >> 1) & 1);
+            if (i + frameSize <= bytes.length) { validFrame = true; break; }
+        }
+        if (!validFrame) throw new Error('语音服务返回的音频数据不是完整的 MP3，请检查接口返回格式');
         return new Blob([bytes], { type: 'audio/mpeg' });
     }
 
@@ -80,7 +101,7 @@ const MiniMaxTTS = (() => {
         while (audioCache.size > maxCachedAudio) audioCache.delete(audioCache.keys().next().value);
     }
 
-    async function synthesize(text, settings = getSettings(), signal) {
+    function describeRequest(text, settings) {
         const apiKey = String(settings.apiKey || '').trim();
         const endpoint = String(settings.endpoint || 'https://api.minimaxi.com/v1/t2a_v2').trim();
         const model = String(settings.model || 'speech-2.8-hd').trim();
@@ -92,7 +113,12 @@ const MiniMaxTTS = (() => {
         const requestUrl = new URL(endpoint);
         const groupId = String(settings.groupId || '').trim();
         if (groupId) requestUrl.searchParams.set('GroupId', groupId);
-        const cacheKey = JSON.stringify([requestUrl.href, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
+        const cacheKey = JSON.stringify([requestUrl.href, apiKey, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
+        return { apiKey, requestUrl, model, voiceId, cacheKey };
+    }
+
+    async function synthesize(text, settings = getSettings(), signal) {
+        const { apiKey, requestUrl, model, voiceId, cacheKey } = describeRequest(text, settings);
         if (audioCache.has(cacheKey)) return audioCache.get(cacheKey);
 
         const response = await fetch(requestUrl.href, {
@@ -123,82 +149,137 @@ const MiniMaxTTS = (() => {
             const detail = result.base_resp?.status_msg || result.message || `HTTP ${response.status}`;
             throw new Error(`MiniMax 语音生成失败：${detail}`);
         }
+        if (signal?.aborted) {
+            const error = new Error('语音生成已取消');
+            error.name = 'AbortError';
+            throw error;
+        }
+        if (result.data?.status != null && Number(result.data.status) !== 2) {
+            throw new Error('MiniMax 音频尚未生成完成，请重试');
+        }
+        const format = String(result.extra_info?.audio_format || 'mp3').toLowerCase();
+        if (format !== 'mp3') throw new Error('MiniMax 返回的音频格式不是 MP3，请检查语音接口');
         const blob = decodeHexAudio(result.data?.audio);
+        const traceId = String(result.trace_id || '');
+        audioDetails.set(blob, { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '' });
         cacheAudio(cacheKey, blob);
         return blob;
     }
 
-    async function play(bubble, text) {
-        if (activeBubble === bubble && activeAudio && !activeAudio.paused) {
-            activeAudio.pause();
-            bubble.classList.remove('voice-playing');
-            return;
+    function setLoading(session, loading) {
+        const bubble = session.bubble;
+        if (loading) {
+            bubble.classList.add('voice-loading');
+            bubble.setAttribute('aria-busy', 'true');
+        } else {
+            bubble.classList.remove('voice-loading');
+            bubble.removeAttribute('aria-busy');
         }
-        if (pendingBubble === bubble) {
-            stop();
-            return;
-        }
-        stop();
-        const token = playbackToken;
-        pendingRequest = new AbortController();
-        pendingBubble = bubble;
-        bubble.classList.add('voice-loading');
-        bubble.setAttribute('aria-busy', 'true');
+        if (bubble.id === 'minimax-tts-preview') bubble.disabled = loading;
+    }
+
+    function failPlayback(session, error, code = session.audio.error?.code || 0) {
+        if (activeSession !== session) return;
+        const details = session.blob && audioDetails.get(session.blob);
+        if (details && audioCache.get(details.cacheKey) === session.blob) audioCache.delete(details.cacheKey);
+        const message = code || error?.name === 'NotSupportedError'
+            ? getAudioPlaybackErrorMessage(code || 4)
+            : '语音音频播放失败，请重试';
+        const diagnostic = details
+            ? `（${details.format}，${session.blob.size} B${details.traceId ? `，请求 ${details.traceId}` : ''}）`
+            : '';
+        stop(session);
+        showToast(message + diagnostic);
+    }
+
+    async function startPlayback(session) {
+        if (activeSession !== session) return;
+        session.phase = 'starting';
+        setLoading(session, true);
         try {
-            const savedSettings = getSettings();
-            const ttsSettings = {
-                ...savedSettings,
-                voiceId: resolveVoiceId(bubble.dataset.voiceId, savedSettings)
-            };
-            const blob = await synthesize(text, ttsSettings, pendingRequest.signal);
-            if (token !== playbackToken) return;
-            pendingRequest = null;
-            pendingBubble = null;
-            activeUrl = URL.createObjectURL(blob);
-            activeAudio = new Audio(activeUrl);
-            activeBubble = bubble;
-            activeAudio.addEventListener('ended', stop, { once: true });
-            activeAudio.addEventListener('error', () => {
-                const mediaErrorCode = activeAudio?.error?.code || 0;
-                stop();
-                showToast(getAudioPlaybackErrorMessage(mediaErrorCode));
-            }, { once: true });
-            await activeAudio.play();
-            bubble.classList.add('voice-playing');
+            await session.audio.play();
+            if (activeSession !== session || session.phase !== 'starting') return;
+            session.phase = 'playing';
+            session.bubble.classList.add('voice-playing');
         } catch (error) {
-            if (token === playbackToken) {
-                stop();
-                if (error?.name === 'NotAllowedError') showToast('浏览器拦截了音频播放，请再次点击语音气泡播放');
-                else if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
+            if (activeSession !== session) return;
+            if (error?.name === 'NotAllowedError') {
+                session.phase = 'blocked';
+                session.bubble.classList.remove('voice-playing');
+                showToast('音频已准备好，浏览器需要手动播放，请再次点击试听或语音气泡');
+            } else if (error?.name === 'AbortError') {
+                stop(session);
+            } else {
+                failPlayback(session, error);
             }
         } finally {
-            if (token === playbackToken) {
-                bubble.classList.remove('voice-loading');
-                bubble.removeAttribute('aria-busy');
-            }
+            if (activeSession === session) setLoading(session, false);
         }
     }
 
-    function stop() {
-        playbackToken++;
-        if (pendingRequest) pendingRequest.abort();
-        pendingRequest = null;
-        if (pendingBubble) {
-            pendingBubble.classList.remove('voice-loading');
-            pendingBubble.removeAttribute('aria-busy');
+    async function play(bubble, text, settings) {
+        if (!bubble) return;
+        let ttsSettings, cacheKey;
+        try {
+            const savedSettings = settings || getSettings();
+            ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : bubble.dataset.voiceId, savedSettings) };
+            ({ cacheKey } = describeRequest(text, ttsSettings));
+        } catch (error) {
+            showToast(error.message);
+            return;
         }
-        if (activeAudio) {
-            activeAudio.pause();
-            activeAudio.src = '';
+        const previous = activeSession;
+        if (previous?.bubble === bubble && previous.cacheKey === cacheKey) {
+            if (previous.phase === 'loading' || previous.phase === 'starting') return stop(previous);
+            if (previous.phase === 'playing') {
+                previous.audio.pause();
+                previous.phase = 'paused';
+                bubble.classList.remove('voice-playing');
+                return;
+            }
+            // A prepared source must play synchronously within the retry's user gesture.
+            return startPlayback(previous);
         }
-        if (activeUrl) URL.revokeObjectURL(activeUrl);
-        if (activeBubble) activeBubble.classList.remove('voice-playing', 'voice-loading');
-        activeAudio = activeUrl = activeBubble = null;
-        pendingBubble = null;
+        stop();
+        const session = { bubble, cacheKey, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
+        activeSession = session;
+        setLoading(session, true);
+        try {
+            const cached = audioCache.get(cacheKey);
+            session.blob = cached || await synthesize(text, ttsSettings, session.controller.signal);
+            if (activeSession !== session) return;
+            session.onEnded = () => { if (activeSession === session) stop(session); };
+            session.onError = () => failPlayback(session);
+            session.audio.addEventListener('ended', session.onEnded);
+            session.audio.addEventListener('error', session.onError);
+            session.url = URL.createObjectURL(session.blob);
+            session.audio.src = session.url;
+            return startPlayback(session);
+        } catch (error) {
+            if (activeSession !== session) return;
+            stop(session);
+            if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
+        }
+    }
+
+    function stop(session = activeSession) {
+        if (!session) return;
+        if (activeSession === session) activeSession = null;
+        session.phase = 'stopped';
+        session.controller.abort();
+        if (session.onEnded) session.audio.removeEventListener('ended', session.onEnded);
+        if (session.onError) session.audio.removeEventListener('error', session.onError);
+        session.audio.pause();
+        session.audio.removeAttribute('src');
+        session.audio.load();
+        if (session.url) URL.revokeObjectURL(session.url);
+        session.url = null;
+        setLoading(session, false);
+        session.bubble.classList.remove('voice-playing');
     }
 
     function resolveVoiceId(characterVoiceId, settings = getSettings()) {
-        return String(characterVoiceId || settings.voiceId || '').trim();
+        return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
     return { play, synthesize, resolveVoiceId };
@@ -209,7 +290,7 @@ function getAudioPlaybackErrorMessage(code) {
         1: '音频播放已取消',
         2: '语音已生成，但浏览器读取音频失败，请检查网络或重试',
         3: '语音已生成，但浏览器无法解码音频；请确认 MiniMax 返回格式为 MP3',
-        4: '语音已生成，但当前浏览器不支持返回的音频格式'
+        4: '返回的音频无法播放：数据可能损坏，或格式与浏览器不兼容'
     };
     return messages[code] || '语音已生成，但浏览器播放失败；请再次点击重试并检查浏览器音频支持';
 }
@@ -225,19 +306,7 @@ async function previewMiniMaxVoice() {
         pitch: document.getElementById('minimax-tts-pitch')?.value
     };
     const button = document.getElementById('minimax-tts-preview');
-    if (button) button.disabled = true;
-    try {
-        const blob = await MiniMaxTTS.synthesize('你好，这是角色语音试听。', settings);
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.addEventListener('ended', () => URL.revokeObjectURL(url), { once: true });
-        audio.addEventListener('error', () => URL.revokeObjectURL(url), { once: true });
-        await audio.play();
-    } catch (error) {
-        showToast(error?.message || '语音试听失败');
-    } finally {
-        if (button) button.disabled = false;
-    }
+    return MiniMaxTTS.play(button, '你好，这是角色语音试听。', settings);
 }
 
 function setupPhotoVideoSystem() {
