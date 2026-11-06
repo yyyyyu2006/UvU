@@ -1,0 +1,12 @@
+.model-picker-source[hidden] { display: none !important; }
+.model-picker-trigger { min-width: 0; max-width: 180px; padding: 6px 15px 6px 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 14px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.model-picker-card { width: min(520px,100%); max-height: 82dvh; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.model-picker-card > .model-picker-search { width: 100%; min-width: 0; box-sizing: border-box; flex-shrink: 0; padding: 10px 12px; border: 1px solid var(--feature-border,#d9dfe6); border-radius: 9px; background: var(--feature-input,#fff); color: inherit; font: inherit; }
+.model-picker-count { margin: 0; font-size: 12px; color: var(--feature-muted,#667085); }
+.model-picker-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.model-picker-overlay .model-picker-list > button { display: block; width: 100%; min-height: 42px; border: 0; border-bottom: 1px solid var(--feature-border,#e4e8ed); border-radius: 0; padding: 10px; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.model-picker-overlay .model-picker-list > button[aria-selected=true] { background: var(--feature-input,#edf3f7); font-weight: 600; }
+.model-picker-overlay .model-picker-list > button:hover { background: var(--feature-input,#edf3f7); }
+
+#api-settings-screen .model-picker-control { min-width: 0; max-width: 55%; }
+#api-settings-screen .model-picker-trigger { flex: 1 1 auto; }

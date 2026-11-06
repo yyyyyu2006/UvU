@@ -202,3 +202,15 @@
     font-size: 13px;
     color: #555;
 }
+
+/* Preset footer alignment stays local to this dialog. */
+#cot-preset-manage-modal #cot-import-preset-btn,
+#cot-preset-manage-modal #cot-close-manage-modal-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 9px 12px;
+    line-height: 1.25;
+}

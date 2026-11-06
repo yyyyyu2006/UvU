@@ -409,7 +409,7 @@ function injectArchiveUi() {
     const grids = document.querySelectorAll('#chat-expansion-panel .expansion-grid');
     const grid = grids[0];
     if (grid && !document.getElementById('chat-archives-btn')) {
-        grid.insertAdjacentHTML('beforeend', `
+        (grid.querySelector('#red-packet-btn') || grid).insertAdjacentHTML(grid.querySelector('#red-packet-btn') ? 'beforebegin' : 'beforeend', `
             <div class="expansion-item" id="chat-archives-btn">
                 <div class="expansion-item-icon">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v4H4V4m1 6h14v10H5V10m4 2v2h6v-2H9z"/></svg>

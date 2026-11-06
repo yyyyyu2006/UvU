@@ -62,6 +62,7 @@ function setupApiSettingsApp() {
 
     populateApiSelect();
     setupSecondaryApiSettings();
+    if (typeof setupSearchableModelPickers === 'function') setupSearchableModelPickers();
     n.addEventListener('change', () => {
         r.value = c[n.value] || ''
     });
