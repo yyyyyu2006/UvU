@@ -67,10 +67,10 @@ function openStickerDescriptionSettings() {
     const archive = chat.activeArchiveId, id = currentChatId, type = currentChatType;
     const isCurrent = () => chat.activeArchiveId === archive && currentChatId === id && currentChatType === type;
     const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'sticker-description-settings';
-    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>表情画面说明注入</strong><button type="button" data-action="close">关闭</button></header><p class="feature-help">图片识别只填写表情说明；此处独立控制本聊天向模型发送哪些说明。尚未保存设置时沿用旧版已绑定分组的全部说明规则，原表情发送与名称提示规则保持不变。</p><label><input type="checkbox" name="enabled">向模型注入画面说明</label><label><input type="checkbox" name="relevantOnly">只注入与近期聊天匹配的名称 / 关键词</label><label>最多条数<input type="number" name="maxItems" min="1" max="100"></label><label>本轮说明最多字数（含标题；不是精确Token）<input type="number" name="maxChars" min="200" max="30000"></label><button type="button" data-action="save">保存并更新预览</button><p class="feature-help" data-status></p><pre data-preview></pre></div>';
+    overlay.innerHTML = '<div class="feature-dialog-card sticker-description-card"><header><strong>表情画面说明</strong><button type="button" data-action="close">关闭</button></header><p class="feature-help">控制本轮发送给模型的表情说明。</p><div class="sticker-description-options"><label class="sticker-description-toggle"><input type="checkbox" name="enabled"><span>注入画面说明</span></label><label class="sticker-description-toggle"><input type="checkbox" name="relevantOnly"><span>仅注入相关表情</span></label><label class="sticker-description-limit">最多条数<input type="number" name="maxItems" min="1" max="100"></label><label class="sticker-description-limit">字数上限<input type="number" name="maxChars" min="200" max="30000"></label></div><button type="button" data-action="save">保存</button><p class="feature-help" data-status></p><pre data-preview></pre></div>';
     const values = { enabled: true, relevantOnly: true, maxItems: 12, maxChars: 3000, ...chat.stickerDescriptionSettings };
     for (const [name, value] of Object.entries(values)) { const input = overlay.querySelector(`[name="${name}"]`); if (!input) continue; if (input.type === 'checkbox') input.checked = value; else input.value = value; }
-    const preview = () => { const plan = getStickerDescriptionPlan(chat); overlay.querySelector('[data-status]').textContent = `${plan.legacy ? '当前使用旧版全部说明规则；保存后才应用本面板限制。' : '已应用独立注入设置。'} 实际 ${plan.entries.length} 条 / ${plan.context.length} 字。${plan.reason || ''}`; overlay.querySelector('[data-preview]').textContent = plan.context || '本轮未注入表情说明。'; };
+    const preview = () => { const plan = getStickerDescriptionPlan(chat); overlay.querySelector('[data-status]').textContent = `${plan.legacy ? '旧规则' : '当前设置'} · ${plan.entries.length} 条 / ${plan.context.length} 字${plan.reason ? ` · ${plan.reason}` : ''}`; overlay.querySelector('[data-preview]').textContent = plan.context || '本轮未注入表情说明。'; };
     overlay.querySelector('[data-action="close"]').onclick = () => overlay.remove();
     overlay.querySelector('[data-action="save"]').onclick = async event => {
         const button = event.currentTarget; button.disabled = true;
@@ -104,7 +104,7 @@ function setupStickerAssist() {
     const host = document.getElementById('setting-char-sticker-groups-container');
     if (host && !document.getElementById('sticker-description-settings-open')) {
         const control = document.createElement('button'); control.type = 'button'; control.id = 'sticker-description-settings-open';
-        control.className = 'btn btn-secondary'; control.textContent = '表情画面说明注入 / 预算'; control.onclick = openStickerDescriptionSettings; host.after(control);
+        control.className = 'btn btn-secondary'; control.textContent = '表情说明'; control.setAttribute('aria-label', '表情画面说明注入与预算设置'); control.title = '表情画面说明注入与预算设置'; control.onclick = openStickerDescriptionSettings; host.after(control);
     }
     const form = document.getElementById('add-sticker-form');
     const fields = document.createElement('div');
