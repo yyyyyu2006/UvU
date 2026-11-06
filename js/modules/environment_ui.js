@@ -80,6 +80,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         return { enabled: fields.enabled.checked, service: fields.service.value, userLocation: places.user,
             mcp: { centerServiceId: center.value, url: fields.mcpUrl.value.trim(), token: fields.mcpToken.value.trim(), tools: Object.fromEntries(Object.keys(ENVIRONMENT_TOOL_DEFAULTS).map(operation => [operation, { name: fields['tool-' + operation].value.trim(), args: fields['args-' + operation].value }])) } };
     }
+    form.querySelector('[data-mcp]').before(form.querySelector('[data-service]'));
     const valid = () => !controller.signal.aborted && (!chat || (db.characters.includes(chat) && chat.activeArchiveId === archiveId));
     async function run(action) {
         if (!valid()) { status.textContent = '窗口已关闭或存档已切换，请重新打开'; return; }

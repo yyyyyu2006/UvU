@@ -159,9 +159,11 @@
         const targets = [...(db.characters || []).map(chat => ({ chat, type: 'private', label: '角色 · ' + (chat.remarkName || chat.realName || chat.id) })), ...(db.groups || []).map(chat => ({ chat, type: 'group', label: '群聊 · ' + (chat.name || chat.id) }))];
         const initial = targets.findIndex(t => t.chat.id === currentChatId && t.type === currentChatType);
         const target = select(d.body, '接收角色／群聊（使用该对象当前活动存档）', [['仅查看工具结果', ''], ...targets.map((t, i) => [t.label, String(i)])], initial >= 0 ? String(initial) : '');
+        const targetLabel = target.parentElement; targetLabel.firstChild.textContent = '角色 / 群聊'; targetLabel.remove();
         const selectedTarget = () => target.value === '' ? null : targets[Number(target.value)];
         const permissionArea = node('details'); permissionArea.append(node('summary', '当前权限总览与撤销'));
         const serviceArea = node('section'), toolsArea = node('section'), roleArea = node('section'), plannerArea = node('details'), logsArea = node('details');
+        const roleContent = node('div', undefined, 'mcp-role-content'); roleArea.append(node('strong', '角色授权'), targetLabel, roleContent);
         d.body.append(serviceArea, toolsArea, roleArea, permissionArea, plannerArea, logsArea);
         let serviceId = m().settings().services[0]?.id || '', tools = [], page = 0;
         function renderServices() {
@@ -226,8 +228,8 @@
         }
         function renderRoles() {
             renderPermissions();
-            roleArea.replaceChildren(node('strong', '角色授权'));
-            const t = selectedTarget(); if (!t) { roleArea.append(node('p', '选择一个角色或群聊后设置。', 'mcp-help')); return; }
+            roleContent.replaceChildren();
+            const t = selectedTarget(); if (!t) { roleContent.append(node('p', '选择一个角色或群聊后设置。', 'mcp-help')); return; }
             const scope = m().scope(t.chat, t.type), p = m().policy(scope);
             const archive = t.chat.archives?.find(item => item.id === scope.archive);
             const pendingCount = m().pending(scope);
@@ -235,17 +237,17 @@
             const scopeDetails = node('details', undefined, 'mcp-scope-details');
             scopeDetails.append(node('summary', '存档信息'));
             scopeDetails.append(node('p', `${archive?.name || '当前存档'} · ID ${String(scope.archive || 'default')}`, 'mcp-help'));
-            roleArea.append(scopeSummary, scopeDetails);
-            const enabled = check(roleArea, '允许此角色使用 MCP 外部资料', p?.enabled), auto = check(roleArea, '允许独立 API 自动判断（会增加模型调用）', p?.auto), grants = [];
+            roleContent.append(scopeSummary, scopeDetails);
+            const enabled = check(roleContent, '允许此角色使用 MCP 外部资料', p?.enabled), auto = check(roleContent, '允许独立 API 自动判断（会增加模型调用）', p?.auto), grants = [];
             for (const svc of m().settings().services) for (const [name, rule] of Object.entries(svc.tools)) if (rule.enabled) {
-                const input = check(roleArea, svc.name + ' / ' + name + (rule.readOnly ? ' · 只读' : ' · 仅手动结果'), p?.grants.some(g => g.serviceId === svc.id && g.toolName === name)); grants.push({ input, serviceId: svc.id, toolName: name });
+                const input = check(roleContent, svc.name + ' / ' + name + (rule.readOnly ? ' · 只读' : ' · 仅手动结果'), p?.grants.some(g => g.serviceId === svc.id && g.toolName === name)); grants.push({ input, serviceId: svc.id, toolName: name });
             }
             const row = node('div', undefined, 'mcp-row'); row.append(button('保存角色授权', () => d.run(async () => {
                 if (!m().valid(scope)) throw new Error('角色或存档已切换，请重新选择');
                 const next = m().settings(); next.policies = next.policies.filter(p => p.chatId !== t.chat.id || p.type !== t.type);
                 next.policies.push({ chatId: t.chat.id, type: t.type, enabled: enabled.checked, auto: auto.checked, grants: grants.filter(g => g.input.checked).map(g => ({ serviceId: g.serviceId, toolName: g.toolName })) });
                 await m().save(next); renderRoles(); d.status.textContent = '角色授权已保存；未开启自动判断时只使用你手动指定的结果';
-            })), button('清空待用结果', () => { m().take(scope); renderRoles(); d.status.textContent = '该角色待用资料已清除'; })); roleArea.append(row);
+            })), button('清空待用结果', () => { m().take(scope); renderRoles(); d.status.textContent = '该角色待用资料已清除'; })); roleContent.append(row);
         }
         target.onchange = renderRoles;
         plannerArea.append(node('summary', '独立工具判断 API（自动模式使用）'));

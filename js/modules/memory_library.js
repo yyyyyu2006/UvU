@@ -165,10 +165,10 @@ function openMemoryLibrary() {
             isCurrent = memoryLibrarySnapshot(chat); status.textContent = '记忆选项已保存。';
         } catch (error) { status.textContent = error.message; }
     }));
-    filterDisclosure.after(tuning);
     const diagnostics = element('details', undefined, 'memory-library-diagnostics'); diagnostics.append(element('summary', '本轮检索诊断 / 来源索引状态'));
-    const diagnosticText = element('pre'); diagnostics.append(diagnosticText); tuning.after(diagnostics);
+    const diagnosticText = element('pre'); diagnostics.append(diagnosticText);
     const pagination = element('div', undefined, 'memory-library-toolbar'); list.after(pagination);
+    overlay.querySelector('.feature-dialog-card').append(tuning, diagnostics);
     const describe = journal => `剧情时间：${journal.timeline || '未指定'} · 创建：${new Date(journal.createdAt || 0).toLocaleString()} · 分类：${journal.category || '未分类'}`;
     const original = (journal, host) => {
         const details = element('details'), summary = element('summary', '对照原始聊天 / 合并来源'); details.append(summary);

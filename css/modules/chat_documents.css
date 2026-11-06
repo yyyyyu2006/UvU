@@ -17,10 +17,36 @@
 .shared-document-card-footer{font-size:10px;color:#89909a;padding:9px 2px 0;line-height:1.5;text-align:center}
 .shared-document-card:focus-visible{outline:2px solid #778c9e;outline-offset:2px}
 
-.shared-document-dialog .message-forward-dialog-header { padding-bottom: 6px; }
-.shared-document-dialog .shared-document-body { gap: 8px; padding: 0 14px 14px; }
-.shared-document-dialog .shared-document-help { max-width: 58ch; }
-.shared-document-dialog .shared-document-actions { position: sticky; bottom: -1px; z-index: 1; padding-top: 8px; background: #fff; }
-.shared-document-dialog .shared-document-actions button { min-height: 32px; }
-.shared-document-dialog .shared-document-actions button:last-child { background: #e7f0f7; border-color: #b6cddd; }
+.shared-document-dialog.message-forward-dialog { width: min(456px,calc(100vw - 32px)); max-height: min(88dvh,720px); padding: 0; border: 1px solid #e8eaed; border-radius: 24px; background: #f7f8fa; box-shadow: 0 8px 32px #151b2412; }
+.shared-document-dialog .message-forward-header { flex: 0 0 auto; padding: 24px 24px 16px; gap: 16px; background: transparent; }
+.shared-document-dialog .message-forward-header strong { font-size: 18px; letter-spacing: -.3px; }
+.shared-document-dialog .message-forward-close { font-size: 12px; background: #fff; border: 1px solid #e8eaed; padding: 6px 12px; min-height: 32px; }
+.shared-document-dialog .shared-document-body { gap: 16px; padding: 0 24px 24px; }
+.shared-document-dialog [hidden] { display: none !important; }
+.shared-document-dialog .shared-document-upload { display: flex; align-items: center; justify-content: flex-start; gap: 16px; width: 100%; padding: 24px; border: 1px solid #e9ebee; border-radius: 20px; background: #fff; text-align: left; }
+.shared-document-upload > .derived-icon { width: 24px; height: 24px; padding: 12px; box-sizing: content-box; border-radius: 16px; background: #eff6fc; color: #537c9d; }
+.shared-document-upload-label { display: grid; gap: 8px; }
+.shared-document-upload-label strong { font-size: 14px; font-weight: 600; }
+.shared-document-upload-label small { font-size: 11px; line-height: 1.5; color: #858b93; }
+.shared-document-editor { padding: 16px; min-width: 0; border-radius: 20px; background: #fff; border: 1px solid #e9ebee; }
+.shared-document-dialog .shared-document-name { padding: 4px 0 16px; border: 0; border-bottom: 1px solid #f0f1f3; border-radius: 0; background: transparent; font-size: 15px; font-weight: 600; }
+.shared-document-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 16px 0 8px; font-size: 12px; color: #818791; }
+.shared-document-preview-heading strong { font-weight: 400; }
+.shared-document-dialog .shared-document-editor textarea { height: clamp(120px,20dvh,192px); min-height: 120px; max-height: 192px; padding: 0; border: 0; border-radius: 0; background: transparent; resize: none; overflow-y: auto; font-size: 14px; line-height: 1.8; }
+.shared-document-dialog .shared-document-help { max-width: 58ch; font-size: 11px; color: #858b93; }
+.shared-document-status:empty { display: none; }
+.shared-document-dialog :is(.shared-document-downloads,.shared-document-tutorial) { font-size: 12px; color: #68727e; }
+.shared-document-dialog summary { cursor: pointer; padding: 4px 0; border-radius: 0; }
+.shared-document-dialog details[open] > :not(summary) { margin-top: 12px; }
+.shared-document-export-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.shared-document-dialog .shared-document-actions { flex: 0 0 auto; justify-content: flex-end; padding: 16px 24px; margin: 0; background: #fff; border-top: 1px solid #eff0f2; }
+.shared-document-dialog .shared-document-actions button { display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 36px; padding: 8px 18px; border-radius: 999px; border: 1px solid #17191c; background: #17191c; color: #fff; font-size: 12px; cursor: pointer; }
+.shared-document-dialog .shared-document-actions button:disabled { opacity: .5; cursor: default; }
+.shared-document-dialog :is(button,input,textarea,summary):focus-visible { outline: 2px solid #88b2d4; outline-offset: 3px; }
+@media (max-width: 360px) {
+    .shared-document-dialog .message-forward-header { padding: 20px 16px 16px; }
+    .shared-document-dialog .shared-document-body { padding: 0 16px 16px; }
+    .shared-document-dialog .shared-document-upload { padding: 16px; gap: 12px; }
+    .shared-document-dialog .shared-document-actions { padding: 16px; }
+}
 .shared-document-card-content { gap: 5px; }

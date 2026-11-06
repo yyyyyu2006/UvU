@@ -200,7 +200,11 @@ function openRelationshipDialog() {
     const dialog = createMessageForwardDialog('好友关系', 'chat-relationship-dialog');
     dialog.panel.classList.add('relationship-dialog');
     const body = document.createElement('div'); body.className = 'relationship-dialog-body'; dialog.panel.appendChild(body);
-    const add = (tag, text, className = '') => { const el = document.createElement(tag); el.textContent = text; el.className = className; if (tag === 'textarea') el.dataset.expandedEditor = 'true'; body.appendChild(el); return el; };
+    let section;
+    const add = (tag, text, className = '') => {
+        if (tag === 'strong') { section = document.createElement('section'); section.className = 'relationship-section'; body.appendChild(section); }
+        const el = document.createElement(tag); el.textContent = text; el.className = className; if (tag === 'textarea') el.dataset.expandedEditor = 'true'; (section || body).appendChild(el); return el;
+    };
     const valid = () => db.characters.includes(chat) && chat.activeArchiveId === archiveId && currentChatType === 'private' && currentChatId === chat.id;
     const run = async action => {
         if (!valid()) { showToast('会话或存档已改变，请重新打开'); dialog.dismiss(); return; }
@@ -210,7 +214,7 @@ function openRelationshipDialog() {
         finally { dialog.setBusy(false); }
     };
     function render() {
-        body.replaceChildren();
+        body.replaceChildren(); section = null;
         const r = getChatRelationship(chat);
         add('p', relationshipStatusText(chat), 'relationship-status');
         add('p', '关系随当前存档保存。删除好友会保留聊天记录，可在聊天设置中重新添加；拉黑不会自动删除好友。', 'relationship-help');
@@ -232,7 +236,7 @@ function openRelationshipDialog() {
             button('发送朋友验证请求', () => updateChatRelationship(chat, next => { next.outgoingRequest = { text: input.value.trim() || '请求添加为好友', at: Date.now() }; }));
             if (r.outgoingRequest) add('p', '朋友验证已发出，等待通过；可用下方独立条件判断，或手动模拟通过。', 'relationship-help');
         }
-        add('strong', '对方自动恢复规则');
+        const recoverySection = add('strong', '恢复规则').parentElement;
         const modeLabel = add('label', '恢复方式');
         const mode = add('select', ''); modeLabel.htmlFor = mode.id = 'relationship-recovery-mode';
         for (const [value, text] of [['manual', '手动恢复（默认）'], ['timer', '定时恢复'], ['condition', '按自定义条件判断（调用 API）']]) { const o = document.createElement('option'); o.value = value; o.textContent = text; mode.appendChild(o); }
@@ -251,7 +255,8 @@ function openRelationshipDialog() {
         });
         if (r.recovery.mode === 'timer' && r.recovery.restoreAt && (r.peer.blocked || r.peer.deleted)) add('p', '预定恢复：' + new Date(r.recovery.restoreAt).toLocaleString(), 'relationship-help');
         if (r.recovery.mode === 'condition') button('现在检查恢复条件', async () => { const restored = await checkRelationshipRecovery(chat, true); showToast(restored ? '对方已恢复好友关系' : '暂未满足恢复条件，或正在检查'); });
-        add('strong', '角色自主决定是否拉黑我');
+        const autonomySection = add('strong', '角色自主判断').parentElement;
+        recoverySection.before(autonomySection);
         const autonomyLabel = add('label', '', 'relationship-autonomy-toggle');
         const autonomyToggle = document.createElement('input'); autonomyToggle.type = 'checkbox'; autonomyToggle.checked = r.autonomy.enabled; autonomyToggle.id = 'relationship-autonomy-enabled';
         const autonomyText = document.createElement('span'); autonomyText.textContent = '允许角色根据人设和聊天上下文自主拉黑我';

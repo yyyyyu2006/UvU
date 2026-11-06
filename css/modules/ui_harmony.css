@@ -313,6 +313,34 @@
     box-shadow: 0 6px 20px rgba(20,24,30,.055), inset 0 1px rgba(255,255,255,.92);
 }
 
+/* Local Lucide controls and a consistent reading order for derived panels. */
+.derived-icon { display: inline-block; width: 16px; height: 16px; flex: 0 0 auto; vertical-align: middle; stroke-width: 1.75; pointer-events: none; }
+.derived-icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+:is(.mcp-settings,.derived-settings,.relationship-dialog).message-forward-dialog { padding: 0; }
+:is(.mcp-settings,.derived-settings,.relationship-dialog) .message-forward-header { padding: 24px 24px 16px; gap: 16px; }
+:is(.mcp-settings,.derived-settings,.relationship-dialog) .message-forward-header strong { font-size: 18px; letter-spacing: -.3px; }
+:is(.mcp-settings,.derived-settings,.relationship-dialog) { background: #f7f8fa; border: 1px solid #e8eaed; border-radius: 24px; box-shadow: 0 8px 32px #151b2412; }
+:is(.mcp-settings .mcp-body,.derived-settings .derived-body,.relationship-dialog-body) { padding: 0 24px 24px; gap: 16px; }
+:is(.mcp-settings,.derived-settings) :is(section,details),.relationship-section { padding: 16px; border-radius: 20px; border: 1px solid #e9ebee; background: #fff; box-shadow: none; }
+.mcp-settings section > strong,.relationship-section > strong { display: block; margin-bottom: 8px; font-size: 14px; color: #202328; }
+.mcp-settings .mcp-tool { background: #f8f9fb; border-color: #eff0f3; border-radius: 16px; padding: 16px; margin-top: 16px; }
+.mcp-settings section .mcp-scope-details { border: 0; padding: 8px 0; border-radius: 0; background: transparent; }
+.mcp-settings :is(.mcp-row,.mcp-actions) { gap: 8px; }
+.mcp-settings :is(.mcp-help,.mcp-status) { font-size: 11px; line-height: 1.7; }
+.derived-settings :is(input:not([type=checkbox]),select,textarea) { border-radius: 12px; padding: 8px 12px; }
+.derived-settings section section { padding: 16px 0 0; margin-top: 8px; border: 0; border-top: 1px solid #eff0f3; border-radius: 0; }
+.relationship-dialog-body { display: flex; flex-direction: column; }
+.relationship-section { display: grid; gap: 8px; min-width: 0; }
+.relationship-section > .relationship-action { width: fit-content; max-width: 100%; min-height: 32px; padding: 6px 12px; border-radius: 999px; font-size: 12px; background: #f7f8fa; border-color: #e8eaed; }
+.relationship-section :is(input:not([type=checkbox]),select,textarea) { border-radius: 12px; }
+.relationship-section [hidden] { display: none !important; }
+.memory-library :is(.memory-library-tuning,.memory-library-diagnostics) { border: 1px solid #e9ebee; border-radius: 20px; padding: 16px; background: #fff; }
+.memory-library .memory-library-list { margin-top: 8px; }
+@media (max-width: 360px) {
+    :is(.mcp-settings,.derived-settings,.relationship-dialog) .message-forward-header { padding: 20px 16px 16px; }
+    :is(.mcp-settings .mcp-body,.derived-settings .derived-body,.relationship-dialog-body) { padding: 0 16px 16px; }
+}
+
 :is(.memory-library-card,.memory-library-filter-disclosure,.memory-library-index-actions,.mcp-settings section,.mcp-settings details,.storage-backup-extras,.avatar-candidate-preview,.sticker-description-options,#uvu-story-bridge-screen .uvu-bridge-review-floor) {
     border-radius: 20px;
 }
@@ -360,3 +388,9 @@
         border-radius: 20px;
     }
 }
+
+/* File picker is a content card; only its actions are pills. */
+#shared-document-dialog .shared-document-body { gap: 16px; }
+#shared-document-dialog .shared-document-upload { border-radius: 20px; }
+#shared-document-dialog .shared-document-actions button[data-action="send"] { background: #17191c; border-color: #17191c; box-shadow: 0 2px 6px #17191c0c; }
+#shared-document-dialog .shared-document-actions button[data-action="send"]:hover { background: #30343a; }

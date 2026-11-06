@@ -19,11 +19,11 @@ const toolServer = http.createServer(async (req, res) => {
     else { calls++; if(q.params.name==='write_note')writes++; result = { resultType: 'complete', structuredContent: { city: q.params.arguments.city, temperature: 18, note: '<img src=x onerror="window.injected=true">' } }; }
     res.setHeader('Content-Type', 'text/event-stream'); res.end('data: ' + JSON.stringify({ jsonrpc: '2.0', id: q.id, result }) + '\n\n');
 });
-const scripts = ['modules/message_forward.js', '../vendor/mcp_schema.js', 'modules/mcp_transport.js', 'modules/mcp_services.js', 'modules/mcp_chat.js', 'modules/mcp_ui.js'];
+const scripts = ['modules/message_forward.js', 'vendor/lucide/uvu-icons.js', 'modules/derived_icons.js', '../vendor/mcp_schema.js', 'modules/mcp_transport.js', 'modules/mcp_services.js', 'modules/mcp_chat.js', 'modules/mcp_ui.js'];
 const server = http.createServer(async (req, res) => {
     if (req.url === '/') {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/css/chat.css"><link rel="stylesheet" href="/css/modules/mcp.css"><style>body{margin:0;background:#eee}*{box-sizing:border-box}</style><script>window.db={characters:[{id:"a",realName:"测试角色",activeArchiveId:"a1",history:[{role:"user",content:"上海天气怎么样"}]}],groups:[]};window.currentChatId="a";window.currentChatType="private";window.saveData=async()=>{};window.buildChatApiRequest=(cfg,messages)=>({endpoint:cfg.url+"/v1/chat/completions",headers:{"Content-Type":"application/json"},requestBody:{messages}});</script>' + scripts.map(s => '<script src="/js/' + s.replace('../vendor', 'vendor') + '"></script>').join('') + '<button onclick="openMcpSettings()">打开 MCP</button>');
+        return res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/css/chat.css"><link rel="stylesheet" href="/css/modules/mcp.css"><link rel="stylesheet" href="/css/modules/ui_harmony.css"><style>body{margin:0;background:#eee}*{box-sizing:border-box}</style><script>window.db={characters:[{id:"a",realName:"测试角色",activeArchiveId:"a1",history:[{role:"user",content:"上海天气怎么样"}]}],groups:[]};window.currentChatId="a";window.currentChatType="private";window.saveData=async()=>{};window.buildChatApiRequest=(cfg,messages)=>({endpoint:cfg.url+"/v1/chat/completions",headers:{"Content-Type":"application/json"},requestBody:{messages}});</script>' + scripts.map(s => '<script src="/js/' + s.replace('../vendor', 'vendor') + '"></script>').join('') + '<button onclick="openMcpSettings()">打开 MCP</button>');
     }
     if (req.url === '/v1/chat/completions') {
         let raw='';for await(const chunk of req)raw+=chunk;const sent=JSON.parse(raw);assert.ok(!JSON.stringify(sent).includes('SECRET PERSONA'));
@@ -40,6 +40,7 @@ const server = http.createServer(async (req, res) => {
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });const errors = [];page.on('pageerror',e=>errors.push(e.message));
         await page.goto(origin);await page.getByRole('button',{name:'打开 MCP',exact:true}).click();const panel=page.locator('#mcp-services');
+        const recipient=panel.getByLabel('接收角色／群聊（使用该对象当前活动存档）');await recipient.focus();await recipient.press('ArrowUp');assert.equal(await recipient.evaluate(el=>document.activeElement===el),true);await recipient.press('ArrowDown');assert.equal(await recipient.evaluate(el=>document.activeElement===el),true);
         assert.equal(calls,0);await panel.getByRole('checkbox',{name:'启用 MCP 服务（默认关闭）',exact:true}).check();
         await panel.getByRole('button',{name:'添加',exact:true}).click();const editor=page.locator('#mcp-service-editor');
         await editor.getByLabel('名称',{exact:true}).fill('测试服务');await editor.getByLabel('服务接口地址',{exact:true}).fill(toolUrl);
@@ -56,7 +57,7 @@ const server = http.createServer(async (req, res) => {
         const weather=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^weather$/})});
         await weather.getByRole('checkbox',{name:'启用工具',exact:true}).check();await weather.getByRole('checkbox',{name:'我已核实为只读，允许自动调用／环境映射',exact:true}).check();await weather.getByRole('button',{name:'保存授权',exact:true}).click();
         await panel.getByRole('checkbox',{name:'允许此角色使用 MCP 外部资料',exact:true}).check();await panel.getByRole('checkbox',{name:'测试服务 / weather · 只读',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
-        const scopeSummary=await panel.locator('.mcp-body > section').nth(2).locator('p.mcp-help').textContent();assert.match(scopeSummary,/测试角色 · 当前存档 · 待用 0/);assert.doesNotMatch(scopeSummary,/archive_/);
+        const roleArea=panel.locator('.mcp-body > section').nth(2),scopeSummary=await roleArea.locator('.mcp-role-content > p.mcp-help').textContent();assert.match(scopeSummary,/测试角色 · 待用 0/);assert.doesNotMatch(scopeSummary,/archive_/);assert.equal(await roleArea.locator('.mcp-scope-details').getAttribute('open'),null);assert.match(await roleArea.locator('.mcp-scope-details').textContent(),/当前存档 · ID a1/);
         await weather.getByRole('button',{name:'参数 / 调用',exact:true}).click();const caller=page.locator('#mcp-tool-call');
         await caller.getByLabel('city *',{exact:true}).fill('上海');await caller.getByRole('button',{name:'调用',exact:true}).click();await caller.getByRole('button',{name:'供下轮参考',exact:true}).waitFor();
         await caller.getByRole('button',{name:'供下轮参考',exact:true}).click();assert.equal(await page.evaluate(()=>MCPServices.pending(MCPServices.scope(db.characters[0],'private'))),1);assert.equal(await page.evaluate(()=>window.injected||false),false);assert.equal(await caller.locator('img').count(),0);
