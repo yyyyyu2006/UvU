@@ -16,3 +16,11 @@
 .shared-document-card-content small{font-size:10px;color:#89909a}.shared-document-open{background:#f1f3f5;border-radius:14px;padding:5px 16px;font-size:11px;color:#667380;margin-top:2px}
 .shared-document-card-footer{font-size:10px;color:#89909a;padding:9px 2px 0;line-height:1.5;text-align:center}
 .shared-document-card:focus-visible{outline:2px solid #778c9e;outline-offset:2px}
+
+.shared-document-dialog .message-forward-dialog-header { padding-bottom: 6px; }
+.shared-document-dialog .shared-document-body { gap: 8px; padding: 0 14px 14px; }
+.shared-document-dialog .shared-document-help { max-width: 58ch; }
+.shared-document-dialog .shared-document-actions { position: sticky; bottom: -1px; z-index: 1; padding-top: 8px; background: #fff; }
+.shared-document-dialog .shared-document-actions button { min-height: 32px; }
+.shared-document-dialog .shared-document-actions button:last-child { background: #e7f0f7; border-color: #b6cddd; }
+.shared-document-card-content { gap: 5px; }

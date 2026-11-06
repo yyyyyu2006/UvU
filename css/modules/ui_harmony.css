@@ -1,0 +1,148 @@
+/* Derived UI harmony. Every selector targets an added module or an added feature class. */
+:is(.memory-library,.shared-document-dialog,.mcp-settings,.derived-settings,.resource-health) {
+    --ui-gap: 8px;
+    --ui-radius: 9px;
+}
+
+/* Summary and vector memory */
+.memory-library .memory-library-index-actions,
+.memory-library .memory-library-filter-disclosure { min-width: 0; }
+.memory-library .memory-library-index-actions > summary,
+.memory-library .memory-library-filter-disclosure > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 9px; border: 1px solid #dfe3e9; border-radius: 9px; background: #f5f7fa; }
+.memory-library .memory-library-index-actions[open],
+.memory-library .memory-library-filter-disclosure[open] { flex-basis: 100%; }
+.memory-library .memory-library-index-actions[open] > button { margin: 5px 5px 0 0; }
+.memory-library .memory-library-filter-disclosure > .memory-library-filters { margin-top: 7px; }
+.memory-library .memory-library-toolbar > label { min-width: 90px; }
+.memory-library .memory-library-toolbar select { padding: 6px 8px; font-size: 14px; }
+.memory-library .memory-library-card > .feature-help { margin: 4px 0; }
+.memory-library .memory-library-card > pre { margin: 6px 0; }
+.memory-library .memory-library-card > details > summary { color: #586975; }
+.memory-library .memory-library-pick strong { overflow-wrap: anywhere; }
+#auto-memory-modal .auto-memory-dialog { padding: 16px; }
+#auto-memory-modal .auto-memory-heading { position: sticky; top: -16px; z-index: 2; padding: 3px 0 8px; background: inherit; }
+#auto-memory-modal .auto-memory-heading h2 { font-size: 16px; }
+#auto-memory-form > .auto-memory-help { max-width: 62ch; margin: 6px 0; font-size: 11px; line-height: 1.5; }
+#auto-memory-form fieldset { margin: 10px 0; padding: 8px 10px; border-radius: 9px; }
+#auto-memory-form fieldset > .auto-memory-help { font-size: 11px; line-height: 1.5; }
+#auto-memory-form .auto-memory-grid { gap: 0 8px; }
+#auto-memory-form .auto-memory-grid > label { font-size: 11px; }
+#auto-memory-form .auto-memory-actions { gap: 6px; margin-top: 8px; }
+#auto-memory-form .auto-memory-actions .btn { min-height: 36px; }
+#auto-memory-modal .auto-memory-range { margin-top: 8px; padding: 9px 10px; }
+
+/* Character-specific file cards and editor */
+.shared-document-dialog .shared-document-body { gap: 7px; }
+.shared-document-dialog .shared-document-recipient[hidden] { display: none !important; }
+.shared-document-dialog .shared-document-actions { gap: 6px; }
+.shared-document-dialog .shared-document-actions button { min-height: 32px; }
+.shared-document-dialog .shared-document-actions button:last-child { background: #e7f0f7; border-color: #b6cddd; }
+.shared-document-card-header { margin-bottom: 6px; }
+.shared-document-card-footer { padding-top: 6px; }
+.document-edit-tools { gap: 5px; margin: 4px 0; }
+.document-edit-tools > button { min-height: 30px; padding: 4px 8px; }
+.global-css-document-tools { gap: 4px; }
+
+/* SillyTavern bridge review */
+#uvu-story-bridge-screen .uvu-bridge-actions { gap: 6px; }
+#uvu-story-bridge-screen .uvu-bridge-actions .btn,
+#uvu-story-bridge-screen .uvu-bridge-review-toolbar button,
+#uvu-story-bridge-screen .uvu-bridge-diagnostics button { min-height: 32px; padding: 5px 8px; border-radius: 8px; }
+#uvu-story-bridge-screen .uvu-bridge-handoff,
+#uvu-story-bridge-screen .uvu-bridge-review { gap: 7px; padding: 8px 0; }
+#uvu-story-bridge-screen .uvu-bridge-review-help { font-size: 11px; line-height: 1.45; }
+#uvu-story-bridge-screen .uvu-bridge-review-floor summary { padding: 5px 0; }
+#uvu-story-bridge-screen .uvu-bridge-review-toolbar { gap: 6px; }
+#uvu-story-bridge-screen .uvu-bridge-guide { margin-top: 10px; }
+
+/* MCP services */
+.mcp-settings .mcp-body { gap: 8px; }
+.mcp-settings section, .mcp-settings details { border-radius: 8px; padding: 8px; }
+.mcp-settings .mcp-help { margin: 3px 0 7px; font-size: 11px; line-height: 1.5; }
+.mcp-settings .mcp-actions { position: sticky; bottom: -14px; z-index: 2; padding: 7px 0 2px; background: #fff; }
+.mcp-settings .mcp-actions button { min-height: 32px; }
+.mcp-settings .mcp-actions button:first-of-type { color: #a33a32; border-color: #e0aaa6; background: #fff7f6; }
+.mcp-settings .mcp-tool { padding: 7px 0; }
+
+/* Voice settings */
+.minimax-tts-settings .kkt-item-subtitle { max-width: 58ch; font-size: 11px; line-height: 1.45; }
+.minimax-tts-settings .minimax-tts-actions .btn { min-height: 34px; padding: 6px 10px; }
+.minimax-tts-settings .minimax-director-settings { margin-top: 8px; padding-top: 8px; }
+.minimax-tts-settings .minimax-director-fields { gap: 8px; margin-top: 8px; }
+.minimax-tts-settings .minimax-director-fields textarea { min-height: 64px; }
+
+/* Status and Token add-on surface only */
+.status-token-panel { display: flex; flex-direction: column; max-height: min(68dvh, 620px); padding: 14px; }
+.status-token-panel .status-token-heading { position: sticky; top: 0; z-index: 1; padding: 2px 0 8px; background: inherit; }
+.status-token-panel .status-token-summary { margin-top: 8px; padding: 8px 0; }
+.status-token-panel .status-token-note { margin: 4px 0 7px; max-height: 3.2em; overflow: auto; }
+.status-token-panel .status-token-list { min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.status-token-panel .status-token-row { gap: 8px; padding: 5px 0; }
+.status-token-panel .status-token-worldbook-toggle { min-height: 32px; }
+
+/* Sticker, album and avatar candidate management */
+.sticker-suggestions { gap: 6px; padding: 6px 8px; }
+.sticker-suggestions button { flex-basis: 60px; width: 60px; }
+.sticker-suggestions img { width: 50px; height: 50px; }
+.sticker-import-list { gap: 6px; }
+.sticker-import-row { padding: 5px 0; }
+.avatar-candidate-preview { border-radius: 8px; padding: 8px; }
+.avatar-candidate-preview > summary { padding: 4px 0; }
+.avatar-candidate-row { display: grid; grid-template-columns: 56px minmax(0,1fr); gap: 6px; align-items: center; }
+.avatar-candidate-row > img { width: 52px !important; height: 52px !important; }
+
+/* Backup and model picker */
+#storage-backup-options { display: grid; gap: 5px; }
+.storage-backup-modes { gap: 6px; padding-bottom: 8px; }
+.storage-backup-modes button { min-height: 34px; padding: 6px 8px; }
+.storage-backup-extras { gap: 7px; padding: 8px 10px; border-radius: 8px; }
+.storage-backup-extras p { margin: 0; font-size: 11px; }
+.model-picker-card { gap: 7px; }
+.model-picker-count { margin: -2px 0; }
+.model-picker-overlay .model-picker-list > button { min-height: 38px; padding: 8px 10px; }
+
+/* Expanded document editor: separate search, navigation and replacement rows. */
+.text-editor-card .editor-search { display: grid; grid-template-columns: minmax(0,1fr) auto auto auto; gap: 5px; }
+.text-editor-card .editor-search > .editor-find { grid-column: 1 / 3; width: 100%; box-sizing: border-box; }
+.text-editor-card .editor-search > label:has(.editor-case) { grid-column: 3; white-space: nowrap; }
+.text-editor-card .editor-search > .editor-count { grid-column: 4; align-self: center; white-space: nowrap; }
+.text-editor-card .editor-search > [data-action="previous"],
+.text-editor-card .editor-search > [data-action="next"] { grid-row: 2; min-height: 30px; padding: 4px 7px; }
+.text-editor-card .editor-search > .editor-replace { grid-column: 1 / 3; width: 100%; min-width: 0; box-sizing: border-box; }
+.text-editor-card .editor-search > [data-action="replace"] { grid-column: 3; }
+.text-editor-card .editor-search > [data-action="replaceAll"] { grid-column: 4; }
+.text-editor-card .editor-search > [data-action="undo"] { grid-column: 1 / -1; justify-self: start; }
+.text-editor-card .editor-search button { min-height: 30px; padding: 4px 7px; }
+
+/* New in-app notification only; retain its single-toast behavior. */
+.incoming-message-toast { min-height: 68px; padding: 10px 13px; border-radius: 13px; gap: 10px; }
+.incoming-message-avatar { width: 46px; height: 46px; flex-basis: 46px; border-radius: 10px; }
+.incoming-message-content { gap: 2px; }
+
+/* Calendar controls use the same compact rhythm as derived settings. */
+.environment-calendar .derived-toolbar { gap: 6px; }
+.environment-calendar .derived-toolbar button { min-height: 32px; padding: 5px 8px; }
+.environment-calendar .environment-month { gap: 3px; }
+.environment-calendar .environment-day { height: 36px; }
+
+@media (max-width: 380px) {
+    #auto-memory-form .auto-memory-grid { grid-template-columns: minmax(0,1fr); }
+    .minimax-tts-settings .minimax-tts-field-row { grid-template-columns: minmax(0,1fr); gap: 7px; }
+    .mcp-settings .mcp-actions { flex-wrap: wrap; }
+    .memory-library .memory-library-toolbar { gap: 5px; }
+    .text-editor-card .editor-search { grid-template-columns: minmax(0,1fr) auto; }
+    .text-editor-card .editor-search > .editor-find,
+    .text-editor-card .editor-search > .editor-replace { grid-column: 1 / -1; }
+    .text-editor-card .editor-search > label:has(.editor-case) { grid-column: 1; }
+    .text-editor-card .editor-search > .editor-count { grid-column: 2; justify-self: end; }
+    .text-editor-card .editor-search > [data-action="previous"] { grid-row: 3; grid-column: 1; }
+    .text-editor-card .editor-search > [data-action="next"] { grid-row: 3; grid-column: 2; }
+    .text-editor-card .editor-search > [data-action="replace"] { grid-row: 5; grid-column: 1; }
+    .text-editor-card .editor-search > [data-action="replaceAll"] { grid-row: 5; grid-column: 2; }
+    .text-editor-card .editor-search > [data-action="undo"] { grid-row: 6; grid-column: 1 / -1; }
+}
+
+@media (prefers-color-scheme: dark) {
+    .mcp-settings .mcp-actions { background: #1d272d; }
+    #auto-memory-modal .auto-memory-heading { background: #1d272d; }
+}

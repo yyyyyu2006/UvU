@@ -339,3 +339,18 @@
 .memory-library .memory-library-warning{color:var(--danger-color,#9b4b00);font-size:13px;line-height:1.6}
 .memory-library .memory-library-tuning input[type=checkbox]{align-self:flex-start}
 @media(max-width:360px){.memory-library .memory-library-filters{grid-template-columns:minmax(0,1fr)}}
+
+/* Memory UI: make the index the primary surface; advanced controls stay secondary. */
+.memory-library .feature-dialog-card { padding: 14px; }
+.memory-library .feature-dialog-card > header { position: sticky; top: -14px; z-index: 2; padding: 4px 0 10px; background: inherit; }
+.memory-library .memory-library-toolbar { margin: 8px 0; gap: 6px; }
+.memory-library .memory-library-toolbar > button { min-height: 32px; padding: 5px 9px; }
+.memory-library .memory-library-toolbar label { margin: 0; flex: 1 1 120px; }
+.memory-library .memory-library-toolbar label select { margin-top: 0; }
+.memory-library .memory-library-filters { margin-top: 8px; padding: 8px 10px; border: 1px solid #e7ebef; border-radius: 9px; }
+.memory-library .memory-library-filters label { margin: 5px 0; gap: 4px; font-size: 12px; }
+.memory-library .memory-library-filters input:not([type=checkbox]), .memory-library .memory-library-filters select { padding: 6px 8px; font-size: 14px; }
+.memory-library .memory-library-card { padding: 10px; margin: 8px 0; }
+.memory-library .memory-library-card pre { max-height: 170px; margin: 7px 0; }
+.memory-library .memory-library-tuning, .memory-library .memory-library-diagnostics { margin: 8px 0; padding: 8px 10px; }
+.memory-library .memory-library-status { margin: 7px 0; font-size: 12px; }

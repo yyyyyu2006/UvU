@@ -74,6 +74,8 @@
     color: var(--text-color, #333); background: var(--input-bg, #fff); font: inherit;
 }
 .minimax-director-fields textarea { resize: vertical; min-height: 76px; }
+.minimax-tts-settings .kkt-item-subtitle { max-width: 58ch; font-size: 11px; line-height: 1.45; }
+.minimax-tts-actions .btn { min-height: 32px; padding: 6px 10px; }
 .minimax-director-fields .kkt-item-subtitle { overflow-wrap: anywhere; line-height: 1.6; }
 #send-pv-modal .pv-send-modes { display: inline-flex; gap: 4px; padding: 3px; margin: 0 0 14px; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
 #send-pv-modal .pv-send-modes label { position: relative; margin: 0; cursor: pointer; }

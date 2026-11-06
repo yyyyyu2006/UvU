@@ -34,7 +34,7 @@ function openSharedDocumentDialog(message, chat) {
     const initial = chat?.id || (currentChatType === 'private' ? currentChatId : db.characters[0]?.id);
     if (initial) select.value = initial;
     let target = captureChatSendTarget(select.value, 'private'), file = message?.document, reading = false;
-    const recipient = documentNode('label', '接收角色'); recipient.appendChild(select); body.appendChild(recipient);
+    const recipient = documentNode('label', '接收角色', 'shared-document-recipient'); recipient.appendChild(select); recipient.hidden = Boolean(message); body.appendChild(recipient);
     if (message) select.disabled = true;
     const hint = documentNode('p', '支持 TXT / Markdown / DOCX / PDF / CSV / TSV / XLSX / XLS；每份不超过5MB、100000字符。PDF须有可提取文字。文件在本机解析，发送后才随此聊天请求交给模型。', 'shared-document-help');
     const usage = documentNode('p', '使用：选文件 → 核对预览 → 发送 → 在聊天中告诉角色“请阅读／修改后发回”。回复键仍按原来的方式使用。每轮最多提供最近8份文件、正文共32000字符，超长会标明截取。新副本不会覆盖原件；PDF、Word排版与图片、表格公式和宏不参与编辑。', 'shared-document-help');
