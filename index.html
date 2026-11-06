@@ -579,7 +579,7 @@
                         <label class="minimax-tts-field">Group ID（可选）
                             <input id="minimax-tts-group-id" type="text" autocomplete="off" placeholder="旧版账户需要时填写">
                         </label>
-                        <div class="kkt-item-subtitle">密钥仅保存在此浏览器，不会写入普通备份。</div>
+                        <div class="kkt-item-subtitle">密钥保存在当前浏览器，导出设置备份时会包含。</div>
                         <div class="minimax-tts-field-row">
                             <label class="minimax-tts-field">模型
                                 <input id="minimax-tts-model" type="text" autocomplete="off" value="speech-2.8-hd">
@@ -595,6 +595,42 @@
                             <label class="minimax-tts-field">音调 <output id="minimax-tts-pitch-value">0</output>
                                 <input id="minimax-tts-pitch" type="range" min="-12" max="12" step="1" value="0">
                             </label>
+                        </div>
+                        <div class="minimax-director-settings">
+                            <label class="minimax-director-toggle" for="minimax-director-enabled">
+                                <span>语音导演</span>
+                                <input id="minimax-director-enabled" type="checkbox">
+                            </label>
+                            <div class="minimax-director-fields" id="minimax-director-fields" hidden>
+                                <div class="kkt-item-subtitle">首次播放会将角色人设及此前对话发给导演 API，额外调用一次；只控制情绪、语速和停顿。</div>
+                                <label class="minimax-tts-field">导演 API 类型
+                                    <select id="minimax-director-provider">
+                                        <option value="newapi">OpenAI 兼容</option>
+                                        <option value="gemini">Gemini</option>
+                                    </select>
+                                </label>
+                                <label class="minimax-tts-field">导演 API 地址
+                                    <input id="minimax-director-endpoint" type="url" inputmode="url" placeholder="https://api.example.com/v1" autocomplete="url">
+                                </label>
+                                <label class="minimax-tts-field">导演 API 密钥
+                                    <input id="minimax-director-key" type="password" autocomplete="new-password">
+                                </label>
+                                <label class="minimax-tts-field">导演模型
+                                    <input id="minimax-director-model" type="text" autocomplete="off" placeholder="填写文本模型名称">
+                                </label>
+                                <div class="minimax-tts-field-row">
+                                    <label class="minimax-tts-field">参考消息数
+                                        <input id="minimax-director-context" type="number" inputmode="numeric" min="0" max="50" step="1" value="12">
+                                    </label>
+                                    <label class="minimax-tts-field">超时（秒）
+                                        <input id="minimax-director-timeout" type="number" inputmode="numeric" min="1" max="60" step="1" value="12">
+                                    </label>
+                                </div>
+                                <label class="minimax-tts-field">导演要求
+                                    <textarea id="minimax-director-prompt" rows="3" maxlength="4000"></textarea>
+                                </label>
+                                <div class="kkt-item-subtitle">失败时使用普通语音。试听使用当前设置与试听台词，聊天语音才会参考剧情。控制标记不会写入聊天正文。</div>
+                            </div>
                         </div>
                         <div class="minimax-tts-actions">
                             <button type="button" class="btn btn-secondary" id="minimax-tts-preview">试听</button>
@@ -2915,14 +2951,15 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261104-autonomous-block"></script>
-<script src="js/modules/chat_render.js?v=20261104-minimax-voice-fix"></script>
+<script src="js/modules/chat_render.js?v=20261106-voice-director"></script>
 <script src="js/modules/chat_archives.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261105-mcp-center"></script>
     <script src="js/modules/chat_ai_call.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
     <script src="js/modules/chat_ai.js?v=20261105-audit-repairs"></script>
-<script src="js/modules/chat_features.js?v=20261104-minimax-voice-fix"></script>
+<script src="js/modules/voice_director.js?v=20261106-voice-director"></script>
+<script src="js/modules/chat_features.js?v=20261106-voice-director"></script>
 <script src="js/modules/chat_ops.js?v=20261106-audit-repairs"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
 <script src="js/modules/character_avatar.js?v=20261104-avatar-location"></script>
@@ -2934,7 +2971,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/mcp_ui.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment_ui.js?v=20261105-mcp-center"></script>
-<link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-minimax-tts">
+<link rel="stylesheet" href="css/modules/derived_features.css?v=20261106-voice-director">
 <script src="js/chat.js?v=20261106-status-icon"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
@@ -2945,7 +2982,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
 <script src="js/modules/settings_chat.js?v=20261105-audit-repairs"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
-<script src="js/modules/settings_api.js?v=20261104-minimax-voice-fix"></script> <!-- API 设置与预设 -->
+<script src="js/modules/settings_api.js?v=20261106-voice-director"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261104-global-css-token-toolbar"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
@@ -3045,7 +3082,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/story_bridge.js?v=20261105-tt-onboarding"></script>
 <script src="js/modules/memory_library.js?v=20261103-notifications-backup"></script>
 <script src="js/modules/storage_html.js?v=20261103-notifications-backup"></script> <!-- 存储空间HTML注入 -->
-<script src="js/modules/storage.js?v=20261105-audit-repairs"></script>   <!-- 存储空间分析图表 -->
+<script src="js/modules/storage.js?v=20261106-voice-director"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->
 <script src="js/modules/tutorial.js"></script>  <!-- 教程、更新日志、GitHub备份 -->

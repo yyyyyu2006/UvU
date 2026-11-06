@@ -886,6 +886,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (!isSent) {
             bubbleElement.dataset.voiceText = voiceMatch[1].trim();
             bubbleElement.dataset.voiceId = chat.minimaxTtsVoiceId || '';
+            if (typeof VoiceDirector !== 'undefined') VoiceDirector.bind(bubbleElement, chat, message, currentChatType);
             bubbleElement.setAttribute('role', 'button');
             bubbleElement.setAttribute('tabindex', '0');
             bubbleElement.setAttribute('aria-label', '播放语音消息');

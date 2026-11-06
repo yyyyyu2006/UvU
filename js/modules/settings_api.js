@@ -205,6 +205,7 @@ function setupMiniMaxTtsSettings() {
     fields.voiceId.value = saved.voiceId || '';
     fields.speed.value = saved.speed || '1';
     fields.pitch.value = saved.pitch ?? '0';
+    if (typeof VoiceDirector !== 'undefined') VoiceDirector.setupSettings(saved.director);
 
     const updateRangeLabels = () => {
         document.getElementById('minimax-tts-speed-value').textContent = Number(fields.speed.value).toFixed(1);
@@ -221,6 +222,15 @@ function setupMiniMaxTtsSettings() {
     saveButton.addEventListener('click', async () => {
         const endpoint = fields.endpoint.value.trim();
         if (endpoint && !/^https:\/\//i.test(endpoint)) return showToast('MiniMax API 地址必须使用 HTTPS');
+        const director = typeof VoiceDirector !== 'undefined' ? VoiceDirector.fromForm() : saved.director;
+        if (director?.enabled) {
+            try {
+                const url = new URL(director.endpoint);
+                if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error();
+            } catch (_) { return showToast('请填写有效的导演 HTTPS API 地址，不包含查询参数'); }
+            if (!director.apiKey || !director.model) return showToast('请填写导演 API 密钥和模型');
+        }
+        const previous = db.minimaxTtsSettings;
         db.minimaxTtsSettings = {
             endpoint: endpoint || 'https://api.minimaxi.com/v1/t2a_v2',
             apiKey: fields.apiKey.value.trim(),
@@ -228,9 +238,17 @@ function setupMiniMaxTtsSettings() {
             model: fields.model.value.trim() || 'speech-2.8-hd',
             voiceId: fields.voiceId.value.trim(),
             speed: Number(fields.speed.value),
-            pitch: Number(fields.pitch.value)
+            pitch: Number(fields.pitch.value),
+            director
         };
-        await saveData();
+        saveButton.disabled = true;
+        try {
+            await saveData();
+        } catch (_) {
+            db.minimaxTtsSettings = previous;
+            showToast('语音设置保存失败，请检查存储空间后重试');
+            return;
+        } finally { saveButton.disabled = false; }
         document.getElementById('minimax-tts-status').textContent = db.minimaxTtsSettings.apiKey
             ? (db.minimaxTtsSettings.voiceId ? '设置已保存，可以试听或点击聊天语音播放。' : '密钥已保存，请填写音色 ID 后试听。')
             : '设置已保存，请填写 MiniMax API 密钥和音色 ID。';

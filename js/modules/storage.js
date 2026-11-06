@@ -709,6 +709,12 @@ function storageValidateModules(modules) {
         const settings = modules.minimaxTtsSettings;
         for (const key of ['endpoint', 'apiKey', 'groupId', 'model', 'voiceId']) optional(settings[key], 'minimaxTtsSettings.' + key, 'string');
         for (const key of ['speed', 'pitch']) optional(settings[key], 'minimaxTtsSettings.' + key, 'number');
+        if (settings.director !== undefined) {
+            object(settings.director, 'minimaxTtsSettings.director');
+            optional(settings.director.enabled, 'minimaxTtsSettings.director.enabled', 'boolean');
+            for (const key of ['provider', 'endpoint', 'apiKey', 'model', 'prompt']) optional(settings.director[key], 'minimaxTtsSettings.director.' + key, 'string');
+            for (const key of ['contextMessages', 'timeoutSec']) optional(settings.director[key], 'minimaxTtsSettings.director.' + key, 'number');
+        }
     }
     if (modules.mcpSettings !== undefined) {
         if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');

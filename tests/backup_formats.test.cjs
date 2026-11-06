@@ -92,6 +92,7 @@ test('streamed backup JSON matches the normal JSON structure', async () => {
 test('settings backup includes complete MiniMax voice configuration and excludes bridge credentials', async () => {
     const f = fixture(); f.element('storage-export-format').value = 'json';
     const voice = { endpoint: 'https://voice.test/v1/t2a_v2', apiKey: 'voice-key', groupId: 'group', model: 'speech-2.8-hd', voiceId: 'voice', speed: 1.2, pitch: -2, extension: { future: true } };
+    voice.director = { enabled: true, endpoint: 'https://director.test', apiKey: 'director-key', model: 'model', contextMessages: 12, timeoutSec: 12, prompt: 'natural' };
     f.c.db.minimaxTtsSettings = voice;
     f.c.db.uvuStoryBridgeSettings = { pairingToken: 'PAIRING-SECRET', adminToken: 'ADMIN-SECRET' };
     vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "settings");', f.c);
@@ -101,6 +102,14 @@ test('settings backup includes complete MiniMax voice configuration and excludes
     assert.equal(data.modules.uvuStoryBridgeSettings, undefined);
     assert.ok(!JSON.stringify(data).includes('PAIRING-SECRET'));
     assert.ok(!JSON.stringify(data).includes('ADMIN-SECRET'));
+});
+
+test('voice director imports validate nested types while accepting legacy voice settings', () => {
+    const f = fixture();
+    assert.doesNotThrow(() => f.c.storageValidateModules({ minimaxTtsSettings: { voiceId: 'legacy' } }));
+    for (const director of [[], { enabled: 'true' }, { apiKey: {} }, { contextMessages: 'twelve' }, { prompt: [] }]) {
+        assert.throws(() => f.c.storageValidateModules({ minimaxTtsSettings: { director } }), /director/);
+    }
 });
 
 

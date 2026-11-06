@@ -45,7 +45,7 @@ function harness() {
     }
     const preview = bubble(); preview.id = 'minimax-tts-preview'; elements.set('minimax-tts-preview', preview);
     const context = vm.createContext({
-        Blob, URL: TestURL, Uint8Array, AbortController, Map, Audio: TestAudio,
+        Blob, URL: TestURL, Uint8Array, AbortController, Map, Audio: TestAudio, setTimeout, clearTimeout,
         window: {}, db: { minimaxTtsSettings: settings },
         document: { getElementById: id => elements.get(id) },
         showToast: message => toasts.push(message),
@@ -53,8 +53,12 @@ function harness() {
     });
     const state = { sounds, toasts, urls, preview, fetch: async () => reply(),
         get requests() { return requests; }, set playHook(hook) { playHook = hook; } };
+    const directorFile = path.join(__dirname, '../js/modules/voice_director.js');
+    if (fs.existsSync(directorFile)) vm.runInContext(fs.readFileSync(directorFile, 'utf8'), context);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/chat_features.js'), 'utf8'), context);
     state.tts = vm.runInContext('MiniMaxTTS', context);
+    state.director = fs.existsSync(directorFile) ? vm.runInContext('VoiceDirector', context) : null;
+    state.db = context.db;
     state.previewVoice = vm.runInContext('previewMiniMaxVoice', context);
     return state;
 }
@@ -69,6 +73,87 @@ test('late events from an old voice cannot stop or mark the new voice', async ()
     assert.equal(second.classes.has('voice-playing'), true);
     assert.deepEqual(h.toasts, []);
     assert.equal(first.attributes.has('aria-busy'), false);
+});
+
+function enableDirector(h) {
+    h.db.minimaxTtsSettings.director = { enabled: true, endpoint: 'https://director.test/v1', apiKey: 'director-key', model: 'director-model' };
+    const calls = [];
+    h.fetch = async (url, options) => {
+        calls.push({ url, body: JSON.parse(options.body) });
+        return url.includes('director.test')
+            ? { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ emotion: 'sad', speedMultiplier: 0.9,
+                pauses: [{ after: '对不起，', seconds: 0.4 }] }) } }] }) }
+            : reply();
+    };
+    return calls;
+}
+
+test('directed playback sends controls only to MiniMax and preserves transcript data', async () => {
+    const h = harness(), b = bubble(), calls = enableDirector(h);
+    b.dataset.voiceText = '对不起，是我没考虑周全。';
+    await h.tts.play(b, b.dataset.voiceText);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].body.text, '对不起，<#0.4#>是我没考虑周全。');
+    assert.equal(calls[1].body.voice_setting.emotion, 'sad');
+    assert.equal(calls[1].body.voice_setting.speed, 0.9);
+    assert.equal(b.dataset.voiceText, '对不起，是我没考虑周全。');
+    h.sounds.at(-1).emit('ended');
+    await h.tts.play(b, b.dataset.voiceText);
+    assert.equal(calls.length, 2, 'successful director and speech plans should both be reused');
+});
+
+test('directed autoplay retry stays synchronous and never repeats director or TTS requests', async () => {
+    const h = harness(), b = bubble(), calls = enableDirector(h);
+    h.playHook = () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+    await h.tts.play(b, '对不起，是我没考虑周全。');
+    let played = false; h.playHook = () => { played = true; return Promise.resolve(); };
+    const retry = h.tts.play(b, '对不起，是我没考虑周全。');
+    assert.equal(played, true); await retry;
+    assert.equal(calls.length, 2);
+});
+
+test('directed voice can pause and resume, then switch bubbles without repeating synthesis', async () => {
+    const h = harness(), b = bubble(), calls = enableDirector(h);
+    await h.tts.play(b, '对不起，是我没考虑周全。');
+    const audio = h.sounds.at(-1);
+    await h.tts.play(b, '对不起，是我没考虑周全。');
+    assert.equal(audio.paused, true);
+    assert.equal(b.classes.has('voice-playing'), false);
+    await h.tts.play(b, '对不起，是我没考虑周全。');
+    assert.equal(audio.paused, false); assert.equal(calls.length, 2);
+    await h.tts.play(bubble(), 'another line');
+    assert.equal(audio.paused, true);
+    assert.equal(b.attributes.has('aria-busy'), false);
+});
+
+test('director HTTP failure falls back to original TTS without sending error text to speech', async () => {
+    const h = harness(), b = bubble(); enableDirector(h);
+    let spoken;
+    h.fetch = async (url, init) => {
+        if (url.includes('director.test')) return { ok: false, status: 503 };
+        spoken = JSON.parse(init.body); return reply();
+    };
+    await h.tts.play(b, '原文');
+    assert.equal(spoken.text, '原文');
+    assert.equal(spoken.voice_setting.emotion, undefined);
+    assert.equal(b.classes.has('voice-playing'), true);
+    assert.ok(h.toasts.some(text => /503/.test(text)));
+});
+
+test('archive switching during direction cancels speech instead of falling back into a new archive', async () => {
+    const h = harness(), b = bubble(); enableDirector(h);
+    const m = { id: 'm', role: 'assistant', content: '[晴的语音：你好。]' };
+    const chat = { id: 'c', activeArchiveId: 'a', realName: '晴', history: [m] };
+    h.db.characters = [chat];
+    h.director.bind(b, chat, m, 'private');
+    const pending = deferred(); let requests = 0, requestedUrl;
+    h.fetch = async url => { requests++; requestedUrl = url; return pending.promise; };
+    const playing = h.tts.play(b, '你好。');
+    assert.match(requestedUrl, /director\.test/);
+    chat.activeArchiveId = 'b';
+    pending.resolve({ ok: true, json: async () => ({ choices: [{ message: { content: '{"emotion":"calm"}' } }] }) });
+    await playing;
+    assert.equal(requests, 1); assert.equal(h.urls.size, 0); assert.equal(b.classes.size, 0);
 });
 
 test('normal completion releases resources without a false playback error', async () => {

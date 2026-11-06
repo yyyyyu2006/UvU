@@ -63,6 +63,18 @@
 .minimax-tts-field output { float: right; color: var(--primary-color); }
 .minimax-tts-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .minimax-tts-actions .btn { width: auto; margin: 0; padding: 8px 14px; }
+.minimax-director-settings { border-top: 1px solid var(--border-color, #ddd); padding-top: 12px; }
+.minimax-director-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.minimax-director-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary-color); }
+.minimax-director-fields { display: grid; gap: 12px; margin-top: 12px; min-width: 0; }
+.minimax-director-fields[hidden] { display: none !important; }
+.minimax-director-fields select, .minimax-director-fields textarea {
+    box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+    padding: 8px 10px; border: 1px solid var(--border-color, #ddd); border-radius: 6px;
+    color: var(--text-color, #333); background: var(--input-bg, #fff); font: inherit;
+}
+.minimax-director-fields textarea { resize: vertical; min-height: 76px; }
+.minimax-director-fields .kkt-item-subtitle { overflow-wrap: anywhere; line-height: 1.6; }
 @media (max-width: 380px) {
     .minimax-tts-field-row { grid-template-columns: minmax(0, 1fr); }
     .minimax-tts-actions .btn { flex: 1; padding-inline: 8px; }

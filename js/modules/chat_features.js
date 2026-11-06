@@ -113,12 +113,15 @@ const MiniMaxTTS = (() => {
         const requestUrl = new URL(endpoint);
         const groupId = String(settings.groupId || '').trim();
         if (groupId) requestUrl.searchParams.set('GroupId', groupId);
-        const cacheKey = JSON.stringify([requestUrl.href, apiKey, model, voiceId, settings.speed || 1, settings.pitch || 0, text]);
-        return { apiKey, requestUrl, model, voiceId, cacheKey };
+        const emotion = /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(model) &&
+            ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'].includes(settings.emotion) ? settings.emotion : '';
+        const cacheKey = JSON.stringify([requestUrl.href, apiKey, model, voiceId, settings.speed || 1, settings.pitch || 0, text,
+            emotion, settings.speechCacheKey || '']);
+        return { apiKey, requestUrl, model, voiceId, emotion, cacheKey };
     }
 
     async function synthesize(text, settings = getSettings(), signal) {
-        const { apiKey, requestUrl, model, voiceId, cacheKey } = describeRequest(text, settings);
+        const { apiKey, requestUrl, model, voiceId, emotion, cacheKey } = describeRequest(text, settings);
         if (audioCache.has(cacheKey)) return audioCache.get(cacheKey);
 
         const response = await fetch(requestUrl.href, {
@@ -134,7 +137,8 @@ const MiniMaxTTS = (() => {
                     voice_id: voiceId,
                     speed: Number(settings.speed) || 1,
                     vol: 1,
-                    pitch: Number(settings.pitch) || 0
+                    pitch: Number(settings.pitch) || 0,
+                    ...(emotion ? { emotion } : {})
                 },
                 audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
             })
@@ -194,6 +198,7 @@ const MiniMaxTTS = (() => {
 
     async function startPlayback(session) {
         if (activeSession !== session) return;
+        if (session.source && !VoiceDirector.isCurrent(session.source)) return stop(session);
         session.phase = 'starting';
         setLoading(session, true);
         try {
@@ -219,13 +224,18 @@ const MiniMaxTTS = (() => {
 
     async function play(bubble, text, settings) {
         if (!bubble) return;
-        let ttsSettings, cacheKey;
+        let ttsSettings, cacheKey, directorSettings, source;
         try {
             const savedSettings = settings || getSettings();
             ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : bubble.dataset.voiceId, savedSettings) };
             ({ cacheKey } = describeRequest(text, ttsSettings));
+            if (typeof VoiceDirector !== 'undefined') {
+                directorSettings = VoiceDirector.settings(savedSettings.director);
+                source = VoiceDirector.capture(bubble, text, directorSettings);
+                if (source) cacheKey = JSON.stringify([cacheKey, directorSettings, source.key]);
+            }
         } catch (error) {
-            showToast(error.message);
+            if (error.name !== 'AbortError') showToast(error.message);
             return;
         }
         const previous = activeSession;
@@ -241,13 +251,25 @@ const MiniMaxTTS = (() => {
             return startPlayback(previous);
         }
         stop();
-        const session = { bubble, cacheKey, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
+        const session = { bubble, cacheKey, source, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
         activeSession = session;
         setLoading(session, true);
         try {
-            const cached = audioCache.get(cacheKey);
-            session.blob = cached || await synthesize(text, ttsSettings, session.controller.signal);
+            let speechText = text;
+            if (source) {
+                const direction = await VoiceDirector.prepare(text, directorSettings, source, session.controller.signal);
+                if (activeSession !== session) return;
+                if (!VoiceDirector.isCurrent(source)) return stop(session);
+                if (direction.warning) showToast(direction.warning);
+                speechText = direction.text.length <= 10000 ? direction.text : text;
+                ttsSettings = { ...ttsSettings, emotion: direction.emotion, speechCacheKey: cacheKey,
+                    speed: Math.round(Math.max(0.5, Math.min(2, (Number(ttsSettings.speed) || 1) * direction.speedMultiplier)) * 100) / 100 };
+            }
+            const audioKey = describeRequest(speechText, ttsSettings).cacheKey;
+            const cached = audioCache.get(audioKey);
+            session.blob = cached || await synthesize(speechText, ttsSettings, session.controller.signal);
             if (activeSession !== session) return;
+            if (source && !VoiceDirector.isCurrent(source)) return stop(session);
             session.onEnded = () => { if (activeSession === session) stop(session); };
             session.onError = () => failPlayback(session);
             session.audio.addEventListener('ended', session.onEnded);
@@ -303,7 +325,8 @@ async function previewMiniMaxVoice() {
         model: document.getElementById('minimax-tts-model')?.value.trim(),
         voiceId: document.getElementById('minimax-tts-voice')?.value.trim(),
         speed: document.getElementById('minimax-tts-speed')?.value,
-        pitch: document.getElementById('minimax-tts-pitch')?.value
+        pitch: document.getElementById('minimax-tts-pitch')?.value,
+        director: typeof VoiceDirector !== 'undefined' ? VoiceDirector.fromForm() : undefined
     };
     const button = document.getElementById('minimax-tts-preview');
     return MiniMaxTTS.play(button, '你好，这是角色语音试听。', settings);
