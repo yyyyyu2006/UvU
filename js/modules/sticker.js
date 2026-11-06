@@ -381,6 +381,8 @@ async function sendSticker(sticker) {
     if (!chat) return;
     const chatId = currentChatId, chatType = currentChatType;
     const target = captureChatSendTarget();
+    const quoteInfo = currentQuoteInfo?.chatId === chatId && currentQuoteInfo.chatType === chatType &&
+        currentQuoteInfo.archiveId === chat.activeArchiveId ? currentQuoteInfo : null;
     const mutation = beginChatMutation(chat, chatType);
     const dbSticker = db.myStickers.find(s => s.id === sticker.id);
     const beforeUsed = dbSticker?.lastUsedTime;
@@ -401,17 +403,23 @@ async function sendSticker(sticker) {
         timestamp: Date.now(),
         stickerData: sticker.data 
     };
+    if (quoteInfo) {
+        message.quote = { messageId: quoteInfo.id, senderId: quoteInfo.senderId,
+            senderName: quoteInfo.senderName, content: quoteInfo.content, timestamp: quoteInfo.timestamp };
+    }
     if (currentChatType === 'group') {
         message.senderId = 'user_me';
     }
     if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, currentChatType);
         chat.history.push(message);
-    addMessageBubble(message, currentChatId, currentChatType);
+    addMessageBubble(message, chatId, chatType);
+    if (quoteInfo && currentQuoteInfo === quoteInfo) cancelQuoteReply();
     
     if (!await saveChatMutation(mutation, '表情发送未保存，请重试')) {
         if (dbSticker?.lastUsedTime === usedAt) {
             if (beforeUsed === undefined) delete dbSticker.lastUsedTime; else dbSticker.lastUsedTime = beforeUsed;
         }
+        if (quoteInfo && isChatTargetVisible(target) && !currentQuoteInfo) startQuoteReply(quoteInfo.id);
         return;
     }
     renderChatList();

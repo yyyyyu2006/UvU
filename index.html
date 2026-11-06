@@ -29,7 +29,7 @@
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261105-handoff-recovery">
-    <link rel="stylesheet" href="css/settings.css?v=20261105-tt-summary">
+    <link rel="stylesheet" href="css/settings.css?v=20261106-bridge-form">
 
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
@@ -659,15 +659,15 @@
                             <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
                         <div class="kkt-item-subtitle" id="uvu-bridge-intro">UvU 负责线上手机聊天，酒馆负责线下剧情。SillyTavern 本机桥接默认客户端端口为 8765；TT 可选择无需服务器的文件交接。</div>
                         </div>
-                        <label>互通通道<select id="uvu-bridge-channel"><option value="st">SillyTavern 本机桥接</option><option value="tt">TauriTavern / iOS</option></select></label>
-                        <label id="uvu-bridge-tt-transport" hidden>TT 交接方式<select id="uvu-bridge-tt-mode"><option value="file">无需服务器的文件交接（推荐）</option><option value="https">可选：独立 HTTPS 中继实时连接</option></select></label>
+                        <label class="uvu-bridge-field">互通通道<select id="uvu-bridge-channel"><option value="st">SillyTavern 本机桥接</option><option value="tt">TauriTavern / iOS</option></select></label>
+                        <label class="uvu-bridge-field" id="uvu-bridge-tt-transport" hidden>TT 交接方式<select id="uvu-bridge-tt-mode"><option value="file">无需服务器的文件交接（推荐）</option><option value="https">可选：独立 HTTPS 中继实时连接</option></select></label>
                         <div id="uvu-bridge-online-controls">
-                        <label>桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="SillyTavern 本机地址 / TT 的 HTTPS 中继地址"></label>
-                        <label>配对码（一次性 / 永久）<input id="uvu-bridge-pair-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="128" placeholder="粘贴酒馆生成的配对码"></label>
-                        <label>本设备名称<input id="uvu-bridge-device-name" type="text" maxlength="80" placeholder="如：小米 Chrome"></label>
+                        <label class="uvu-bridge-field">桥接地址<input id="uvu-bridge-url" type="url" inputmode="url" autocomplete="url" placeholder="SillyTavern 本机地址 / TT 的 HTTPS 中继地址"></label>
+                        <label class="uvu-bridge-field">配对码（一次性 / 永久）<input id="uvu-bridge-pair-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="128" placeholder="粘贴酒馆生成的配对码"></label>
+                        <label class="uvu-bridge-field">本设备名称<input id="uvu-bridge-device-name" type="text" maxlength="80" placeholder="如：小米 Chrome"></label>
                         </div>
-                        <label><input id="uvu-bridge-enabled" type="checkbox" checked> 启用本页互通（酒馆端另有插件总开关）</label>
-                        <label><input id="uvu-bridge-inject-scenes" type="checkbox"> 所选角色使用已审核的酒馆剧情记忆</label>
+                        <label class="uvu-bridge-option"><input id="uvu-bridge-enabled" type="checkbox" checked> 启用本页互通（酒馆端另有插件总开关）</label>
+                        <label class="uvu-bridge-option"><input id="uvu-bridge-inject-scenes" type="checkbox"> 所选角色使用已审核的酒馆剧情记忆</label>
                         <output id="uvu-bridge-connection" aria-live="polite">尚未检查绑定状态</output>
                         <div class="uvu-bridge-actions" id="uvu-bridge-online-actions">
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
@@ -2935,7 +2935,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment_ui.js?v=20261105-mcp-center"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261104-minimax-tts">
-<script src="js/chat.js?v=20261105-mcp-center"></script>     <!-- 聊天核心入口 -->
+<script src="js/chat.js?v=20261106-status-icon"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261104-chat-stop-compatible"></script> <!-- 聊天室HTML注入 -->
@@ -2951,7 +2951,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/home_presets.js"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
-<script src="js/modules/sticker.js?v=20261103-chat-safety"></script>   <!-- 表情包管理系统 -->
+<script src="js/modules/sticker.js?v=20261106-quote-sticker"></script>   <!-- 表情包管理系统 -->
 <script src="js/modules/worldbook.js?v=20261103-documents"></script> <!-- 世界书设定集 -->
 <script src="js/modules/peek.js"></script>      <!-- 偷看手机(相册/短信等) -->
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">

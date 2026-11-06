@@ -75,7 +75,16 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
    await uvu.setViewportSize({width,height:844});
    const result=await uvu.locator('.uvu-bridge-range').evaluate(e=>({width:e.clientWidth,scrollWidth:e.scrollWidth,inputs:[...e.querySelectorAll('input')].map(i=>({width:i.getBoundingClientRect().width,right:i.getBoundingClientRect().right}))}));
    assert.ok(result.scrollWidth<=result.width);assert.ok(result.inputs.every(i=>i.width<=84&&i.right<=width));
-   metrics.push({panel:'UvU',viewport:width,numberInputWidths:result.inputs.map(i=>i.width),noOverflow:true});
+   const fields=await uvu.locator('#uvu-bridge-online-controls').evaluate(e=>[...e.querySelectorAll('label')].map(label=>{
+    const input=label.querySelector('input'),r=input.getBoundingClientRect(),lr=label.getBoundingClientRect();
+    const range=document.createRange();range.selectNode(label.firstChild);const text=range.getBoundingClientRect();
+    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,labelBottom:lr.bottom,textBottom:text.bottom,height:r.height};
+   }));
+   assert.ok(fields.every(f=>f.top>=f.textBottom+5&&f.height>=38&&f.right<=width));
+   assert.ok(fields.slice(1).every((f,i)=>f.top-fields[i].bottom>=32));
+   assert.ok(Math.max(...fields.map(f=>f.left))-Math.min(...fields.map(f=>f.left))<1);
+   metrics.push({panel:'UvU',viewport:width,numberInputWidths:result.inputs.map(i=>i.width),noOverflow:true,stackedFields:true});
+   await uvu.screenshot({path:path.join(root,'../uvu-verification-deps/artifacts',`bridge-form-${width}.png`),fullPage:true});
   }
   assert.deepEqual(errors,[]);console.log(JSON.stringify({metrics,errors},null,2));
  } finally {await browser.close();}

@@ -55,6 +55,7 @@ const root = path.join(__dirname, '..');
         assert.ok(await page.locator('.status-swiper').evaluate(e => e.scrollLeft) > previous + 100);
         page.on('dialog', dialog => dialog.accept());
         const deleteControl = page.getByRole('button', { name: '删除当前这张状态栏', exact: true });
+        assert.equal(await deleteControl.locator('svg[aria-hidden=true]').count(), 1);
         const controls = await Promise.all([page.locator('[data-token-flip]'), page.locator('#close-status-panel-btn'), deleteControl].map(control => control.boundingBox()));
         assert.ok(controls.every(r => Math.abs(r.width - 44) < 1 && Math.abs(r.height - 44) < 1));
         assert.ok(Math.abs(controls[0].y - controls[1].y) < 1 && Math.abs(controls[1].y - controls[2].y) < 1);

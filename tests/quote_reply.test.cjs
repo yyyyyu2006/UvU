@@ -14,7 +14,7 @@ function fixture() {
     const chat = { id: 'alice', myName: '我', myRemarkName: '我的备注', remarkName: '阿晴',
         activeArchiveId: 'archive-1', history: [] };
     const context = vm.createContext({ window: {}, console, setTimeout, clearTimeout, Event,
-        db: { characters: [chat], groups: [], apiSettings: {} },
+        db: { characters: [chat], groups: [], apiSettings: {}, myStickers: [] },
         currentChatId: 'alice', currentChatType: 'private', currentQuoteInfo: null,
         isInMultiSelectMode: false, isGenerating: false,
         messageInput: { value: '已经写好的草稿', focus(options) {
@@ -23,9 +23,9 @@ function fixture() {
             this.previewVisibleAtFocus = classes.has('visible');
         }, dispatchEvent() {} },
         document: { getElementById: id => id === 'reply-preview-bar' ? preview : null },
-        addMessageBubble() {}, triggerHapticFeedback() {}, saveData: async () => {}, renderChatList() {}
+        addMessageBubble() {}, triggerHapticFeedback() {}, saveData: async () => {}, renderChatList() {}, showPanel() {}
     });
-    ['chat_ops.js', 'chat_ai.js'].forEach(file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules', file), 'utf8'), context));
+    ['chat_ops.js', 'chat_ai.js', 'sticker.js'].forEach(file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules', file), 'utf8'), context));
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/chat.js'), 'utf8'), context);
     return { context, chat, preview, name, content, classes };
 }
@@ -270,4 +270,49 @@ test('withdrawn messages keep long-press actions but cannot be swiped into a quo
     touch('touchmove', 140);
     touch('touchend', 140);
     assert.equal(context.currentQuoteInfo, null);
+});
+
+
+test('sticker reply stores the original quote in private and group chats without consuming the draft', async () => {
+ for(const type of ['private','group']) {
+  const {context:c,chat}=fixture();
+  if(type==='group'){c.currentChatType='group';c.db.groups=[chat];chat.me={nickname:'我'};chat.members=[{id:'member',groupNickname:'阿晴'}];}
+  chat.history.push({id:'source',role:'assistant',senderId:'member',content:'[阿晴的消息：原文]',timestamp:777});
+  const sticker={id:'s',name:'开心',data:'data:image/png;base64,AA==',description:'笑脸'};c.db.myStickers=[sticker];
+  c.startQuoteReply('source');await c.sendSticker(sticker);
+  const sent=chat.history.at(-1);assert.equal(sent.quote?.messageId,'source');assert.equal(sent.quote.content,'原文');
+  assert.equal(sent.quote.timestamp,777);assert.equal(sent.stickerData,sticker.data);assert.match(sent.parts[0].text,/笑脸/);
+  assert.equal(c.currentQuoteInfo,null);assert.equal(c.messageInput.value,'已经写好的草稿');
+  assert.match(c.formatQuotedUserMessage(sent,chat,type),/引用.*原文.*表情包/);
+ }
+});
+test('sticker send ignores quotes from a different chat or archive and leaves ordinary stickers unchanged', async () => {
+ for(const mode of ['none','chat','archive']) {
+  const {context:c,chat}=fixture();chat.history.push({id:'source',role:'assistant',content:'原文'});
+  if(mode!=='none')c.startQuoteReply('source');
+  if(mode==='archive')chat.activeArchiveId='other';
+  if(mode==='chat'){c.db.characters.push({id:'bob',myName:'我',history:[]});c.currentChatId='bob';}
+  await c.sendSticker({id:'s',name:'开心',data:'image'});
+  const target=mode==='chat'?c.db.characters[1]:chat;assert.equal(target.history.at(-1).quote,undefined);
+  assert.equal(target.history.at(-1).content,'[我发送的表情包：开心]');
+ }
+});
+test('failed quoted sticker restores the quote, while a newer selection or different archive is protected', async () => {
+ for(const mode of ['restore','newer','archive']) {
+  const {context:c,chat}=fixture();chat.history.push({id:'one',role:'assistant',content:'第一条'},{id:'two',role:'assistant',content:'第二条'});
+  const sticker={id:'s',name:'开心',data:'image'};c.db.myStickers=[sticker];c.showToast=()=>{};c.startQuoteReply('one');
+  let fail;c.saveData=()=>new Promise((resolve,reject)=>{fail=reject;});const sending=c.sendSticker(sticker);
+  assert.equal(c.currentQuoteInfo,null);
+  if(mode==='newer')c.startQuoteReply('two');
+  if(mode==='archive'){chat.activeArchiveId='other';chat.history=[];}
+  fail(Error('quota'));await sending;
+  assert.equal(c.currentQuoteInfo?.id,mode==='restore'?'one':mode==='newer'?'two':undefined);
+  assert.equal(sticker.lastUsedTime,undefined);assert.ok(chat.history.every(m=>!m.stickerData));
+ }
+});
+test('new quote selected during a successful sticker save remains selected', async () => {
+ const {context:c,chat}=fixture();chat.history.push({id:'one',role:'assistant',content:'第一条'},{id:'two',role:'assistant',content:'第二条'});
+ let finish;c.saveData=()=>new Promise(resolve=>{finish=resolve;});c.startQuoteReply('one');
+ const sending=c.sendSticker({id:'s',name:'开心',data:'image'});c.startQuoteReply('two');finish();await sending;
+ assert.equal(chat.history.at(-1).quote?.messageId,'one');assert.equal(c.currentQuoteInfo.id,'two');
 });
