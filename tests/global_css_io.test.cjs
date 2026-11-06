@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../js/modules/global_css_io.js'), 'utf8');
 
-function fixture({ failSave = false } = {}) {
+function fixture({ failSave = false, confirmImport = true } = {}) {
     const handlers = new Map(), downloads = [], toasts = [], applied = [];
     const button = id => ({ id, attributes: {}, addEventListener(type, handler) { handlers.set(id + ':' + type, handler); }, setAttribute(name, value) { this.attributes[name] = String(value); }, click() { return handlers.get(id + ':click')?.({ target: this }); } });
     const textarea = { value: '.old { color: red; }' };
@@ -27,6 +27,7 @@ function fixture({ failSave = false } = {}) {
         readImportDocument: async file => ({ text: file.text }), confirm: () => true,
         showToast: text => toasts.push(text) });
     vm.runInContext(source, context);
+    context.previewGlobalCssImport = async () => confirmImport;
     observer();
     return { context, modal, textarea, input, nodes, downloads, toasts, applied, handlers };
 }
@@ -85,10 +86,20 @@ test('global CSS document controls export current text and import TXT or DOCX di
 
 test('failed CSS import persistence restores the prior active style and editor contents', async () => {
     const f = fixture({ failSave: true }); f.context.window.GlobalCssIO.setup();
+    f.textarea.value = '.unsaved { color: purple; }';
     f.input.files = [{ name: 'style.docx', text: '.broken { color: blue; }' }];
     await f.handlers.get('input:change')();
     assert.equal(f.context.db.globalCss, '.old { color: red; }');
-    assert.equal(f.textarea.value, '.old { color: red; }');
+    assert.equal(f.textarea.value, '.unsaved { color: purple; }');
     assert.equal(f.applied.at(-1), '.old { color: red; }');
     assert.match(f.toasts.at(-1), /disk full/);
+});
+test('cancelled CSS preview leaves active styles and the unsaved editor draft unchanged', async () => {
+    const f = fixture({ confirmImport: false });
+    f.textarea.value = '.draft {}';
+    f.input.files = [{ name: 'style.txt', text: '.incoming {}' }];
+    await f.handlers.get('input:change')();
+    assert.equal(f.context.db.globalCss, '.old { color: red; }');
+    assert.equal(f.textarea.value, '.draft {}');
+    assert.equal(f.applied.length, 0);
 });

@@ -78,8 +78,8 @@ test('scene summary preview stays gated until confirmed, replaces one journal an
 test('late scene summary cannot apply after archive change or source edit',async()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));
  const items=[{id:'f',text:'剧情',selected:true}],journal={id:'j',source:'sillytavern',content:'剧情',bridgeReview:{version:2,archiveId:'default',items}};f.chat.memoryJournals=[journal];
- let release;f.context.UvUBridgeSummary.generate=async()=>new Promise(resolve=>release=()=>resolve({title:'摘要',content:'旧结果',sourceSignature:f.context.UvUBridgeSummary.signature(items),items}));
- const pending=f.bridge.summarizeReview(f.chat,journal,items,{});f.chat.activeArchiveId='other';release();
+ let release,started;const ready=new Promise(resolve=>started=resolve);f.context.UvUBridgeSummary.generate=async()=>new Promise(resolve=>{release=()=>resolve({title:'摘要',content:'旧结果',sourceSignature:f.context.UvUBridgeSummary.signature(items),items});started();});
+ const pending=f.bridge.summarizeReview(f.chat,journal,items,{});await ready;f.chat.activeArchiveId='other';release();
  await assert.rejects(pending,/存档|变更/);assert.equal(journal.bridgeReview.summaryDraft,undefined);
 });
 
@@ -449,9 +449,10 @@ test('forced review refresh preserves unsaved text and selection in its own arch
  f.chat.activeArchiveId='a';f.chat.memoryJournals=[journal];
  const find=(root,tag)=>root.tag===tag && (tag!=='input' || root.attributes?.['aria-label']==='允许这条剧情加入上下文')?root:root.children.flatMap(c=>typeof c==='object'?[find(c,tag)]:[]).find(Boolean);
  f.bridge.renderReview(true);
+ const openDetails=root=>{for(const item of root.children){if(item?.tag==='details'){item.open=true;item.listeners.toggle?.();}if(item?.children)openDetails(item);}};openDetails(host);
  let text=find(host,'textarea'),check=find(host,'input');
  text.value='UNSAVED';text.listeners.input();check.checked=true;check.listeners.change();
- f.bridge.renderReview(true);
+ f.bridge.renderReview(true);openDetails(host);
  assert.equal(find(host,'textarea').value,'UNSAVED');assert.equal(find(host,'input').checked,true);
  assert.equal(journal.content,'ORIGINAL');
 });
@@ -524,4 +525,65 @@ test('late automatic failure cannot overwrite disconnected state',async()=>{
  rejectDirectory(new Error('late offline'));await running;
  assert.equal(f.bridge.connectionSnapshot().phase,'unpaired');
  assert.equal(f.bridge.isConnected(),false);
+});
+
+test('review edit drafts survive reload, isolate channels archives and never apply old source versions',()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ const journal={id:'j',externalSceneId:'s',bridgeReview:{channel:'st',archiveId:'default',items:[{id:'f',text:'原文',selected:false}]}};f.chat.memoryJournals=[journal];
+ f.bridge.writeReviewDraft(f.chat,journal,[{id:'f',text:'编辑',selected:true}]);
+ assert.equal(f.bridge.readReviewDraft(f.chat,journal).items[0].text,'编辑');
+ journal.bridgeReview.items[0].text='更新原文';assert.equal(f.bridge.readReviewDraft(f.chat,journal),null);
+ journal.bridgeReview.items[0].text='原文';f.chat.activeArchiveId='other';assert.equal(f.bridge.readReviewDraft(f.chat,journal),null);
+ f.chat.activeArchiveId='default';f.db.uvuStoryBridgeSettings.channel='tt';assert.equal(f.bridge.readReviewDraft(f.chat,journal),null);
+});
+test('mode lookup propagates caller abort without network diagnostic wrapping',async()=>{
+ const f=harness(async(url,opts)=>new Promise((resolve,reject)=>{opts.signal.addEventListener('abort',()=>reject(Object.assign(new Error('cancelled'),{name:'AbortError'})),{once:true});}));
+ f.context.AbortController=AbortController;const control=new AbortController();const pending=f.bridge.getMode('char-1',{signal:control.signal});control.abort();
+ await assert.rejects(pending,error=>error.name==='AbortError');
+});
+test('safe capacity diagnostics contain counts but no tokens source text addresses or role identifiers',()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));f.db.uvuStoryBridgeSettings.outbox=[{payload:{text:'SECRET STORY'}}];
+ const snapshot=f.bridge.diagnosticsSnapshot();assert.equal(snapshot.local.pendingSend,1);assert.equal(snapshot.local.remainingSend,499);
+ assert.doesNotMatch(JSON.stringify(snapshot),/paired-token|SECRET STORY|127\.0\.0\.1|char-1/);
+});
+
+test('scene and floor review load lazily and select all includes unloaded floors',()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));
+ function element(tag){return {tag,children:[],listeners:{},attributes:{},dataset:{},value:'',append(...v){this.children.push(...v);},replaceChildren(){this.children=[];},setAttribute(k,v){this.attributes[k]=v;},addEventListener(k,v){this.listeners[k]=v;},contains(){return false;}};}
+ const host=element('host');f.context.document.createElement=element;f.context.document.getElementById=id=>id==='uvu-bridge-review-list'?host:null;
+ const items=Array.from({length:125},(_,i)=>({id:String(i),text:'楼层'+i,selected:false}));
+ const journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{archiveId:'default',items}};f.chat.memoryJournals=[journal];
+ const walk=root=>[root,...root.children.flatMap(x=>typeof x==='object'?walk(x):[])];f.bridge.renderReview(true);
+ assert.equal(walk(host).filter(x=>x.tag==='textarea').length,0);
+ const scene=host.children.find(x=>x.tag==='details');scene.open=true;scene.listeners.toggle();
+ assert.equal(walk(host).filter(x=>x.className==='uvu-bridge-review-row').length,20);
+ assert.equal(walk(host).filter(x=>x.attributes['aria-label']==='编辑整层剧情').length,0);
+ const all=walk(host).find(x=>x.attributes['aria-label']==='全选本场剧情');all.checked=true;all.listeners.change();
+ assert.equal(f.bridge.readReviewDraft(f.chat,journal).items.filter(x=>x.selected).length,125);
+});
+
+test('recovery never erases unrecovered scene parts just because relay has lost them',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({events:[]})}));
+ f.db.uvuStoryBridgeSettings.pendingScenes={'char-1:lost':{characterKey:'char-1',archiveId:'default',partCount:2,parts:{1:'未恢复剧情'},floorParts:{}}};
+ await f.bridge.syncIncoming('char-1',20,true);assert.equal(f.db.uvuStoryBridgeSettings.pendingScenes['char-1:lost'].parts[1],'未恢复剧情');
+});
+
+test('completed-only cleanup requires export and confirmation and preserves incomplete parts and dedup receipts',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const state=f.db.uvuStoryBridgeSettings;
+ f.chat.memoryJournals=[{id:'j',externalSceneId:'done',source:'sillytavern',bridgeReview:{channel:'st',archiveId:'default',status:'approved',items:[]}}];
+ state.receipts={'char-1:done':{archiveId:'default',at:1}};state.pendingScenes={'char-1:done':{characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:'saved'}},'char-1:lost':{characterKey:'char-1',partCount:2,parts:{1:'KEEP'}}};
+ const preview=await f.bridge.cleanupCompleted();assert.equal(preview.completedSceneCopies,1);assert.equal(preview.protectedScenes,1);
+ await assert.rejects(f.bridge.cleanupCompleted({dryRun:false,confirmed:true}),/导出/);assert.ok(state.pendingScenes['char-1:done']);
+ f.context.saveData=async()=>{throw new Error('quota');};await assert.rejects(f.bridge.cleanupCompleted({dryRun:false,confirmed:true,exported:true}),/quota/);assert.ok(state.pendingScenes['char-1:done']);
+ f.context.saveData=async()=>{};await f.bridge.cleanupCompleted({dryRun:false,confirmed:true,exported:true});assert.equal(state.pendingScenes['char-1:done'],undefined);assert.equal(state.pendingScenes['char-1:lost'].parts[1],'KEEP');assert.ok(state.receipts['char-1:done']);
+});
+
+test('summary group checkpoints persist independently from approval and resume only the exact source version',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})})),items=[{id:'f',text:'剧情',selected:true}],key='a'.repeat(64);
+ const journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{channel:'st',archiveId:'default',items,status:'pending'}};f.chat.memoryJournals=[journal];
+ f.context.UvUBridgeSummary.generate=async(chat,input,options)=>{options.cache.set(key,{title:'分组',content:'分组结果'});await options.onCache(key,{title:'分组',content:'分组结果'});throw new Error('预算用完');};
+ await assert.rejects(f.bridge.summarizeReview(f.chat,journal,items,{}),/预算/);assert.equal(journal.content,'原文');assert.equal(f.bridge.allowedMemory(f.chat,journal),false);assert.equal(journal.bridgeReview.summaryResume.entries.length,1);assert.match(journal.bridgeReview.summaryResume.sourceVersion,/^[a-f0-9]{64}$/);
+ let reused;f.context.UvUBridgeSummary.generate=async(chat,input,options)=>{reused=options.cache.has(key);return {title:'摘要',content:'待确认摘要',items,sourceSignature:f.context.UvUBridgeSummary.signature(items)};};
+ await f.bridge.summarizeReview(f.chat,journal,items,{});assert.equal(reused,true);assert.equal(journal.content,'原文');
+ journal.bridgeReview.items[0].text='更新原文';await f.bridge.summarizeReview(f.chat,journal,journal.bridgeReview.items,{});assert.equal(reused,false);
 });

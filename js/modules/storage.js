@@ -403,9 +403,9 @@ const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'memoryVe
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
 const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
 const storageClone = value => value === undefined ? undefined : (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
-function storageRuntimeData(chat) {
+function storageRuntimeData(chat, options = {}) {
     const result = {};
-    STORAGE_CHAT_KEYS.forEach(key => { if (chat[key] !== undefined) result[key] = storageClone(chat[key]); });
+    STORAGE_CHAT_KEYS.forEach(key => { if (chat[key] !== undefined && !(key === 'memoryVectorIndex' && options.includeVectorIndex === false)) result[key] = storageClone(chat[key]); });
     if (chat.statusPanel) {
         result.statusPanel = {};
         STORAGE_STATUS_KEYS.forEach(key => { if (chat.statusPanel[key] !== undefined) result.statusPanel[key] = storageClone(chat.statusPanel[key]); });
@@ -419,22 +419,22 @@ function storageContactData(chat) {
     if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
     return result;
 }
-function storageExportChat(chat, contacts, chats) {
+function storageExportChat(chat, contacts, chats, options = {}) {
     const result = contacts ? storageContactData(chat) : { id: chat.id, name: chat.name };
     if (chats) {
-        Object.assign(result, storageRuntimeData(chat));
+        Object.assign(result, storageRuntimeData(chat, options));
         if (contacts && chat.statusPanel) result.statusPanel = storageClone(chat.statusPanel);
         result.activeArchiveId = chat.activeArchiveId;
         result.archives = (chat.archives || []).map(archive => {
             const metadata = {};
             Object.keys(archive).forEach(key => { if (key !== 'data') metadata[key] = storageClone(archive[key]); });
-            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}) } : storageRuntimeData(archive.data || {}) };
+            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}, options) } : storageRuntimeData(archive.data || {}, options) };
         });
         result.archives.forEach(archive => {
             if (contacts && archive.data.statusPanel && chat.archives.find(item => item.id === archive.id)?.data?.statusPanel) {
                 archive.data.statusPanel = storageClone(chat.archives.find(item => item.id === archive.id).data.statusPanel);
             }
-            if (archive.id === chat.activeArchiveId) archive.data = { ...archive.data, ...storageRuntimeData(chat),
+            if (archive.id === chat.activeArchiveId) archive.data = { ...archive.data, ...storageRuntimeData(chat, options),
                 ...(contacts && chat.statusPanel ? { statusPanel: storageClone(chat.statusPanel) } : {}) };
         });
     }
@@ -569,7 +569,33 @@ function storageValidateModules(modules) {
             optional(journal.isFavorited, location + '.isFavorited', 'boolean');
             if (journal.range !== undefined) {
                 object(journal.range, location + '.range');
-                for (const name of ['start', 'end']) optional(journal.range[name], location + '.range.' + name, 'number');
+                if (!Number.isInteger(journal.range.start) || journal.range.start < 0 || !Number.isInteger(journal.range.end) || journal.range.end < journal.range.start) fail(location + '.range', '非负且有序的整数范围');
+            }
+            if (journal.qualityReview !== undefined) {
+                const review = journal.qualityReview, prefix = location + '.qualityReview';
+                object(review, prefix);
+                optional(review.status, prefix + '.status', 'string');
+                if (review.status !== undefined && !['pending', 'approved'].includes(review.status)) fail(prefix + '.status', '有效审核状态');
+                optional(review.archiveId, prefix + '.archiveId', 'string');
+                for (const key of ['createdAt', 'updatedAt', 'reviewedAt']) optional(review[key], prefix + '.' + key, 'number');
+                if (review.warnings !== undefined && (!Array.isArray(review.warnings) || review.warnings.some(value => typeof value !== 'string'))) fail(prefix + '.warnings', '文本列表');
+            }
+            if (journal.bridgeReview !== undefined) {
+                const reviewPath = location + '.bridgeReview', review = journal.bridgeReview;
+                object(review, reviewPath);
+                for (const key of ['status', 'channel', 'archiveId', 'sourceText', 'memoryMode']) optional(review[key], reviewPath + '.' + key, 'string');
+                optional(review.version, reviewPath + '.version', 'number');
+                const reviewItem = (entry, entryPath) => {
+                    for (const key of ['id', 'text', 'speaker', 'date', 'sourceMessageId']) optional(entry[key], entryPath + '.' + key, 'string');
+                    optional(entry.selected, entryPath + '.selected', 'boolean');
+                    if (typeof entry.text !== 'string') fail(entryPath + '.text', '文本');
+                };
+                list(review.items, reviewPath + '.items', reviewItem);
+                if (review.summaryDraft !== undefined) {
+                    object(review.summaryDraft, reviewPath + '.summaryDraft');
+                    for (const key of ['title', 'content', 'sourceRevision']) optional(review.summaryDraft[key], reviewPath + '.summaryDraft.' + key, 'string');
+                    list(review.summaryDraft.reviewItems, reviewPath + '.summaryDraft.reviewItems', reviewItem);
+                }
             }
             if (journal.autoMemory !== undefined) {
                 object(journal.autoMemory, location + '.autoMemory');
@@ -649,6 +675,14 @@ function storageValidateModules(modules) {
                     optional(settings.enabled, location + '.enabled', 'boolean');
                     for (const name of ['everyUserMessages', 'lastCheckUserCount']) optional(settings[name], location + '.' + name, 'number');
                 }
+            }
+        }
+        if (item.stickerDescriptionSettings !== undefined) {
+            const value = item.stickerDescriptionSettings, prefix = path + '.stickerDescriptionSettings';
+            object(value, prefix);
+            for (const key of ['enabled', 'relevantOnly']) optional(value[key], prefix + '.' + key, 'boolean');
+            for (const [key, low, high] of [['maxItems', 1, 100], ['maxChars', 200, 30000]]) {
+                if (value[key] !== undefined && (!Number.isInteger(value[key]) || value[key] < low || value[key] > high)) fail(prefix + '.' + key, `整数 ${low}–${high}`);
             }
         }
         derivedProfile(item, path);
@@ -738,6 +772,12 @@ function storageValidateModules(modules) {
         }
     }
     for (const key of ['apiPresets', 'cotPresets', 'myPersonaPresets', 'bubbleCssPresets', 'globalCssPresets', 'fontPresets', 'statusBarPresets', 'themePresets', 'soundPresets', 'galleryPresets', 'chatFolders', 'workshopLlmPresets', 'workshopPromptPresets', 'widgetTemplates', 'addedWidgets']) list(modules[key], key, () => {});
+    list(modules.cotPresets, 'cotPresets', (preset, location) => {
+        list(preset.items, location + '.items', (item, itemPath) => {
+            for (const key of ['id', 'name', 'content', 'role']) optional(item[key], itemPath + '.' + key, 'string');
+            for (const key of ['enabled', 'locked']) optional(item[key], itemPath + '.' + key, 'boolean');
+        });
+    });
     for (const key of ['wallpaper', 'globalCss', 'fontUrl', 'homeSignature', 'moreProfileCardBg', 'homeScreenMode']) optional(modules[key], key, 'string');
     if (modules.homeLayoutOrder !== undefined && (!Array.isArray(modules.homeLayoutOrder) || modules.homeLayoutOrder.some(id => typeof id !== 'string'))) fail('homeLayoutOrder', '文本列表');
     if (modules.homeLayoutPages !== undefined && modules.homeLayoutPages !== null && (!Array.isArray(modules.homeLayoutPages) || modules.homeLayoutPages.some(page => !Array.isArray(page) || page.some(id => typeof id !== 'string')))) fail('homeLayoutPages', '页面列表');
@@ -758,6 +798,8 @@ function storageMergeChats(targets, incoming, contacts, chats) {
         if (!chats) return;
         const applyRuntime = (destination, source) => {
             const data = storageRuntimeData(source);
+            if (Array.isArray(data.memoryJournals)) data.memoryJournals = data.memoryJournals.map(journal =>
+                journal.range ? journal : { ...journal, range: { start: 0, end: 0 } });
             // Old backups have no index. Never pair newly restored history with
             // vectors from a different local story; the derived cache rebuilds lazily.
             if (source.history !== undefined && source.memoryVectorIndex === undefined) data.memoryVectorIndex = {};
@@ -812,12 +854,14 @@ async function storageExportMediaCache() {
     return result;
 }
 
-async function storageReadBackup(file, selection) {
+async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
+    const cancelled = () => Object.assign(new Error('备份导入已取消'), { name: 'AbortError' });
+    if (signal?.aborted) throw cancelled();
     if (/\.ee$/i.test(file.name) && typeof DecompressionStream !== 'function') {
         throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
     }
     if (typeof Worker === 'function') {
-        const keys = [
+        const keys = ['_uvuBackup',
             ...(selection.contacts || selection.chats ? ['characters', 'groups'] : []),
             ...(selection.worldbooks ? ['worldBooks'] : []), ...(selection.wallpapers ? ['myStickers'] : []),
             ...(selection.fonts ? ['customFonts'] : []), ...(selection.other ? ['mediaCache'] : []),
@@ -825,16 +869,22 @@ async function storageReadBackup(file, selection) {
         ];
         return new Promise((resolve, reject) => {
             let worker;
-            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261104-memory-safety'); }
+            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261106-feature-audit'); }
             catch (_) { reject(new Error('备份后台解析无法启动，请检查浏览器或网站脚本策略')); return; }
-            const finish = () => { worker.terminate(); clearTimeout(timer); };
+            let settled = false;
+            const finish = () => { settled = true; worker.terminate(); clearTimeout(timer); signal?.removeEventListener('abort', abort); };
+            const abort = () => { if (!settled) { finish(); reject(cancelled()); } };
             const timer = setTimeout(() => { finish(); reject(new Error('备份解析超时，请按类别拆分后重试')); }, 180000);
             worker.onmessage = event => {
+                if (settled) return;
+                if (event.data.progress) { onProgress?.(event.data.progress); return; }
                 finish();
                 if (event.data.error) reject(new Error(event.data.error)); else resolve(event.data.modules);
             };
             worker.onerror = () => { finish(); reject(new Error('备份后台解析失败，请检查文件或按类别拆分')); };
-            try { worker.postMessage({ file, keys }); }
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) { abort(); return; }
+            try { worker.postMessage({ file, keys, progress: !!onProgress }); }
             catch (_) { finish(); reject(new Error('无法将备份文件交给后台解析')); }
         });
     }
@@ -853,6 +903,7 @@ async function storageReadBackup(file, selection) {
             text = await new Blob(parts).text();
         } finally { reader.releaseLock(); }
     } else text = await file.text();
+    if (signal?.aborted) throw cancelled();
     const imported = JSON.parse(text);
     return imported?.modules ?? imported;
 }
@@ -951,6 +1002,8 @@ async function handleExport() {
     const exportBtn = document.getElementById('storage-export-btn');
     const exportText = document.getElementById('storage-export-text');
     const format = document.getElementById('storage-export-format')?.value || 'ee';
+    const exportOptions = { includeCredentials: document.getElementById('storage-export-credentials')?.checked !== false,
+        includeVectorIndex: document.getElementById('storage-export-vector-index')?.checked !== false };
     storageBackupBusy = true;
     exportBtn.disabled = true;
     exportText.textContent = '处理中...';
@@ -967,8 +1020,8 @@ async function handleExport() {
             exportData.modules.characters = [];
             exportData.modules.groups = [];
 
-            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats));
-            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats));
+            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
+            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
         }
 
         // 2. Worldbooks
@@ -1010,6 +1063,9 @@ async function handleExport() {
         }
 
         if (exportSelection.other) exportData.modules.mediaCache = await storageExportMediaCache();
+        if (typeof storageApplyExportOptions === 'function') exportData.modules = storageApplyExportOptions(exportData.modules, exportOptions);
+        exportData.backupManifest = { version: 1, categories: Object.keys(exportSelection).filter(key => exportSelection[key]),
+            ...exportOptions, resources: 'external-links-preserved' };
         let outputBlob;
         let extension = 'json';
         if (format !== 'json') {
@@ -1065,16 +1121,26 @@ async function handleImport(event) {
     storageBackupBusy = true;
     importLabel.classList.add('disabled');
     importText.textContent = '处理中...';
+    const controls = typeof storageBackupControls === 'function' ? storageBackupControls() : null;
 
     try {
         if (file.size > 32 * 1024 * 1024) showToast('大备份正在后台解析，请保持页面打开；内存不足时可按类别拆分备份');
-        const mods = await storageReadBackup(file, importSelection);
+        let mods = await storageReadBackup(file, importSelection, controls || {});
+        if (typeof storageResolveImportOptions === 'function') mods = storageResolveImportOptions(mods, {
+            credentialMode: document.getElementById('storage-import-credentials')?.value || 'preserve' });
+        storageValidateModules(mods);
+        if (controls?.signal.aborted || (typeof storageConfirmImport === 'function' && !await storageConfirmImport(importSelection, mods)))
+            throw Object.assign(new Error('备份导入已取消'), { name: 'AbortError' });
+        if (controls?.signal.aborted) throw Object.assign(new Error('备份导入已取消'), { name: 'AbortError' });
+        controls?.committing();
         await storageCommitImport(importSelection, mods);
+        controls?.finish('导入已成功提交。');
         showToast('导入成功，即将刷新页面');
         setTimeout(() => { window.location.reload(); }, 1500);
     } catch (error) {
-        console.error('导入出错:', error);
-        showToast('导入失败：' + error.message);
+        if (error.name !== 'AbortError') console.error('导入出错:', error);
+        controls?.finish(error.name === 'AbortError' ? '已取消，未写入数据。' : '导入失败，原数据保留。');
+        showToast(error.name === 'AbortError' ? '已取消导入，未写入数据' : '导入失败：' + error.message);
         storageBackupBusy = false;
         importLabel.classList.remove('disabled');
         importText.textContent = '导入备份';

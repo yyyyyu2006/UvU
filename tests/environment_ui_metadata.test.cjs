@@ -1,0 +1,5 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const c=vm.createContext({Date});vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/environment_ui.js'),'utf8'),c);
+test('environment UI metadata names source year region timezone and cache freshness without fetching',()=>{const result=c.environmentDataStatus({source:'local fixture',fetchedAt:1000},{kind:'holidays',year:2026,location:{countryCode:'CN',subdivision:'CN-SH',timezone:'Asia/Shanghai'},now:61000});assert.equal(result.ageMinutes,1);assert.equal(result.status,'fresh');assert.match(result.text,/2026|CN-SH|Asia\/Shanghai|local fixture/);});
+test('environment UI distinguishes stale weather unknown timestamps and clock skew',()=>{assert.equal(c.environmentDataStatus({source:'test',fetchedAt:1000},{kind:'weather',now:20*60000}).status,'stale');assert.equal(c.environmentDataStatus({source:'test'},{kind:'weather',now:1000}).status,'unknown');assert.equal(c.environmentDataStatus({source:'test',fetchedAt:100000},{kind:'weather',now:1000}).status,'clock-skew');});

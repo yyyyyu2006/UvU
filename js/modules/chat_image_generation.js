@@ -23,6 +23,15 @@ const ChatImageGeneration = (() => {
         ui.cancel.disabled = Boolean(running?.saving);
         ui.hint.hidden = !ai;
         ui.form.setAttribute('aria-busy', String(busy));
+        if (ui.preview) {
+            const ready = Boolean(ai && retry?.image && retry.target === target && retry.prompt === ui.input.value.trim());
+            ui.preview.hidden = !ready;
+            ui.previewToggle.hidden = !ai;
+            ui.previewCheckbox.disabled = busy;
+            ui.previewConfirm.disabled = ui.previewRegenerate.disabled = busy;
+            if (ready) { ui.previewImage.src = retry.image; ui.previewSave.href = retry.image; }
+            else { ui.previewImage.removeAttribute('src'); ui.previewSave.removeAttribute('href'); }
+        }
     }
 
     function cancel() {
@@ -61,6 +70,20 @@ const ChatImageGeneration = (() => {
         if (typeof MutationObserver !== 'undefined') new MutationObserver(() => {
             if (!ui.modal.classList.contains('visible')) cancel();
         }).observe(ui.modal, { attributes: true, attributeFilter: ['class'] });
+        if (typeof document.createElement === 'function' && ui.hint?.insertAdjacentElement) {
+            const toggle = document.createElement('label'); toggle.className = 'feature-help';
+            toggle.innerHTML = '<input id="pv-confirm-preview" type="checkbox"> 生成后先预览，再确认发送';
+            ui.hint.insertAdjacentElement('afterend', toggle);
+            const preview = document.createElement('div'); preview.id = 'pv-generated-preview'; preview.hidden = true;
+            preview.innerHTML = '<img alt="本次生成图片预览" style="display:block;max-width:100%;max-height:35dvh;object-fit:contain"><p class="feature-help">图片仅在本次弹窗暂存；关闭后请重新生成。保存失败可重试发送。</p><a id="pv-generated-save" download="UvU-generated-image.png">保存图片</a> <button id="pv-generated-confirm" type="button">确认发送</button> <button id="pv-generated-regenerate" type="button">重新生图</button>';
+            toggle.insertAdjacentElement('afterend', preview);
+            Object.assign(ui, { previewToggle: toggle, previewCheckbox: toggle.querySelector('input'), preview,
+                previewImage: preview.querySelector('img'), previewSave: preview.querySelector('a'),
+                previewConfirm: preview.querySelector('#pv-generated-confirm'), previewRegenerate: preview.querySelector('#pv-generated-regenerate') });
+            ui.previewCheckbox.addEventListener('change', refresh);
+            ui.previewConfirm.addEventListener('click', () => send(ui.input.value, true));
+            ui.previewRegenerate.addEventListener('click', () => { retry = null; send(ui.input.value); });
+        }
         refresh();
     }
 
@@ -80,6 +103,33 @@ const ChatImageGeneration = (() => {
         finally { signal.removeEventListener('abort', onAbort); }
     }
 
+    async function readImageBlob(response, signal) {
+        const tooLarge = () => new Error('生成图片超过 15MB，请降低工坊图片尺寸');
+        if (Number(response.headers?.get('content-length')) > maxBytes) {
+            if (response.body?.cancel) Promise.resolve(response.body.cancel()).catch(() => {});
+            throw tooLarge();
+        }
+        if (!response.body?.getReader) {
+            // Without streams no bounded read is possible; do not buffer unknown-size responses.
+            throw new Error('图片下载需要浏览器流式读取支持，请更新浏览器后重试');
+        }
+        const reader = response.body.getReader(), chunks = [];
+        let bytes = 0, complete = false;
+        try {
+            while (true) {
+                const part = await cancellable(reader.read(), signal);
+                if (part.done) { complete = true; break; }
+                bytes += part.value.byteLength;
+                if (bytes > maxBytes) throw tooLarge();
+                chunks.push(part.value);
+            }
+            return new Blob(chunks);
+        } finally {
+            if (!complete) Promise.resolve(reader.cancel()).catch(() => {});
+            reader.releaseLock();
+        }
+    }
+
     async function imageData(value, signal) {
         if (typeof value !== 'string' || !value.trim()) throw new Error('生图接口没有返回有效图片');
         value = value.trim();
@@ -94,8 +144,7 @@ const ChatImageGeneration = (() => {
                 throw new Error('图片已生成，但下载失败；请检查图片外链和跨域访问设置');
             }
             if (!response.ok) throw new Error(`图片下载失败（HTTP ${response.status}），请检查图片外链`);
-            if (Number(response.headers?.get('content-length')) > maxBytes) throw new Error('生成图片超过 15MB，请降低工坊图片尺寸');
-            blob = await response.blob();
+            blob = await readImageBlob(response, signal);
         } else {
             const encoded = value.replace(/^data:image\/(?:png|jpe?g|webp);base64,/i, '').replace(/\s/g, '');
             if (encoded.length > Math.ceil(maxBytes * 4 / 3) + 4) throw new Error('生成图片超过 15MB，请降低工坊图片尺寸');
@@ -128,7 +177,7 @@ const ChatImageGeneration = (() => {
         return http ? `生图失败（HTTP ${http[1]}），请检查工坊 API 设置` : '生图失败，请检查工坊 API 配置或网络后重试';
     }
 
-    async function send(text) {
+    async function send(text, confirmPreview = false) {
         text = String(text || '').trim();
         if (!text || running) return false;
         const source = target || captureChatSendTarget();
@@ -147,18 +196,25 @@ const ChatImageGeneration = (() => {
         status('正在生成图片…'); refresh();
         try {
             let image;
-            if (retry?.target === source && retry.prompt === text && retry.key === key) image = retry.image;
+            if (retry?.target === source && retry.prompt === text && retry.key === key && retry.image) image = retry.image;
             else {
-                retry = null;
+                if (retry && (retry.target !== source || retry.prompt !== text || retry.key !== key)) retry = null;
                 if (typeof window.executeImageGeneration !== 'function') throw new Error('请先在工坊完成生图 API 配置，并刷新页面');
-                const result = await cancellable(window.executeImageGeneration(settings, text, { signal: session.controller.signal }), session.controller.signal);
+                const result = retry?.target === source && retry.prompt === text && retry.key === key && retry.raw
+                    ? { imageData: retry.raw }
+                    : await cancellable(window.executeImageGeneration(settings, text, { signal: session.controller.signal }), session.controller.signal);
                 assertActive(session);
+                retry = { target: source, prompt: text, key, raw: result.imageData };
                 status('正在准备图片…');
                 image = await cancellable(imageData(result.imageData, session.controller.signal), session.controller.signal);
                 assertActive(session);
                 retry = { target: source, prompt: text, key, image };
             }
             assertActive(session);
+            if (ui?.previewCheckbox?.checked && !confirmPreview) {
+                status('图片已生成；请预览后确认发送，也可先保存图片或重新生图');
+                return false;
+            }
             if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
             session.saving = true; clearTimeout(session.timer); refresh();
             const { chat, type, chatId } = source;
@@ -183,7 +239,7 @@ const ChatImageGeneration = (() => {
             showToast('图片已发送');
             return true;
         } catch (error) {
-            if (running === session) status(errorText(error, session));
+            if (running === session) status(errorText(error, session) + (retry?.raw ? '；生成结果已保留，可重试下载，无需重新生图' : ''));
             return false;
         } finally {
             clearTimeout(session.timer);

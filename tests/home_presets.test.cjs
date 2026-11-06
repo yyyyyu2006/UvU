@@ -33,7 +33,7 @@ function fixture() {
         defaultWidgetSettings: { topLeft: { emoji: '', text: '' }, topRight: { emoji: '', text: '' },
             bottomLeft: { emoji: '', text: '' }, bottomRight: { emoji: '', text: '' } },
         dexieDB: {
-            globalSettings: { put: async ({ key, value }) => {
+            globalSettings: { delete: async key => { if (failing) throw new Error('disk full'); persisted.delete(key); }, put: async ({ key, value }) => {
                 if (failing) throw new Error('disk full');
                 persisted.set(key, plain(value));
             } },
@@ -68,6 +68,22 @@ test('export includes visible layout, images, variables and templates; excludes 
     assert.equal(preset.settings.appearance.fontSizeScale, 1.1);
     const json = JSON.stringify(preset);
     for (const secret of ['SECRET_', 'private-memory.example.com', 'memoryApiSettings', 'private-person', 'private-history', 'unused', 'apiSettings']) assert.equal(json.includes(secret), false);
+});
+test('preset resource summary exposes dependencies without loading external files and can undo an import', async () => {
+    const f=fixture(),before=JSON.stringify(f.db.homeLayoutPages),preset=await f.api.createPreset('next',true);
+    preset.settings.wallpaper='https://cdn.example/image.png?token=private';preset.settings.appearance.globalCss='@import url(https://font.example/style.css);';
+    const summary=f.api.inspectResources(preset);assert.ok(summary.resources.some(x=>x.includes('cdn.example')));assert.equal(JSON.stringify(summary).includes('token=private'),false);
+    await f.api.applyPreset(preset);assert.equal(f.api.canUndo(),true);await f.api.undoPreset();assert.equal(JSON.stringify(f.db.homeLayoutPages),before);assert.equal(f.db.wallpaper,image);assert.equal(f.api.canUndo(),false);
+});
+test('preset undo persistence failure keeps imported settings available for retry', async () => {
+    const f=fixture(),preset=await f.api.createPreset('next',true);preset.settings.homeSignature='new';await f.api.applyPreset(preset);f.setFailing(true);
+    await assert.rejects(f.api.undoPreset(),/disk full/);assert.equal(f.db.homeSignature,'new');assert.equal(f.api.canUndo(),true);
+});
+test('preset undo permits home renderer normalization immediately after import', async () => {
+    const f=fixture(),before=JSON.stringify(f.db.homeLayoutPages),preset=await f.api.createPreset('next',false);
+    let renders=0;f.context.setupHomeScreen=()=>{if(renders++===0)f.db.homeLayoutPages[0].push('app-api');};
+    await f.api.applyPreset(preset);await f.api.undoPreset();
+    assert.equal(JSON.stringify(f.db.homeLayoutPages),before);
 });
 
 test('export can omit font, size and global CSS', async () => {

@@ -56,6 +56,35 @@ const MiniMaxTTS = (() => {
     const audioCache = new Map();
     const audioDetails = new WeakMap();
     const maxCachedAudio = 8;
+    const maxCachedBytes = 24 * 1024 * 1024;
+    let lastDiagnostic = null;
+
+    function getCacheInfo() {
+        return { entries: audioCache.size, bytes: Array.from(audioCache.values()).reduce((sum, blob) => sum + blob.size, 0),
+            maxBytes: maxCachedBytes, maxEntries: maxCachedAudio };
+    }
+
+    function clearCache() {
+        const previous = getCacheInfo();
+        audioCache.clear();
+        return previous;
+    }
+
+    function showDiagnostics(session) {
+        if (session.bubble.id !== 'minimax-tts-preview' || (typeof document === 'undefined' || typeof document.createElement !== 'function')) return;
+        let panel = document.getElementById('minimax-tts-diagnostics');
+        if (!panel) {
+            panel = document.createElement('div'); panel.id = 'minimax-tts-diagnostics'; panel.className = 'feature-help';
+            const detail = document.createElement('span'); detail.setAttribute('aria-live', 'polite'); panel.appendChild(detail);
+            const clear = document.createElement('button'); clear.type = 'button'; clear.textContent = '清理语音缓存';
+            clear.addEventListener('click', () => { const info = clearCache(); showToast('已清理 ' + info.entries + ' 条语音；再次播放需调用 API 合成'); detail.textContent = '运行时语音缓存已清空；刷新也会清空缓存。'; });
+            panel.appendChild(clear); session.bubble.insertAdjacentElement('afterend', panel);
+        }
+        const d = session.diagnostic, info = getCacheInfo();
+        panel.querySelector('span').textContent = '导演 ' + d.directorMs + 'ms，合成 ' + d.synthesisMs + 'ms；' +
+            (d.cacheHit ? '复用缓存' : '本次调用合成 API') + '；情绪 ' + (d.emotion || 'auto') + '，语速 ' + d.speed + '，停顿 ' + d.pauseCount + ' 处' +
+            (d.warning ? '；' + d.warning : '') + '；缓存 ' + info.entries + ' 条 / ' + (info.bytes / 1048576).toFixed(1) + 'MiB。刷新后需重新合成。';
+    }
 
     function getSettings() {
         return db.minimaxTtsSettings || {};
@@ -98,7 +127,7 @@ const MiniMaxTTS = (() => {
     function cacheAudio(key, blob) {
         audioCache.delete(key);
         audioCache.set(key, blob);
-        while (audioCache.size > maxCachedAudio) audioCache.delete(audioCache.keys().next().value);
+        while (audioCache.size > maxCachedAudio || getCacheInfo().bytes > maxCachedBytes) audioCache.delete(audioCache.keys().next().value);
     }
 
     function describeRequest(text, settings) {
@@ -122,52 +151,76 @@ const MiniMaxTTS = (() => {
 
     async function synthesize(text, settings = getSettings(), signal) {
         const { apiKey, requestUrl, model, voiceId, emotion, cacheKey } = describeRequest(text, settings);
-        if (audioCache.has(cacheKey)) return audioCache.get(cacheKey);
-
-        const response = await fetch(requestUrl.href, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            signal,
-            body: JSON.stringify({
-                model,
-                text,
-                stream: false,
-                output_format: 'hex',
-                voice_setting: {
-                    voice_id: voiceId,
-                    speed: Number(settings.speed) || 1,
-                    vol: 1,
-                    pitch: Number(settings.pitch) || 0,
-                    ...(emotion ? { emotion } : {})
-                },
-                audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
-            })
-        });
-        let result;
+        if (signal?.aborted) throw Object.assign(new Error('语音生成已取消'), { name: 'AbortError' });
+        if (audioCache.has(cacheKey)) {
+            const cached = audioCache.get(cacheKey); cacheAudio(cacheKey, cached); return cached;
+        }
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        let stage = 'request', timer, rejectCancellation;
+        const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
+        const cancel = () => {
+            controller?.abort();
+            rejectCancellation(Object.assign(new Error('语音生成已取消'), { name: 'AbortError', stage }));
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
+        if (typeof setTimeout === 'function') timer = setTimeout(() => {
+            controller?.abort();
+            rejectCancellation(Object.assign(new Error('MiniMax 语音合成超时（' + (stage === 'request' ? '请求' : '响应') + '阶段），请稍后重试'), { name: 'TimeoutError', stage }));
+        }, 60000);
+        const wait = promise => Promise.race([promise, cancellation]);
         try {
-            result = await response.json();
-        } catch {
-            throw new Error(`MiniMax 返回了无效响应 (${response.status})`);
-        }
-        if (!response.ok || (result.base_resp && result.base_resp.status_code !== 0)) {
-            const detail = result.base_resp?.status_msg || result.message || `HTTP ${response.status}`;
-            throw new Error(`MiniMax 语音生成失败：${detail}`);
-        }
-        if (signal?.aborted) {
-            const error = new Error('语音生成已取消');
-            error.name = 'AbortError';
+            const response = await wait(fetch(requestUrl.href, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                signal: controller?.signal || signal,
+                body: JSON.stringify({
+                    model,
+                    text,
+                    stream: false,
+                    output_format: 'hex',
+                    voice_setting: {
+                        voice_id: voiceId,
+                        speed: Number(settings.speed) || 1,
+                        vol: 1,
+                        pitch: Number(settings.pitch) || 0,
+                        ...(emotion ? { emotion } : {})
+                    },
+                    audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
+                })
+            }));
+
+            stage = 'response';
+            let result;
+            try { result = await wait(response.json()); }
+            catch (error) {
+                if (error.name === 'AbortError' || error.name === 'TimeoutError') throw error;
+                throw new Error('MiniMax 返回了无效响应 (' + response.status + ')');
+            }
+            if (!response.ok || (result.base_resp && result.base_resp.status_code !== 0)) {
+                const detail = result.base_resp?.status_msg || result.message || ('HTTP ' + response.status);
+                throw new Error('MiniMax 语音生成失败：' + detail);
+            }
+            if (signal?.aborted) throw Object.assign(new Error('语音生成已取消'), { name: 'AbortError' });
+            stage = 'decode';
+            if (result.data?.status != null && Number(result.data.status) !== 2) throw new Error('MiniMax 音频尚未生成完成，请重试');
+            const format = String(result.extra_info?.audio_format || 'mp3').toLowerCase();
+            if (format !== 'mp3') throw new Error('MiniMax 返回的音频格式不是 MP3，请检查语音接口');
+            const blob = decodeHexAudio(result.data?.audio);
+            const traceId = String(result.trace_id || '');
+            audioDetails.set(blob, { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '' });
+            cacheAudio(cacheKey, blob);
+            return blob;
+        } catch (error) {
+            error.stage = error.stage || stage;
+            if (error.name !== 'AbortError' && error.name !== 'TimeoutError') {
+                const label = { request: '请求', response: '响应', decode: '音频解码' }[error.stage];
+                error.message = 'MiniMax ' + label + '阶段失败：' + error.message;
+            }
             throw error;
+        } finally {
+            if (timer != null) clearTimeout(timer);
+            signal?.removeEventListener('abort', cancel);
         }
-        if (result.data?.status != null && Number(result.data.status) !== 2) {
-            throw new Error('MiniMax 音频尚未生成完成，请重试');
-        }
-        const format = String(result.extra_info?.audio_format || 'mp3').toLowerCase();
-        if (format !== 'mp3') throw new Error('MiniMax 返回的音频格式不是 MP3，请检查语音接口');
-        const blob = decodeHexAudio(result.data?.audio);
-        const traceId = String(result.trace_id || '');
-        audioDetails.set(blob, { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '' });
-        cacheAudio(cacheKey, blob);
-        return blob;
     }
 
     function setLoading(session, loading) {
@@ -227,7 +280,8 @@ const MiniMaxTTS = (() => {
         let ttsSettings, cacheKey, directorSettings, source;
         try {
             const savedSettings = settings || getSettings();
-            ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : bubble.dataset.voiceId, savedSettings) };
+            const boundVoice = !settings && typeof VoiceDirector !== 'undefined' ? VoiceDirector.voiceIdFor(bubble) : null;
+            ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : boundVoice ?? bubble.dataset.voiceId, savedSettings) };
             ({ cacheKey } = describeRequest(text, ttsSettings));
             if (typeof VoiceDirector !== 'undefined') {
                 directorSettings = VoiceDirector.settings(savedSettings.director);
@@ -256,10 +310,16 @@ const MiniMaxTTS = (() => {
         setLoading(session, true);
         try {
             let speechText = text;
+            session.diagnostic = { directorMs: 0, synthesisMs: 0, emotion: '', speed: Number(ttsSettings.speed) || 1, pauseCount: 0, warning: '', cacheHit: false };
+            const directorStarted = Date.now();
             if (source) {
                 const direction = await VoiceDirector.prepare(text, directorSettings, source, session.controller.signal);
                 if (activeSession !== session) return;
                 if (!VoiceDirector.isCurrent(source)) return stop(session);
+                session.diagnostic.directorMs = Date.now() - directorStarted;
+                session.diagnostic.warning = direction.warning || '';
+                session.diagnostic.emotion = direction.emotion || '';
+                session.diagnostic.pauseCount = direction.pauseCount || 0;
                 if (direction.warning) showToast(direction.warning);
                 speechText = direction.text.length <= 10000 ? direction.text : text;
                 ttsSettings = { ...ttsSettings, emotion: direction.emotion, speechCacheKey: cacheKey,
@@ -267,7 +327,13 @@ const MiniMaxTTS = (() => {
             }
             const audioKey = describeRequest(speechText, ttsSettings).cacheKey;
             const cached = audioCache.get(audioKey);
+            const synthesisStarted = Date.now();
             session.blob = cached || await synthesize(speechText, ttsSettings, session.controller.signal);
+            session.diagnostic.synthesisMs = Date.now() - synthesisStarted;
+            session.diagnostic.cacheHit = Boolean(cached);
+            session.diagnostic.speed = Number(ttsSettings.speed) || 1;
+            lastDiagnostic = { ...session.diagnostic };
+            showDiagnostics(session);
             if (activeSession !== session) return;
             if (source && !VoiceDirector.isCurrent(source)) return stop(session);
             session.onEnded = () => { if (activeSession === session) stop(session); };
@@ -304,7 +370,7 @@ const MiniMaxTTS = (() => {
         return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
-    return { play, synthesize, resolveVoiceId };
+    return { play, synthesize, resolveVoiceId, getCacheInfo, clearCache, getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
 })();
 
 function getAudioPlaybackErrorMessage(code) {

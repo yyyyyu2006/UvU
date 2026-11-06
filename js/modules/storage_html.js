@@ -66,6 +66,17 @@ function injectStorageHTML() {
                     <option value="json">通用备份 .json（无需解压支持）</option>
                 </select>
             </label>
+            <div class="storage-backup-extras">
+                <label><input type="checkbox" id="storage-export-credentials" checked> 导出包含 API 密钥（分享给他人前请取消）</label>
+                <label><input type="checkbox" id="storage-export-vector-index" checked> 导出包含向量索引（取消可减小备份，记忆原文保留）</label>
+                <p>备份保留外链地址，不自动下载外部图片、字体和组件。导入前将显示更新范围供确认。</p>
+            </div>
+            <label class="storage-backup-extras">脱敏备份的空白密钥
+                <select id="storage-import-credentials"><option value="preserve">保留本机相同接口的密钥</option><option value="clear">清空对应密钥</option></select>
+            </label>
+            <button type="button" data-resource-health>检查外链与资源加载</button>
+            <p id="storage-backup-progress" role="status" aria-live="polite"></p>
+            <button type="button" id="storage-backup-cancel" hidden>取消解析</button>
             <div class="storage-action-group">
                 <button class="storage-action-btn storage-export-btn" id="storage-export-btn">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">

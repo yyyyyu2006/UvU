@@ -54,3 +54,19 @@ test('real journal summary factory retains its third-person requirements and lea
  assert.match(prompt,/专业的对话记录总结助手/);assert.match(prompt,/第三人称/);assert.match(prompt,/关键原话摘录/);
  assert.doesNotMatch(prompt,/LOCAL_HISTORY|OLD_FAVORITE|1970|\[系统时间:/);assert.equal(JSON.stringify(chat),before);
 });
+
+test('summary request budget stops before extra paid calls and resumes successful groups',async()=>{
+ const f=setup(),cache=new Map(),source=[{id:'long',selected:true,text:'剧情'.repeat(5000)}];
+ await assert.rejects(f.api.generate({},source,{batchChars:2000,maxCalls:1,cache}),/预算/);
+ assert.equal(f.calls.filter(x=>x.kind==='api').length,1);assert.equal(cache.size,1);
+ const plan=f.api.estimate(source,{batchChars:2000});assert.ok(plan.batchCount>1);assert.equal(plan.sourceChars,10000);
+ const progress=[];const result=await f.api.generate({},source,{batchChars:2000,maxCalls:20,cache,onBudgetProgress:x=>progress.push(x)});
+ assert.ok(result.content);assert.ok(progress.some(x=>x.cached>0));assert.ok(result.callCount<=20);
+});
+
+test('successful summary groups emit safe bounded resume keys and can continue after a fresh cache',async()=>{
+ const f=setup();f.ctx.crypto=require('node:crypto').webcrypto;const saved=[];const source=[{id:'long',selected:true,text:'长剧情。'.repeat(2000)}];
+ await assert.rejects(f.api.generate({},source,{batchChars:2000,maxCalls:1,onCache:(key,value)=>saved.push([key,value])}),/预算/);
+ assert.equal(saved.length,1);assert.match(saved[0][0],/^[a-f0-9]{64}$/);assert.doesNotMatch(saved[0][0],/example|剧情|private/);
+ const resumed=await f.api.generate({},source,{batchChars:2000,maxCalls:20,cache:new Map(saved)});assert.equal(resumed.cachedCount,1);
+});

@@ -42,7 +42,14 @@
         const d = dialog(id ? '编辑 MCP 服务' : '添加 MCP 服务', 'mcp-service-editor');
         const name = field(d.body, '名称', 'input', 'text', previous?.name || ''); name.maxLength = 128;
         const url = field(d.body, '服务接口地址', 'input', 'url', previous?.url || ''); url.placeholder = 'https://你的服务/mcp';
-        const protocol = select(d.body, '协议', [['自动识别（推荐）', 'auto'], ['2026-07-28', '2026-07-28'], ['2025-11-25', '2025-11-25'], ['2025-06-18', '2025-06-18'], ['2025-03-26', '2025-03-26']], previous?.protocol || 'auto');
+        if (!previous) {
+            const template = select(d.body, '用途模板（仍需填写真实服务地址）', [['自定义服务', 'custom'], ['天气与日历', 'environment'], ['只读资料检索', 'lookup'], ['外部笔记', 'notes']], 'custom');
+            template.onchange = () => {
+                if (!name.value.trim()) name.value = {environment:'天气与日历',lookup:'资料检索',notes:'外部笔记'}[template.value] || '';
+                d.status.textContent = '模板仅填写用途说明；不会提供虚构地址、自动授权或自动执行工具。请向服务提供者取得接口地址。';
+            };
+        }
+        const protocol = select(d.body, '协议' , [['自动识别（推荐）', 'auto'], ['2026-07-28', '2026-07-28'], ['2025-11-25', '2025-11-25'], ['2025-06-18', '2025-06-18'], ['2025-03-26', '2025-03-26']], previous?.protocol || 'auto');
         const auth = select(d.body, '认证', [['无需令牌', 'none'], ['Bearer 令牌', 'bearer']], previous?.auth || 'none');
         const token = field(d.body, '令牌（独立存储，不进入 MCP 导出或整机备份）', 'input', 'password', previous ? m().vault.get(previous) : ''); token.autocomplete = 'off';
         const remember = check(d.body, '在此浏览器记住令牌；不勾选仅当前会话保存', previous && m().vault.remembered(previous));
@@ -79,6 +86,16 @@
         const simple = node('details'); simple.open = true; simple.append(node('summary', '填写参数'));
         const raw = field(d.body, '最终 JSON 参数（可直接编辑；以此处为准）', 'textarea', 'text', '{}'); raw.rows = 5; raw.spellcheck = false;
         d.body.insertBefore(simple, raw.parentElement);
+        const validation = node('p', '', 'mcp-help'); validation.setAttribute('role', 'status'); raw.parentElement.after(validation);
+        const validateInput = () => {
+            try {
+                const value = JSON.parse(raw.value);
+                if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error('参数最外层必须是 JSON 对象');
+                if (!tool.validate(value)) throw new Error('与 Schema 不符：检查必填项、嵌套类型、范围和多余字段');
+                raw.setAttribute('aria-invalid', 'false'); validation.textContent = 'JSON 与本工具参数 Schema 校验通过；尚未调用。';
+            } catch (error) { raw.setAttribute('aria-invalid', 'true'); validation.textContent = '参数未通过：' + error.message; }
+        };
+        raw.addEventListener('input', validateInput); validateInput();
         const properties = tool.inputSchema.properties || {}, required = tool.inputSchema.required || [];
         for (const [key, schema] of Object.entries(properties).slice(0, 30)) {
             const title = key + (required.includes(key) ? ' *' : '（可选）'); let input;
@@ -92,7 +109,7 @@
                     try { value[key] = Array.isArray(schema.enum) || ['boolean', 'object', 'array'].includes(schema.type) ? JSON.parse(input.value) : ['integer', 'number'].includes(schema.type) ? Number(input.value) : input.value; }
                     catch (_) { d.status.textContent = key + ' 需要有效 JSON'; return; }
                 }
-                raw.value = JSON.stringify(value, null, 2);
+                raw.value = JSON.stringify(value, null, 2); validateInput();
             };
             if (schema.description) simple.append(node('p', String(schema.description).slice(0, 500), 'mcp-help'));
         }
@@ -101,7 +118,7 @@
         const output = node('pre', '尚未调用', 'mcp-result'); d.body.append(output);
         let result;
         const supply = button('供下轮参考', () => {
-            try { m().queue(result, scope); d.status.textContent = '已加入该角色当前存档的下一次回复参考；10 分钟内有效，使用一次后清除'; supply.disabled = true; }
+            try { m().queue(result, scope); d.status.textContent = '已加入该角色当前存档的下一次回复参考；10 分钟内有效，回复成功使用一次后清除'; supply.disabled = true; }
             catch (error) { d.status.textContent = error.message; }
         }); supply.disabled = true;
         const actions = node('div', undefined, 'mcp-row');
@@ -126,7 +143,7 @@
             ['1 · 添加服务', '打开 API 设置 → MCP 服务 → 添加。填写服务提供者给出的 HTTPS /mcp 地址。MCP 不是聊天模型接口；本功能不会把其他玩家的数据部署进你的 GitHub。需要认证时选择 Bearer。令牌默认仅当前浏览器会话保存，可主动选择记住。'],
             ['2 · 测试并授权工具', '保存后选中服务，点击“测试 / 刷新工具”。确认工具用途后，勾选“启用工具”并保存。只有你确认不会修改外部数据的工具才可勾选“已核实为只读”；服务自行声明只读不等于已授权。工具定义变化后需重新核对。开启服务和总开关后才能调用。'],
             ['3 · 手动查询', '在角色／群聊中选择接收目标和当前存档。在工具卡片点击“参数 / 调用”，填写必填字段或 JSON，再调用。写入或未知工具会显示具体服务、工具和参数，须确认后执行。取消或超时不保证外部服务尚未执行，请先核实再重试。'],
-            ['4 · 供下轮参考', '在“角色授权”内允许该角色使用外部资料，并勾选相应工具保存。之后调用工具，检查结果，再点“供下轮参考”。只用于该角色当时的存档、下一次回复尝试；10 分钟失效，不自动保存为日记或向量记忆。可用“清空待用结果”撤销。'],
+            ['4 · 供下轮参考', '在“角色授权”内允许该角色使用外部资料，并勾选相应工具保存。之后调用工具，检查结果，再点“供下轮参考”。只用于该角色当时的存档、下一次成功回复；失败或取消会保留至10分钟失效，不自动保存为日记或向量记忆。可用“清空待用结果”撤销。'],
             ['5 · 自动工具判断（可选）', '先设置“独立工具判断 API”：可用主 API、副 API，或单独填写地址/模型/密钥。再为角色勾选“允许独立 API 自动判断”。它仅看到最近 1–4 条相关文本和已授权工具，不会读完整人设、世界书或历史。每轮最多 1–3 次已授权只读调用。判断失败、断网或工具失败时继续普通回复。'],
             ['6 · Token 和费用', '普通聊天 Token 面板会单列 MCP 外部资料的本地估算。工具判断是另一次模型调用，其输入/输出用量在本中心记录，优先使用 API 返回值；不是角色回复总用量的一部分。工具服务本身是否收费由服务提供者决定。只读缓存仅避免相同参数的重复工具请求，不保证节省模型费用。'],
             ['7 · 日历和天气复用', '在“日历与环境设置 → 高级 → MCP”选择已添加的中心服务，并配置四类工具名、参数模板和结果结构。仅支持你核实为只读的工具；原免密钥天气服务及原独立 MCP 配置继续保留。'],
@@ -143,8 +160,9 @@
         const initial = targets.findIndex(t => t.chat.id === currentChatId && t.type === currentChatType);
         const target = select(d.body, '接收角色／群聊（使用该对象当前活动存档）', [['仅查看工具结果', ''], ...targets.map((t, i) => [t.label, String(i)])], initial >= 0 ? String(initial) : '');
         const selectedTarget = () => target.value === '' ? null : targets[Number(target.value)];
+        const permissionArea = node('details'); permissionArea.append(node('summary', '当前权限总览与撤销'));
         const serviceArea = node('section'), toolsArea = node('section'), roleArea = node('section'), plannerArea = node('details'), logsArea = node('details');
-        d.body.append(serviceArea, toolsArea, roleArea, plannerArea, logsArea);
+        d.body.append(serviceArea, toolsArea, roleArea, permissionArea, plannerArea, logsArea);
         let serviceId = m().settings().services[0]?.id || '', tools = [], page = 0;
         function renderServices() {
             serviceArea.replaceChildren(node('strong', '远程服务'));
@@ -159,10 +177,31 @@
                     serviceId = next.services[0]?.id || ''; tools = []; renderServices(); renderTools(); renderRoles();
                 })), button('测试 / 刷新工具', () => d.run(async signal => {
                     if (!serviceId) throw new Error('请先添加一个服务'); d.status.textContent = '正在连接并读取工具…';
-                    tools = await m().discover(serviceId, signal, true); page = 0; renderTools(); renderRoles();
+                    tools = await m().discover(serviceId, signal, true); page = 0; renderServices(); renderTools(); renderRoles();
                     d.status.textContent = '连接成功：' + tools.length + ' 个工具；请检查用途后保存授权';
                 })));
             serviceArea.append(row);
+            if (serviceId) {
+                const health = m().health(serviceId);
+                serviceArea.append(node('p', `服务：${health.enabled ? '开启' : '关闭'} · 认证：${health.credentialsPresent ? '已具备／无需' : '未填'} · 工具：${health.tools} · 已授权对象：${health.roles}\n` +
+                    (health.checkedAt ? `上次成功检查：${new Date(health.checkedAt).toLocaleString()} · 协议 ${health.protocol}。这是本机记录，不代表服务此刻仍在线。` : '尚未成功检查；点击“测试 / 刷新工具”连接。'), 'mcp-help'));
+            }
+            renderPermissions();
+        }
+        function renderPermissions() {
+            permissionArea.querySelectorAll(':scope > :not(summary)').forEach(el => el.remove());
+            const policies = m().settings().policies.filter(p => p.enabled || p.grants.length);
+            if (!policies.length) permissionArea.append(node('p', '尚无角色授权。服务和工具启用不等于角色自动获得权限。', 'mcp-help'));
+            for (const policy of policies) {
+                const entry = node('div', undefined, 'mcp-row');
+                const t = targets.find(t => t.chat.id === policy.chatId && t.type === policy.type);
+                entry.append(node('span', `${t?.label || '已删除对象'} · ${policy.enabled ? (policy.auto ? '自动只读判断' : '仅手动参考') : '停用'} · ${policy.grants.length} 项`));
+                entry.append(button('撤销此对象授权', () => d.run(async () => {
+                    const next = m().settings(); next.policies = next.policies.filter(p => p.chatId !== policy.chatId || p.type !== policy.type);
+                    await m().save(next); renderRoles(); d.status.textContent = '已撤销此对象全部MCP授权，待用资料同时失效。';
+                })));
+                permissionArea.append(entry);
+            }
         }
         function renderTools() {
             toolsArea.replaceChildren(node('strong', '工具列表'));
@@ -186,6 +225,7 @@
             nav.append(previous, node('span', (page + 1) + ' / ' + pages), next); toolsArea.append(nav);
         }
         function renderRoles() {
+            renderPermissions();
             roleArea.replaceChildren(node('strong', '角色授权'));
             const t = selectedTarget(); if (!t) { roleArea.append(node('p', '选择一个角色或群聊后设置。', 'mcp-help')); return; }
             const scope = m().scope(t.chat, t.type), p = m().policy(scope);

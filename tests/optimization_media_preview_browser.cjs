@@ -1,0 +1,23 @@
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const root=path.join(__dirname,'..');
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+ const page=await browser.newPage({viewport:{width:390,height:844}});
+ await page.route('https://preview.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="send-pv-modal" class="visible"><form id="send-pv-form"><input id="pv-mode-text" type="radio"><input id="pv-mode-ai" type="radio"><input id="pv-text-input"><button id="pv-send-btn" type="button">发送</button><button id="pv-cancel-generation" type="button">取消</button><p id="pv-generation-status"></p><p id="pv-generation-hint">生图</p></form></div>'}));
+ await page.goto('https://preview.test/');
+ await page.evaluate(()=>{window.db={characters:[{id:'a',myName:'我',history:[]}],groups:[],workshopSettings:{}};window.currentChatId='a';window.currentChatType='private';window.saveData=async()=>{};window.renderChatList=()=>{};window.addMessageBubble=()=>{};window.renderMessages=()=>{};window.showToast=()=>{};window.generations=0;window.executeImageGeneration=async()=>{window.generations++;return{imageData:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII='};};});
+ for(const f of ['chat_ops','chat_image_generation'])await page.addScriptTag({content:fs.readFileSync(path.join(root,'js/modules/'+f+'.js'),'utf8')});
+ await page.evaluate(()=>{ChatImageGeneration.setup();ChatImageGeneration.open();document.getElementById('pv-mode-ai').checked=true;document.getElementById('pv-mode-ai').dispatchEvent(new Event('change'));document.getElementById('pv-text-input').value='窗边';});
+ await page.locator('#pv-confirm-preview').check();
+ await page.evaluate(()=>ChatImageGeneration.send('窗边'));
+ assert.equal(await page.evaluate(()=>db.characters[0].history.length),0,'preview has no chat side effect');
+ assert.equal(await page.locator('#pv-generated-preview').isVisible(),true);
+ assert.match(await page.locator('#pv-generated-save').getAttribute('href'),/^data:image\/png;base64,/);
+ await page.locator('#pv-generated-regenerate').click();
+ await page.waitForFunction(()=>window.generations===2 && !document.getElementById('pv-generated-confirm').disabled);
+ assert.equal(await page.evaluate(()=>db.characters[0].history.length),0);
+ await page.locator('#pv-generated-confirm').click();
+ await page.waitForFunction(()=>db.characters[0].history.length===1);
+ assert.equal(await page.evaluate(()=>window.generations),2);
+ console.log('PASS: optional image preview, manual save, regenerate, one confirmed chat write');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

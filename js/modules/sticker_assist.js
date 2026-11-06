@@ -1,19 +1,111 @@
+const stickerKeywordCache = new WeakMap();
+function getStickerKeywords(sticker) {
+    const signature = JSON.stringify([sticker.name, sticker.keywords]);
+    const cached = stickerKeywordCache.get(sticker);
+    if (cached?.signature === signature) return cached.words;
+    const words = [sticker.name, ...worldBookKeys(sticker.keywords)].filter(Boolean).map(value => String(value).toLocaleLowerCase());
+    stickerKeywordCache.set(sticker, { signature, words });
+    return words;
+}
+function getStickerDescriptionPlan(chat, queryText) {
+    const groups = (chat.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    const described = db.myStickers.filter(s => groups.includes(s.group) && s.description?.trim());
+    const saved = chat.stickerDescriptionSettings;
+    const header = '\n【可用表情包画面说明】\n';
+    const format = sticker => JSON.stringify({ 名称: sticker.name, 画面与含义: sticker.description.slice(0, 1500), 关键词: worldBookKeys(sticker.keywords) });
+    if (!saved) return { context: described.length ? header + described.map(format).join('\n') + '\n' : '', entries: described, legacy: true };
+    if (saved.enabled !== true) return { context: '', entries: [], legacy: false, reason: '说明注入已关闭' };
+    const budget = Math.max(200, Math.min(30000, Number(saved.maxChars) || 3000));
+    const maxItems = Math.max(1, Math.min(100, Number(saved.maxItems) || 12));
+    if (queryText === undefined) queryText = (chat.history || []).slice(-3).filter(message => ['user', 'assistant'].includes(message.role) &&
+        !message.isHidden && !message.isThinking && !message.isWithdrawn && !message.isContextDisabled && !message.isStatusUpdate && !message.relationshipDelivery)
+        .map(message => String(message.content || '').replace(/data:[^\s<>"']*/gi, '').slice(-2000)).join('\n');
+    const candidates = saved.relevantOnly === true ? getStickerSuggestions(queryText, described, maxItems) : described.slice(0, maxItems);
+    let context = '', remaining = budget - header.length - 1;
+    const entries = [];
+    for (const sticker of candidates) {
+        const line = format(sticker);
+        if (line.length + 1 > remaining) continue;
+        context += line + '\n'; remaining -= line.length + 1; entries.push(sticker);
+    }
+    return { context: context ? header + context : '', entries, legacy: false, omitted: described.length - entries.length, maxChars: budget,
+        reason: entries.length ? '' : '没有相关说明，或说明超过本轮字数预算' };
+}
+async function saveImportedStickers(additions) {
+    const ids = new Set(additions.map(item => item.id));
+    if (ids.size !== additions.length || db.myStickers.some(item => ids.has(item.id))) throw new Error('导入表情编号冲突，请重新导入');
+    db.myStickers.push(...additions);
+    try { await saveData(); }
+    catch (error) { db.myStickers = db.myStickers.filter(item => !ids.has(item.id)); throw error; }
+}
+async function recognizeStickerIntoInput(image, input, { signal, isCurrent = () => true, onlyIfEmpty = false } = {}) {
+    if (onlyIfEmpty && input.value.trim()) return false;
+    const before = input.value;
+    let edited = false;
+    const markEdited = () => { edited = true; };
+    input.addEventListener('input', markEdited);
+    try {
+        const result = await recognizeStickerImage(image, signal);
+        if (signal?.aborted || edited || input.value !== before || !isCurrent()) return false;
+        input.value = result; return true;
+    } finally { input.removeEventListener('input', markEdited); }
+}
+function getStickerImportDuplicates(items, existing = db.myStickers) {
+    const hash = value => { let a = 2166136261, b = 5381; for (let i = 0; i < value.length; i++) { a = Math.imul(a ^ value.charCodeAt(i), 16777619); b = Math.imul(b, 33) ^ value.charCodeAt(i); } return `${value.length}:${a >>> 0}:${b >>> 0}`; };
+    const seen = new Map();
+    for (const item of existing) { const data = String(item.data || ''); if (data) seen.set(hash(data), { data, label: `已有表情“${item.name || item.id}”` }); }
+    return items.map((item, index) => {
+        const data = String(item.data || ''), key = hash(data), previous = seen.get(key);
+        if (data && previous?.data === data) return { duplicate: true, reason: `图片与${previous.label}相同，默认不勾选；可手动保留` };
+        seen.set(key, { data, label: `本次第 ${index + 1} 张图片` });
+        return { duplicate: false, reason: '' };
+    });
+}
+function openStickerDescriptionSettings() {
+    const chat = (currentChatType === 'private' ? db.characters : db.groups).find(item => item.id === currentChatId);
+    if (!chat) return;
+    const archive = chat.activeArchiveId, id = currentChatId, type = currentChatType;
+    const isCurrent = () => chat.activeArchiveId === archive && currentChatId === id && currentChatType === type;
+    const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'sticker-description-settings';
+    overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>表情画面说明注入</strong><button type="button" data-action="close">关闭</button></header><p class="feature-help">图片识别只填写表情说明；此处独立控制本聊天向模型发送哪些说明。尚未保存设置时沿用旧版已绑定分组的全部说明规则，原表情发送与名称提示规则保持不变。</p><label><input type="checkbox" name="enabled">向模型注入画面说明</label><label><input type="checkbox" name="relevantOnly">只注入与近期聊天匹配的名称 / 关键词</label><label>最多条数<input type="number" name="maxItems" min="1" max="100"></label><label>本轮说明最多字数（含标题；不是精确Token）<input type="number" name="maxChars" min="200" max="30000"></label><button type="button" data-action="save">保存并更新预览</button><p class="feature-help" data-status></p><pre data-preview></pre></div>';
+    const values = { enabled: true, relevantOnly: true, maxItems: 12, maxChars: 3000, ...chat.stickerDescriptionSettings };
+    for (const [name, value] of Object.entries(values)) { const input = overlay.querySelector(`[name="${name}"]`); if (!input) continue; if (input.type === 'checkbox') input.checked = value; else input.value = value; }
+    const preview = () => { const plan = getStickerDescriptionPlan(chat); overlay.querySelector('[data-status]').textContent = `${plan.legacy ? '当前使用旧版全部说明规则；保存后才应用本面板限制。' : '已应用独立注入设置。'} 实际 ${plan.entries.length} 条 / ${plan.context.length} 字。${plan.reason || ''}`; overlay.querySelector('[data-preview]').textContent = plan.context || '本轮未注入表情说明。'; };
+    overlay.querySelector('[data-action="close"]').onclick = () => overlay.remove();
+    overlay.querySelector('[data-action="save"]').onclick = async event => {
+        const button = event.currentTarget; button.disabled = true;
+        try {
+            if (!isCurrent()) throw new Error('聊天或存档已切换，请重新打开');
+            const before = chat.stickerDescriptionSettings, next = {};
+            for (const name of ['enabled', 'relevantOnly', 'maxItems', 'maxChars']) { const input = overlay.querySelector(`[name="${name}"]`); if (!input.checkValidity()) throw new Error('请按范围填写说明条数与字数'); next[name] = input.type === 'checkbox' ? input.checked : Number(input.value); }
+            chat.stickerDescriptionSettings = next;
+            try { await saveData(); } catch (error) { if (chat.stickerDescriptionSettings === next) chat.stickerDescriptionSettings = before; throw error; }
+            if (!isCurrent()) throw new Error('保存期间已切换聊天，请重新打开'); preview();
+        } catch (error) { overlay.querySelector('[data-status]').textContent = error.message; }
+        finally { button.disabled = false; }
+    };
+    document.body.append(overlay); preview();
+}
+
 function getStickerSuggestions(text, stickers, limit = Infinity) {
     const query = String(text || '').trim().toLocaleLowerCase();
     if (!query) return [];
     return stickers.map(sticker => {
-        const words = [sticker.name, ...worldBookKeys(sticker.keywords)].filter(Boolean).map(s => s.toLocaleLowerCase());
+        const words = getStickerKeywords(sticker);
         const score = words.reduce((best, word) => Math.max(best, query === word ? 100 : query.includes(word) ? 50 + Math.min(word.length, 30) : query.length >= 2 && word.includes(query) ? 20 : 0), 0);
         return { sticker, score };
     }).filter(item => item.score > 0 && validStickerImage(item.sticker.data)).sort((a, b) => b.score - a.score || (b.sticker.lastUsedTime || 0) - (a.sticker.lastUsedTime || 0)).slice(0, limit).map(item => item.sticker);
 }
-function getStickerDescriptionContext(chat) {
-    const groups = (chat.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
-    const described = db.myStickers.filter(s => groups.includes(s.group) && s.description?.trim());
-    if (!described.length) return '';
-    return '\n【可用表情包画面说明】\n' + described.map(s => JSON.stringify({ 名称: s.name, 画面与含义: s.description.slice(0, 1500), 关键词: worldBookKeys(s.keywords) })).join('\n') + '\n';
+function getStickerDescriptionContext(chat, queryText) {
+    return getStickerDescriptionPlan(chat, queryText).context;
 }
+
 function setupStickerAssist() {
+    const host = document.getElementById('setting-char-sticker-groups-container');
+    if (host && !document.getElementById('sticker-description-settings-open')) {
+        const control = document.createElement('button'); control.type = 'button'; control.id = 'sticker-description-settings-open';
+        control.className = 'btn btn-secondary'; control.textContent = '表情画面说明注入 / 预算'; control.onclick = openStickerDescriptionSettings; host.after(control);
+    }
     const form = document.getElementById('add-sticker-form');
     const fields = document.createElement('div');
     fields.innerHTML = '<div class="form-group"><label for="sticker-keywords">联想关键词（逗号分隔）</label><input id="sticker-keywords" type="text" placeholder="开心,哈哈,好耶"></div><div class="form-group"><label for="sticker-description">图片内容 / 情绪 / 适用场景</label><textarea id="sticker-description" rows="3" placeholder="例如：小猫举起双手欢呼，表达开心和赞同"></textarea><button type="button" id="sticker-recognize">使用 API 识别当前图片</button><p class="feature-help">识别使用 API 设置中的“图片识别”路由，需要支持视觉的模型。保存说明后角色可据此理解和选择表情。</p></div>';
@@ -40,9 +132,8 @@ function setupStickerAssist() {
         const identity = document.getElementById('sticker-edit-id').value;
         button.disabled = true; button.textContent = '识别中…';
         try {
-            const description = await recognizeStickerImage(image);
-            if (document.getElementById('sticker-preview').querySelector('img')?.src === image && document.getElementById('sticker-edit-id').value === identity) document.getElementById('sticker-description').value = description;
-            showToast('图片识别完成，请确认说明后保存');
+            const applied = await recognizeStickerIntoInput(image, document.getElementById('sticker-description'), { isCurrent: () => document.getElementById('sticker-preview').querySelector('img')?.src === image && document.getElementById('sticker-edit-id').value === identity });
+            showToast(applied ? '图片识别完成，请确认说明后保存' : '识别完成；已保留你在等待期间修改的说明或新选择的图片');
         } catch (error) { showToast('识别失败：' + error.message); }
         finally { button.disabled = false; button.textContent = '使用 API 识别当前图片'; }
     });
@@ -58,25 +149,50 @@ function setupStickerAssist() {
     const bar = document.createElement('div'); bar.id = 'sticker-suggestions'; bar.className = 'sticker-suggestions'; bar.hidden = true; bar.setAttribute('aria-label', '表情联想');
     document.getElementById('reply-preview-bar').before(bar);
     let composing = false, selectedChat = currentChatId, selectedType = currentChatType, selectedArchive;
-    window.clearStickerSuggestions = () => { bar.hidden = true; bar.replaceChildren(); };
-    const refresh = () => {
-        const chat = (currentChatType === 'private' ? db.characters : db.groups).find(c => c.id === currentChatId);
-        if (selectedChat !== currentChatId || selectedType !== currentChatType || selectedArchive !== chat?.activeArchiveId) { bar.hidden = true; bar.replaceChildren(); selectedChat = currentChatId; selectedType = currentChatType; selectedArchive = chat?.activeArchiveId; }
-        const suggestions = composing || !chat || isInMultiSelectMode ? [] : getStickerSuggestions(composer.value, db.myStickers);
-        bar.replaceChildren(); bar.hidden = !suggestions.length; bar.scrollLeft = 0;
-        suggestions.forEach(sticker => {
+    let timer, previous = [], moreButton, activeSuggestions = [], rendered = 0;
+    const clear = () => { clearTimeout(timer); bar.hidden = true; bar.replaceChildren(); previous = []; activeSuggestions = []; rendered = 0; moreButton = null; };
+    window.clearStickerSuggestions = clear;
+    const renderMore = chat => {
+        const scroll = bar.scrollLeft;
+        moreButton?.remove();
+        for (const sticker of activeSuggestions.slice(rendered, rendered + 24)) {
             const button = document.createElement('button'); button.type = 'button'; button.title = sticker.description || sticker.name;
-            const image = document.createElement('img'); image.src = sticker.data; image.alt = sticker.name; const label = document.createElement('span'); label.textContent = sticker.name; button.append(image, label);
+            const image = document.createElement('img'); image.src = sticker.data; image.alt = sticker.name; image.loading = 'lazy'; image.decoding = 'async';
+            const label = document.createElement('span'); label.textContent = sticker.name; button.append(image, label);
             button.addEventListener('mousedown', e => e.preventDefault());
             button.addEventListener('click', async () => {
                 if (chat.id !== currentChatId || chat.activeArchiveId !== selectedArchive || isInMultiSelectMode) return;
                 button.disabled = true;
-                try { await sendSticker(sticker); bar.hidden = true; } catch (error) { showToast('发送失败：' + error.message); button.disabled = false; }
+                try { await sendSticker(sticker); clear(); } catch (error) { showToast('发送失败：' + error.message); button.disabled = false; }
             }); bar.appendChild(button);
-        });
+        }
+        rendered = Math.min(rendered + 24, activeSuggestions.length);
+        if (rendered < activeSuggestions.length) {
+            moreButton = document.createElement('button'); moreButton.type = 'button'; moreButton.dataset.more = 'true';
+            moreButton.textContent = `更多（剩余 ${activeSuggestions.length - rendered}）`;
+            moreButton.onclick = () => renderMore(chat); bar.appendChild(moreButton);
+        }
+        bar.hidden = !activeSuggestions.length; bar.scrollLeft = scroll;
     };
-    composer.addEventListener('compositionstart', () => { composing = true; refresh(); }); composer.addEventListener('compositionend', () => { composing = false; refresh(); }); composer.addEventListener('input', refresh);
-    new MutationObserver(() => { if (currentChatId !== selectedChat || currentChatType !== selectedType || isInMultiSelectMode || !document.getElementById('chat-room-screen').classList.contains('active')) { bar.hidden = true; bar.replaceChildren(); selectedChat = currentChatId; selectedType = currentChatType; } }).observe(document.getElementById('chat-room-screen'), { attributes: true, childList: true, subtree: false });
+    const refresh = () => {
+        const chat = (currentChatType === 'private' ? db.characters : db.groups).find(c => c.id === currentChatId);
+        if (selectedChat !== currentChatId || selectedType !== currentChatType || selectedArchive !== chat?.activeArchiveId) {
+            clear(); selectedChat = currentChatId; selectedType = currentChatType; selectedArchive = chat?.activeArchiveId;
+        }
+        const suggestions = composing || !chat || isInMultiSelectMode ? [] : getStickerSuggestions(composer.value, db.myStickers);
+        // Compare references and small metadata without copying/serializing the image payload.
+        if (previous.length === suggestions.length && previous.every((item, i) => item.sticker === suggestions[i] && item.name === suggestions[i].name && item.description === suggestions[i].description && item.data === suggestions[i].data)) return;
+        previous = suggestions.map(sticker => ({ sticker, name: sticker.name, description: sticker.description, data: sticker.data }));
+        const scroll = bar.scrollLeft; bar.replaceChildren(); rendered = 0; activeSuggestions = suggestions; moreButton = null;
+        if (chat) renderMore(chat); else bar.hidden = true;
+        bar.scrollLeft = scroll;
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(refresh, 120); };
+    composer.addEventListener('compositionstart', () => { composing = true; clear(); });
+    composer.addEventListener('compositionend', () => { composing = false; schedule(); });
+    composer.addEventListener('input', schedule);
+
+    new MutationObserver(() => { if (currentChatId !== selectedChat || currentChatType !== selectedType || isInMultiSelectMode || !document.getElementById('chat-room-screen').classList.contains('active')) { clear(); selectedChat = currentChatId; selectedType = currentChatType; } }).observe(document.getElementById('chat-room-screen'), { attributes: true, childList: true, subtree: false });
 }
 async function recognizeStickerImage(image, signal, purpose = 'sticker') {
     const controller = new AbortController();
@@ -116,12 +232,14 @@ function showStickerImportPreview(items, initialGroup) {
     const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'sticker-import-preview';
     overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>表情文档导入预览</strong><button type="button" class="import-cancel">取消</button></header><p class="feature-help">可修改每张图的名称、关键词、画面说明。格式：名称|关键词|说明:图片URL；DOCX 嵌入图片可在同一表格行填写这些信息。批量识图会逐张调用当前图片识别 API，并保存识别说明。</p><label>分组<input class="import-group" type="text"></label><div class="sticker-import-list"></div><div class="sticker-import-actions"><button type="button" class="import-recognize">批量识别所选图片</button><span class="import-recognize-status" aria-live="polite"></span><button type="button" class="import-save">确认导入</button></div></div>';
     overlay.querySelector('.import-group').value = initialGroup;
-    const rows = items.map(item => {
-        const row = document.createElement('label'); row.className = 'sticker-import-row'; const checked = document.createElement('input'); checked.type = 'checkbox'; checked.checked = true; checked.style.width = 'auto';
-        const image = document.createElement('img'); image.src = item.data; image.alt = item.name;
+    const duplicates = getStickerImportDuplicates(items);
+    const rows = items.map((item, index) => {
+        const row = document.createElement('label'); row.className = 'sticker-import-row'; const checked = document.createElement('input'); checked.type = 'checkbox'; checked.checked = !duplicates[index].duplicate; checked.style.width = 'auto';
+        const image = document.createElement('img'); image.src = item.data; image.alt = item.name; image.loading = 'lazy'; image.decoding = 'async';
         const fields = document.createElement('div');
         fields.innerHTML = '<input class="import-name" aria-label="表情名称"><input class="import-keys" aria-label="联想关键词" placeholder="关键词，逗号分隔"><input class="import-description" aria-label="画面说明" placeholder="图片内容和适用场景">';
         fields.querySelector('.import-name').value = item.name; fields.querySelector('.import-keys').value = worldBookKeys(item.keywords).join(', '); fields.querySelector('.import-description').value = item.description;
+        if (duplicates[index].duplicate) { const warning = document.createElement('p'); warning.className = 'feature-help'; warning.textContent = duplicates[index].reason; fields.append(warning); }
         row.append(checked, image, fields); overlay.querySelector('.sticker-import-list').appendChild(row); return { item, row, checked };
     });
     let recognitionController = null, closed = false;
@@ -139,21 +257,20 @@ function showStickerImportPreview(items, initialGroup) {
         const signal = recognitionController.signal;
         overlay.querySelector('.import-save').disabled = true;
         button.textContent = '停止识别';
-        let cursor = 0, completed = 0, failed = 0;
+        let cursor = 0, completed = 0, failed = 0, edited = 0;
         const workers = Array.from({ length: Math.min(2, selected.length) }, async () => {
             while (!signal.aborted && !closed && cursor < selected.length) {
                 const item = selected[cursor++];
                 const description = item.row.querySelector('.import-description');
                 try {
-                    const result = await recognizeStickerImage(item.item.data, signal);
+                    const applied = await recognizeStickerIntoInput(item.item.data, description, { signal, onlyIfEmpty: true, isCurrent: () => !closed && item.checked.checked });
                     if (signal.aborted || closed) break;
-                    description.value = result;
-                    completed++;
+                    if (applied) completed++; else edited++;
                 } catch (_) {
                     if (signal.aborted || closed) break;
                     failed++;
                 }
-                status.textContent = `已处理 ${completed + failed}/${selected.length} 张，成功 ${completed}，失败 ${failed}`;
+                status.textContent = `已处理 ${completed + failed + edited}/${selected.length} 张，成功 ${completed}，失败 ${failed}，保留手改 ${edited}`;
             }
         });
         await Promise.all(workers);
@@ -163,16 +280,16 @@ function showStickerImportPreview(items, initialGroup) {
         button.disabled = false;
         button.textContent = '批量识别所选图片';
         if (signal.aborted) status.textContent = `已停止，保留已完成的 ${completed} 张说明，可重试未完成图片。`;
-        else if (!failed) status.textContent = `识别完成：${completed} 张图片；请核对说明后导入。`;
+        else if (!failed) status.textContent = `识别完成：${completed} 张图片，保留手改 ${edited} 张；请核对说明后导入。`;
     };
     overlay.querySelector('.import-save').onclick = async e => {
         if (recognitionController || closed) return;
         const group = overlay.querySelector('.import-group').value.trim();
         const additions = rows.filter(r => r.checked.checked).map(({ item, row }) => ({ id: 'sticker_' + crypto.randomUUID(), name: row.querySelector('.import-name').value.trim(), keywords: worldBookKeys(row.querySelector('.import-keys').value), description: row.querySelector('.import-description').value.trim(), data: item.data, group, lastUsedTime: 0 }));
         if (!additions.length || additions.some(s => !s.name)) return showToast('请选择图片并填写名称');
-        const previous = db.myStickers.slice(); e.target.disabled = true;
-        try { db.myStickers.push(...additions); await saveData(); close(); document.getElementById('batch-add-sticker-modal').classList.remove('visible'); renderStickerCategories(); renderStickerGrid(); showToast('已导入 ' + additions.length + ' 张表情'); }
-        catch (error) { db.myStickers = previous; e.target.disabled = false; showToast('保存失败：' + error.message); }
+        e.target.disabled = true;
+        try { await saveImportedStickers(additions); close(); document.getElementById('batch-add-sticker-modal').classList.remove('visible'); renderStickerCategories(); renderStickerGrid(); showToast('已导入 ' + additions.length + ' 张表情'); }
+        catch (error) { e.target.disabled = false; showToast('保存失败：' + error.message); }
     };
     document.body.appendChild(overlay);
 }

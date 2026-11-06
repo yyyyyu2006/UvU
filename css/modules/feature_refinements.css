@@ -1,0 +1,43 @@
+/* Derived components only. Original .btn, chat layout and player CSS are untouched. */
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health,.storage-backup-extras) {
+    --feature-surface: var(--bg-color, #f6f8fa);
+    --feature-ink: var(--text-color, #29343c);
+    --feature-input: #fff;
+    --feature-border: #cfd8df;
+    --feature-muted: #586975;
+}
+:is(.feature-dialog-card,.derived-settings,.mcp-settings,.resource-health) {
+    color: var(--feature-ink); background: var(--feature-surface); min-width: 0; box-sizing: border-box;
+}
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(input:not([type=checkbox]),textarea,select,pre) {
+    color: var(--feature-ink); background: var(--feature-input); border-color: var(--feature-border);
+}
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(button,summary):focus-visible {
+    outline: 2px solid var(--feature-ink); outline-offset: 3px;
+}
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button {
+    position: relative; width: auto; min-height: 32px; padding: 4px 8px; margin: 0;
+    color: var(--feature-ink); background: var(--feature-input); border-color: var(--feature-border); line-height: 1.4;
+}
+:is(.derived-help,.mcp-help,.feature-help) { color: var(--feature-muted); }
+:is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(footer,.mcp-row,.derived-toolbar) { gap: 10px; flex-wrap: wrap; }
+.storage-backup-extras { display: flex; flex-direction: column; gap: 10px; padding: 12px; font-size: 12px; line-height: 1.6; color: var(--feature-ink); }
+.storage-backup-extras label { display: flex; align-items: center; gap: 8px; }
+.storage-backup-extras select { max-width: 100%; min-width: 0; padding: 6px; }
+#storage-backup-progress { font-size: 12px; overflow-wrap: anywhere; padding-inline: 12px; }
+.resource-health { width: min(520px,calc(100vw - 24px)); max-height: 88dvh; display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.resource-health > p { font-size: 12px; line-height: 1.6; }
+.resource-health-list { overflow: auto; min-height: 0; overscroll-behavior: contain; }
+.resource-health-list p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--feature-border); }
+#uvu-dependency-warning { position: fixed; inset: auto 12px 12px; z-index: 99000; display: flex; align-items: center; gap: 12px; padding: 12px; background: #fff7e5; color: #563b13; border: 1px solid #d0a656; border-radius: 10px; font-size: 12px; line-height: 1.5; }
+#uvu-dependency-warning button { flex: 0 0 auto; padding: 6px; }
+@media (pointer: coarse) {
+    :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button { min-height: 36px; }
+    :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button::after { content: ''; position: absolute; inset: -4px; }
+}
+@media (prefers-color-scheme: dark) {
+    :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health,.storage-backup-extras) {
+        --feature-surface: #1d272d; --feature-ink: #edf2f5; --feature-input: #25343d; --feature-border: #53646f; --feature-muted: #c4d0d8;
+        color-scheme: dark;
+    }
+}

@@ -78,6 +78,16 @@
             .replace(/^\s*(?:小剧场|番外剧场|状态栏)\s*[：:][\s\S]*$/mu, '');
         return {text: clean(source), mode: 'plain', tag: ''};
     }
+    function inspectStory(value, options = {}) {
+        const result = extractStory(value, options), source = String(value || '');
+        const tags = [...new Set([...source.matchAll(/<\s*\/?\s*([a-z\u3400-\u9fff][a-z0-9_\-\u3400-\u9fff]*)\b[^>]*>/giu)].map(match => match[1].toLowerCase()))];
+        const blocked = new Set(['think','thinking','analysis','reasoning','cot','status','statusbar','status_bar','status_panel','statusbox','status_box','uiboard','small_theater','smalltheater','mini_theater','theater','小剧场','状态栏','状态','思考','思维链','script','style','iframe','object','svg', ...String(options.excludeTags || '').split(/[,，\s]+/u)]);
+        const known = new Set([...BODY_TAGS, ...String(options.bodyTags || '').split(/[,，\s]+/u), 'p','div','span','b','strong','i','em','br','a','img','section','article','ul','ol','li','details','summary']);
+        const filteredTags = tags.filter(tag => blocked.has(tag));
+        const unknownTags = tags.filter(tag => !blocked.has(tag) && !known.has(tag));
+        return {...result, filteredTags, unknownTags, sourceChars: source.length, extractedChars: result.text.length,
+            requiresConfirmation: result.mode !== 'tagged' || unknownTags.length > 0};
+    }
     function validateFloor(floor) {
         if (!floor || typeof floor !== 'object' || typeof floor.id !== 'string' || !floor.id || floor.id.length > 160 ||
             !Number.isInteger(floor.number) || floor.number < 1 || !['user', 'assistant'].includes(floor.role) ||
@@ -86,8 +96,14 @@
             !['plain', 'tagged'].includes(floor.extraction) || typeof floor.bodyTag !== 'string' || floor.bodyTag.length > 41 ||
             !Number.isInteger(floor.part) || !Number.isInteger(floor.partCount) || floor.partCount < 1 || floor.partCount > 2000 ||
             floor.part < 1 || floor.part > floor.partCount) throw new Error('酒馆剧情楼层信息无效；未导入。');
+        let provenance;
+        if(floor.provenance!==undefined){const report=floor.provenance;
+            if(!report || !['filteredTags','unknownTags'].every(key=>Array.isArray(report[key]) && report[key].length<=40 && report[key].every(tag=>typeof tag==='string' && /^[a-z\u3400-\u9fff][a-z0-9_\-\u3400-\u9fff]{0,40}$/iu.test(tag))) ||
+                !['sourceChars','extractedChars'].every(key=>Number.isSafeInteger(report[key]) && report[key]>=0)) throw new Error('剧情提取来源信息无效。');
+            provenance={filteredTags:[...report.filteredTags],unknownTags:[...report.unknownTags],sourceChars:report.sourceChars,extractedChars:report.extractedChars};
+        }
         return {id: floor.id, number: floor.number, speaker: floor.speaker, role: floor.role, createdAt: floor.createdAt,
-            extraction: floor.extraction, bodyTag: floor.bodyTag, part: floor.part, partCount: floor.partCount};
+            extraction: floor.extraction, bodyTag: floor.bodyTag, part: floor.part, partCount: floor.partCount, ...(provenance?{provenance}:{})};
     }
     function floorItems(parts, floorParts) {
         const items = [];
@@ -129,7 +145,7 @@
     function segments(value) {
         return clean(value).split(/\n\s*\n/).map(text => text.trim()).filter(Boolean).map((text, index) => ({ id: String(index + 1), text, selected: false }));
     }
-    const api = { clean, fingerprint, extractStory, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
+    const api = { clean, fingerprint, extractStory, inspectStory, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
     root.UvUBridgeText = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis === 'undefined' ? this : globalThis);

@@ -1,8 +1,48 @@
 // UI is isolated from original beautification and chat settings layouts.
+function environmentDataStatus(data = {}, options = {}) {
+    const now=options.now ?? Date.now(),time=Number(data.fetchedAt),known=Number.isFinite(time) && time>0,age=known?now-time:null;
+    const ttl=options.kind==='holidays'?24*3600000:15*60000;
+    const status=!known?'unknown':age < -60000?'clock-skew':age>=ttl?'stale':'fresh';
+    const ageMinutes=known?Math.max(0,Math.floor(age/60000)):null;
+    const freshness={unknown:'获取时间未知', 'clock-skew':'获取时间在设备未来，请核对设备时钟',stale:'缓存已过建议时效，请刷新',fresh:'数据在缓存时效内（可能来自缓存）'}[status];
+    const location=options.location || {},region=[location.countryCode,location.subdivision].filter(Boolean).join(' / ') || '地区未知';
+    const text='来源：'+String(data.source || '未知')+' · 年份：'+(options.year || '以观测时间为准')+' · 地区：'+region+' · 时区：'+(location.timezone || '未知')+' · '+freshness+(known?' · 获取于（设备时间） '+new Date(time).toLocaleString()+' · 约 '+ageMinutes+' 分钟前':'');
+    return {status,ageMinutes,text};
+}
 function environmentNode(tag, text, className = '') {
     const element = document.createElement(tag); element.className = className;
     if (text !== undefined) element.textContent = text;
     return element;
+}
+
+// Display-only local annotations; never merged into provider caches or environment prompts.
+function environmentHolidayNoteKey(location, date) {
+    if (!location?.countryCode || !location?.timezone || !/^\d{4}-\d{2}-\d{2}$/.test(date) || +date.slice(0,4)<1900 || +date.slice(0,4)>2200) throw new Error('请选择有效地区、时区和1900至2200年内的日期');
+    const parsed = new Date(date + 'T12:00:00Z');
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0,10)!==date) throw new Error('日期无效');
+    return JSON.stringify([location.countryCode, location.subdivision || '', location.timezone, date]);
+}
+function getEnvironmentHolidayDisplayNote(location, date) {
+    try {
+        const note=JSON.parse(localStorage.getItem('uvu-holiday-display-notes.v1') || '{}')[environmentHolidayNoteKey(location,date)];
+        return note && ['note','offday','workday','observance'].includes(note.kind) && typeof note.note==='string' && note.note.length<=500 ? {kind:note.kind,note:note.note} : null;
+    } catch (_) { return null; }
+}
+function saveEnvironmentHolidayDisplayNote(location, date, note) {
+    const key=environmentHolidayNoteKey(location,date);
+    if (note && (!['note','offday','workday','observance'].includes(note.kind) || typeof note.note!=='string' || note.note.length>500)) throw new Error('请选择显示类型，备注限500字');
+    let saved; try { saved=JSON.parse(localStorage.getItem('uvu-holiday-display-notes.v1') || '{}'); } catch (_) {}
+    if (!saved || typeof saved!=='object' || Array.isArray(saved)) saved={};
+    if (!note) delete saved[key];
+    else { if (!Object.hasOwn(saved,key) && Object.keys(saved).length>=500) throw new Error('本机补注已达500条，请先删除不需要的补注'); saved[key]={kind:note.kind,note:note.note.trim()}; }
+    localStorage.setItem('uvu-holiday-display-notes.v1',JSON.stringify(saved));
+}
+function environmentHolidayDisplay(days, manual) {
+    const kind=day=>day.isOffDay?'offday':day.isWorkDay?'workday':'observance';
+    const labels={offday:'公共假日／休息日（来源标记）',workday:'调休上班（来源标记）',observance:'节日／纪念日（未标记放假）'};
+    let text=days.map(day=>day.name+'（'+labels[kind(day)]+'）').join('；');
+    if (manual) text+=(text?'；':'')+'本机手动'+(manual.kind==='note'?'备注':'显示修正：'+{offday:'休息日',workday:'上班日',observance:'节日／纪念日'}[manual.kind])+(manual.note?' · '+manual.note:'')+'（仅日历展示）';
+    return {text,kind:manual && manual.kind!=='note'?manual.kind:days.some(day=>day.isOffDay)?'offday':days.some(day=>day.isWorkDay)?'workday':days.length?'observance':'unknown'};
 }
 
 function openEnvironmentSettings(forChat = false) {
@@ -143,13 +183,21 @@ function openEnvironmentCalendar() {
     side.setAttribute('aria-label', '日历所属位置');
     side.appendChild(new Option('我的日历', 'user'));
     if (chat) side.appendChild(new Option('char 的日历', 'char'));
+    settingsButton.title='选择城市、行政区与数据服务；不修改日历原始数据。';refreshButton.title='清除当前位置天气缓存并重新获取；节假日使用按年份缓存，失败会保留明确提示。';
     toolbar.append(side, settingsButton, refreshButton); body.appendChild(toolbar);
-    const clock = environmentNode('p', '', 'environment-clock'), weather = environmentNode('p', '', 'derived-help');
+    const clock = environmentNode('p', '', 'environment-clock'), weather = environmentNode('p', '', 'derived-help'), metadata=environmentNode('p','','derived-help environment-data-status');
     const nav = environmentNode('div', undefined, 'derived-toolbar');
     const previous = environmentNode('button', '上月'), title = environmentNode('strong'), next = environmentNode('button', '下月'), today = environmentNode('button', '今天'); nav.append(previous, title, next, today);
     const grid = environmentNode('div', undefined, 'environment-month'); grid.setAttribute('aria-label', '月份日期');
     const detail = environmentNode('p', '', 'derived-status'), source = environmentNode('p', '', 'derived-help');
-    body.append(clock, weather, nav, grid, detail, source);
+    body.append(clock, weather, metadata, nav, grid, detail, source);
+    const annotation=environmentNode('details'),annotationHeading=environmentNode('summary','本机节日显示补注（可选）'),annotationScope=environmentNode('p','','derived-help'),annotationHelp=environmentNode('p','只保存本机的地区、时区和所选日期；不修改数据源、不进入 AI 感知。来源未标记放假时，节日／纪念日不代表法定休息日。','derived-help');
+    const annotationKind=environmentNode('select'),annotationText=environmentNode('textarea'),annotationSave=environmentNode('button','保存本机补注'),annotationDelete=environmentNode('button','删除本机补注'),annotationStatus=environmentNode('p','','derived-status');
+    annotationKind.setAttribute('aria-label','本机节日显示类型');annotationText.setAttribute('aria-label','本机节日备注');annotationText.maxLength=500;annotationText.rows=3;annotationText.style.width='100%';annotationText.style.boxSizing='border-box';
+    for(const [value,label] of [['note','仅备注，保留来源标记'],['offday','手动显示为休息日'],['workday','手动显示为上班日'],['observance','手动显示为节日／纪念日']])annotationKind.appendChild(new Option(label,value));
+    annotationSave.type=annotationDelete.type='button';annotationStatus.setAttribute('aria-live','polite');annotation.append(annotationHeading,annotationHelp,annotationScope,annotationKind,annotationText,annotationSave,annotationDelete,annotationStatus);body.appendChild(annotation);
+    let applyAnnotation=()=>{};
+    annotationSave.onclick=()=>applyAnnotation(false);annotationDelete.onclick=()=>applyAnnotation(true);
     let year, month, selectedDate, renderId = 0;
     const valid = () => !controller.signal.aborted && (!chat || (db.characters.includes(chat) && chat.activeArchiveId === archiveId));
     function place() {
@@ -173,7 +221,7 @@ function openEnvironmentCalendar() {
             const date = location ? environmentDateParts(location.timezone) : { year: new Date().getFullYear(), month: new Date().getMonth() + 1 };
             year = +date.year; month = +date.month; selectedDate = location ? environmentDateKey(location.timezone) : '';
         }
-        title.textContent = `${year}年${month}月`; grid.replaceChildren(); detail.textContent = ''; source.textContent = ''; weather.textContent = location ? '正在读取天气…' : '未启用或未配置此方位置；日期仍可浏览';
+        title.textContent = `${year}年${month}月`; grid.replaceChildren(); detail.textContent = ''; source.textContent = ''; metadata.textContent=''; weather.textContent = location ? '正在读取天气…' : '未启用或未配置此方位置；日期仍可浏览';
         ['日', '一', '二', '三', '四', '五', '六'].forEach(day => grid.appendChild(environmentNode('span', day, 'environment-weekday')));
         for (let i = 0; i < new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); i++) grid.appendChild(environmentNode('span'));
         const cells = new Map(), dateKey = location ? environmentDateKey(location.timezone) : '';
@@ -184,12 +232,26 @@ function openEnvironmentCalendar() {
             cell.onclick = () => { selectedDate = key; selectDay(); }; cells.set(key, cell); grid.appendChild(cell);
         }
         let holidayData = null;
+        function paintDay(key) {
+            const cell=cells.get(key),days=holidayData?.days.filter(day=>day.date===key) || [],manual=location?getEnvironmentHolidayDisplayNote(location,key):null,display=environmentHolidayDisplay(days,manual);
+            cell.querySelectorAll('small').forEach(node=>node.remove());cell.classList.remove('is-offday','is-workday');
+            if(display.kind==='offday' || display.kind==='workday')cell.classList.add(display.kind==='offday'?'is-offday':'is-workday');
+            cell.title=display.text;if(display.kind!=='unknown')cell.appendChild(environmentNode('small',({offday:'休',workday:'班',observance:'节'})[display.kind] || '注'));
+            else if(manual)cell.appendChild(environmentNode('small','注'));
+        }
         function selectDay() {
             cells.forEach((cell, key) => cell.classList.toggle('is-selected', key === selectedDate));
+            const editable=Boolean(location && selectedDate && cells.has(selectedDate));
+            annotationKind.disabled=annotationText.disabled=annotationSave.disabled=annotationDelete.disabled=!editable;
+            annotationScope.textContent=editable?`${location.countryCode}${location.subdivision?' / '+location.subdivision:''} · ${location.timezone} · ${selectedDate}（所选地区日期）`:'请启用位置并选择日期';
+            const manual=editable?getEnvironmentHolidayDisplayNote(location,selectedDate):null;annotationKind.value=manual?.kind || 'note';annotationText.value=manual?.note || '';annotationStatus.textContent='';
             if (!selectedDate || !cells.has(selectedDate)) return;
             const days = holidayData?.days.filter(day => day.date === selectedDate) || [];
-            detail.textContent = selectedDate + '：' + (days.length ? days.map(day => `${day.name}（${day.isOffDay ? '公共假日' : day.isWorkDay ? '调休上班' : '节日／纪念日'}）`).join('；') : holidayData ? '此数据源未收录当天的全国／已选行政区节假日' : '节假日数据尚未获取');
+            const display=environmentHolidayDisplay(days,manual);
+            detail.textContent = selectedDate + '：' + (display.text || (holidayData ? '此数据源未收录当天的全国／已选行政区节假日' : '节假日数据尚未获取'));
         }
+        applyAnnotation=remove=>{try{if(!valid() || !location || !cells.has(selectedDate))throw new Error('请选择地区与日期');saveEnvironmentHolidayDisplayNote(location,selectedDate,remove?null:{kind:annotationKind.value,note:annotationText.value});paintDay(selectedDate);selectDay();annotationStatus.textContent=remove?'已删除本机补注；显示来源标记':'已保存本机补注；仅影响此地区、时区和日期的日历显示';}catch(error){annotationStatus.textContent='保存失败：'+error.message;}};
+        cells.forEach((_,key)=>paintDay(key));
         selectDay();
         if (!location) return;
         const config = getEnvironmentSettings();
@@ -197,20 +259,17 @@ function openEnvironmentCalendar() {
         if (!valid() || id !== renderId || signal.aborted) return;
         const [w, h] = results;
         if (w.status === 'fulfilled') {
+            metadata.textContent=environmentDataStatus(w.value,{kind:'weather',location}).text+(w.value.observedAt?' · 提供方观测时间：'+w.value.observedAt:' · 观测时间未提供');
             weather.replaceChildren(environmentNode('span', `${w.value.text} · ${w.value.temperature}℃ · 更新于 ${new Date(w.value.fetchedAt).toLocaleTimeString('zh-CN')} · `));
             if (w.value.source === 'Open-Meteo') {
                 const credit = environmentNode('a', 'Open-Meteo'); credit.href = 'https://open-meteo.com/'; credit.target = '_blank'; credit.rel = 'noopener noreferrer'; weather.appendChild(credit);
             } else weather.appendChild(environmentNode('span', w.value.source));
             weather.appendChild(environmentNode('span', '（提供方数据，不代表设备精确实况）'));
-        } else weather.textContent = '天气获取失败，可检查网络／服务后刷新';
+        } else {weather.textContent = '天气获取失败，可检查网络／服务后刷新';metadata.textContent='天气获取失败；未将缺少数据视为晴天或零度。';}
         if (h.status === 'fulfilled') {
             holidayData = h.value;
-            for (const day of holidayData.days) {
-                const cell = cells.get(day.date); if (!cell) continue;
-                if (day.isOffDay || day.isWorkDay) cell.classList.add(day.isOffDay ? 'is-offday' : 'is-workday');
-                cell.title = day.name; cell.appendChild(environmentNode('small', day.isOffDay ? '休' : day.isWorkDay ? '班' : '节'));
-            }
-            source.textContent = `节假日：${h.value.source}。${h.value.regionalNote} 时间使用设备时钟。`;
+            cells.forEach((_,key)=>paintDay(key));
+            source.textContent = '节假日：'+environmentDataStatus(h.value,{kind:'holidays',year,location}).text+'。'+(h.value.regionalNote || '')+' 时间使用设备时钟。数据源可能不含全部地方节日；未收录不等于没有节日。';
         } else source.textContent = `节假日未获取：${h.reason?.message || '服务失败'}；不将失败视为没有节假日。`;
         selectDay();
     }

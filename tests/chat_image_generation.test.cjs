@@ -156,7 +156,7 @@ test('remote results are downloaded without credentials and saved as durable ima
     const requests = [];
     f.c.fetch = async (url, options) => {
         requests.push({ url, options });
-        return { ok: true, headers: new Headers(), blob: async () => new Blob([Buffer.from(png, 'base64')], { type: 'image/png' }) };
+        return new Response(Buffer.from(png, 'base64'), { headers: { 'Content-Type': 'image/png' } });
     };
     assert.equal(await f.feature.send('draft'), true);
     assert.equal(requests.length, 1); assert.equal(requests[0].options.credentials, 'omit');

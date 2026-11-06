@@ -29,15 +29,43 @@ const VoiceDirector = (() => {
         };
     }
 
+    function safeStatusPattern(value) {
+        if (typeof value !== 'string' || value.length > 256) return null;
+        const parts = value.match(/^\/(.*?)\/([a-z]*)$/);
+        const pattern = parts ? parts[1] : value;
+        // The common paired-tag pattern is removed by a linear literal scan.
+        const paired = pattern.replace(/\\\//g, '/').match(/^<([\w:-]+)>\.\*\?<\/([\w:-]+)>$/);
+        if (paired && paired[1] === paired[2]) {
+            const opening = '<' + paired[1] + '>', closing = '</' + paired[1] + '>';
+            return { [Symbol.replace](text) {
+                const lookup = !parts || parts[2].includes('i') ? text.toLowerCase() : text;
+                const startTag = !parts || parts[2].includes('i') ? opening.toLowerCase() : opening;
+                const endTag = !parts || parts[2].includes('i') ? closing.toLowerCase() : closing;
+                const chunks = []; let cursor = 0, start;
+                while ((start = lookup.indexOf(startTag, cursor)) >= 0) {
+                    const end = lookup.indexOf(endTag, start + startTag.length);
+                    if (end < 0) break;
+                    chunks.push(text.slice(cursor, start)); cursor = end + endTag.length;
+                }
+                chunks.push(text.slice(cursor)); return chunks.join('');
+            } };
+        }
+        // Only fixed-width expressions run synchronously here. Custom repetitions/groups
+        // belong in a bounded worker, never in this optional context capture path.
+        const structure = pattern.replace(/\\./g, '').replace(/\[[^\]]*\]/g, 'x');
+        if (/[()*+?{}|]/.test(structure)) return null;
+        let flags = parts ? parts[2] : 'gs';
+        if (!/^[gimsuy]*$/.test(flags) || new Set(flags).size !== flags.length) return null;
+        if (!flags.includes('g')) flags += 'g';
+        try { return new RegExp(pattern, flags); } catch (_) { return null; }
+    }
+
     function cleanText(value, statusPanel) {
-        let text = String(value || '');
+        let text = String(value || '').slice(0, 12000);
         if (statusPanel?.enabled && statusPanel.regexPattern) {
             try {
-                const parts = statusPanel.regexPattern.match(/^\/(.*?)\/([a-z]*)$/);
-                let flags = parts ? parts[2] || 'gs' : 'gs';
-                if (!flags.includes('g')) flags += 'g';
-                if (!flags.includes('s')) flags += 's';
-                text = text.replace(new RegExp(parts ? parts[1] : statusPanel.regexPattern, flags), '');
+                const pattern = safeStatusPattern(statusPanel.regexPattern);
+                if (pattern) text = text.replace(pattern, '');
             } catch (_) { /* Match the ordinary chat path when a saved pattern is invalid. */ }
         }
         text = text.slice(0, 12000);
@@ -51,6 +79,19 @@ const VoiceDirector = (() => {
 
     function bind(bubble, chat, message, type) {
         bindings.set(bubble, { chat, message, type, archiveId: chat.activeArchiveId || '', content: message.content });
+    }
+
+    function voiceIdFor(bubble) {
+        const binding = bindings.get(bubble);
+        if (!binding) return null;
+        const { chat, message, type, archiveId } = binding;
+        if (!(type === 'group' ? db.groups : db.characters)?.includes(chat) || (chat.activeArchiveId || '') !== archiveId || !chat.history?.includes(message)) throw aborted();
+        if (type === 'group') {
+            const member = chat.members?.find(item => item.id === message.senderId);
+            const original = member?.originalCharId && db.characters?.find(item => item.id === member.originalCharId);
+            return String(original?.minimaxTtsVoiceId || '').trim() || String(chat.minimaxTtsVoiceId || '').trim();
+        }
+        return String(chat.minimaxTtsVoiceId || '').trim();
     }
 
     function payloadFor(binding, text, count) {
@@ -90,7 +131,9 @@ const VoiceDirector = (() => {
         const payload = payloadFor(binding, text, normalized.contextMessages);
         const identity = binding ? [binding.type, binding.chat.id, binding.archiveId, binding.message.id] : ['preview'];
         const serialized = JSON.stringify(payload);
-        return { binding, payload, text, count: normalized.contextMessages, serialized, key: JSON.stringify([identity, serialized]) };
+        return { binding, payload, text, count: normalized.contextMessages, serialized, key: JSON.stringify([identity, serialized]),
+            warning: binding?.chat.statusPanel?.enabled && binding.chat.statusPanel.regexPattern && !safeStatusPattern(binding.chat.statusPanel.regexPattern)
+                ? '语音导演已跳过复杂或无效的自定义状态栏正则；内置标签仍会清理' : '' };
     }
 
     function isCurrent(source) {
@@ -118,7 +161,7 @@ const VoiceDirector = (() => {
         for (const item of inserts.sort((a, b) => b.position - a.position)) {
             spoken = spoken.slice(0, item.position) + `<#${item.seconds}#>` + spoken.slice(item.position);
         }
-        return { text: spoken, emotion: emotions.has(value.emotion) ? value.emotion : '', speedMultiplier };
+        return { text: spoken, emotion: emotions.has(value.emotion) ? value.emotion : '', speedMultiplier, pauseCount: inserts.length };
     }
 
     function request(config, payload) {
@@ -147,8 +190,9 @@ const VoiceDirector = (() => {
         const config = settings(value), fallback = { text, emotion: '', speedMultiplier: 1 };
         if (!config.enabled) return fallback;
         if (signal?.aborted || !isCurrent(source)) throw aborted();
+        if (source?.warning) return { ...fallback, warning: source.warning + '；本次使用普通语音' };
         const key = JSON.stringify([config, source?.key || text]);
-        if (plans.has(key)) return { ...plans.get(key) };
+        if (plans.has(key)) return { ...plans.get(key), ...(source?.warning ? { warning: source.warning } : {}) };
         const controller = new AbortController();
         const cancel = () => controller.abort();
         signal?.addEventListener('abort', cancel, { once: true });
@@ -169,7 +213,7 @@ const VoiceDirector = (() => {
             const result = controls(text, JSON.parse(output));
             plans.set(key, result);
             while (plans.size > 32) plans.delete(plans.keys().next().value);
-            return { ...result };
+            return { ...result, ...(source?.warning ? { warning: source.warning } : {}) };
         } catch (error) {
             if (signal?.aborted || !isCurrent(source)) throw aborted();
             const detail = timedOut ? '导演 API 超时' : /^导演/.test(error.message) ? error.message : '导演分析失败';
@@ -194,10 +238,18 @@ const VoiceDirector = (() => {
         for (const [id, key] of Object.entries({ provider: 'provider', endpoint: 'endpoint', key: 'apiKey', model: 'model',
             context: 'contextMessages', timeout: 'timeoutSec', prompt: 'prompt' })) field(id).value = config[key];
         field('prompt').placeholder = defaultPrompt;
+        if (field('prompt').insertAdjacentElement && !document.getElementById('minimax-director-preset')) {
+            const label = document.createElement('label'); label.textContent = '导演风格预设（选择后替换补充风格，保存后生效）';
+            const select = document.createElement('select'); select.id = 'minimax-director-preset';
+            select.innerHTML = '<option value="">保留当前风格</option><option value="natural">自然克制</option><option value="gentle">沉稳舒缓</option><option value="bright">明快轻盈</option>';
+            const presets = { natural: defaultPrompt, gentle: '语气沉稳温和，稍慢而清晰，停顿短而自然。保留原台词，不添加声音。', bright: '语气明快轻盈，节奏自然清晰；情绪变化适度。保留原台词，不添加声音。' };
+            select.onchange = () => { if (presets[select.value]) { field('prompt').value = presets[select.value]; field('prompt').dispatchEvent(new Event('input', { bubbles: true })); } };
+            label.appendChild(select); field('prompt').insertAdjacentElement('beforebegin', label);
+        }
         const toggle = () => { field('fields').hidden = !field('enabled').checked; };
         toggle();
         field('enabled').addEventListener('change', toggle);
     }
 
-    return { settings, bind, capture, isCurrent, prepare, fromForm, setupSettings };
+    return { settings, bind, voiceIdFor, capture, isCurrent, prepare, fromForm, setupSettings };
 })();

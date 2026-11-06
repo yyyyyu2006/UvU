@@ -333,3 +333,9 @@
 .memory-library summary{cursor:pointer;font-size:13px;line-height:1.6}
 .memory-library .memory-library-status{font-size:13px;line-height:1.6}
 .memory-library button{min-height:36px;margin:0;line-height:1.35;white-space:normal}
+.memory-library .memory-library-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.memory-library .memory-library-filters label:first-child{grid-column:1/-1}
+.memory-library .memory-library-tuning,.memory-library .memory-library-diagnostics{border:1px solid var(--border-color,#ddd);border-radius:10px;padding:10px;margin:12px 0}
+.memory-library .memory-library-warning{color:var(--danger-color,#9b4b00);font-size:13px;line-height:1.6}
+.memory-library .memory-library-tuning input[type=checkbox]{align-self:flex-start}
+@media(max-width:360px){.memory-library .memory-library-filters{grid-template-columns:minmax(0,1fr)}}

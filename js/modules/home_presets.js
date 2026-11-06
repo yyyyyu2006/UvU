@@ -215,6 +215,54 @@
         return { templates, mapping };
     }
 
+    let undoState = null;
+    function inspectResources(raw) {
+        const preset = validate(raw), resources = new Set();
+        const visit = value => {
+            if (typeof value === 'string') {
+                for (const match of value.matchAll(/https?:\/\/[^\s"'<>)]{1,2048}/gi)) {
+                    if (resources.size >= 100) break;
+                    resources.add(match[0].replace(/^(https?:\/\/)(?:[^/@]+@)/i, '$1').replace(/[?#].*$/, '').slice(0, 250));
+                }
+            } else if (value && typeof value === 'object') Object.values(value).forEach(visit);
+        };
+        visit(preset.settings);
+        return { resources: Array.from(resources), hasCss: Boolean(preset.settings.appearance?.globalCss || preset.settings.widgetTemplates.some(item => item.css)),
+            hasScripts: preset.settings.widgetTemplates.some(item => item.js.trim() || /<script|\bon\w+\s*=|javascript:/i.test(item.html)) };
+    }
+    async function undoPreset() {
+        if (!undoState) fail('没有可撤销的主页预设导入');
+        const current = Object.fromEntries(undoState.keys.map(key => [key, db[key]]));
+        if (JSON.stringify(current) !== undoState.applied) fail('主页已有后续修改，请先导出当前主页后再恢复');
+        const saved = undoState;
+        await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
+            for (const [key, entry] of Object.entries(saved.snapshot)) {
+                if (entry.exists) await dexieDB.globalSettings.put({ key, value: entry.value });
+                else await dexieDB.globalSettings.delete(key);
+            }
+        });
+        for (const [key, entry] of Object.entries(saved.snapshot)) { if (entry.exists) db[key] = entry.value; else delete db[key]; }
+        saved.addedTemplates.forEach(id => document.getElementById('custom-widget-style-' + id)?.remove?.());
+        if (saved.keys.includes('fontUrl')) { applyGlobalFont(db.fontUrl || '', false); applyFontSize(db.fontSizeScale || 1); applyGlobalCss(db.globalCss || ''); }
+        setupHomeScreen(); renderCustomizeForm(); undoState = null;
+    }
+    function previewPreset(preset, summary, includesCode) {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'home-preset-preview'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '主页预设导入预览');
+            overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>主页预设导入预览</strong><button type="button" data-cancel>取消</button></header><p class="preset-summary" style="white-space:pre-wrap"></p><p>资源地址仅做清单预览，不会提前加载；外链可能因网络、跨域或过期而失效。</p><ul></ul><label data-trust hidden><input type="checkbox">我信任此预设来源，同意运行其小组件代码</label><p>成功导入后可撤销一次主页配置；脚本已产生的外部操作无法撤回。</p><button type="button" data-confirm>确认导入主页预设</button></div>';
+            overlay.querySelector('.preset-summary').textContent = summary.join('\n\n');
+            const info = inspectResources(preset), list = overlay.querySelector('ul');
+            info.resources.forEach(url => { const li = document.createElement('li'); li.textContent = url; list.appendChild(li); });
+            if (!info.resources.length) list.textContent = '没有检测到 HTTP(S) 外部资源。';
+            const accept = overlay.querySelector('[data-confirm]'), trust = overlay.querySelector('[data-trust]'); trust.hidden = !includesCode; accept.disabled = includesCode;
+            trust.querySelector('input').onchange = event => { accept.disabled = !event.target.checked; };
+            const finish = yes => { overlay.remove(); resolve(yes); };
+            overlay.querySelector('[data-cancel]').onclick = () => finish(false); accept.onclick = () => finish(true);
+            overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); finish(false); } });
+            document.body.appendChild(overlay); overlay.querySelector('[data-cancel]').focus();
+        });
+    }
+
     async function applyPreset(raw) {
         const preset = validate(raw);
         const settings = clone(preset.settings);
@@ -224,6 +272,8 @@
         if (settings.appearance) Object.assign(settings, settings.appearance);
         delete settings.appearance;
         if (!dexieDB) fail('数据库尚未就绪，请稍后重试');
+        const snapshot = Object.fromEntries(Object.keys(settings).map(key => [key, { exists: Object.hasOwn(db, key), value: db[key] === undefined ? undefined : clone(db[key]) }]));
+        const oldTemplateIds = new Set((db.widgetTemplates || []).map(item => item.id));
         // 先原子保存白名单设置，成功后才更新内存与页面；失败不覆盖原主页。
         await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
             for (const [key, value] of Object.entries(settings)) {
@@ -231,6 +281,7 @@
             }
         });
         Object.assign(db, settings);
+        undoState = { snapshot, keys: Object.keys(settings), applied: JSON.stringify(settings), addedTemplates: settings.widgetTemplates.filter(item => !oldTemplateIds.has(item.id)).map(item => item.id) };
         settings.widgetTemplates.forEach(template => {
             const id = `custom-widget-style-${template.id}`;
             let style = document.getElementById(id);
@@ -247,6 +298,7 @@
         renderCustomizeForm();
         const preview = document.getElementById('wallpaper-preview');
         if (preview) preview.style.backgroundImage = `url("${db.wallpaper}")`;
+        undoState.applied = JSON.stringify(Object.fromEntries(undoState.keys.map(key => [key, db[key]])));
         return preset;
     }
 
@@ -262,7 +314,13 @@
             status.style.color = error ? '#c0392b' : '#666';
             showToast(message);
         };
-        const busy = value => { exportButton.disabled = value; importButton.disabled = value; fileInput.disabled = value; };
+        let undoButton;
+        if (importButton.insertAdjacentElement) {
+            undoButton = document.createElement('button'); undoButton.type = 'button'; undoButton.id = 'home-preset-undo'; undoButton.textContent = '撤销上次主页导入'; undoButton.hidden = !undoState;
+            importButton.insertAdjacentElement('afterend', undoButton);
+            undoButton.onclick = async () => { busy(true); try { await undoPreset(); undoButton.hidden = true; report('已恢复导入前的主页配置'); } catch (error) { report('撤销失败：' + error.message, true); } finally { busy(false); } };
+        }
+        const busy = value => { exportButton.disabled = value; importButton.disabled = value; fileInput.disabled = value; if (undoButton) undoButton.disabled = value; };
         exportButton.addEventListener('click', async () => {
             busy(true);
             try {
@@ -303,8 +361,9 @@
                     settings.appearance ? '同时应用字体、字号和全局 CSS（会影响应用内其他页面）。' : '保留当前字体、字号和全局 CSS。',
                     '聊天记录、角色卡和 API 设置保持不变。建议先导出自己的主页留作备份。'];
                 if (includesCode) summary.push('此预设包含可执行的小组件代码，请仅导入信任来源的文件。');
-                if (!confirm(summary.join('\n\n'))) { report('已取消导入'); return; }
+                if (!await previewPreset(preset, summary, includesCode)) { report('已取消导入'); return; }
                 await applyPreset(preset);
+                if (undoButton) undoButton.hidden = false;
                 document.getElementById('home-preset-name').value = preset.name;
                 report(`已应用主页预设「${preset.name}」，返回主页即可查看`);
             } catch (error) { report(`导入失败：${error.message}`, true); }
@@ -312,6 +371,6 @@
         });
     }
 
-    window.HomePresets = Object.freeze({ createPreset, validate, applyPreset });
+    window.HomePresets = Object.freeze({ createPreset, validate, applyPreset, inspectResources, undoPreset, canUndo: () => Boolean(undoState) });
     window.setupHomePresets = setup;
 })();

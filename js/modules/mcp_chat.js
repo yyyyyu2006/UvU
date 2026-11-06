@@ -16,9 +16,15 @@
         return { ...cfg, streamEnabled: false };
     }
     function question(chat, n) {
-        return chat.history.filter(m => ['user', 'assistant'].includes(m.role) && !m.isThinking && !m.isContextDisabled)
-            .slice(-n).map(m => ({ role: m.role, text: String(m.content || (m.parts || []).filter(p => p.type === 'text').map(p => p.text).join('\n'))
-                .replace(/<(thinking|think|analysis)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]*>/g, ' ').slice(0, 2000) }));
+        return (chat.history || []).filter(m => ['user', 'assistant'].includes(m.role) && !m.isThinking && !m.isContextDisabled &&
+            !m.isWithdrawn && !m.relationshipDelivery && !m.isHidden && !m.isStatusUpdate)
+            .slice(-n).map(m => {
+                const texts = [m.content, ...(Array.isArray(m.parts) ? m.parts : []).filter(p => p.type === 'text').map(p => p.text)]
+                    .filter(value => typeof value === 'string').map(value => value.replace(/data:[^\s"'<>]+/gi, ''));
+                return { role: m.role, text: [...new Set(texts)].join('\n').slice(0, 12000)
+                    .replace(/<(thinking|think|analysis|status|statusbar|script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+                    .replace(/<[^>]*>/g, ' ').trim().slice(0, 2000) };
+            }).filter(item => item.text);
     }
     function usage(payload, input, output) {
         const raw = payload.usage || payload.usageMetadata;
@@ -63,13 +69,16 @@
         }
         return result.calls;
     }
-    async function prepare(chat, type = 'private', externalSignal) {
+    async function prepare(chat, type = 'private', externalSignal, options = {}) {
         const m = manager(), settings = m.settings();
         if (!settings.enabled) return '';
         if (externalSignal?.aborted) throw new DOMException('请求已取消', 'AbortError');
         const s = m.scope(chat, type), policy = m.policy(s);
         if (!m.valid(s) || !policy?.enabled) return '';
-        const start = m.stamp(), manual = m.take(s);
+        const start = m.stamp();
+        const staged = typeof options.onLease === 'function' && typeof m.lease === 'function' ? m.lease(s) : null;
+        const manual = staged ? staged.text : m.take(s);
+        if (staged) options.onLease(staged);
         if (!policy.auto) return manual;
         const q = question(chat, settings.planner.recentMessages);
         if (!q.some(x => x.role === 'user' && x.text.trim())) return manual;
@@ -98,6 +107,6 @@
     window.MCPChat = Object.freeze({ prepare, plannerVaultService });
 }());
 
-async function prepareMcpChatContext(chat, type, signal) {
-    return window.MCPChat.prepare(chat, type, signal);
+async function prepareMcpChatContext(chat, type, signal, options) {
+    return window.MCPChat.prepare(chat, type, signal, options);
 }

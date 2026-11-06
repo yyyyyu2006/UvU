@@ -30,6 +30,12 @@
         if (group.length) groups.push(group);
         return groups;
     }
+    function estimate(input, options = {}) {
+        const items = selected(input), limit = Math.max(2000, Math.min(20000, Number(options.batchChars) || 12000));
+        const batchCount = batches(items, limit).length;
+        return {sourceChars: items.reduce((size, item) => size + item.text.length, 0), batchCount,
+            minimumCalls: batchCount + (batchCount > 1 && options.merge !== false ? 1 : 0), mergeMayRequireMore: batchCount > 1};
+    }
     function parse(raw) {
         if (typeof parseAutoMemoryResponse === 'function') return parseAutoMemoryResponse(raw, false);
         const title = String(raw || '').match(/<title>([\s\S]*?)<\/title>/i), body = String(raw || '').match(/<content>([\s\S]*?)<\/content>/i);
@@ -46,14 +52,20 @@
         const config = structuredClone(options.apiSource === 'memory'
             ? resolveAutoMemoryApi({apiSource: 'memory'}) : resolveAuxiliaryApiConfig('journal'));
         if (!config.url || !config.key || !config.model) throw new Error('日记 / 记忆总结 API 未配置完整。');
+        const maxCalls = Math.max(1, Math.min(200, Math.floor(Number(options.maxCalls) || 20)));
+        let callCount = 0, cached = 0;
+        const report = () => options.onBudgetProgress?.({callCount, cached, maxCalls, batchCount: groups.length});
         const check = () => {
             if (options.signal?.aborted) throw new Error('总结已取消，原文保留。');
             options.assertCurrent?.();
         };
         const call = async prompt => {
             check();
-            const key = JSON.stringify([config.url, config.model, prompt]);
-            if (cache.has(key)) return cache.get(key);
+            const identity = JSON.stringify([config.url, config.model, prompt]);
+            const key = globalThis.crypto?.subtle ? [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity)))].map(value=>value.toString(16).padStart(2,'0')).join('') : identity;
+            if (cache.has(key)) {cached++; report(); return cache.get(key);}
+            if (callCount >= maxCalls) throw new Error('本轮总结调用预算已用完；原文和已完成分组保留，可提高预算后继续。');
+            callCount++; report();
             const control = new AbortController(), abort = () => control.abort();
             const timeout = setTimeout(abort, 90000);
             options.signal?.addEventListener('abort', abort, {once: true});
@@ -65,7 +77,7 @@
                 if (control.signal.aborted) throw new Error('总结请求已取消或超时，原文保留。');
                 const result = parse(raw);
                 if (!result.content || result.content.length > 200000) throw new Error('总结正文长度无效，原文保留。');
-                cache.set(key, result); return result;
+                cache.set(key, result); await options.onCache?.(key, result); return result;
             } finally {clearTimeout(timeout); options.signal?.removeEventListener('abort', abort);}
         };
         const results = [];
@@ -92,7 +104,7 @@
             }
         }
         check();
-        return {title, content, items, sourceSignature: signature(items), batchCount: groups.length, createdAt: Date.now()};
+        return {title, content, items, sourceSignature: signature(items), batchCount: groups.length, callCount, cachedCount: cached, createdAt: Date.now()};
     }
-    root.UvUBridgeSummary = {selected, signature, batches, generate};
+    root.UvUBridgeSummary = {selected, signature, batches, estimate, generate};
 })(typeof globalThis === 'undefined' ? this : globalThis);

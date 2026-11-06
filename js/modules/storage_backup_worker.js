@@ -98,7 +98,7 @@ self.onmessage = async event => {
             stream = stream.pipeThrough(new DecompressionStream('gzip'));
         }
         const reader = stream.getReader(), decoder = new TextDecoder(), parser = createBackupParser(keys);
-        let bytes = 0;
+        let bytes = 0, lastProgress = 0;
         try {
             while (true) {
                 const { value, done } = await reader.read();
@@ -106,6 +106,9 @@ self.onmessage = async event => {
                 bytes += value.byteLength;
                 if (bytes > 512 * 1024 * 1024) { await reader.cancel(); throw new Error('解压后备份超过 512 MB，请在原设备按类别拆分导出'); }
                 parser.write(decoder.decode(value, { stream: true }));
+                if (event.data.progress && bytes - lastProgress >= 1024 * 1024) {
+                    lastProgress = bytes; self.postMessage({ progress: { decodedBytes: bytes } });
+                }
             }
             parser.write(decoder.decode());
         } finally { reader.releaseLock(); }

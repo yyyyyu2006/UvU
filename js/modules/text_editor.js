@@ -3,6 +3,78 @@ function findEditorMatches(text, query, caseSensitive = false) {
     const escaped = query.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
     return Array.from(text.matchAll(new RegExp(escaped, caseSensitive ? 'gu' : 'giu')), m => ({ start: m.index, end: m.index + m[0].length }));
 }
+// Scan bounded overlapping windows without splitting Unicode surrogate pairs.
+// Partial results stay private until the complete scan succeeds.
+function findEditorMatchesAsync(text, query, caseSensitive = false, signal) {
+    return new Promise((resolve, reject) => {
+        let timer = null, cursor = 0, base = 0, boundary = 0, segment = null;
+        const matches = [];
+        const finish = error => {
+            if (timer !== null) clearTimeout(timer);
+            signal?.removeEventListener('abort', abort);
+            if (error) reject(error); else resolve(matches);
+        };
+        const abort = () => { const error = new Error('Search cancelled'); error.name = 'AbortError'; finish(error); };
+        if (signal?.aborted) return abort();
+        if (!query) return finish();
+        const escaped = query.replace(/[.*+?^$()|[\]{}\\]/g, '\\$&');
+        const regex = new RegExp(escaped, caseSensitive ? 'gu' : 'giu');
+        const safeBoundary = end => end < text.length && end > 0 && text.charCodeAt(end - 1) >= 0xd800 && text.charCodeAt(end - 1) <= 0xdbff && text.charCodeAt(end) >= 0xdc00 && text.charCodeAt(end) <= 0xdfff ? end - 1 : end;
+        const step = () => {
+            timer = null;
+            if (signal?.aborted) return abort();
+            if (cursor >= text.length && segment === null) return finish();
+            if (segment === null) {
+                base = cursor; boundary = safeBoundary(Math.min(text.length, base + 32768));
+                segment = text.slice(base, safeBoundary(Math.min(text.length, boundary + query.length + 2)));
+                regex.lastIndex = 0;
+            }
+            const started = Date.now();
+            for (let count = 0; count < 512; count++) {
+                const match = regex.exec(segment);
+                if (!match || base + match.index >= boundary) {
+                    cursor = Math.max(cursor, boundary); segment = null; break;
+                }
+                const start = base + match.index, end = start + match[0].length;
+                matches.push({ start, end }); cursor = end;
+                if (Date.now() - started >= 4) break;
+            }
+            if (cursor >= text.length && segment === null) finish();
+            else timer = setTimeout(step, 0);
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+        timer = setTimeout(step, 0);
+    });
+}
+function replaceEditorMatches(text, matches, replacement) {
+    const chunks = []; let cursor = 0;
+    for (const match of matches) { chunks.push(text.slice(cursor, match.start), replacement); cursor = match.end; }
+    chunks.push(text.slice(cursor)); return chunks.join('');
+}
+const expandedEditorStates = new Map();
+function rememberExpandedEditorState(target, state) {
+    const key = getExpandedEditorScrollKey(target);
+    if (!key) return;
+    expandedEditorStates.delete(key);
+    // Session drafts are bounded and never copied into durable backup/browser storage.
+    if (state.original.length + state.value.length <= 2000000) expandedEditorStates.set(key, { ...state });
+    while (expandedEditorStates.size > 12 || Array.from(expandedEditorStates.values()).reduce((sum, item) => sum + item.original.length + item.value.length, 0) > 4000000) expandedEditorStates.delete(expandedEditorStates.keys().next().value);
+}
+function getExpandedEditorState(target, original) {
+    const value = expandedEditorStates.get(getExpandedEditorScrollKey(target));
+    return value ? { ...value, conflict: value.original !== original } : null;
+}
+function scrollEditorSelection(draft, position) {
+    const style = getComputedStyle(draft), mirror = document.createElement('div');
+    for (const name of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight', 'padding', 'wordBreak', 'overflowWrap', 'tabSize', 'textIndent', 'textTransform']) mirror.style[name] = style[name];
+    Object.assign(mirror.style, { position: 'fixed', left: '-100000px', top: '0', width: draft.clientWidth + 'px',
+        boxSizing: 'border-box', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', visibility: 'hidden', border: '0' });
+    mirror.textContent = draft.value.slice(0, position);
+    const marker = document.createElement('span'); marker.textContent = draft.value.slice(position, position + 1) || '\u200b';
+    mirror.appendChild(marker); document.body.appendChild(mirror);
+    draft.scrollTop = Math.max(0, marker.offsetTop - draft.clientHeight / 3);
+    mirror.remove();
+}
 const EXPANDED_EDITOR_SCROLL_PREFIX = 'uvu:expanded-editor-scroll:';
 function getExpandedEditorScrollKey(target) {
     if (!target) return '';
@@ -13,7 +85,9 @@ function getExpandedEditorScrollKey(target) {
     if (!owner && id.startsWith('world-book-')) {
         owner = 'worldbook:' + (typeof document !== 'undefined' ? document.getElementById('world-book-id')?.value || 'new' : 'new');
     } else if (!owner && /^setting-(?:char-|my-|group-|status-|custom-bubble)/.test(id) && typeof currentChatId !== 'undefined' && currentChatId) {
-        owner = (typeof currentChatType !== 'undefined' ? currentChatType : 'private') + ':' + currentChatId;
+        const type = typeof currentChatType !== 'undefined' ? currentChatType : 'private';
+        const chat = typeof db !== 'undefined' ? (type === 'group' ? db.groups : db.characters)?.find(item => item.id === currentChatId) : null;
+        owner = type + ':' + currentChatId + (chat?.activeArchiveId ? ':' + chat.activeArchiveId : '');
     }
     return EXPANDED_EDITOR_SCROLL_PREFIX + (owner ? encodeURIComponent(owner) + ':' : '') + id;
 }
@@ -51,41 +125,102 @@ function openExpandedEditor(target, importedText) {
     if (document.getElementById('expanded-text-editor')) return;
     const original = target.value;
     const overlay = document.createElement('div');
-    overlay.id = 'expanded-text-editor'; overlay.className = 'feature-dialog'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true');
-    overlay.innerHTML = '<div class="feature-dialog-card text-editor-card"><header><strong class="editor-title"></strong><button type="button" data-action="cancel">取消</button><button type="button" data-action="apply">应用</button></header><div class="editor-search"><input type="search" class="editor-find" placeholder="查找文字" aria-label="查找文字"><label><input type="checkbox" class="editor-case">区分大小写</label><span class="editor-count" aria-live="polite"></span><button type="button" data-action="previous">上一个</button><button type="button" data-action="next">下一个</button><input type="text" class="editor-replace" placeholder="替换为" aria-label="替换为"><button type="button" data-action="replace">替换</button><button type="button" data-action="replaceAll">全部替换</button></div><div class="editor-import-options" hidden><span>文档已解析，请选择：</span><button type="button" data-action="importReplace">替换原文</button><button type="button" data-action="importAppend">追加到原文</button></div><textarea class="editor-draft" spellcheck="false" aria-label="展开编辑内容"></textarea><footer>仅编辑草稿；应用后请按原界面的保存方式保存。</footer></div>';
+    overlay.id = 'expanded-text-editor'; overlay.className = 'feature-dialog'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '展开文字编辑器');
+    overlay.innerHTML = '<div class="feature-dialog-card text-editor-card"><header><strong class="editor-title"></strong><button type="button" data-action="keepDraft">暂存关闭</button><button type="button" data-action="cancel">放弃</button><button type="button" data-action="apply">应用</button></header><div class="editor-search"><input type="search" class="editor-find" placeholder="查找文字" aria-label="查找文字"><label><input type="checkbox" class="editor-case">区分大小写</label><span class="editor-count" aria-live="polite"></span><button type="button" data-action="previous">上一个</button><button type="button" data-action="next">下一个</button><input type="text" class="editor-replace" placeholder="替换为" aria-label="替换为"><button type="button" data-action="replace">替换</button><button type="button" data-action="replaceAll">全部替换</button><button type="button" data-action="undo" disabled>撤销替换</button></div><div class="editor-draft-notice feature-help" hidden></div><div class="editor-import-options" hidden><span>文档已解析，请选择：</span><button type="button" data-action="importReplace">替换原文</button><button type="button" data-action="importAppend">追加到原文</button></div><textarea class="editor-draft" spellcheck="false" aria-label="展开编辑内容"></textarea><footer>仅编辑草稿；应用后请按原界面的保存方式保存。</footer></div>';
     const label = target.id ? document.querySelector('label[for="' + CSS.escape(target.id) + '"]') : null;
     overlay.querySelector('.editor-title').textContent = (label?.textContent || target.getAttribute('placeholder') || '展开编辑').slice(0, 45);
     const draft = overlay.querySelector('.editor-draft'), find = overlay.querySelector('.editor-find'), replacement = overlay.querySelector('.editor-replace'), caseBox = overlay.querySelector('.editor-case');
     draft.value = importedText ?? original;
     overlay.querySelector('.editor-import-options').hidden = importedText === undefined;
     const scrollTarget = { scrollKey: getExpandedEditorScrollKey(target) };
-    let matches = [], active = -1;
+    const saved = importedText === undefined ? getExpandedEditorState(scrollTarget, original) : null;
+    if (saved && !saved.conflict) { draft.value = saved.value; find.value = saved.query || ''; replacement.value = saved.replacement || ''; caseBox.checked = Boolean(saved.caseSensitive); }
+    const notice = overlay.querySelector('.editor-draft-notice');
+    if (saved?.value !== saved?.original && saved) {
+        notice.hidden = false;
+        notice.textContent = saved.conflict ? '原文已变化，已保留旧草稿供复制；未覆盖当前原文。' : '已恢复未应用的页面临时草稿；刷新页面将清空。';
+        if (saved.conflict) {
+            const copy = document.createElement('button'); copy.type = 'button'; copy.textContent = '查看旧草稿';
+            copy.addEventListener('click', () => { if (confirm('使用旧草稿替换当前展开编辑内容？原界面仅在应用后变化。')) { draft.value = saved.value; update(); } }); notice.appendChild(copy);
+        }
+    }
+    let matches = [], active = -1, searchTimer = null, searchDirty = false, undoValue = null;
+    let searchController = null, searchPromise = null, searchVersion = 0, closed = false;
+    const remember = (value, base = original) => rememberExpandedEditorState(scrollTarget, { original: base, value, query: find.value, replacement: replacement.value,
+        caseSensitive: caseBox.checked, selectionStart: draft.selectionStart, selectionEnd: draft.selectionEnd });
     let scrollSaveTimer = null;
     const persistScroll = () => {
         if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
         scrollSaveTimer = setTimeout(() => { scrollSaveTimer = null; saveExpandedEditorScroll(scrollTarget, draft); }, 80);
     };
     const status = () => { overlay.querySelector('.editor-count').textContent = (active < 0 ? 0 : active + 1) + ' / ' + matches.length; };
-    const update = () => { matches = findEditorMatches(draft.value, find.value, caseBox.checked); active = -1; status(); };
+    const invalidateSearch = () => {
+        searchVersion++; searchController?.abort(); searchController = null; searchPromise = null;
+        if (searchTimer) clearTimeout(searchTimer);
+        searchTimer = null; matches = []; active = -1; searchDirty = true;
+        overlay.querySelector('.editor-count').textContent = '查找中…';
+        overlay.querySelector('.editor-search').setAttribute('aria-busy', 'true');
+    };
+    const update = () => {
+        invalidateSearch();
+        const version = searchVersion, text = draft.value, query = find.value, sensitive = caseBox.checked;
+        const publish = result => {
+            if (closed || version !== searchVersion || text !== draft.value || query !== find.value || sensitive !== caseBox.checked) return false;
+            matches = result; active = -1; searchDirty = false; searchController = null;
+            overlay.querySelector('.editor-search').setAttribute('aria-busy', 'false'); status(); return true;
+        };
+        if (!query || text.length <= 50000) {
+            const ready = publish(findEditorMatches(text, query, sensitive));
+            return searchPromise = Promise.resolve(ready);
+        }
+        searchController = new AbortController();
+        return searchPromise = findEditorMatchesAsync(text, query, sensitive, searchController.signal).then(publish, error => {
+            if (error.name !== 'AbortError') {
+                if (!closed && version === searchVersion) {
+                    overlay.querySelector('.editor-count').textContent = '查找失败，请调整文字后重试';
+                    overlay.querySelector('.editor-search').setAttribute('aria-busy', 'false');
+                }
+                console.error('Editor search failed', error);
+            }
+            return false;
+        });
+    };
+    const readyForSearchAction = () => {
+        const pending = searchDirty ? searchPromise || update() : Promise.resolve(!closed);
+        const version = searchVersion, text = draft.value, query = find.value, sensitive = caseBox.checked;
+        return pending.then(ready => ready && !closed && !searchDirty && version === searchVersion && text === draft.value && query === find.value && sensitive === caseBox.checked);
+    };
+    const scheduleSearch = event => {
+        if (event?.target === draft) { undoValue = null; overlay.querySelector('[data-action=undo]').disabled = true; }
+        invalidateSearch();
+        searchTimer = setTimeout(update, draft.value.length > 50000 ? 180 : 80);
+    };
+    const recordUndo = () => { undoValue = draft.value; overlay.querySelector('[data-action=undo]').disabled = false; };
     const select = index => {
-        if (!matches.length) return;
+        if (closed || searchDirty || !matches.length) return;
         active = (index + matches.length) % matches.length;
         draft.focus(); draft.setSelectionRange(matches[active].start, matches[active].end);
-        const line = draft.value.slice(0, matches[active].start).split('\n').length - 1;
-        draft.scrollTop = Math.max(0, line * 24 - draft.clientHeight / 3); status();
+        scrollEditorSelection(draft, matches[active].start); status();
     };
-    const close = () => {
+    const close = (keepDraft = false, applied = false) => {
         if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
+        closed = true; invalidateSearch();
         saveExpandedEditorScroll(scrollTarget, draft);
-        overlay.remove(); target.focus({ preventScroll: true });
+        remember(keepDraft || applied ? draft.value : original, applied ? draft.value : original);
+        overlay.remove();
+        if (target.isConnected && target.getClientRects().length) target.focus({ preventScroll: true });
     };
-    find.addEventListener('input', update); caseBox.addEventListener('change', update); draft.addEventListener('input', update); draft.addEventListener('scroll', persistScroll, { passive: true });
-    overlay.addEventListener('click', e => {
+    find.addEventListener('input', scheduleSearch); caseBox.addEventListener('change', update); draft.addEventListener('input', scheduleSearch); draft.addEventListener('scroll', persistScroll, { passive: true });
+    overlay.addEventListener('click', async e => {
         const action = e.target.closest('[data-action]')?.dataset.action;
+        if (['next', 'previous', 'replace', 'replaceAll'].includes(action) && !await readyForSearchAction()) return;
+        if (action === 'keepDraft') close(true);
+        if (action === 'undo' && undoValue !== null) { draft.value = undoValue; undoValue = null; e.target.disabled = true; update(); }
         if (action === 'cancel') { if (draft.value === original || confirm('放弃未应用的编辑？')) close(); }
         if (action === 'apply') {
             if (!target.isConnected) return showToast('原编辑界面已关闭，请先复制草稿');
-            target.value = draft.value; target.dispatchEvent(new Event('input', { bubbles: true })); target.dispatchEvent(new Event('change', { bubbles: true })); close();
+            if (getExpandedEditorScrollKey(target) !== scrollTarget.scrollKey) return showToast('角色或存档已变化，请暂存或复制草稿后重新打开');
+            target.value = draft.value; target.dispatchEvent(new Event('input', { bubbles: true })); target.dispatchEvent(new Event('change', { bubbles: true })); close(false, true);
         }
         if (action === 'next') select(active + 1);
         if (action === 'previous') select(active < 0 ? matches.length - 1 : active - 1);
@@ -93,18 +228,19 @@ function openExpandedEditor(target, importedText) {
         if (action === 'importAppend') { draft.value = original + (original ? '\n\n' : '') + importedText; update(); }
         if (action === 'replace') {
             if (active < 0) return select(0);
-            const at = matches[active].start; draft.setRangeText(replacement.value, at, matches[active].end, 'end'); update();
+            recordUndo(); const at = matches[active].start; draft.setRangeText(replacement.value, at, matches[active].end, 'end'); if (!await update()) return;
             const next = matches.findIndex(m => m.start >= at + replacement.value.length); select(next < 0 ? 0 : next);
         }
         if (action === 'replaceAll' && matches.length) {
-            for (let i = matches.length - 1; i >= 0; i--) draft.value = draft.value.slice(0, matches[i].start) + replacement.value + draft.value.slice(matches[i].end);
+            recordUndo(); draft.value = replaceEditorMatches(draft.value, matches, replacement.value);
             update();
         }
     });
-    overlay.addEventListener('keydown', e => {
+    overlay.addEventListener('keydown', async e => {
+        if (e.isComposing) return;
         if ((e.ctrlKey || e.metaKey) && ['f', 'h'].includes(e.key.toLowerCase())) { e.preventDefault(); find.focus(); find.select(); }
-        if (e.key === 'Enter' && e.target === find) { e.preventDefault(); select(active + (e.shiftKey ? -1 : 1)); }
-        if (e.key === 'Escape') { e.preventDefault(); overlay.querySelector('[data-action=cancel]').click(); }
+        if (e.key === 'Enter' && e.target === find) { e.preventDefault(); if (await readyForSearchAction()) select(active + (e.shiftKey ? -1 : 1)); }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); overlay.querySelector('[data-action=cancel]').click(); }
         if (e.key === 'Tab') {
             const focusable = Array.from(overlay.querySelectorAll('button,input,textarea')).filter(n => !n.disabled && n.getClientRects().length);
             const first = focusable[0], last = focusable[focusable.length - 1];
@@ -113,7 +249,10 @@ function openExpandedEditor(target, importedText) {
         }
     });
     document.body.appendChild(overlay); update(); draft.focus({ preventScroll: true });
-    if (importedText === undefined) restoreExpandedEditorScroll(scrollTarget, draft);
+    if (importedText === undefined) {
+        if (saved && !saved.conflict) draft.setSelectionRange(Math.min(saved.selectionStart || 0, draft.value.length), Math.min(saved.selectionEnd ?? saved.selectionStart ?? 0, draft.value.length));
+        restoreExpandedEditorScroll(scrollTarget, draft);
+    }
 }
 function setupExpandedEditors() {
     const attach = () => document.querySelectorAll('textarea:not([data-expanded-editor])').forEach(target => {

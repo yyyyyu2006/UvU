@@ -1018,3 +1018,11 @@ input:checked + .kkt-slider:before {
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
+
+/* Scoped bridge audit controls: source review and diagnostics. */
+#uvu-story-bridge-screen .uvu-bridge-diagnostics { padding:10px; min-width:0; overflow-wrap:anywhere; }
+#uvu-story-bridge-screen .uvu-bridge-diagnostics pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; font-size:12px; max-height:42vh; overflow:auto; }
+#uvu-story-bridge-screen .uvu-bridge-review-toolbar > input[type="search"] { width:200px; max-width:100%; min-width:0; box-sizing:border-box; }
+#uvu-story-bridge-screen .uvu-bridge-review-toolbar button, #uvu-story-bridge-screen .uvu-bridge-diagnostics button { min-height:36px; width:auto; max-width:100%; white-space:normal; }
+#uvu-story-bridge-screen .uvu-bridge-review-toolbar, #uvu-story-bridge-screen .uvu-bridge-summary-options { color:inherit; }
+#uvu-story-bridge-screen .uvu-bridge-diagnostics summary { cursor:pointer; }

@@ -1,0 +1,9 @@
+/* Notification preferences only; original chat and beautification rules are untouched. */
+#uvu-notification-preferences { box-sizing:border-box; width:100%; min-width:0; margin-top:10px; color:var(--text-color,inherit); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+#uvu-notification-preferences summary { cursor:pointer; }
+#uvu-notification-preferences p { margin:6px 0; }
+#uvu-notification-preferences label { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; min-width:0; }
+#uvu-notification-preferences select, #uvu-notification-preferences input[type="time"] { box-sizing:border-box; max-width:100%; min-width:0; padding:6px 8px; color:var(--text-color,#333); background:var(--input-bg,#fff); border:1px solid var(--border-color,#ccc); border-radius:6px; font:inherit; }
+#uvu-notification-preferences select { width:100%; }
+#uvu-notification-preferences input[type="checkbox"] { width:18px; height:18px; flex:none; }
+#uvu-notification-preferences button { width:auto; max-width:100%; min-height:36px; padding:6px 10px; white-space:normal; }

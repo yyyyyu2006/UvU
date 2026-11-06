@@ -23,6 +23,18 @@ function refreshChatGenerationUI() {
         typingIndicator.textContent = `“${name}”正在输入中...`;
     }
 }
+// Cancels only this reply's wait; shared/manual preparation jobs keep their ownership.
+async function awaitChatPreparation(promise, signal) {
+    if (!signal) return promise;
+    let abort;
+    const cancellation = new Promise((_, reject) => {
+        abort = () => reject(Object.assign(new Error('回复已取消'), { name: 'AbortError' }));
+        signal.addEventListener('abort', abort, { once: true });
+        if (signal.aborted) abort();
+    });
+    try { return await Promise.race([promise, cancellation]); }
+    finally { signal.removeEventListener('abort', abort); }
+}
 function stopAiReply() {
     const request = getChatGeneration();
     if (!request?.controller) return false;
@@ -35,12 +47,14 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
     const chatScreen = document.getElementById('chat-room-screen');
     const isViewingChat = currentChatId === chatId && currentChatType === chatType && chatScreen?.classList.contains('active');
     if (isViewingChat && document.visibilityState !== 'hidden') return;
+    if (typeof shouldShowMessageNotification === 'function' && !shouldShowMessageNotification(chatId, chatType)) return;
     let host = document.getElementById('incoming-message-notifications');
     if (!host) {
         host = document.createElement('div'); host.id = 'incoming-message-notifications'; host.setAttribute('aria-live', 'polite');
         document.body.appendChild(host);
     }
     messages.filter(message => message.role === 'assistant' && !message.isStatusUpdate && !message.isThinking && !message.isContextDisabled).forEach(message => {
+        if (typeof claimIncomingMessageNotification === 'function' && !claimIncomingMessageNotification(chat, message, chatId, chatType)) return;
         const card = document.createElement('button'); card.type = 'button'; card.className = 'incoming-message-toast';
         const member = chatType === 'group' && message.senderId ? chat.members?.find(item => item.id === message.senderId) : null;
         const titleText = chatType === 'private' ? (chat.remarkName || chat.realName || '新消息') : (member?.groupNickname || member?.realName || chat.name || '新消息');
@@ -53,11 +67,17 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
         const title = document.createElement('strong'); title.textContent = titleText;
         const body = document.createElement('span'); body.className = 'incoming-message-text';
         body.textContent = String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息';
+        if (typeof getMessageNotificationPresentation === 'function') {
+            const display = getMessageNotificationPresentation(titleText, body.textContent, avatar.src, chatId, chatType);
+            title.textContent = display.title; body.textContent = display.body;
+            if (display.icon) avatar.src = display.icon;
+            else { avatar.onerror = null; avatar.hidden = true; avatar.removeAttribute('src'); }
+        }
         content.append(title, body);
         card.append(avatar, content);
         host.replaceChildren(card);
         bindIncomingNotificationSwipe(card, () => openChatRoom(chatId, chatType));
-        showSystemMessageNotification(titleText, body.textContent, avatar.src, chatId, chatType);
+        showSystemMessageNotification(titleText, String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息', member?.avatar || chat.avatar, chatId, chatType);
         setTimeout(() => card.remove(), 5000);
     });
 }
@@ -85,16 +105,24 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     const bridgeTurnStart = globalThis.UvUStoryBridge?.turnStart?.(chat) ?? Math.max(0, chat.history.length - 1);
     let storyBridgeMode = null;
     if (chatType === 'private' && globalThis.UvUStoryBridge?.isEnabled?.() !== false && globalThis.UvUStoryBridge?.isConnected()) {
+        const preflight = { chat, chatType, archiveId: bridgeArchive, history: bridgeHistory, controller: typeof AbortController === 'function' ? new AbortController() : null };
+        chatGenerationRequests.add(preflight);
+        if (!isBackground) refreshChatGenerationUI();
         try {
-            storyBridgeMode = await globalThis.UvUStoryBridge.getMode(chatId);
-            if (chat.activeArchiveId !== bridgeArchive || chat.history !== bridgeHistory || getChatGeneration(chatId, chatType)) return;
+            storyBridgeMode = await awaitChatPreparation(globalThis.UvUStoryBridge.getMode(chatId,
+                { signal: preflight.controller?.signal, timeoutMs: 5000 }), preflight.controller?.signal);
+            if (chat.activeArchiveId !== bridgeArchive || chat.history !== bridgeHistory) return;
             if (storyBridgeMode.mode === 'offline') {
                 if (!isBackground) showToast('当前处于酒馆线下剧情模式；拿出手机后才能让 UvU 回复。');
                 return;
             }
         } catch (error) {
+            if (preflight.controller?.signal.aborted) return;
             if (!isBackground) showToast('酒馆模式暂时不可用，已按普通线上聊天继续回复。');
             console.warn('UvU Story Bridge mode check failed; continuing with normal reply:', error.message);
+        } finally {
+            chatGenerationRequests.delete(preflight);
+            refreshChatGenerationUI();
         }
     }
     if (chat.activeArchiveId !== bridgeArchive || chat.history !== bridgeHistory || getChatGeneration(chatId, chatType)) return;
@@ -164,11 +192,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         messageArea.scrollTop = messageArea.scrollHeight;
     }
 
-    let replyDelivered = false;
+    let replyDelivered = false, mcpLease = null;
     try {
         const memoryArchiveId = chat.activeArchiveId;
         const relationshipRevision = chat.friendRelationship?.revision;
-        if (typeof runAutoMemory === 'function') await runAutoMemory(chatId, chatType);
+        if (typeof runAutoMemory === 'function') await awaitChatPreparation(runAutoMemory(chatId, chatType), generationController?.signal);
         if (generationController?.signal.aborted || chat.history !== generationRequest.history || chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         const requestHistory = chat.history;
         const requestIsCurrent = () => !generationController?.signal.aborted && chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
@@ -182,8 +210,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, historySlice, Math.random, generationController?.signal) : buildWorldBookPlan(chat, historySlice)) : undefined;
         let vectorContext = '';
         if (typeof getVectorMemoryContext === 'function') {
-            const query = historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');
-            try { vectorContext = await getVectorMemoryContext(chat, query, generationController?.signal); }
+            const query = typeof getVectorMemoryQuery === 'function' ? getVectorMemoryQuery(chat, historySlice.slice(-4))
+                : historySlice.slice(-4).map(message => `${message.role}: ${message.content || ''}`).join('\n');
+            try { vectorContext = await awaitChatPreparation(getVectorMemoryContext(chat, query, generationController?.signal), generationController?.signal); }
             catch (error) {
                 if (error.name === 'AbortError') throw error;
                 console.error('Vector memory lookup failed:', error.message);
@@ -199,7 +228,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (!requestIsCurrent()) return;
         let mcpContext = '';
         if (typeof prepareMcpChatContext === 'function') {
-            try { mcpContext = await prepareMcpChatContext(chat, chatType, generationController?.signal); }
+            try { mcpContext = await prepareMcpChatContext(chat, chatType, generationController?.signal, { onLease: lease => { mcpLease = lease; } }); }
             catch (error) { if (generationController?.signal.aborted) throw error; console.warn('MCP reference unavailable; continuing ordinary reply'); }
         }
         if (!requestIsCurrent()) return;
@@ -689,6 +718,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
             replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal) !== false;
         }
+        if (replyDelivered && requestIsCurrent()) mcpLease?.commit();
         if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
             try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode, globalThis.UvUStoryBridge.messageRecords(chat, bridgeTurnStart, chat.history.length)); }
             catch (error) { console.warn('UvU Story Bridge sync failed:', error.message); }

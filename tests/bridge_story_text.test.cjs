@@ -18,3 +18,16 @@ test('extracted floor text stays literal and invalid dates are rejected', () => 
     assert.equal(helper.floorItems({1: text}, {1: floor})[0].text, text);
     assert.throws(() => helper.validateFloor({...floor, createdAt: 8640000000000001}), /楼层/);
 });
+
+test('extraction provenance reports filtered unknown and broken markup without changing story text',()=>{
+ const result=helper.inspectStory('<status>hidden</status><mystery>剧情</mystery>');
+ assert.equal(result.text,'剧情');assert.equal(result.requiresConfirmation,true);assert.ok(result.unknownTags.includes('mystery'));assert.ok(result.filteredTags.includes('status'));
+ const tagged=helper.inspectStory('<content>正文</content>');assert.equal(tagged.tag,'content');assert.equal(tagged.requiresConfirmation,false);
+ const broken=helper.inspectStory('<content>broken');assert.equal(broken.mode,'malformed');assert.equal(broken.requiresConfirmation,true);
+});
+
+test('validated floors retain bounded extraction provenance for manual review',()=>{
+ const floor={id:'f',number:1,speaker:'A',role:'assistant',createdAt:0,extraction:'plain',bodyTag:'',part:1,partCount:1,provenance:{filteredTags:['status'],unknownTags:['custom'],sourceChars:99,extractedChars:2}};
+ const validated=helper.validateFloor(floor);assert.deepEqual(validated.provenance.unknownTags,['custom']);assert.equal(validated.provenance.sourceChars,99);
+ assert.throws(()=>helper.validateFloor({...floor,provenance:{...floor.provenance,unknownTags:['x'.repeat(50)]}}),/提取|楼层/);
+});
