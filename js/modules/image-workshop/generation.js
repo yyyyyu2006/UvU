@@ -156,7 +156,9 @@ function initWorkshopGeneration() {
 }
 
 // --- 统一生图调用函数 ---
-window.executeImageGeneration = async function(settings, customPrompt = null) {
+window.executeImageGeneration = async function(settings, customPrompt = null, { signal } = {}) {
+    const checkCancelled = () => { if (signal?.aborted) throw Object.assign(new Error('生图已取消'), { name: 'AbortError' }); };
+    checkCancelled();
     const provider = settings.provider || 'novelai';
     
     // 从当前激活的预设中获取 URL 和 Key
@@ -199,10 +201,12 @@ window.executeImageGeneration = async function(settings, customPrompt = null) {
         }
         
         payload = await buildGPTPayload(settings, customPrompt || settings.gptTestPrompt);
+        checkCancelled();
         console.log('【统一生图】发送给 GPT 的完整 Payload:', JSON.stringify(payload, null, 2));
         
         response = await fetch(finalApiUrl, {
             method: 'POST',
+            ...(signal ? { signal } : {}),
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${apiKey}`
@@ -212,6 +216,7 @@ window.executeImageGeneration = async function(settings, customPrompt = null) {
     } else if (provider === 'novelai') {
         const protocol = activePreset?.protocol || 'novelai';
         const novelaiPayload = await buildNovelAIPayload(settings, customPrompt);
+        checkCancelled();
         payload = protocol === 'openai'
             ? buildNovelAIOpenAICompatiblePayload(novelaiPayload)
             : novelaiPayload;
@@ -252,11 +257,13 @@ window.executeImageGeneration = async function(settings, customPrompt = null) {
 
         response = await fetch(finalApiUrl, {
             method: 'POST',
+            ...(signal ? { signal } : {}),
             headers: headers,
             body: JSON.stringify(payload)
         });
     }
 
+    checkCancelled();
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`生图 API 请求失败 (${response.status}): ${errorText}`);

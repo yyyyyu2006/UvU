@@ -75,6 +75,17 @@
 }
 .minimax-director-fields textarea { resize: vertical; min-height: 76px; }
 .minimax-director-fields .kkt-item-subtitle { overflow-wrap: anywhere; line-height: 1.6; }
+#send-pv-modal .pv-send-modes { display: inline-flex; gap: 4px; padding: 3px; margin: 0 0 14px; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
+#send-pv-modal .pv-send-modes label { position: relative; margin: 0; cursor: pointer; }
+#send-pv-modal .pv-send-modes input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+#send-pv-modal .pv-send-modes span { display: block; padding: 6px 12px; border-radius: 4px; font-size: 13px; line-height: 20px; }
+#send-pv-modal .pv-send-modes input:checked + span { background: var(--primary-color, #c5ddea); color: var(--text-color, #333); }
+#send-pv-modal .pv-send-modes input:focus-visible + span { outline: 2px solid var(--text-color, #333); outline-offset: 1px; }
+#send-pv-modal .pv-send-modes input:disabled + span { opacity: 0.6; cursor: wait; }
+#send-pv-modal .pv-generation-hint, #send-pv-modal .pv-generation-status { margin: 0 0 12px; font-size: 12px; line-height: 1.6; color: var(--text-color, #666); overflow-wrap: anywhere; }
+#send-pv-modal .pv-send-actions { display: flex; align-items: center; gap: 8px; }
+#send-pv-modal .pv-send-actions .btn { flex: 1; width: auto; min-width: 0; margin: 0; padding: 10px 12px; font-size: 14px; }
+#send-pv-modal [hidden] { display: none !important; }
 @media (max-width: 380px) {
     .minimax-tts-field-row { grid-template-columns: minmax(0, 1fr); }
     .minimax-tts-actions .btn { flex: 1; padding-inline: 8px; }

@@ -1,0 +1,195 @@
+// On-demand photo generation, isolated from ordinary chat replies and workshop state.
+const ChatImageGeneration = (() => {
+    let ui, target, running, retry;
+    const maxBytes = 15 * 1024 * 1024;
+    const cancelled = () => Object.assign(new Error('已取消生成'), { name: 'AbortError' });
+    const isSelected = () => ui?.aiMode.checked === true;
+
+    function status(text) {
+        if (!ui) return;
+        ui.status.textContent = text;
+        ui.status.hidden = !text;
+    }
+
+    function refresh() {
+        if (!ui) return;
+        const ai = isSelected(), busy = Boolean(running);
+        ui.textMode.disabled = ui.aiMode.disabled = busy;
+        ui.input.readOnly = busy;
+        ui.submit.disabled = busy;
+        ui.submit.textContent = busy ? (running.saving ? '保存中…' : '生成中…')
+            : ai ? (retry && retry.prompt === ui.input.value.trim() ? '重试发送' : '生成并发送') : '发送';
+        ui.cancel.hidden = !busy;
+        ui.cancel.disabled = Boolean(running?.saving);
+        ui.hint.hidden = !ai;
+        ui.form.setAttribute('aria-busy', String(busy));
+    }
+
+    function cancel() {
+        if (!running || running.saving) return;
+        const session = running;
+        running = null;
+        clearTimeout(session.timer);
+        session.controller.abort();
+        status('已取消生成');
+        refresh();
+    }
+
+    function open() {
+        // A pending database commit owns its message, but no longer owns a reopened dialog.
+        if (running?.saving) running = null;
+        else cancel();
+        target = captureChatSendTarget();
+        retry = null;
+        status('');
+        refresh();
+    }
+
+    function setup() {
+        if (ui) return;
+        const field = id => document.getElementById(id);
+        if (!field('pv-mode-ai')) return;
+        ui = { modal: field('send-pv-modal'), form: field('send-pv-form'), input: field('pv-text-input'),
+            textMode: field('pv-mode-text'), aiMode: field('pv-mode-ai'), submit: field('pv-send-btn'),
+            cancel: field('pv-cancel-generation'), status: field('pv-generation-status'), hint: field('pv-generation-hint') };
+        for (const mode of [ui.textMode, ui.aiMode]) mode.addEventListener('change', () => {
+            cancel(); retry = null; status(''); refresh();
+        });
+        ui.input.addEventListener('input', refresh);
+        ui.cancel.addEventListener('click', cancel);
+        ui.modal.addEventListener('click', event => { if (event.target === ui.modal) cancel(); });
+        if (typeof MutationObserver !== 'undefined') new MutationObserver(() => {
+            if (!ui.modal.classList.contains('visible')) cancel();
+        }).observe(ui.modal, { attributes: true, attributeFilter: ['class'] });
+        refresh();
+    }
+
+    function assertActive(session) {
+        if (running !== session || session.controller.signal.aborted) throw cancelled();
+        if (!isChatSendTargetValid(session.target)) throw new Error('聊天或存档已变化，本次图片未发送，请重新打开后重试');
+    }
+
+    async function cancellable(promise, signal) {
+        let onAbort;
+        const cancellation = new Promise((_, reject) => {
+            onAbort = () => reject(cancelled());
+            signal.addEventListener('abort', onAbort, { once: true });
+            if (signal.aborted) onAbort();
+        });
+        try { return await Promise.race([promise, cancellation]); }
+        finally { signal.removeEventListener('abort', onAbort); }
+    }
+
+    async function imageData(value, signal) {
+        if (typeof value !== 'string' || !value.trim()) throw new Error('生图接口没有返回有效图片');
+        value = value.trim();
+        let blob;
+        if (/^https?:\/\//i.test(value)) {
+            const url = new URL(value);
+            if (url.username || url.password) throw new Error('图片下载地址无效');
+            let response;
+            try { response = await fetch(url.href, { signal, credentials: 'omit', referrerPolicy: 'no-referrer' }); }
+            catch (error) {
+                if (signal.aborted) throw cancelled();
+                throw new Error('图片已生成，但下载失败；请检查图片外链和跨域访问设置');
+            }
+            if (!response.ok) throw new Error(`图片下载失败（HTTP ${response.status}），请检查图片外链`);
+            if (Number(response.headers?.get('content-length')) > maxBytes) throw new Error('生成图片超过 15MB，请降低工坊图片尺寸');
+            blob = await response.blob();
+        } else {
+            const encoded = value.replace(/^data:image\/(?:png|jpe?g|webp);base64,/i, '').replace(/\s/g, '');
+            if (encoded.length > Math.ceil(maxBytes * 4 / 3) + 4) throw new Error('生成图片超过 15MB，请降低工坊图片尺寸');
+            let decoded;
+            try { decoded = atob(encoded); }
+            catch (_) { throw new Error('生图接口没有返回有效图片'); }
+            blob = new Blob([Uint8Array.from(decoded, char => char.charCodeAt(0))]);
+        }
+        if (signal.aborted) throw cancelled();
+        if (blob.size > maxBytes) throw new Error('生成图片超过 15MB，请降低工坊图片尺寸');
+        const bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+        const mime = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 ? 'image/png'
+            : bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff ? 'image/jpeg'
+            : bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+                bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50 ? 'image/webp' : '';
+        if (!mime) throw new Error('生图接口没有返回有效的 PNG、JPEG 或 WebP 图片');
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('生成图片读取失败，请重试'));
+            reader.readAsDataURL(new Blob([blob], { type: mime }));
+        });
+    }
+
+    function errorText(error, session) {
+        if (session.timedOut) return '生图等待超时，本次图片未发送，请稍后重试';
+        if (error.name === 'AbortError') return '已取消生成';
+        if (/^(?:未配置|聊天或存档|图片|生成图片|生图接口|请先在工坊)/.test(error.message)) return error.message;
+        const http = error.message?.match(/生图 API 请求失败 \((\d+)\)/);
+        return http ? `生图失败（HTTP ${http[1]}），请检查工坊 API 设置` : '生图失败，请检查工坊 API 配置或网络后重试';
+    }
+
+    async function send(text) {
+        text = String(text || '').trim();
+        if (!text || running) return false;
+        const source = target || captureChatSendTarget();
+        if (!isChatSendTargetValid(source)) {
+            status('聊天或存档已变化，请重新打开后重试');
+            return false;
+        }
+        if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
+        const settings = structuredClone(db.workshopSettings || {});
+        const key = JSON.stringify(settings);
+        const session = { target: source, controller: new AbortController(), saving: false, timedOut: false };
+        running = session;
+        session.timer = setTimeout(() => {
+            if (running === session && !session.saving) { session.timedOut = true; session.controller.abort(); }
+        }, 180000);
+        status('正在生成图片…'); refresh();
+        try {
+            let image;
+            if (retry?.target === source && retry.prompt === text && retry.key === key) image = retry.image;
+            else {
+                retry = null;
+                if (typeof window.executeImageGeneration !== 'function') throw new Error('请先在工坊完成生图 API 配置，并刷新页面');
+                const result = await cancellable(window.executeImageGeneration(settings, text, { signal: session.controller.signal }), session.controller.signal);
+                assertActive(session);
+                status('正在准备图片…');
+                image = await cancellable(imageData(result.imageData, session.controller.signal), session.controller.signal);
+                assertActive(session);
+                retry = { target: source, prompt: text, key, image };
+            }
+            assertActive(session);
+            if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
+            session.saving = true; clearTimeout(session.timer); refresh();
+            const { chat, type, chatId } = source;
+            const name = type === 'private' ? chat.myName : chat.me.nickname;
+            const message = { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'user',
+                content: image, parts: [{ type: 'text', text: `[${name}发来了一张图片：]\n图片描述：${text}` },
+                    { type: 'image', data: image }], timestamp: Date.now() };
+            if (type === 'group') message.senderId = 'user_me';
+            const mutation = beginChatMutation(chat, type);
+            if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(chat, message, type);
+            chat.history.push(message);
+            if (isChatTargetVisible(source)) addMessageBubble(message, chatId, type);
+            if (!await saveChatMutation(mutation, '图片发送未保存，请重试')) {
+                if (running === session) status('图片已生成，但发送未保存；可重试发送');
+                return false;
+            }
+            renderChatList();
+            if (running === session) {
+                retry = null;
+                ui?.modal.classList.remove('visible');
+            }
+            showToast('图片已发送');
+            return true;
+        } catch (error) {
+            if (running === session) status(errorText(error, session));
+            return false;
+        } finally {
+            clearTimeout(session.timer);
+            if (running === session) { running = null; refresh(); }
+        }
+    }
+
+    return { setup, open, isSelected, send, cancel };
+})();

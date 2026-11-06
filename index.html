@@ -1486,12 +1486,21 @@ node setup-server-plugin.js</code></pre>
         <div class="modal-window">
             <h3>分享照片/视频</h3>
             <form id="send-pv-form">
+                <div class="pv-send-modes" role="group" aria-label="发送方式">
+                    <label><input id="pv-mode-text" type="radio" name="pv-send-mode" value="text" checked><span>文字图</span></label>
+                    <label><input id="pv-mode-ai" type="radio" name="pv-send-mode" value="ai"><span>AI 生图</span></label>
+                </div>
+                <p id="pv-generation-hint" class="pv-generation-hint" hidden>使用工坊当前生图 API 与模型，生成后发送图片。</p>
                 <div class="form-group">
                     <label for="pv-text-input">输入描述</label>
                     <textarea id="pv-text-input" placeholder="在这里描述你的照片或视频内容..." required
                               rows="4"></textarea>
                 </div>
-                <button type="submit" class="btn btn-primary">发送</button>
+                <p id="pv-generation-status" class="pv-generation-status" role="status" aria-live="polite" hidden></p>
+                <div class="pv-send-actions">
+                    <button type="button" id="pv-cancel-generation" class="btn btn-secondary" hidden>取消生成</button>
+                    <button type="submit" id="pv-send-btn" class="btn btn-primary">发送</button>
+                </div>
             </form>
         </div>
     </div>
@@ -2959,7 +2968,8 @@ node setup-server-plugin.js</code></pre>
     <script src="js/modules/notifications.js?v=20261103-notification-test"></script>
     <script src="js/modules/chat_ai.js?v=20261105-audit-repairs"></script>
 <script src="js/modules/voice_director.js?v=20261106-voice-director"></script>
-<script src="js/modules/chat_features.js?v=20261106-voice-director"></script>
+<script src="js/modules/chat_image_generation.js?v=20261105-chat-image-generation"></script>
+<script src="js/modules/chat_features.js?v=20261105-chat-image-generation"></script>
 <script src="js/modules/chat_ops.js?v=20261106-audit-repairs"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
 <script src="js/modules/character_avatar.js?v=20261104-avatar-location"></script>
@@ -2971,7 +2981,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/mcp_ui.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment_ui.js?v=20261105-mcp-center"></script>
-<link rel="stylesheet" href="css/modules/derived_features.css?v=20261106-voice-director">
+<link rel="stylesheet" href="css/modules/derived_features.css?v=20261105-chat-image-generation">
 <script src="js/chat.js?v=20261106-status-icon"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
@@ -3096,7 +3106,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/workshop_html.js"></script> <!-- 绘图工坊HTML注入 -->
 <script src="js/modules/image-workshop/settings.js"></script>
 <script src="js/modules/image-workshop/prompts.js"></script>
-<script src="js/modules/image-workshop/generation.js"></script>
+<script src="js/modules/image-workshop/generation.js?v=20261105-chat-image-generation"></script>
 <script src="js/modules/image-workshop/vibe.js"></script>
 <script src="js/modules/image-workshop/history.js"></script>
 <script src="js/modules/image-workshop/char.js"></script>

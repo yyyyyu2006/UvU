@@ -337,14 +337,19 @@ function setupPhotoVideoSystem() {
     const sendPvForm = document.getElementById('send-pv-form');
     const sendPvModal = document.getElementById('send-pv-modal');
     const pvTextInput = document.getElementById('pv-text-input');
+    if (typeof ChatImageGeneration !== 'undefined') ChatImageGeneration.setup();
 
     photoVideoBtn.addEventListener('click', () => {
         sendPvForm.reset();
+        if (typeof ChatImageGeneration !== 'undefined') ChatImageGeneration.open();
         sendPvModal.classList.add('visible');
     });
     sendPvForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        sendMyPhotoVideo(pvTextInput.value.trim());
+        if (typeof ChatImageGeneration !== 'undefined' && ChatImageGeneration.isSelected()) {
+            return ChatImageGeneration.send(pvTextInput.value.trim());
+        }
+        return sendMyPhotoVideo(pvTextInput.value.trim());
     });
 }
 
