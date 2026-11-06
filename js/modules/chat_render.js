@@ -176,6 +176,9 @@ function createBaseMessageBubbleElement(message, isContinuous = false) {
     if (message.type === 'forwarded-chat' && message.forwardedChat && !message.isWithdrawn) {
         return createMessageForwardElement(message, chat, currentChatType, isContinuous);
     }
+    if (message.type === 'document' && message.document && !message.isWithdrawn && typeof createSharedDocumentElement === 'function') {
+        try { validateSharedDocument(message.document); return createSharedDocumentElement(message, chat, currentChatType, isContinuous); } catch (_) { /* Invalid attachments use the existing text fallback. */ }
+    }
     // 这里需要把 isThinking 从 message 里解构出来
     let {role, content, timestamp, id, transferStatus, giftStatus, stickerData, senderId, quote, isWithdrawn, originalContent, isStatusUpdate, isThinking} = message;
     

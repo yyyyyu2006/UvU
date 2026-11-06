@@ -1,0 +1,19 @@
+{
+  "pdfjs": {
+    "version": "4.10.38",
+    "source": "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-4.10.38.tgz",
+    "license": "Apache-2.0",
+    "notes": "CMaps and standard fonts retain their bundled license notices; loaded on demand."
+  },
+  "sheetjs": {
+    "version": "0.20.3",
+    "source": "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+    "license": "Apache-2.0",
+    "notes": "Loaded only by the local spreadsheet worker; no formula/macro execution."
+  },
+  "sha256": {
+    "js/vendor/pdfjs/pdf.mjs": "a209a2124baa35cbb9015b809926f1bcec9dd1c247296290e205dd9d76cb9128",
+    "js/vendor/pdfjs/pdf.worker.mjs": "7c237f83fa56bce645d8af51d183c9c56ba7b2d2928ff42754dc7020bea36323",
+    "js/vendor/sheetjs/xlsx.full.min.js": "cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41"
+  }
+}

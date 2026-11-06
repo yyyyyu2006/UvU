@@ -45,8 +45,8 @@ function environmentHolidayDisplay(days, manual) {
     return {text,kind:manual && manual.kind!=='note'?manual.kind:days.some(day=>day.isOffDay)?'offday':days.some(day=>day.isWorkDay)?'workday':days.length?'observance':'unknown'};
 }
 
-function openEnvironmentSettings(forChat = false) {
-    const chat = forChat && currentChatType === 'private' ? db.characters.find(item => item.id === currentChatId) : null;
+function openEnvironmentSettings(forChat = false, selectedChat = null) {
+    const chat = selectedChat && db.characters.includes(selectedChat) ? selectedChat : forChat && currentChatType === 'private' ? db.characters.find(item => item.id === currentChatId) : null;
     const archiveId = chat?.activeArchiveId;
     const controller = new AbortController();
     const dialog = createMessageForwardDialog(chat ? '天气与异地模式' : '日历与环境设置', 'environment-settings', () => controller.abort());
@@ -179,10 +179,10 @@ function openEnvironmentCalendar() {
     const body = environmentNode('div', undefined, 'derived-body'); dialog.panel.appendChild(body);
     const toolbar = environmentNode('div', undefined, 'derived-toolbar');
     const settingsButton = environmentNode('button', '设置'), refreshButton = environmentNode('button', '刷新'), side = environmentNode('select');
-    const chat = currentChatType === 'private' && db.characters.find(item => item.id === currentChatId), archiveId = chat?.activeArchiveId;
+    let chat = null, archiveId;
     side.setAttribute('aria-label', '日历所属位置');
     side.appendChild(new Option('我的日历', 'user'));
-    if (chat) side.appendChild(new Option('char 的日历', 'char'));
+    db.characters.forEach(character => side.appendChild(new Option((character.remarkName || character.realName || character.name || '未命名角色') + ' 的日历', 'character:' + character.id)));
     settingsButton.title='选择城市、行政区与数据服务；不修改日历原始数据。';refreshButton.title='清除当前位置天气缓存并重新获取；节假日使用按年份缓存，失败会保留明确提示。';
     toolbar.append(side, settingsButton, refreshButton); body.appendChild(toolbar);
     const clock = environmentNode('p', '', 'environment-clock'), weather = environmentNode('p', '', 'derived-help'), metadata=environmentNode('p','','derived-help environment-data-status');
@@ -203,14 +203,14 @@ function openEnvironmentCalendar() {
     function place() {
         const settings = getEnvironmentSettings(), profile = getChatEnvironmentProfile(chat);
         if (!settings.enabled) return null;
-        return side.value === 'char' ? (profile.remoteEnabled ? profile.charLocation : null) : settings.userLocation;
+        return chat ? (profile.remoteEnabled ? profile.charLocation : null) : settings.userLocation;
     }
     function updateClock() {
         const location = place(), settings = getEnvironmentSettings(), profile = getChatEnvironmentProfile(chat), now = new Date();
         clock.textContent = location ? `${location.name} · ${environmentClock(location, now)}（${location.timezone}）` : '请在设置中开启功能并选择城市';
         if (location && profile.remoteEnabled && settings.userLocation && profile.charLocation) {
             const minutes = environmentTimezoneOffset(profile.charLocation.timezone, now) - environmentTimezoneOffset(settings.userLocation.timezone, now);
-            clock.textContent += `\n${minutes === 0 ? 'char 与我时间相同' : 'char 比我' + (minutes > 0 ? '快' : '慢') + Math.abs(minutes / 60).toFixed(2).replace(/\.?0+$/, '') + '小时'}（包含夏令时）`;
+            clock.textContent += `\n${minutes === 0 ? (chat?.remarkName || chat?.realName || chat?.name || '角色') + ' 与我时间相同' : (chat?.remarkName || chat?.realName || chat?.name || '角色') + ' 比我' + (minutes > 0 ? '快' : '慢') + Math.abs(minutes / 60).toFixed(2).replace(/\.?0+$/, '') + '小时'}（包含夏令时）`;
         }
     }
     async function render(reset = false) {
@@ -273,7 +273,7 @@ function openEnvironmentCalendar() {
         } else source.textContent = `节假日未获取：${h.reason?.message || '服务失败'}；不将失败视为没有节假日。`;
         selectDay();
     }
-    settingsButton.onclick = () => openEnvironmentSettings(Boolean(chat));
+    settingsButton.onclick = () => { if (valid()) openEnvironmentSettings(false, chat); else detail.textContent = '角色或存档已变化，请重新选择角色'; };
     refreshButton.onclick = () => {
         const location = place();
         if (location) {
@@ -282,7 +282,7 @@ function openEnvironmentCalendar() {
         }
         render().catch(error => { detail.textContent = error.message; });
     };
-    side.onchange = () => render(true).catch(error => { detail.textContent = error.message; });
+    side.onchange = () => { refreshController?.abort(); ++renderId; chat = side.value.startsWith('character:') ? db.characters.find(item => 'character:' + item.id === side.value) : null; archiveId = chat?.activeArchiveId; if (side.value !== 'user' && !chat) side.value = 'user'; render(true).catch(error => { detail.textContent = error.message; }); };
     previous.onclick = () => { if (year === 1900 && month === 1) return; if (--month < 1) { month = 12; year--; } selectedDate = ''; render().catch(error => { detail.textContent = error.message; }); };
     next.onclick = () => { if (year === 2200 && month === 12) return; if (++month > 12) { month = 1; year++; } selectedDate = ''; render().catch(error => { detail.textContent = error.message; }); };
     today.onclick = () => render(true).catch(error => { detail.textContent = error.message; });

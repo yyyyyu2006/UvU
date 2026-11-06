@@ -205,6 +205,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         let systemPrompt, requestBody;
         let historySlice = typeof getAutoMemoryContextHistory === 'function'
             ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
+        if (typeof documentHistoryForRequest === 'function') historySlice = documentHistoryForRequest(historySlice);
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
         const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
             ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, historySlice, Math.random, generationController?.signal) : buildWorldBookPlan(chat, historySlice)) : undefined;
@@ -232,6 +233,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             catch (error) { if (generationController?.signal.aborted) throw error; console.warn('MCP reference unavailable; continuing ordinary reply'); }
         }
         if (!requestIsCurrent()) return;
+        const documentPlan = chatType === 'private' && typeof prepareDocumentContext === 'function' ? prepareDocumentContext(historySlice) : { history: historySlice, instructions: '', sources: [] };
+        historySlice = documentPlan.history;
         const buildBasePrompt = () => {
             if (chatType === 'private') {
                 systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
@@ -256,6 +259,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
+        if (documentPlan.instructions) systemPrompt += documentPlan.instructions;
 
         const lastContextMessage = historySlice[historySlice.length - 1];
         // 检查系统提示词中是否包含聊天记录占位符
@@ -683,7 +687,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let reportedUsage = null;
         if (streamEnabled) {
-            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }) === true;
+            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }, documentPlan.sources) === true;
         } else {
             let result;
             try {
@@ -716,7 +720,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal) !== false;
+            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal, documentPlan.sources) !== false;
         }
         if (replyDelivered && requestIsCurrent()) mcpLease?.commit();
         if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
@@ -744,7 +748,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage) {
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage, documentSources = []) {
     let fullResponse = await readStreamResponse(response, apiType, onUsage);
     if (!requestIsCurrent()) return;
     if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
@@ -761,10 +765,10 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
     }
 
     // ===================
-    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal) !== false;
+    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal, documentSources) !== false;
 }
 
-async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal) {
+async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal, documentSources = []) {
     const replyArchiveId = chat.activeArchiveId;
     let replyHistory = chat.history;
     const initialHistoryLength = chat.history.length;
@@ -778,6 +782,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         showIncomingMessageNotifications(chat, added, targetChatId, targetChatType);
     };
     if (!replyIsCurrent()) return;
+    const documentReply = documentSources.length && typeof extractDocumentReplies === 'function' ? extractDocumentReplies(fullResponse, documentSources) : { files: [] };
     let mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
     const ownedMessages = new Map(), removedMessages = new Set();
     const appendReplyMessage = message => {
@@ -803,8 +808,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         }
         return saved;
     };
+    if (documentSources.length) fullResponse = documentReply.text;
     const rawResponse = fullResponse;
-    if (fullResponse) {
+    if (fullResponse || documentReply.files.length) {
         // 1. 移除 [incipere] 标签
         fullResponse = fullResponse.replace(/\[incipere\]/g, "");
 
@@ -1430,6 +1436,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 notifyNewMessages();
             }
             return;
+        }
+        for (const file of documentReply.files) {
+            const message = documentMessage(file, 'assistant');
+            appendReplyMessage(message);
+            addMessageBubble(message, targetChatId, targetChatType);
         }
         if (!await savePendingReply()) return false;
         notifyNewMessages();

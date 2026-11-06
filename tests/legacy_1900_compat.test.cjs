@@ -21,7 +21,7 @@ function fixture(root, provider, version, type) {
         filterHistoryForAI:(_chat, history)=>structuredClone(history), pad:n=>String(n).padStart(2,'0'), getRandomValue:v=>v,
         fetch:async (_url, init)=> { requests.push(JSON.parse(init.body)); return { ok:true, json:async()=>provider==='gemini'?{ candidates:[{content:{parts:[{text:'回复'}]}}] }:{choices:[{message:{content:'回复'}}]} }; },
         showApiError:error=>errors.push(error.message) });
-    if (root === current) for (const file of ['modules/auto_memory.js', 'modules/worldbook_rules.js', 'modules/mcp_transport.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    if (root === current) for (const file of ['modules/chat_documents.js', 'modules/auto_memory.js', 'modules/worldbook_rules.js', 'modules/mcp_transport.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     c.handleAiReplyContent=async()=>{};
     return { c,chat,requests,errors };
@@ -58,4 +58,16 @@ for(const provider of ['newapi','gemini'])test('MCP raw reference is sent but ex
 test('MCP globally enabled with no role grants still preserves the ordinary request',async()=>{
     const a=fixture(current,'newapi','uwu','private'),b=fixture(current,'newapi','uwu','private');b.c.db.mcpSettings={enabled:true,services:[],policies:[]};
     await a.c.getAiReply('c','private');await b.c.getAiReply('c','private');assert.deepEqual(b.requests,a.requests);
+});
+for (const provider of ['newapi','gemini']) test('shared file uses bounded text only and captures request source: '+provider,async()=>{
+    const f=fixture(current,provider,'uwu','private');
+    const file=f.c.makeSharedDocument('内容.txt','DOCUMENT_BODY_SENTINEL',{originalData:'data:application/octet-stream;base64,YQ=='});
+    f.chat.history.push({id:'file-1',role:'user',type:'document',document:file,content:'file summary',parts:[{type:'text',text:'file summary'}],timestamp:1700000002000});
+    let sources;f.c.handleAiReplyContent=async(...args)=>{sources=args[6];return true;};await f.c.getAiReply('c','private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.match(JSON.stringify(f.requests[0]),/DOCUMENT_BODY_SENTINEL/);assert.doesNotMatch(JSON.stringify(f.requests[0]),/base64,YQ==/);assert.equal(sources.length,1);assert.equal(sources[0].id,'file-1');assert.equal(sources[0].documentInputComplete,true);assert.ok(f.chat.history.at(-1).document.originalData);
+});
+test('stream path carries the same document sources to the original reply handler',async()=>{
+    const f=fixture(current,'newapi','uwu','private'),sources=[{id:'file-1'}];let received;
+    f.c.readStreamResponse=async()=> 'ordinary response';f.c.handleAiReplyContent=async(...args)=>{received=args[6];return true;};
+    assert.equal(await f.c.processStream({},f.chat,'newapi','c','private',true,()=>true,undefined,undefined,sources),true);assert.equal(received,sources);
 });

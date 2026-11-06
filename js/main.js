@@ -113,6 +113,7 @@ const init = async () => {
     setupVoiceMessageSystem();
     setupPhotoVideoSystem();
     setupImageRecognition();
+    if (typeof setupSharedDocuments === 'function') setupSharedDocuments();
     setupWalletSystem();
     setupGiftSystem();
     setupTimeSkipSystem();

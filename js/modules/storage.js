@@ -552,6 +552,10 @@ function storageValidateModules(modules) {
             object(item.quote, path + '.quote');
             for (const key of ['messageId', 'senderId', 'senderName', 'content']) optional(item.quote[key], path + '.quote.' + key, 'string');
         }
+        if (item.type === 'document') {
+            if (typeof validateSharedDocument !== 'function') throw new Error('文件消息模块未加载，请刷新后导入');
+            validateSharedDocument(item.document);
+        }
         if (item.forwardedChat !== undefined) {
             object(item.forwardedChat, path + '.forwardedChat');
             list(item.forwardedChat.records, path + '.forwardedChat.records', message);
