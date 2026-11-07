@@ -346,7 +346,7 @@
         saveTail = pending; return pending;
     }
 
-    const state = { track: null, queue: [], index: -1, playing: false, phase: 'idle', position: 0, duration: 0, mode: 'order', error: '', errorCode: '', sleepAt: 0, skipUnavailable:false, queueLabel:'', queueVersion:0 };
+    const state = { track: null, queue: [], index: -1, playing: false, phase: 'idle', position: 0, duration: 0, mode: 'order', error: '', errorCode: '', sleepAt: 0, skipUnavailable:false, queueLabel:'', queueVersion:0, volume:1 };
     let shuffleBag=[], visits=[], visitIndex=-1, priority=[];
     const failedKeys=new Set();
     function resetShuffle(current=state.track){shuffleBag=state.queue.map(key).filter(id=>!current||id!==key(current));for(let i=shuffleBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffleBag[i],shuffleBag[j]]=[shuffleBag[j],shuffleBag[i]];}}
@@ -442,6 +442,7 @@
             if (generation !== intent || controller.signal.aborted) return;
             if (typeof Audio !== 'function') throw new Error('Audio playback is unavailable');
             const current = new Audio(); audio = current;
+            try { current.volume = state.volume; if(Number.isFinite(current.volume))state.volume = current.volume; } catch (_) {}
             objectURL = source.blob ? URL.createObjectURL(source.blob) : '';
             current.preload = 'metadata'; current.src = objectURL || source.url; current.referrerPolicy = 'no-referrer';
             state.track = { ...value, availability: source.availability, ...(source.cover ? {cover:source.cover} : {}) };
@@ -506,6 +507,12 @@
     function clear(){restore(true);state.queue=state.track?[state.track]:[];priority=[];shuffleBag=[];visits=state.track?[key(state.track)]:[];visitIndex=visits.length-1;queueChanged();}
     function retry(){const t=state.track;if(!t)return Promise.resolve();if(audio&&state.phase==='blocked'){state.phase='paused';return playAudio(audio,++intent);}unload();return play(t);}
     function setSkipUnavailable(value){restore(true);state.skipUnavailable=value===true;saveQueue();emit();}
+    function setVolume(value) {
+        if (!Number.isFinite(value)) return;
+        state.volume = Math.max(0, Math.min(1, value));
+        if (audio) { try { audio.volume = state.volume; state.volume = audio.volume; } catch (_) {} }
+        emit();
+    }
     function stop() { ++intent; unload(); state.track = null; state.index = -1; state.position = state.duration = 0; state.playing = false; state.phase = 'idle'; state.error = ''; clearTimeout(sleepTimer); state.sleepAt = 0; emit(); }
     function setSleep(minutes) {
         clearTimeout(sleepTimer); const delay = number(minutes, 1440) * 60000; state.sleepAt = delay ? Date.now() + delay : 0;
@@ -525,7 +532,7 @@
         };
     }
     const player = { snapshot, subscribe(fn) { if (typeof fn !== 'function') throw new Error('Music subscriber must be a function'); listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
-        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setSleep, stop, suspendVoice };
+        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setVolume, setSleep, stop, suspendVoice };
     if (typeof navigator !== 'undefined' && navigator.mediaSession?.setActionHandler) {
         for (const [name, action] of Object.entries({ play: () => { if (!state.playing) toggle(); }, pause: () => { if (state.playing) toggle(); }, previoustrack: player.previous, nexttrack: player.next, stop,
             seekto: details => seek(details.seekTime), seekbackward: details => seek(state.position - (details.seekOffset || 10)), seekforward: details => seek(state.position + (details.seekOffset || 10)) })) {

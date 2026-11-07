@@ -1,0 +1,158 @@
+/* The approved music draft, scoped to the added music app and its sheets. */
+#uvu-music-screen,.uvu-music-sheet{--um-surface:#fff;--um-text:#101013;--um-gray:#818186;--um-line:#e7e7e9;--um-control:#efeff1;--um-glass:rgba(245,245,247,.9);--um-green:#1684e8;color:var(--um-text);color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif}
+#uvu-music-screen.um-dark,.uvu-music-sheet.um-dark{--um-surface:#000;--um-text:#f7f7f8;--um-gray:#8e8e94;--um-line:#28282b;--um-control:#202023;--um-glass:rgba(38,38,41,.9);color-scheme:dark}
+#uvu-music-screen{position:relative;background:var(--um-surface);isolation:isolate;container-type:inline-size;min-height:0}
+#uvu-music-screen .um-main{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;padding:env(safe-area-inset-top) 0 calc(170px + env(safe-area-inset-bottom));scrollbar-width:none}
+#uvu-music-screen .um-hero{padding:14px 20px 22px;gap:12px}
+#uvu-music-screen .um-hero h1{font-size:34px;font-weight:730;letter-spacing:-1.2px;line-height:1.15;margin:0}
+#uvu-music-screen .um-hero-tools{gap:10px;flex-wrap:nowrap}
+#uvu-music-screen .um-avatar,#uvu-music-screen .um-round-fill{background:var(--um-control);border:1px solid var(--um-line);border-radius:50%}
+#uvu-music-screen .um-button,.uvu-music-sheet .um-button{color:inherit;border-color:var(--um-line);background:var(--um-surface);font-weight:450;box-shadow:none}
+#uvu-music-screen .um-icon,.uvu-music-sheet .um-icon{border:0;background:transparent;border-radius:50%;width:40px;height:40px;min-height:40px;flex:0 0 40px;padding:9px}
+#uvu-music-screen .um-icon img,.uvu-music-sheet .um-icon img{width:22px;height:22px}
+#uvu-music-screen .um-avatar,#uvu-music-screen .um-round-fill{background:var(--um-control)}
+#uvu-music-screen.um-dark .um-icon img,.uvu-music-sheet.um-dark .um-icon img{filter:invert(1)}
+#uvu-music-screen .um-button:focus-visible,.uvu-music-sheet .um-button:focus-visible{outline:3px solid #68baff;outline-offset:3px}
+#uvu-music-screen .um-section{background:transparent;margin:0 0 24px;padding:0}
+#uvu-music-screen .um-section-head{margin:28px 20px 12px;gap:12px}
+#uvu-music-screen .um-section-head h2{font-size:23px;font-weight:700;line-height:1.25;letter-spacing:-.5px}
+#uvu-music-screen .um-section-open{padding:0;border:0;background:transparent;border-radius:0;gap:2px;min-height:0;text-align:left}
+#uvu-music-screen .um-section-open img{width:18px;height:18px;opacity:.5}
+#uvu-music-screen.um-dark .um-section-open img{filter:invert(1)}
+#uvu-music-screen .um-section-head:has(h2:empty){display:none}
+#uvu-music-screen .um-feature-rail,#uvu-music-screen .um-song-pages{display:flex;gap:12px;padding:0 20px 2px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-inline:20px;scrollbar-width:none}
+#uvu-music-screen .um-feature{flex:0 0 calc(100cqw - 66px);min-width:0;max-width:500px;scroll-snap-align:start;display:block;text-align:left;border:0;border-radius:0;background:transparent;padding:0;white-space:normal}
+#uvu-music-screen .um-eyebrow{display:block;font-size:12px;color:var(--um-gray);font-weight:550;line-height:1.4;margin-bottom:3px}
+#uvu-music-screen .um-feature-title{display:block;font-size:20px;line-height:1.27;font-weight:450;letter-spacing:-.3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#uvu-music-screen .um-feature-artist{display:block;color:var(--um-gray);font-size:19px;line-height:1.3;margin-bottom:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#uvu-music-screen .um-feature .um-cover{display:block;width:100%;height:auto;aspect-ratio:1.5;object-fit:cover;border-radius:16px;background:var(--um-control)}
+#uvu-music-screen .um-song-page{flex:0 0 calc(100cqw - 66px);min-width:0;max-width:500px;scroll-snap-align:start}
+#uvu-music-screen .um-track,.uvu-music-sheet .um-track{gap:12px;padding:0;position:relative;min-width:0}
+#uvu-music-screen .um-track+.um-track,.uvu-music-sheet .um-track+.um-track{border:0}
+#uvu-music-screen .um-track:not(:last-child):after,.uvu-music-sheet .um-track:not(:last-child):after{content:"";position:absolute;bottom:0;left:59px;right:0;height:.5px;background:var(--um-line);pointer-events:none}
+#uvu-music-screen .um-track-main,.uvu-music-sheet .um-track-main{display:flex;gap:12px;padding:6px 0;border:0;border-radius:0;background:transparent;text-align:left;justify-content:flex-start}
+#uvu-music-screen .um-track>.um-icon,.uvu-music-sheet .um-track>.um-icon{width:30px;flex-basis:30px;height:44px;padding:3px}
+#uvu-music-screen .um-cover,.uvu-music-sheet .um-track .um-cover{width:47px;height:47px;flex:0 0 47px;border-radius:5px;background:var(--um-control)}
+#uvu-music-screen .um-track-info strong,.uvu-music-sheet .um-track-info strong{font-size:16px;font-weight:450;line-height:1.35}
+#uvu-music-screen .um-track-info small,.uvu-music-sheet .um-track-info small{font-size:13px;line-height:1.35;margin:0;color:var(--um-gray)}
+#uvu-music-screen .um-library-links{padding:0 20px}
+#uvu-music-screen .um-library-link{display:flex;width:100%;gap:17px;align-items:center;background:transparent;border:0;border-radius:0;padding:14px 0;text-align:left;font-size:19px;min-height:55px;position:relative;justify-content:flex-start}
+#uvu-music-screen .um-library-link>img{width:26px;height:26px;flex:none}
+#uvu-music-screen .um-library-link>span{flex:1;min-width:0}
+#uvu-music-screen .um-library-link>img:last-child{width:18px;height:18px;opacity:.5}
+#uvu-music-screen .um-library-link:after{content:"";position:absolute;bottom:0;left:43px;right:0;height:.5px;background:var(--um-line)}
+#uvu-music-screen.um-dark .um-library-link>img{filter:invert(1)}
+#uvu-music-screen .um-playlist-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 12px;padding:0 20px}
+#uvu-music-screen .um-playlist{display:block;text-align:left;background:transparent;padding:0;min-width:0;white-space:normal}
+#uvu-music-screen .um-playlist .um-cover,#uvu-music-screen .um-fave-art{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:9px;background:var(--um-control);margin:0}
+#uvu-music-screen .um-fave-art{display:flex;align-items:center;justify-content:center;background:#f2f2f4}
+#uvu-music-screen .um-fave-art>img{width:64%;height:64%;filter:invert(34%) sepia(85%) saturate(2261%) hue-rotate(331deg) brightness(101%)}
+#uvu-music-screen .um-playlist strong{display:block;font-size:14px;font-weight:450;line-height:1.35;margin-top:7px}
+#uvu-music-screen .um-playlist small{display:block;font-size:12px;line-height:1.35;margin:0;color:var(--um-gray);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#uvu-music-screen .um-section>.um-track,#uvu-music-screen .um-radio-list>.um-track{margin:0 20px}
+#uvu-music-screen .um-radio-list .um-cover{width:96px;height:96px;flex-basis:96px;border-radius:6px}
+#uvu-music-screen .um-radio-list .um-track-main{padding:8px 0}
+#uvu-music-screen .um-radio-list .um-track:after{left:108px}
+.um-bottom{position:absolute;z-index:8;bottom:max(16px,env(safe-area-inset-bottom));left:14px;right:14px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.um-bottom>*{pointer-events:auto}
+#uvu-music-screen .um-mini,.uvu-music-sheet .um-mini{display:flex;gap:10px;align-items:center;background:var(--um-glass);border:1px solid #ffffff42;border-radius:30px;padding:7px 12px 7px 9px;min-height:58px;margin:0;box-shadow:0 2px 12px #00000013;backdrop-filter:blur(24px) saturate(1.7);color:var(--um-text)}
+#uvu-music-screen .um-mini .um-cover,.uvu-music-sheet .um-mini .um-cover{width:39px;height:39px;flex-basis:39px;border-radius:5px}
+#uvu-music-screen .um-mini-open,.uvu-music-sheet .um-mini-open{padding:0;gap:9px;font:inherit}
+#uvu-music-screen .um-mini .um-track-info strong,.uvu-music-sheet .um-mini .um-track-info strong{font-size:13px;font-weight:600}
+#uvu-music-screen .um-mini .um-track-info small,.uvu-music-sheet .um-mini .um-track-info small{font-size:11px;color:var(--um-text);opacity:.8}
+#uvu-music-screen .um-mini .um-icon,.uvu-music-sheet .um-mini .um-icon{width:31px;height:38px;min-height:38px;flex-basis:31px;padding:4px;border-radius:12px}
+#uvu-music-screen .um-mini .um-icon img,.uvu-music-sheet .um-mini .um-icon img{width:25px;height:25px}
+#uvu-music-screen .um-mini-progress,.uvu-music-sheet .um-mini-progress{display:none}
+#uvu-music-screen .um-nav{display:flex;align-items:center;justify-content:space-between;gap:2px;padding:5px 7px;border-radius:36px;background:var(--um-glass);border:1px solid #ffffff45;box-shadow:0 2px 15px #0000000d;backdrop-filter:blur(28px) saturate(1.7);margin:0}
+#uvu-music-screen .um-nav .um-button{flex:1;min-width:0;width:auto;max-width:none;height:58px;flex-direction:column;gap:2px;padding:6px 0;font-size:11px;font-weight:550;border-radius:30px;background:transparent;color:var(--um-text)}
+#uvu-music-screen .um-nav .um-button img{width:26px;height:26px}
+#uvu-music-screen .um-nav .um-button span{font-size:11px}
+#uvu-music-screen .um-nav .um-button.active{color:var(--um-green);background:#80808013;box-shadow:none}
+#uvu-music-screen .um-nav .um-button.active img{filter:invert(40%) sepia(98%) saturate(1848%) hue-rotate(189deg)}
+#uvu-music-screen .um-search{margin:0 20px 18px;padding:0 12px 0 4px;background:var(--um-control);border-radius:12px;align-items:center;gap:0;min-height:40px}
+#uvu-music-screen .um-search input{border:0;background:transparent;border-radius:0;padding:10px 0;font-size:16px;min-height:40px;outline-offset:0}
+#uvu-music-screen .um-search .um-icon{flex-basis:36px;width:36px;opacity:.5}
+#uvu-music-screen .um-sources{display:flex;flex-wrap:wrap;gap:18px;margin:0 20px 20px}
+#uvu-music-screen .um-sources .um-button{border:0;border-bottom:2px solid transparent;border-radius:0;font-size:13px;padding:6px 0;min-height:32px;background:transparent;color:var(--um-gray)}
+#uvu-music-screen .um-sources .um-button.active{color:var(--um-text);border-bottom-color:var(--um-text)}
+#uvu-music-screen .um-public-credit,#uvu-music-screen .um-search-status{margin:0 20px;font-size:12px}
+#uvu-music-screen .um-search-status:empty{display:none}
+#uvu-music-screen .um-search-results,#uvu-music-screen .um-search-more,#uvu-music-screen .um-search-recents{padding:0 20px}
+#uvu-music-screen .um-category-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 20px}
+#uvu-music-screen .um-category{aspect-ratio:1.55;display:flex;align-items:flex-end;justify-content:flex-start;text-align:left;border-radius:12px;padding:14px;color:#fff;font-size:19px;font-weight:650;border:0;position:relative;overflow:hidden;background:#b63a68}
+#uvu-music-screen .um-category:before{content:"";position:absolute;right:-22px;top:-10px;width:100px;height:100px;border:22px solid #ffffff18;border-radius:50%}
+#uvu-music-screen .um-category:nth-child(2){background:#5b70ad}#uvu-music-screen .um-category:nth-child(3){background:#87704f}#uvu-music-screen .um-category:nth-child(4){background:#74806a}
+#uvu-music-screen .um-artwork-shelf{padding:0 20px;scroll-padding-inline:20px}
+#uvu-music-screen .um-artwork-card{max-width:180px;flex-basis:48%}
+#uvu-music-screen .um-artwork-card .um-cover{aspect-ratio:1;width:100%;height:auto;border-radius:9px}
+#uvu-music-screen .um-start-card{min-width:100%;background:var(--um-control);color:var(--um-text)}
+#uvu-music-screen .um-together-summary{margin:24px 20px;padding:16px;background:var(--um-control);border:0}
+#uvu-music-screen .um-together-summary .um-section-head{margin:0}
+.uvu-music-sheet .um-sheet-card{background:var(--um-surface);color:var(--um-text);box-shadow:0 -5px 40px #00000015;border-radius:25px 25px 0 0}
+.uvu-music-sheet .um-sheet-head{padding:14px 20px 12px;gap:12px}
+.uvu-music-sheet .um-sheet-head h2{font-size:20px;font-weight:650}
+.uvu-music-sheet .um-sheet-body{padding:0 20px max(28px,env(safe-area-inset-bottom))}
+.uvu-music-sheet .um-wide{background:transparent;border:0;border-bottom:.5px solid var(--um-line);border-radius:0;padding:16px 0;min-height:52px;font-size:16px;margin:0}
+.uvu-music-sheet input:not([type=range]):not([type=checkbox]),.uvu-music-sheet textarea{background:var(--um-control);border-color:var(--um-line)}
+.uvu-music-sheet .um-section{background:transparent}
+.uvu-music-sheet .um-tutorial pre,.uvu-music-sheet .um-queue-row.current{background:var(--um-control)}
+.uvu-music-sheet .um-lyrics-line.current{color:var(--um-text)}
+.uvu-music-sheet .um-appearance{display:flex;gap:8px}
+.uvu-music-sheet .um-appearance [aria-pressed=true]{background:var(--um-control)}
+.uvu-music-sheet.um-collection-sheet,.uvu-music-sheet.um-player-sheet{padding:0;align-items:stretch}
+.um-collection-sheet .um-sheet-card,.um-player-sheet .um-sheet-card{position:relative;width:100%;max-width:768px;height:100%;max-height:100dvh;border-radius:0}
+.um-collection-sheet .um-sheet-card{background:linear-gradient(#eff0f2 0,#eff0f2 200px,#a6a6a8 310px,#343436 460px,#29292b 100%);--um-gray:#b5b5ba;--um-line:#ffffff25;color:#fff;--um-text:#fff;--um-glass:rgba(62,62,65,.92)}
+.um-collection-sheet .um-sheet-head{padding:12px 17px;z-index:2;padding-top:max(12px,env(safe-area-inset-top))}
+.um-collection-sheet .um-sheet-head h2{display:none}
+.um-collection-sheet .um-sheet-head>.um-icon{background:#7b7b7d7a;width:42px;height:42px}
+.um-collection-sheet .um-sheet-head .um-icon img{filter:invert(1)}
+.um-collection-top{display:flex;background:#7b7b7d7a;border-radius:30px;margin-left:auto}
+.um-collection-sheet .um-sheet-body{padding:0 0 110px}
+.um-collection-art{height:257px;display:flex;justify-content:center;align-items:center;margin-top:-15px;color:#f23b48}
+.um-collection-art>img{width:220px;height:220px;object-fit:cover;border-radius:12px}
+.um-collection-art>img[src$="star-solid.svg"]{filter:invert(34%) sepia(85%) saturate(2261%) hue-rotate(331deg) brightness(101%)}
+.um-collection-name{text-align:center;padding:16px 20px 20px}
+.um-collection-name h1{font-size:25px;line-height:1.3;letter-spacing:-.5px;margin:0;font-weight:700}
+.um-collection-name small{color:#ffffffb8;font-size:12px;display:block;margin-top:4px}
+.um-collection-sheet .um-playlist-tools{display:flex;gap:14px;justify-content:center;align-items:center;margin:0 20px 24px;flex-wrap:nowrap}
+.um-collection-sheet .um-playlist-tools>.um-icon{background:#ffffff12;width:46px;height:46px;flex-basis:46px}
+.um-collection-sheet .um-playlist-tools img,.um-collection-sheet .um-playlist-songs .um-icon img{filter:invert(1)}
+.um-collection-sheet .um-play-pill{background:#fff;color:#1a1a1d;border:0;border-radius:30px;flex:1;max-width:185px;padding:13px 28px;font-size:18px;font-weight:650}
+.um-collection-sheet .um-play-pill img{width:23px;height:23px;filter:none}
+.um-playlist-songs{padding:0 20px;border-top:.5px solid var(--um-line)}
+.um-manage-tools{display:flex;flex-wrap:wrap;gap:8px;padding:12px 0}
+.um-collection-sheet .um-actions{padding:0 20px}
+.um-collection-sheet .um-manage-tools .um-button,.um-collection-sheet .um-actions .um-button,.um-collection-sheet .um-empty .um-button{background:#ffffff12;color:#fff;border-color:#ffffff25}
+.um-collection-sheet .um-empty{color:var(--um-gray)}
+.um-collection-sheet .um-actions:not(.um-editing) button[aria-label="重命名"],.um-collection-sheet .um-actions:not(.um-editing) button[aria-label="删除歌单"]{display:none}
+.um-compact-bottom{flex-direction:row;align-items:center;gap:9px;bottom:max(20px,env(safe-area-inset-bottom))}
+.um-compact-bottom .um-mini{flex:1;min-width:0;padding-right:9px}
+.uvu-music-sheet .um-compact-bottom>.um-icon{width:46px;height:46px;flex-basis:46px;background:var(--um-glass);backdrop-filter:blur(22px)}
+.um-compact-bottom .um-icon img{filter:invert(1)}
+.um-compact-bottom>[aria-label="回到主页"] img{filter:invert(40%) sepia(98%) saturate(1848%) hue-rotate(189deg)}
+.um-compact-bottom .um-mini>[aria-label="下一首"]{display:none}
+.um-player-sheet .um-sheet-card:before{content:"";position:absolute;top:max(14px,env(safe-area-inset-top));left:calc(50% - 18px);width:36px;height:5px;background:var(--um-line);border-radius:9px}
+.um-player-sheet .um-sheet-head{padding:calc(max(14px,env(safe-area-inset-top)) + 15px) 26px 0}
+.um-player-sheet .um-sheet-head h2{font-size:12px;font-weight:450;color:var(--um-gray);text-align:center;flex:1}
+.um-player-sheet .um-now-playing{padding:0 26px max(26px,env(safe-area-inset-bottom));display:flex;flex-direction:column;flex:1;overflow:auto}
+.um-player-sheet .um-artwork{width:100%;max-width:480px;aspect-ratio:1;height:auto;flex:none;border-radius:12px;box-shadow:0 12px 25px #00000020;margin:26px auto}
+.um-player-title{display:flex;gap:10px;align-items:center;flex:none}
+.um-player-title h2{font-size:22px;font-weight:650;letter-spacing:-.5px;line-height:1.35;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.um-player-title p{font-size:17px;line-height:1.35;margin:0}
+.um-player-title .um-icon{background:var(--um-control)}
+.um-player-sheet .um-player-title .um-icon.active img{filter:invert(34%) sepia(85%) saturate(2261%) hue-rotate(331deg) brightness(101%)}
+.um-player-sheet .um-now-playing>input[type=range]{margin:22px 0 0;width:100%;height:5px;flex:none;accent-color:var(--um-text)}
+.um-player-sheet .um-timing{margin-top:9px;font-size:11px;flex:none}
+.um-player-sheet .um-player-controls{display:flex;justify-content:space-around;gap:0;margin:18px 0;flex:none}
+.um-player-sheet .um-player-controls .um-icon{width:60px;height:60px;flex-basis:60px;padding:10px;background:transparent;color:inherit}
+.um-player-sheet .um-player-controls img{width:35px;height:35px}
+.um-player-sheet .um-player-controls .um-primary img{width:47px;height:47px}
+.um-volume{display:flex;align-items:center;gap:12px;color:var(--um-gray);margin:5px 0 18px;flex:none}
+.um-volume>img{width:18px;height:18px;opacity:.5}
+.um-dark .um-volume>img{filter:invert(1)}
+.um-player-sheet .um-volume input[type=range]{min-width:0;width:100%;height:5px;accent-color:var(--um-text)}
+.um-player-sheet .um-player-tools{margin:auto 0 0;padding-top:8px;display:flex;justify-content:space-around;flex:none}
+.um-player-sheet .um-player-status{margin:8px 0 0}
+.um-player-sheet .um-player-status:empty{display:none}
+@media(max-width:350px){#uvu-music-screen .um-hero h1{font-size:31px}#uvu-music-screen .um-hero-tools{gap:4px}#uvu-music-screen .um-hero{padding-left:16px;padding-right:16px}#uvu-music-screen .um-nav .um-button span{font-size:10px}.um-player-sheet .um-now-playing{padding-left:22px;padding-right:22px}.um-player-sheet .um-artwork{margin:18px auto}.um-collection-sheet .um-playlist-tools{gap:10px}}
+@media(prefers-reduced-motion:no-preference){#uvu-music-screen .um-button,.uvu-music-sheet .um-button{transition:background-color .16s,color .16s,transform .16s}#uvu-music-screen .um-button:active,.uvu-music-sheet .um-button:active{transform:scale(.97)}}

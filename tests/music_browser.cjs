@@ -24,6 +24,7 @@ const server = http.createServer((req,res) => {
         return send({ok:true});
     }
     if (u.pathname === '/fixture.wav') { res.setHeader('Content-Type','audio/wav'); return res.end(wav); }
+    if (u.pathname === '/fixture-cover.svg') { const colors=['#b85f72','#6d839a','#a38467','#6f8977'];const i=Number(u.searchParams.get('i'))||0;res.setHeader('Content-Type','image/svg+xml');return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" fill="'+colors[i%4]+'"/><circle cx="290" cy="110" r="140" fill="#ffffff18"/><path d="M0 330L400 70V400H0Z" fill="#ffffff12"/><text x="28" y="310" fill="white" font-size="48" font-family="sans-serif">MUSIC '+(i+1)+'</text></svg>'); }
     const file = path.resolve(root,'.'+(u.pathname==='/'?'/index.html':decodeURIComponent(u.pathname)));
     if (!file.startsWith(root+path.sep)) return res.writeHead(403).end();
     fs.readFile(file,(error,data) => { if(error) return res.writeHead(404).end(); res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml'}[path.extname(file)]||'application/octet-stream')+'; charset=utf-8');res.end(data); });
@@ -51,6 +52,8 @@ const server = http.createServer((req,res) => {
         },base);
         assert.equal(await page.locator('[data-id="app-uvu-music"]').count(),1); assert.equal(await page.locator('[data-id="app-placeholder"] [data-target="uvu-story-bridge-screen"]').count(),1);
         await page.evaluate(()=>UvUMusicUI.open());
+        assert.deepEqual(await page.locator('#uvu-music-screen [data-um-tab]').allTextContents(),['主页','新发现','广播','资料库','搜索'],'approved five-tab navigation');
+        assert.equal(await page.locator('.um-hero h1').evaluate(n=>getComputedStyle(n).fontSize),'34px');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)','music has a white surface');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.parentElement.className),'phone-screen');
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
@@ -72,7 +75,7 @@ const server = http.createServer((req,res) => {
         await page.evaluate(()=>{UvUMusic.player.setMode('list');UvUMusic.player.seek(9.9);});
         await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='1'&&UvUMusic.player.snapshot().playing);
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.waitForSelector('.um-artwork');
-        await page.locator('.um-player-tools [aria-label="列表循环"]').click();await page.getByRole('button',{name:'单曲循环',exact:true}).click();
+        await page.getByRole('button',{name:'更多播放选项',exact:true}).click();await page.getByRole('button',{name:'列表循环',exact:true}).click();await page.getByRole('button',{name:'单曲循环',exact:true}).click();
         assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().mode),'one');
         await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'player-390.png')});
         await page.getByRole('button',{name:'歌词',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('给你写'));
@@ -147,13 +150,14 @@ const server = http.createServer((req,res) => {
         await page.waitForFunction(()=>document.querySelector('.um-account small')?.textContent==='本地测试账号',{},{timeout:15000});await page.getByRole('button',{name:'关闭',exact:true}).click();
         // Actual IndexedDB local import + HTMLAudio decode/play, not an Audio stub.
         await page.locator('#um-local-files').setInputFiles({name:'本地测试.wav',mimeType:'audio/wav',buffer:wav});await page.waitForFunction(()=>UvUMusic.library().favorites.length===1);
-        await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
+        await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'歌曲',exact:true}).click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
         await page.evaluate(async()=>{const list=await UvUMusic.addPlaylist('晚风与来信');await UvUMusic.addToPlaylist(list.id,UvUMusic.library().favorites[0]);UvUMusicUI.open();});
         await page.getByRole('button',{name:'更多 · 本地测试',exact:true}).click();await page.getByRole('button',{name:'编辑歌曲资料',exact:true}).click();
         await page.getByRole('textbox',{name:'歌名',exact:true}).fill('本地新歌名');await page.getByRole('textbox',{name:'歌手',exact:true}).fill('测试歌手');await page.getByRole('textbox',{name:'封面链接',exact:true}).fill(base+'/assets/music/icons/heart.svg');await page.getByRole('button',{name:'保存',exact:true}).click();
         await page.waitForFunction(()=>document.querySelector('.um-mini-open strong')?.textContent==='本地新歌名');assert.match(await page.locator('.um-mini-open .um-cover').getAttribute('src'),/heart\.svg$/,'same-track metadata cover updates mini player');
         await page.evaluate(async()=>{const list=await UvUMusic.addPlaylist('管理测试');window.managedMusicList=list.id;await UvUMusic.addToPlaylist(list.id,UvUMusic.library().favorites[0]);await UvUMusic.addToPlaylist(list.id,{provider:'netease',id:'1',title:'秋日来信 1',artists:['林间']});UvUMusicUI.open();});
-        await page.locator('.um-playlist').filter({hasText:'管理测试'}).click();await page.getByRole('button',{name:'管理',exact:true}).click();await page.getByRole('button',{name:'上移 秋日来信 1',exact:true}).click();
+        await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();await page.locator('.um-playlist').filter({hasText:'管理测试'}).click();await page.getByRole('button',{name:'管理',exact:true}).click();await page.getByRole('button',{name:'上移 秋日来信 1',exact:true}).click();
+        for(const label of ['全选','移除所选','重命名','删除歌单'])assert.ok(await page.getByRole('button',{name:label,exact:true}).evaluate(n=>{const s=getComputedStyle(n);return s.color!==s.backgroundColor;}),'readable collection action '+label);
         await page.waitForFunction(()=>UvUMusic.library().playlists.find(p=>p.id===window.managedMusicList).tracks[0].id==='1');
         await page.getByRole('button',{name:'全选',exact:true}).click();assert.equal(await page.locator('.um-sheet-body input:checked').count(),2);await page.getByRole('button',{name:'移除所选',exact:true}).click();
         await page.waitForFunction(()=>UvUMusic.library().playlists.find(p=>p.id===window.managedMusicList).tracks.length===0);await page.getByRole('button',{name:'重命名',exact:true}).click();await page.getByRole('textbox',{name:'歌单名称',exact:true}).fill('新的歌单名称');await page.getByRole('button',{name:'保存',exact:true}).click();
@@ -181,13 +185,45 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'播放 公共测试曲',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='gd-netease');
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'歌词',exact:true}).click();
         await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('第二句'));await page.getByRole('button',{name:'关闭',exact:true}).click();
-        await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'分享',exact:true}).click();await page.getByRole('button',{name:'发送',exact:true}).click();await page.locator('.uvu-music-target').first().click();
+        await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'更多播放选项',exact:true}).click();await page.getByRole('button',{name:'分享',exact:true}).click();await page.getByRole('button',{name:'发送',exact:true}).click();await page.locator('.uvu-music-target').first().click();
         await page.waitForFunction(()=>db.characters[0].history.some(m=>m.music?.track.provider==='gd-netease'));
         await page.evaluate(()=>openChatRoom('music-char','private'));
         assert.equal(await page.locator('.uvu-music-card').last().locator('.uvu-music-continuous').evaluate(n=>n.hidden),true,'ordinary shares never display a continuous invitation control');
         await page.evaluate(()=>UvUMusicUI.open());await page.locator('#uvu-music-screen [data-um-tab="search"]').click();await page.screenshot({path:path.join(out,'public-search-390.png')});
         await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).uncheck();
         await page.waitForFunction(()=>!UvUMusic.player.snapshot().playing);await page.getByRole('button',{name:'关闭',exact:true}).click();
+        // Approved page geometry and real collection actions, with fixture artwork only.
+        await page.setViewportSize({width:390,height:844});
+        await page.evaluate(async base=>{
+            await UvUMusic.saveSettings({endpoint:base});
+            const titles=['暮色来信','沿着海岸','透明的雨','日落之前','夜间航线','微光','与风同行'];
+            const songs=titles.map((title,i)=>UvUMusic.normalizeTrack({provider:'netease',id:String(i+10),title,artists:[['林间','晚风','小岛'][i%3]],album:title,cover:base+'/fixture-cover.svg?i='+i,duration:10}));
+            for(const track of songs)await UvUMusic.toggleFavorite(track);
+            const p=await UvUMusic.addPlaylist('把旋律留在今天');for(const track of songs)await UvUMusic.addToPlaylist(p.id,track);
+            window.visualMusic=songs;await UvUMusic.player.play(songs[0],songs);UvUMusicUI.open();
+        },base);
+        await page.addStyleTag({content:'#toast-notification { visibility:hidden!important; }'}); // Keep transient fixture messages out of visual captures.
+        for(const id of ['home','discover','radio','library','search']){
+            await page.locator('[data-um-tab="'+id+'"]').click();await page.locator('.um-main').evaluate(n=>n.scrollTop=0);
+            if(id==='search'){await page.getByRole('searchbox',{name:'搜索音乐'}).fill('');await page.getByRole('searchbox',{name:'搜索音乐'}).press('Enter');}
+            await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-'+id+'-390.png')});
+        }
+        await page.locator('[data-um-tab="library"]').click();
+        assert.deepEqual(await page.locator('.um-library-link').allTextContents(),['播放列表','艺人','专辑','歌曲','本地音乐'],'category labels appear once');
+        await page.getByRole('button',{name:'艺人',exact:true}).click();await page.getByRole('button',{name:'林间',exact:true}).click();
+        assert.ok(await page.locator('.um-playlist-songs .um-track').count()>=2,'artist drilldown contains actual tracks');await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.locator('[data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();await page.getByRole('button',{name:'喜爱歌曲',exact:true}).click();
+        await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-playlist-390.png')});
+        await page.locator('.um-collection-sheet [aria-label="播放全部"]').click();await page.locator('.um-collection-sheet [aria-label="展开播放器"]').click();
+        await page.evaluate(()=>UvUMusic.player.play(window.visualMusic[0],window.visualMusic));
+        await page.getByRole('slider',{name:'音量',exact:true}).fill('0.35');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().volume),.35);
+        await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-player-390.png')});await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.locator('[data-um-tab="radio"]').click();await page.locator('.um-feature').first().click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().mode==='shuffle');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().queueLabel),'你的音乐电台');
+        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();
+        assert.equal(await page.locator('.uvu-music-sheet').evaluate(n=>n.classList.contains('um-dark')),true);await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.locator('[data-um-tab="discover"]').click();await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-discover-dark-390.png')});
+        for(const width of [320,390,768]){await page.setViewportSize({width,height:844});for(const id of ['discover','radio','library','search']){await page.locator('[data-um-tab="'+id+'"]').click();assert.ok(await page.locator('.um-main').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'page fits '+id+' '+width);}}
+        await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.UvUMusicUI);await page.evaluate(()=>UvUMusicUI.open());assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.classList.contains('um-dark')),true,'appearance survives reload');
         assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, QR login fixture, stream and IndexedDB WAV audio, invite/card, queue/lyrics, reload.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

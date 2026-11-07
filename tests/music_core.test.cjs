@@ -9,6 +9,20 @@ const file = path.join(__dirname, '../js/modules/music_core.js');
 const plain = value => JSON.parse(JSON.stringify(value));
 const track = (id, extra = {}) => ({ provider: 'netease', id, title: 'Song ' + id, artists: ['Artist'], album: 'Album', duration: 120, ...extra });
 const tick = () => new Promise(resolve => setImmediate(resolve));
+test('volume updates current audio and carries across track changes without interrupting playback', async () => {
+    const h = harness(), a = h.music.importURL('https://media.test/a', {id:'a'}), b = h.music.importURL('https://media.test/b', {id:'b'});
+    await h.music.player.play(a,[a,b]); h.music.player.setVolume(.35);
+    assert.equal(h.sounds.at(-1).volume,.35); assert.equal(h.music.player.snapshot().playing,true);
+    await h.music.player.next(); assert.equal(h.sounds.at(-1).volume,.35);
+    h.music.player.setVolume(2); assert.equal(h.music.player.snapshot().volume,1);
+    h.music.player.setVolume(NaN); assert.equal(h.music.player.snapshot().volume,1);
+    h.music.player.stop();
+});
+test('a browser refusing programmatic volume still plays audio',async()=>{
+    class FixedVolumeAudio extends EventTarget {constructor(){super();this.currentTime=0;this.duration=120;}get volume(){return 1;}set volume(_){throw new Error('System volume only');}play(){return Promise.resolve();}pause(){}load(){}removeAttribute(){}}
+    const h=harness({}, {Audio:FixedVolumeAudio});await h.music.player.play(h.music.importURL('https://media.test/a',{id:'a'}));
+    assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
+});
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 function harness(initial = {}, extras = {}) {
     const sounds = [], calls = [], writes = [], session = new Map(), local = new Map(), urls = new Set();
