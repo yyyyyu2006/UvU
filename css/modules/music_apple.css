@@ -1,4 +1,13 @@
 /* The approved music draft, scoped to the added music app and its sheets. */
+#uvu-music-screen .um-playlist-import-actions{display:flex;gap:8px;margin:0 20px 24px;flex-wrap:wrap}
+.um-import-sheet .um-import-form{display:grid;gap:12px}
+.um-import-sheet .um-import-source{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;align-items:center}
+.um-import-sheet .um-import-source select{min-width:0;width:100%;min-height:42px;border:1px solid var(--um-line);border-radius:14px;background:var(--um-control);color:inherit;font:inherit;font-size:14px;padding:8px}
+.um-import-sheet .um-import-status{font-size:13px;margin:16px 0;overflow-wrap:anywhere}
+.um-import-sheet .um-import-preview{margin-top:16px}
+.um-import-sheet .um-import-preview .um-track{padding:10px 0;gap:12px}
+.um-import-sheet .um-import-preview .um-cover{width:44px;height:44px;flex:0 0 44px;border-radius:8px}
+.um-import-sheet .um-actions{justify-content:flex-start}
 #uvu-music-screen,.uvu-music-sheet{--um-surface:#fff;--um-text:#101013;--um-gray:#818186;--um-line:#e7e7e9;--um-control:#efeff1;--um-glass:rgba(245,245,247,.9);--um-green:#1684e8;color:var(--um-text);color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif}
 #uvu-music-screen.um-dark,.uvu-music-sheet.um-dark{--um-surface:#000;--um-text:#f7f7f8;--um-gray:#8e8e94;--um-line:#28282b;--um-control:#202023;--um-glass:rgba(38,38,41,.9);color-scheme:dark}
 #uvu-music-screen{position:relative;background:var(--um-surface);isolation:isolate;container-type:inline-size;min-height:0}

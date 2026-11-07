@@ -9,6 +9,66 @@ const file = path.join(__dirname, '../js/modules/music_core.js');
 const plain = value => JSON.parse(JSON.stringify(value));
 const track = (id, extra = {}) => ({ provider: 'netease', id, title: 'Song ' + id, artists: ['Artist'], album: 'Album', duration: 120, ...extra });
 const tick = () => new Promise(resolve => setImmediate(resolve));
+test('playlist references recognize canonical platform links and reject unsafe or ambiguous input', () => {
+    const m=harness().music;
+    for(const [value,p,id] of [
+        ['https://music.163.com/#/playlist?id=123&userid=42','netease','123'],
+        ['分享歌单 https://music.163.com/m/playlist?id=456 （来自网易云音乐）','netease','456'],
+        ['https://y.qq.com/n/ryqq/playlist/789','qq','789'],
+        ['https://y.qq.com/n/yqq/playsquare/789.html','qq','789'],
+        ['https://i.y.qq.com/n2/m/share/details/taoge.html?ADTAG=x&id=789','qq','789']])
+        assert.deepEqual(plain(m.parsePlaylistReference(value)),{provider:p,id});
+    assert.deepEqual(plain(m.parsePlaylistReference('123','qq')),{provider:'qq',id:'123'});
+    for(const value of ['123','https://evil.test/playlist?id=123','https://music.163.com.evil.test/playlist?id=123','https://user:pass@music.163.com/playlist?id=123','https://music.163.com:8443/playlist?id=123','https://music.163.com/song?id=123','https://y.qq.com/n/ryqq/songDetail/123','https://music.163.com/playlist?id=12&id=34']) assert.throws(()=>m.parsePlaylistReference(value));
+    assert.throws(()=>m.parsePlaylistReference('https://163cn.tv/abc'),/完整/);
+    assert.throws(()=>m.parsePlaylistReference('https://c6.y.qq.com/base/fcgi-bin/u?__=abc'),/完整/);
+});
+test('playlist preview deduplicates pages without saving; confirmation writes one portable playlist',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}}),progress=[];
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:new URL(url).searchParams.get('page')==='1'?{tracks:[track('1'),track('2')],hasMore:true}:{tracks:[track('2'),track('3')],hasMore:false};
+    const draft=await h.music.previewPlaylist('https://music.163.com/playlist?id=123','',undefined,n=>progress.push(n));
+    assert.deepEqual(plain(draft.tracks.map(t=>t.id)),['1','2','3']);assert.equal(h.writes.length,0);assert.equal(draft.truncated,false);assert.ok(progress.length>=2);
+    const saved=await h.music.importPlaylist({...draft,name:'我的歌单'});assert.equal(saved.name,'我的歌单');assert.equal(saved.tracks.length,3);assert.equal(h.writes.length,1);
+    assert.deepEqual(Object.keys(saved).sort(),['id','name','tracks']);assert.ok(!JSON.stringify(h.db.musicLibrary).includes('https://one.test'));
+});
+test('playlist preview failure, repeated pages, malformed data or changing gateway never create partial playlists',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}});
+    h.fetch=async url=>{if(url.endsWith('/session'))return{token:'ok'};if(new URL(url).searchParams.get('page')==='2')throw Error('page failed');return{tracks:[track('1')],hasMore:true};};
+    await assert.rejects(h.music.previewPlaylist('123','netease'),/page failed/);assert.equal(h.music.library().playlists.length,0);
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:{tracks:[track('1')],hasMore:true};await assert.rejects(h.music.previewPlaylist('123','netease'),/重复|分页/);
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:{};await assert.rejects(h.music.previewPlaylist('123','netease'),/歌单/);
+    h.fetch=async url=>{if(url.endsWith('/session'))return{token:'ok'};h.db.musicSettings.endpoint='https://other.test';return{tracks:[track('1')],hasMore:false};};await assert.rejects(h.music.previewPlaylist('123','netease'),{name:'AbortError'});
+    assert.equal(h.writes.length,0);
+});
+test('playlist import cancellation, source consistency, storage rollback and caps are enforced',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}}),controller=new AbortController();controller.abort();
+    const draft={provider:'netease',id:'123',name:'Import',tracks:[track('1')],truncated:false};
+    await assert.rejects(h.music.previewPlaylist('123','netease',controller.signal),{name:'AbortError'});assert.equal(h.calls.length,0);
+    await assert.rejects(h.music.importPlaylist(draft,controller.signal),{name:'AbortError'});assert.equal(h.writes.length,0);
+    await assert.rejects(h.music.importPlaylist({...draft,tracks:[track('1',{provider:'qq'})]}));
+    await assert.rejects(h.music.importPlaylist({...draft,tracks:[]}));
+    h.failSave=true;await assert.rejects(h.music.importPlaylist(draft),/disk full/);assert.equal(h.music.library().playlists.length,0);
+    h.failSave=false;await Promise.all([h.music.importPlaylist(draft),h.music.addPlaylist('Other')]);assert.equal(h.music.library().playlists.length,2);
+    h.fetch=async url=>{if(url.endsWith('/session'))return{token:'ok'};const page=Number(new URL(url).searchParams.get('page'));return{tracks:Array.from({length:30},(_,i)=>track(String((page-1)*30+i))),hasMore:true};};
+    const large=await h.music.previewPlaylist('123','netease');assert.equal(large.tracks.length,1000);assert.equal(large.truncated,true);assert.ok(h.calls.length<=35);
+    const limited=harness({musicLibrary:{playlists:Array.from({length:100},(_,i)=>({id:'p'+i,name:'x',tracks:[]}))}});await assert.rejects(limited.music.importPlaylist(draft),/100/);assert.equal(limited.writes.length,0);
+});
+test('preview provenance prevents saving after an endpoint change, including a queued change',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}});
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:{tracks:[track('1')],hasMore:false};
+    const draft=await h.music.previewPlaylist('123','netease');
+    const change=h.music.saveSettings({endpoint:'https://two.test'}),importing=h.music.importPlaylist({...draft,name:'Queued'});
+    await change;await assert.rejects(importing,{name:'AbortError'});assert.equal(h.music.library().playlists.length,0);
+    await assert.rejects(h.music.importPlaylist(draft),{name:'AbortError'});
+    await h.music.saveSettings({endpoint:'https://one.test'});const saved=await h.music.importPlaylist(draft);
+    assert.equal(saved.tracks.length,1);assert.ok(!JSON.stringify(saved).includes('one.test'));
+});
+test('closing an in-flight paginated preview cannot produce a usable partial draft',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}}),pending=deferred(),controller=new AbortController();
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:new URL(url).searchParams.get('page')==='1'?{tracks:[track('1')],hasMore:true}:pending.promise;
+    const preview=h.music.previewPlaylist('123','netease',controller.signal);await tick();controller.abort();pending.resolve({tracks:[track('2')],hasMore:false});
+    await assert.rejects(preview,{name:'AbortError'});assert.equal(h.writes.length,0);
+});
 test('volume updates current audio and carries across track changes without interrupting playback', async () => {
     const h = harness(), a = h.music.importURL('https://media.test/a', {id:'a'}), b = h.music.importURL('https://media.test/b', {id:'b'});
     await h.music.player.play(a,[a,b]); h.music.player.setVolume(.35);

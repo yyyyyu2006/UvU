@@ -101,6 +101,71 @@
         await persist('musicLibrary', current => { if (current.playlists.length >= 100) throw new Error('Playlist limit reached'); current.playlists.push({ id, name: text(name, 160).trim() || 'Playlist', tracks: [] }); return current; });
         return library().playlists.find(item => item.id === id);
     }
+    function parsePlaylistReference(input, selected = '') {
+        if (typeof input !== 'string' || input.length > 4096) throw new Error('请输入有效的歌单链接');
+        const value = input.trim();
+        if (/^\d{1,24}$/.test(value)) { if (!PROVIDERS.includes(selected)) throw new Error('仅填写歌单 ID 时，请先选择音乐平台'); return { provider: selected, id: value }; }
+        const urls = value.match(/https?:\/\/[^\s<>"'，。；（）]+/gi) || [];
+        if (urls.length !== 1) throw new Error('请粘贴一条完整的网易云或 QQ 音乐歌单链接');
+        let url; try { url = new URL(urls[0]); } catch (_) { throw new Error('歌单链接无效'); }
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port) throw new Error('歌单链接无效');
+        if (['163cn.tv', '163cn.com', 'c6.y.qq.com'].includes(url.hostname)) throw new Error('请先在音乐平台打开短链接，再复制完整歌单链接');
+        let source, id, route = url;
+        if (url.hostname === 'music.163.com') {
+            source = 'netease';
+            if (url.hash.startsWith('#/')) route = new URL(url.hash.slice(1), url.origin);
+            if (!/^\/(?:m\/|my\/m\/music\/)?playlist\/?$/.test(route.pathname)) throw new Error('这不是网易云歌单链接');
+            if (route.searchParams.getAll('id').length !== 1) throw new Error('歌单 ID 无效');
+            id = route.searchParams.get('id');
+        } else if (['y.qq.com', 'i.y.qq.com'].includes(url.hostname)) {
+            source = 'qq';
+            const path = url.pathname.match(/^\/n\/(?:ryqq\/playlist|yqq\/(?:playlist|playsquare))\/(\d{1,24})(?:\.html)?\/?$/);
+            if (path) id = path[1];
+            else if (/^\/n2\/m\/share\/details\/(?:taoge|playlist)\.html$/.test(url.pathname) && url.searchParams.getAll('id').length === 1) id = url.searchParams.get('id');
+            else throw new Error('这不是 QQ 音乐完整歌单链接；请在音乐平台打开后重新复制');
+        } else throw new Error('仅支持网易云和 QQ 音乐歌单链接');
+        if (!/^\d{1,24}$/.test(id || '')) throw new Error('歌单 ID 无效');
+        return { provider: source, id };
+    }
+    async function previewPlaylist(input, selected = '', signal, progress) {
+        aborted(signal);
+        const reference = parsePlaylistReference(input, selected), host = settings().endpoint;
+        if (!host) throw new Error('请先在音乐账号与设置中连接音乐网关，再读取平台歌单');
+        const songs = [], seen = new Set();
+        for (let page = 1; page <= 100; page++) {
+            aborted(signal); if (settings().endpoint !== host) throw abortError();
+            const data = await playlist(reference.provider, reference.id, page, signal);
+            aborted(signal); if (settings().endpoint !== host) throw abortError();
+            const before = songs.length;
+            for (const song of data.tracks) {
+                if (song.provider !== reference.provider) throw new Error('歌单歌曲的平台与所选来源不一致');
+                const identity = key(song);
+                if (!seen.has(identity)) { seen.add(identity); songs.push(song); }
+            }
+            progress?.(Math.min(songs.length, 1000));
+            aborted(signal);
+            if (!data.hasMore || songs.length >= 1000) {
+                if (!songs.length) throw new Error('歌单为空、未公开或当前账号无法读取');
+                return { ...reference, sourceEndpoint: host, name: (reference.provider === 'qq' ? 'QQ 音乐' : '网易云') + '歌单 ' + reference.id, tracks: songs.slice(0, 1000), truncated: songs.length > 1000 || data.hasMore };
+            }
+            if (songs.length === before) throw new Error('歌单分页重复或不完整，请稍后重试');
+        }
+        throw new Error('歌单分页过多，未能完整读取，请稍后重试');
+    }
+    async function importPlaylist(draft, signal) {
+        aborted(signal);
+        if (!draft || !PROVIDERS.includes(draft.provider) || !/^\d{1,24}$/.test(draft.id || '') || !Array.isArray(draft.tracks) || !draft.tracks.length || draft.tracks.length > 1000) throw new Error('歌单资料无效，最多导入 1000 首');
+        const songs = draft.tracks.map(normalizeTrack);
+        if (songs.some(song => song.provider !== draft.provider)) throw new Error('歌单歌曲的平台与所选来源不一致');
+        const id = makeId(), name = text(draft.name, 160).trim() || '导入歌单';
+        const saved = await persist('musicLibrary', current => {
+            aborted(signal);
+            if (draft.sourceEndpoint && settings().endpoint !== draft.sourceEndpoint) throw new DOMException('音乐服务已更换，请重新预览歌单', 'AbortError');
+            if (current.playlists.length >= 100) throw new Error('最多保存 100 个歌单，请先删除不需要的歌单');
+            current.playlists.push({ id, name, tracks: tracks(songs, 1000) }); return current;
+        });
+        return saved.playlists.find(item => item.id === id);
+    }
     function editPlaylist(id, edit) {
         return persist('musicLibrary', current => { const item = current.playlists.find(value => value.id === id); if (!item) throw new Error('Playlist not found'); edit(item); return current; });
     }
@@ -275,7 +340,12 @@
         const raw = await request('/accounts/' + provider(value) + '/playlists', { signal });
         return { playlists: (Array.isArray(raw.playlists) ? raw.playlists : []).filter(item => item && item.id != null).slice(0, 200).map(item => ({ id: text(String(item.id), 160), name: text(item.name, 200), cover: safeURL(item.cover, true), count: number(item.count, 100000) })) };
     }
-    async function playlist(value, id, page = 1, signal) { return resultTracks(await request('/playlist/' + provider(value) + '/' + part(id) + '?page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal })); }
+    async function playlist(value, id, page = 1, signal) {
+        const raw = await request('/playlist/' + provider(value) + '/' + part(id) + '?page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal });
+        if (!Array.isArray(raw.tracks) || raw.tracks.length > 200 || raw.tracks.some(song => !song || song.provider !== value)) throw new Error('音乐服务返回的歌单格式无效');
+        raw.tracks.forEach(normalizeTrack);
+        return resultTracks(raw);
+    }
     async function lyrics(track, signal) {
         aborted(signal);const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
         if(value.provider==='gd-netease')publicAdapter();const id=(value.provider==='gd-netease'?'public':settings().endpoint)+':'+key(value),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return copy(saved.value);
@@ -541,7 +611,7 @@
     }
     const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, saveSettings, request,
         connect: signal => request('/health', { signal }), accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
-        search, playlists, playlist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
+        search, playlists, playlist, parsePlaylistReference, previewPlaylist, importPlaylist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
         rememberSearch:q=>persist('musicLibrary',current=>({...current,searches:[text(q,200).trim(),...current.searches.filter(v=>v!==text(q,200).trim())].filter(Boolean).slice(0,12)})),clearSearches:()=>persist('musicLibrary',current=>({...current,searches:[]})),
         clearRecent: () => persist('musicLibrary', current => ({ ...current, recent: [] })),
         deletePlaylist: id => persist('musicLibrary', current => ({ ...current, playlists: current.playlists.filter(item => item.id !== id) })), player };

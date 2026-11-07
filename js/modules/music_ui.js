@@ -98,6 +98,51 @@
             body.append(input, button('创建', async () => { const item = await M.addPlaylist(input.value); if (track) await M.addToPlaylist(item.id, track); closeSheet(); render(); }, undefined, 'um-primary'));
         });
     }
+    function importPlaylistPanel(reference) {
+        const controller = new AbortController(); let alive = true, draft, visible = 50, reading = false;
+        modal('导入歌单', (body, overlay) => {
+            overlay.classList.add('um-import-sheet');
+            const form = el('form', undefined, 'um-import-form'), source = el('select'), input = el('input');
+            source.setAttribute('aria-label', '音乐平台');
+            for (const [value, label] of [['', '自动识别'], ['netease', '网易云'], ['qq', 'QQ 音乐']]) { const option = el('option', label); option.value = value; source.append(option); }
+            source.value = reference?.provider || ''; input.type = 'text'; input.maxLength = 4096; input.placeholder = '粘贴歌单链接或 ID'; input.setAttribute('aria-label', '歌单链接'); input.autocomplete = 'off'; input.spellcheck = false;
+            if (reference) input.value = reference.id;
+            const fields = el('div', undefined, 'um-import-source'); fields.append(source, input);
+            const status = el('p', '', 'um-muted um-import-status'); status.setAttribute('role', 'status');
+            const preview = el('div', undefined, 'um-import-preview'), name = el('input'); name.setAttribute('aria-label', '歌单名称'); name.placeholder = '歌单名称'; name.maxLength = 160; name.hidden = true;
+            const save = button('保存歌单', async () => {
+                if (!draft || reading) return;
+                const saved = await M.importPlaylist({ ...draft, name: name.value }, controller.signal);
+                if (!alive) return;
+                closeSheet(); tab = 'library'; libraryPage = '播放列表'; render(0); toast('已导入 ' + saved.tracks.length + ' 首');
+            }, undefined, 'um-primary'); save.disabled = true;
+            const draw = () => {
+                preview.replaceChildren();
+                for (const track of draft.tracks.slice(0, visible)) {
+                    const row = el('div', undefined, 'um-track'), info = el('div', undefined, 'um-track-info');
+                    info.append(el('strong', track.title), el('small', track.artists.join(' / ') || '未知歌手')); row.append(cover(track), info); preview.append(row);
+                }
+                if (draft.tracks.length > visible) preview.append(button('查看更多', () => { visible += 50; draw(); }));
+            };
+            const reset = () => { draft = undefined; save.disabled = true; name.hidden = true; preview.replaceChildren(); status.textContent = ''; };
+            input.oninput = source.onchange = reset;
+            const read = async () => {
+                if (reading) return; reset(); reading = true; input.disabled = source.disabled = true; status.textContent = '正在读取歌单…';
+                try {
+                    const result = await M.previewPlaylist(input.value, source.value, controller.signal, count => { if (alive) status.textContent = '已读取 ' + count + ' 首…'; });
+                    if (!alive) return; draft = result; visible = 50; source.value = result.provider;
+                    name.value = reference?.name || draft.name; name.hidden = false; save.disabled = false;
+                    status.textContent = draft.tracks.length + ' 首' + (draft.truncated ? ' · 仅导入前 1000 首' : ''); draw();
+                } catch (error) { if (alive) status.textContent = error.message; }
+                finally { reading = false; input.disabled = source.disabled = false; }
+            };
+            const readButton = button('预览歌单', read); form.append(fields, readButton); form.onsubmit = event => { event.preventDefault(); void read(); };
+            const actions = el('div', undefined, 'um-actions'); actions.append(save);
+            body.append(form, status, name, preview, actions);
+            if (!M.settings().endpoint) body.append(el('p', '读取平台歌单需要连接音乐网关；私密歌单可能需要登录。', 'um-muted'), button('连接音乐服务', accountsPanel));
+            if (reference) void read();
+        }, () => { alive = false; controller.abort(); });
+    }
     function openPlaylist(item, cloudProvider) {
         let page = 1, tracks = [], pending = false, alive = true, editing=false, unsubscribe;
         const selected=new Set(), controller = new AbortController(), managed=!cloudProvider&&!item.kind;
@@ -127,6 +172,7 @@
                     const data = cloudProvider ? await M.playlist(cloudProvider, item.id, page, controller.signal) : { tracks: item.kind?item.tracks||[]:M.library().playlists.find(p=>p.id===item.id)?.tracks || [], hasMore: false };
                     if (!alive) return;const keys=new Set(tracks.map(M.key));tracks.push(...data.tracks.filter(t=>!keys.has(M.key(t))));draw();footer.replaceChildren();
                     if (data.hasMore) footer.append(button('加载更多', async () => { page++; await load(); }));
+                    if (cloudProvider) footer.append(button('导入到资料库', () => importPlaylistPanel({ provider: cloudProvider, id: item.id, name: item.name })));
                     if (managed) footer.append(button('重命名',()=>modal('歌单名称',box=>{const input=el('input');input.value=item.name;input.maxLength=160;input.setAttribute('aria-label','歌单名称');box.append(input,button('保存',async()=>{await M.renamePlaylist(item.id,input.value);closeSheet();render();}));})),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); closeSheet(); render(); }));
                 } catch (e) { if (alive) toast(e); } finally { pending = false; }
             }; void load();
@@ -186,7 +232,7 @@
             }
             main.append(links);const added=C.recentAdded(lib); const recent = collectionSection('最近添加',added); renderCatalogGrid(recent, C.albums(added).slice(0, 12).map(x => ({ ...x, kind:'collection', subtitle:x.tracks[0]?.artists?.join(' / ') }))); main.append(recent); return;
         }
-        if (libraryPage === '播放列表') { const box = section(''); renderCatalogGrid(box, [favoritesCollection(), ...lib.playlists]); main.append(box); return; }
+        if (libraryPage === '播放列表') { const actions = el('div', undefined, 'um-playlist-import-actions'); actions.append(button('新建歌单', () => createPlaylist()), button('导入歌单', () => importPlaylistPanel())); main.append(actions); const box = section(''); renderCatalogGrid(box, [favoritesCollection(), ...lib.playlists]); main.append(box); return; }
         if (libraryPage === '艺人' || libraryPage === '专辑') { const box = section(''); const groups = libraryPage === '艺人' ? C.artists(tracks) : C.albums(tracks); renderCatalogGrid(box, groups.map(x => ({ ...x, kind:'collection', subtitle:x.tracks.length + ' 首歌曲' }))); if (!tracks.length) empty(box, '资料库为空', importButton()); main.append(box); return; }
         const box = section(''), songs = libraryPage === '本地音乐' ? tracks.filter(t => t.provider === 'local') : tracks; trackRows(box, songs.slice(0, favoriteLimit), { label: libraryPage }); if (songs.length > favoriteLimit) box.append(button('查看全部', () => { favoriteLimit += 50; render(); })); if (!songs.length) empty(box, '还没有歌曲', button('导入音乐', () => document.getElementById('um-local-files').click())); main.append(box);
     }
@@ -340,6 +386,7 @@
         details.append(el('p', '网页和服务在同一台电脑时，可用 http://127.0.0.1:8787 测试。手机上的 127.0.0.1 指手机自身；连接电脑服务请使用配置好的 HTTPS 地址。'));
         details.append(el('p', '3. 把服务地址填入上方，保存并连接。选择网易云或 QQ 音乐，用对应官方 App 扫码确认；同一手机可保存二维码后使用官方 App 的相册识别（是否支持以平台为准）。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
+        details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请在官方平台打开后复制完整链接。账号歌单中也可点“导入到资料库”。最多保存 1000 首歌曲资料，不下载音频，不改变播放权限。需要已连接音乐网关；公共源当前不支持读取歌单。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }

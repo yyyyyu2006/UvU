@@ -19,8 +19,8 @@ const server = http.createServer((req,res) => {
         if (u.pathname === '/v1/search') { searches++; return send({tracks:u.searchParams.get('q')==='滚动'?Array.from({length:30},(_,i)=>song(String(i+1))):[song('1'),{...song('2'),provider:'qq',title:'暮色'}],hasMore:false,errors:[]}); }
         if (u.pathname.endsWith('/stream')) return send({url:base+'/fixture.wav',availability:'full'});
         if (u.pathname.endsWith('/lyrics')) return send({lyric:'[00:00.00]给你写一封秋日的信\n[00:03.00]把想念寄给晚风'});
-        if (u.pathname.endsWith('/playlists')) return send({playlists:[{id:'list1',name:'秋日歌单',count:2}]});
-        if (u.pathname.startsWith('/v1/playlist/')) return send({tracks:[song('1')],hasMore:false});
+        if (u.pathname.endsWith('/playlists')) return send({playlists:[{id:'123',name:'秋日歌单',count:3}]});
+        if (u.pathname.startsWith('/v1/playlist/')) { const p=u.pathname.split('/')[3],tracks=(u.searchParams.get('page')==='2'?['2','3']:['1','2']).map(id=>({...song(id),provider:p}));return send({tracks,hasMore:u.searchParams.get('page')!=='2'}); }
         return send({ok:true});
     }
     if (u.pathname === '/fixture.wav') { res.setHeader('Content-Type','audio/wav'); return res.end(wav); }
@@ -148,6 +148,23 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.waitForSelector('.um-account');
         await page.getByRole('button',{name:'扫码登录',exact:true}).first().click();await page.waitForSelector('.um-qr svg');await page.screenshot({path:path.join(out,'qr-390.png')});
         await page.waitForFunction(()=>document.querySelector('.um-account small')?.textContent==='本地测试账号',{},{timeout:15000});await page.getByRole('button',{name:'关闭',exact:true}).click();
+        // Paste, preview and commit a platform playlist without touching playback or chat history.
+        await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();
+        await page.getByRole('button',{name:'导入歌单',exact:true}).click();
+        await page.getByRole('textbox',{name:'歌单链接',exact:true}).fill('https://music.163.com/#/playlist?id=123');
+        await page.getByRole('button',{name:'预览歌单',exact:true}).click();await page.waitForSelector('.um-import-preview .um-track');
+        assert.equal(await page.locator('.um-import-preview .um-track').count(),3,'preview combines pages and removes duplicate tracks');
+        assert.equal(await page.evaluate(()=>UvUMusic.library().playlists.length),0,'preview is not a saved playlist');
+        for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'import sheet fits '+width);}
+        await page.setViewportSize({width:390,height:844});await page.getByRole('textbox',{name:'歌单名称',exact:true}).fill('链接导入测试');await page.screenshot({path:path.join(out,'playlist-import-390.png')});
+        await page.getByRole('button',{name:'保存歌单',exact:true}).click();await page.waitForFunction(()=>UvUMusic.library().playlists.some(p=>p.name==='链接导入测试'&&p.tracks.length===3));
+        assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),false,'import never starts audio');
+        await page.getByRole('button',{name:'导入歌单',exact:true}).click();await page.getByRole('combobox',{name:'音乐平台',exact:true}).selectOption('qq');await page.getByRole('textbox',{name:'歌单链接',exact:true}).fill('456');
+        await page.getByRole('button',{name:'预览歌单',exact:true}).click();await page.waitForSelector('.um-import-preview .um-track');await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>UvUMusic.library().playlists.length),1,'closing a QQ preview saves nothing');
+        // Existing account playlists use the same preview and atomic import flow.
+        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('button',{name:'歌单',exact:true}).click();await page.getByRole('button',{name:'秋日歌单',exact:true}).click();
+        await page.getByRole('button',{name:'导入到资料库',exact:true}).click();await page.waitForSelector('.um-import-preview .um-track');assert.equal(await page.getByRole('textbox',{name:'歌单名称',exact:true}).inputValue(),'秋日歌单');await page.getByRole('button',{name:'保存歌单',exact:true}).click();
+        await page.waitForFunction(()=>UvUMusic.library().playlists.length===2);
         // Actual IndexedDB local import + HTMLAudio decode/play, not an Audio stub.
         await page.locator('#um-local-files').setInputFiles({name:'本地测试.wav',mimeType:'audio/wav',buffer:wav});await page.waitForFunction(()=>UvUMusic.library().favorites.length===1);
         await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'歌曲',exact:true}).click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
@@ -170,6 +187,7 @@ const server = http.createServer((req,res) => {
         }
         await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
         assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),false,'refresh does not autoplay');assert.equal(await page.evaluate(()=>UvUMusic.library().favorites.length),1,'library survives reload');
+        assert.equal(await page.evaluate(()=>UvUMusic.library().playlists.find(p=>p.name==='链接导入测试')?.tracks.length),3,'imported playlist survives reload');
         // Public source works with no gateway, only after explicit activation.
         await page.evaluate(async()=>{await UvUMusic.saveSettings({endpoint:'',publicSources:[]});UvUMusicUI.open();});
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
@@ -218,6 +236,8 @@ const server = http.createServer((req,res) => {
         await page.evaluate(()=>UvUMusic.player.play(window.visualMusic[0],window.visualMusic));
         await page.getByRole('slider',{name:'音量',exact:true}).fill('0.35');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().volume),.35);
         await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-player-390.png')});await page.getByRole('button',{name:'关闭',exact:true}).click();
+        // Remove the intentionally disabled public-source playback fixture from station history.
+        await page.evaluate(()=>UvUMusic.clearRecent());
         await page.locator('[data-um-tab="radio"]').click();await page.locator('.um-feature').first().click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().mode==='shuffle');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().queueLabel),'你的音乐电台');
         await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();
         assert.equal(await page.locator('.uvu-music-sheet').evaluate(n=>n.classList.contains('um-dark')),true);await page.getByRole('button',{name:'关闭',exact:true}).click();
