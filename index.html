@@ -570,8 +570,9 @@
                     <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
                         <div class="kkt-item-content">
                             <div class="kkt-item-title">MiniMax 角色语音</div>
-                            <div class="kkt-item-subtitle">点击聊天中的语音气泡时生成并播放。MiniMax 会按账户规则计费。</div>
+                            <div class="kkt-item-subtitle">点击语音气泡生成并播放，按 MiniMax 账户计费。</div>
                         </div>
+                        <section class="minimax-settings-section"><strong>语音接口</strong>
                         <label class="minimax-tts-field">API 地址
                             <input id="minimax-tts-endpoint" type="url" inputmode="url" autocomplete="url" placeholder="https://api.minimaxi.com/v1/t2a_v2">
                         </label>
@@ -582,6 +583,8 @@
                             <input id="minimax-tts-group-id" type="text" autocomplete="off" placeholder="旧版账户需要时填写">
                         </label>
                         <div class="kkt-item-subtitle">密钥保存在当前浏览器，导出设置备份时会包含。</div>
+                        </section>
+                        <section class="minimax-settings-section"><strong>音色与播放</strong>
                         <div class="minimax-tts-field-row">
                             <label class="minimax-tts-field">模型
                                 <input id="minimax-tts-model" type="text" autocomplete="off" value="speech-2.8-hd">
@@ -598,6 +601,7 @@
                                 <input id="minimax-tts-pitch" type="range" min="-12" max="12" step="1" value="0">
                             </label>
                         </div>
+                        </section>
                         <div class="minimax-director-settings">
                             <label class="minimax-director-toggle" for="minimax-director-enabled">
                                 <span>语音导演</span>
@@ -636,7 +640,7 @@
                         </div>
                         <div class="minimax-tts-actions">
                             <button type="button" class="btn btn-secondary" id="minimax-tts-preview">试听</button>
-                            <button type="button" class="btn btn-primary" id="minimax-tts-save">保存语音设置</button>
+                            <button type="button" class="btn btn-primary" id="minimax-tts-save">保存</button>
                         </div>
                         <div class="kkt-item-subtitle" id="minimax-tts-status" aria-live="polite"></div>
                     </div>
@@ -694,7 +698,7 @@
                 <div class="kkt-group" id="uvu-story-bridge-settings">
                     <div class="kkt-item" style="flex-direction:column;align-items:stretch;padding:16px;gap:12px;">
                         <div class="kkt-item-content">
-                            <div class="kkt-item-title">SillyTavern 线下剧情互通</div>
+                            <div class="kkt-item-title">连接酒馆</div>
                         <div class="kkt-item-subtitle" id="uvu-bridge-intro">UvU 负责线上手机聊天，酒馆负责线下剧情。SillyTavern 本机桥接默认客户端端口为 8765；TT 可选择无需服务器的文件交接。</div>
                         </div>
                         <label class="uvu-bridge-field">互通通道<select id="uvu-bridge-channel"><option value="st">SillyTavern 本机桥接</option><option value="tt">TauriTavern / iOS</option></select></label>
@@ -704,8 +708,8 @@
                         <label class="uvu-bridge-field">配对码（一次性 / 永久）<input id="uvu-bridge-pair-code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="128" placeholder="粘贴酒馆生成的配对码"></label>
                         <label class="uvu-bridge-field">本设备名称<input id="uvu-bridge-device-name" type="text" maxlength="80" placeholder="如：小米 Chrome"></label>
                         </div>
-                        <label class="uvu-bridge-option"><input id="uvu-bridge-enabled" type="checkbox" checked> 启用本页互通（酒馆端另有插件总开关）</label>
-                        <label class="uvu-bridge-option"><input id="uvu-bridge-inject-scenes" type="checkbox"> 所选角色使用已审核的酒馆剧情记忆</label>
+                        <label class="uvu-bridge-option"><input id="uvu-bridge-enabled" type="checkbox" checked> 启用互通</label>
+                        <label class="uvu-bridge-option"><input id="uvu-bridge-inject-scenes" type="checkbox"> 使用所选角色的已审核记忆</label>
                         <output id="uvu-bridge-connection" aria-live="polite">尚未检查绑定状态</output>
                         <div class="uvu-bridge-actions" id="uvu-bridge-online-actions">
                             <button type="button" class="btn btn-secondary" id="uvu-bridge-pair">连接 / 配对</button>
@@ -719,7 +723,7 @@
                 </div>
             </div>
                         <section class="uvu-bridge-handoff">
-                            <h3>交接线上剧情到酒馆</h3>
+                            <h3>线上剧情</h3>
                             <label>角色<select id="uvu-bridge-handoff-character"></select></label>
                             <div class="uvu-bridge-actions"><button type="button" class="btn btn-secondary" id="uvu-bridge-save-character">保存角色</button><button type="button" class="btn btn-secondary" id="uvu-bridge-use-current">读取所选角色当前存档</button></div>
                             <details id="uvu-bridge-handoff-receipt" class="uvu-bridge-handoff-detail"><summary class="uvu-bridge-note" aria-live="polite">暂无回执</summary><div class="uvu-bridge-handoff-detail-body"></div></details>
@@ -753,7 +757,7 @@
                         <p>部署完成后，TT 使用独立中继 HTTPS 基址与管理员密钥；UvU 使用同一基址和 TT 生成的配对码。不要把管理员密钥填入 UvU。配置未完成请继续使用文件模式。</p>
                         <p>实时模式下两端均需联网；后台可能被 iOS 暂停，回到前台续收。ST 和 TT 的绑定、地址、角色选择及待审数据分别保存。切换通道不会替另一端自动迁移资料。iOS 真机的扩展权限、文件下载和网络来源仍需按实际 TT 版本验证。</p>
                     </details>
-                    <div id="uvu-bridge-st-guide">
+                    <details id="uvu-bridge-st-guide"><summary>SillyTavern · 安装与使用</summary>
                     <ol>
                         <li><strong>安装酒馆扩展：</strong>在 SillyTavern 的扩展管理器中添加 <code>https://github.com/yyyyyu2006/SillyTavern-UvU-Bridge</code>，安装后刷新酒馆页面。</li>
                         <li><strong>安装并配置本机服务：</strong>在酒馆根目录终端依次运行：
@@ -777,7 +781,7 @@ node setup-server-plugin.js</code></pre>
                         <li><strong>与 1900 原版的关系：</strong>互通只把审核通过的剧情追加为记忆资料，不改写原始消息、基础提示词和人设。关闭互通后酒馆剧情不参与上下文；普通收藏记忆保持原注入，向量命中不会挤掉收藏项，重复来源只发送一次。开启记忆后模型多了往事资料，回复可能变化；这不代表两边回复会完全相同。</li>
                     </ol>
                     <p class="uvu-bridge-note">GitHub Pages 通过 HTTPS 访问本机桥接 HTTP 接口，首次配对必须在页面前台完成并允许本地网络访问。已审核记忆才会进入上下文；桥接不改写基础提示词正文。</p>
-                    </div>
+                    </details>
                 </section>
         </main>
     </div>
@@ -2955,9 +2959,9 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/document_import.js?v=20261106-feature-audit"></script>
 <script src="js/modules/chat_documents.js?v=20261106-documents"></script>
 <script src="js/vendor/lucide/uvu-icons.js?v=0.468.0"></script>
-<script src="js/modules/derived_icons.js?v=20261106-card-layout"></script>
-<script src="js/modules/chat_documents_ui.js?v=20261106-card-layout"></script>
-<link rel="stylesheet" href="css/modules/chat_documents.css?v=20261106-card-layout">
+<script src="js/modules/derived_icons.js?v=20261107-panel-system"></script>
+<script src="js/modules/chat_documents_ui.js?v=20261107-panel-system"></script>
+<link rel="stylesheet" href="css/modules/chat_documents.css?v=20261107-panel-system">
 <script src="js/modules/global_css_io.js?v=20261106-feature-audit"></script>
 <script src="js/modules/text_editor.js?v=20261106-feature-audit"></script>
 <script src="js/modules/worldbook_editor.js?v=20261104-worldbook-position"></script>
@@ -2965,7 +2969,7 @@ node setup-server-plugin.js</code></pre>
 <link rel="stylesheet" href="css/modules/document_features.css?v=20261103-vector-viewport">
 <script src="js/modules/character_import.js?v=20261103-documents"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
-<script src="js/modules/chat_relationship.js?v=20261106-card-layout"></script>
+<script src="js/modules/chat_relationship.js?v=20261107-panel-system"></script>
 <script src="js/modules/chat_render.js?v=20261106-documents"></script>
 <script src="js/modules/chat_archives.js?v=20261106-model-picker"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
@@ -2984,9 +2988,9 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/mcp_transport.js?v=20261105-mcp-center"></script>
 <script src="js/modules/mcp_services.js?v=20261106-feature-audit"></script>
 <script src="js/modules/mcp_chat.js?v=20261106-feature-audit"></script>
-<script src="js/modules/mcp_ui.js?v=20261106-card-layout"></script>
+<script src="js/modules/mcp_ui.js?v=20261107-panel-system"></script>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
-<script src="js/modules/environment_ui.js?v=20261106-card-layout"></script>
+<script src="js/modules/environment_ui.js?v=20261107-panel-system"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261105-chat-image-generation">
 <script src="js/chat.js?v=20261106-feature-audit"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
@@ -3011,12 +3015,12 @@ node setup-server-plugin.js</code></pre>
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
     <div class="modal-window auto-memory-dialog">
         <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
-        <p class="auto-memory-help">设置仅对当前聊天的当前存档生效。自动整理与记忆注入分开控制；关闭“使用自动记忆”时，只生成并保存总结，不替换聊天上下文。</p>
+        <p class="auto-memory-help">仅当前存档。自动整理与记忆注入分别开启。</p>
         <p id="auto-memory-status" role="status" aria-live="polite"></p>
         <form id="auto-memory-form">
             <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
             <label class="auto-memory-check"><input name="useMemory" type="checkbox"> 使用自动记忆，替代已总结原文进入上下文</label>
-            <p class="auto-memory-help">关闭“使用自动记忆”会让原楼层继续进入上下文（仍受原有条数限制）；关闭自动整理仅停止后续调用。默认只沿用 1900 版上下文，不自动注入新总结。</p>
+            <details class="auto-memory-guide"><summary>记忆注入说明</summary><p class="auto-memory-help">关闭“使用自动记忆”会让原楼层继续进入上下文（仍受原有条数限制）；关闭自动整理仅停止后续调用。默认只沿用 1900 版上下文，不自动注入新总结。</p></details>
             <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">下方独立记忆 API</option></select></label>
             <details id="memory-api-panel"><summary>独立总结 API 配置（全局共用）</summary>
                 <p class="auto-memory-help">仅当上方总结 API 选择“下方独立记忆 API”时使用，不会改变聊天主 API。</p>
@@ -3039,13 +3043,13 @@ node setup-server-plugin.js</code></pre>
                     <label>生效记忆达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
                     <label>每次最多合并几篇（不低于阈值）<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
                     <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
-                </div><p class="auto-memory-help">默认直接使用原日记与大总结提示词。只有勾选目标字数或填写自定义要求时才会追加规则。严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；已被合并的摘要不重复计数。</p>
+                </div><details class="auto-memory-guide"><summary>合并规则</summary><p class="auto-memory-help">默认直接使用原日记与大总结提示词。只有勾选目标字数或填写自定义要求时才会追加规则。严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；已被合并的摘要不重复计数。</p></details>
             </fieldset>
             <fieldset class="vector-memory-fieldset"><legend>向量记忆检索</legend>
                 <label class="auto-memory-check"><input name="vectorSearchEnabled" type="checkbox"> 启用嵌入检索相关记忆（会调用独立向量 API）</label>
                 <label class="auto-memory-check"><input name="vectorRerankEnabled" type="checkbox"> 使用重排模型对候选结果进行二次排序（额外调用）</label>
                 <details id="vector-api-panel"><summary>独立向量 API、嵌入与重排模型</summary>
-                    <p class="auto-memory-help">这组配置只负责向量记忆，不使用聊天或总结 API。嵌入模型建立检索索引；重排模型对初筛结果再次排序。首次打开会沿用旧版记忆 API 配置作为默认值。</p>
+                    <details class="auto-memory-guide"><summary>向量接口说明</summary><p class="auto-memory-help">这组配置只负责向量记忆，不使用聊天或总结 API。嵌入模型建立检索索引；重排模型对初筛结果再次排序。首次打开会沿用旧版记忆 API 配置作为默认值。</p></details>
                     <label>接口类型<select id="vector-api-provider"><option value="newapi">OpenAI 兼容</option><option value="gemini">Gemini</option></select></label>
                     <label>接口地址<input id="vector-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
                     <label>API 密钥<input id="vector-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
@@ -3068,19 +3072,19 @@ node setup-server-plugin.js</code></pre>
                     <label>最多注入几篇<input name="vectorTopK" type="number" min="1" max="10" required></label>
                     <label>相似度下限<input name="vectorThreshold" type="number" min="0" max="1" step="0.01" required></label>
                 </div>
-                <p class="auto-memory-help">仅在开启后，按当前话题生成嵌入并检索相关记忆；向量缓存在本地聊天数据中。先按余弦相似度筛选，阈值可过滤弱相关内容；二次重排会额外调用独立向量 API。</p>
+                <details class="auto-memory-guide"><summary>检索规则</summary><p class="auto-memory-help">仅在开启后，按当前话题生成嵌入并检索相关记忆；向量缓存在本地聊天数据中。先按余弦相似度筛选，阈值可过滤弱相关内容；二次重排会额外调用独立向量 API。</p></details>
             </fieldset>
             <label>补充总结要求<textarea name="requirements" rows="3" placeholder="例如：保留承诺、关系变化、时间地点与未完成事项。"></textarea></label>
             <details><summary>自定义总结提示词（留空沿用原有提示词）</summary>
                 <label>楼层总结提示词<textarea name="summaryPrompt" rows="6" placeholder="留空沿用现有日记风格、角色设定和世界书；填写后以这里的规则为准。聊天资料自动附加。"></textarea></label>
                 <label>大总结提示词<textarea name="mergePrompt" rows="6" placeholder="留空沿用现有“合并精简”提示词；填写后以这里的规则为准。已有记忆自动附加。"></textarea></label>
             </details>
-            <p class="auto-memory-help">在发送消息、请求回复及回复结束时检查条件。每次检查最多一次楼层总结和一次大总结；失败保留原文并冷却一分钟。页面关闭后不会运行。目标字数通过提示词约束，最终输出取决于模型。</p>
+            <details class="auto-memory-guide"><summary>运行说明</summary><p class="auto-memory-help">在发送消息、请求回复及回复结束时检查条件。每次检查最多一次楼层总结和一次大总结；失败保留原文并冷却一分钟。页面关闭后不会运行。目标字数通过提示词约束，最终输出取决于模型。</p></details>
             <div class="auto-memory-actions"><button type="button" class="btn btn-secondary" id="auto-memory-run">保存并立即整理一批</button><button type="submit" class="btn btn-primary">保存设置</button></div>
             <p class="auto-memory-help">“立即整理”仅忽略楼层触发阈值，仍保留最近楼层；大总结始终遵守篇数阈值。默认关闭自动整理。</p>
         </form>
         <fieldset class="auto-memory-range"><legend>指定楼层批量总结</legend>
-            <p class="auto-memory-help">例如 1–700 层分成 7 份：一次启动，依次生成 7 篇小总结。自动跳过已总结楼层，中途失败可再次启动续接。明确指定范围时会包含最近楼层，不受“保留最近楼层”限制。楼层编号与原有手动日记一致，按完整聊天记录从 1 开始。</p>
+            <details class="auto-memory-guide"><summary>范围总结说明</summary><p class="auto-memory-help">例如 1–700 层分成 7 份：一次启动，依次生成 7 篇小总结。自动跳过已总结楼层，中途失败可再次启动续接。明确指定范围时会包含最近楼层，不受“保留最近楼层”限制。楼层编号与原有手动日记一致，按完整聊天记录从 1 开始。</p></details>
             <div class="auto-memory-grid">
                 <label>起始楼层<input id="auto-memory-range-start" type="number" min="1" value="1"></label>
                 <label>结束楼层<input id="auto-memory-range-end" type="number" min="1"></label>
@@ -3097,7 +3101,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/bridge_summary.js?v=20261106-feature-audit"></script>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
 <script src="js/modules/story_bridge.js?v=20261106-feature-audit"></script>
-<script src="js/modules/memory_library.js?v=20261106-card-layout"></script>
+<script src="js/modules/memory_library.js?v=20261107-panel-system"></script>
 <script src="js/modules/storage_html.js?v=20261106-feature-audit"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/storage.js?v=20261106-documents"></script>
 <script src="js/modules/storage_features.js?v=20261106-feature-audit"></script>   <!-- 存储空间分析图表 -->
@@ -3130,7 +3134,7 @@ node setup-server-plugin.js</code></pre>
 <!-- [4. 程序入口] -->
 <link rel="stylesheet" href="css/modules/notification_preferences.css?v=20261106-feature-audit">
 <link rel="stylesheet" href="css/modules/feature_refinements.css?v=20261106-feature-audit">
-<link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261106-card-layout">
+<link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261107-panel-system">
 <script src="js/modules/feature_dialogs.js?v=20261106-feature-audit"></script>
 <script src="js/main.js?v=20261106-documents"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>

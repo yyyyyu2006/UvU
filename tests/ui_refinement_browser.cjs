@@ -74,13 +74,13 @@ const cssFiles = [
                 assert.match(result.fileBackground, /rgba?\(255, 255, 255/);
                 assert.match(result.statusBackground, /rgba?\(255, 255, 255/);
                 assert.match(result.mcpBackground, /rgba?\(255, 255, 255/);
-                assert.match(result.memoryBackground, /rgba?\(255, 255, 255/);
+                assert.equal(result.memoryBackground, 'rgb(246, 247, 249)');
                 assert.match(result.bridgeBackground, /rgba?\(255, 255, 255/);
-                assert.match(result.dialogBlur, /blur\(/);
+                assert.equal(result.dialogBlur, 'none', 'Content cards use solid white surfaces');
                 assert.equal(result.mainRadius, width <= 420 ? '20px' : '24px', JSON.stringify(result));
                 assert.equal(result.innerRadius, '20px', JSON.stringify(result));
                 assert.equal(result.buttonRadius, '999px', JSON.stringify(result));
-                assert.match(result.primaryBackground, /rgb\(22, 119, 190\)|rgb\(36, 132, 205\)/, JSON.stringify(result));
+                assert.equal(result.primaryBackground, 'rgb(27, 29, 33)', JSON.stringify(result));
                 assert.match(result.toolbarGap, /8px/, JSON.stringify(result));
                 assert.ok(result.buttonWidth < width * 0.6, JSON.stringify(result));
                 assert.ok(result.buttonHeight <= 36, JSON.stringify(result));
@@ -91,7 +91,7 @@ const cssFiles = [
         assert.match(css, /--derived-control-height/);
         assert.match(css, /\.memory-library-filter-disclosure/);
         assert.match(css, /\.shared-document-card/);
-        console.log('PASS white liquid surfaces in light/dark mode, compact sticker entry, collapsed filters, and 320/390/768 layout');
+        console.log('PASS minimal white surfaces in light/dark mode, compact sticker entry, collapsed filters, and 320/390/768 layout');
     } finally {
         await browser.close();
     }
