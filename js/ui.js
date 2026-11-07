@@ -1004,7 +1004,7 @@ function initHomeSortables() {
             group: 'home-grid',
             animation: 150,
             ghostClass: 'sortable-ghost',
-            dragClass: 'sortable-drag',
+            dragClass: 'uvu-home-sortable-drag',
             delay: 800, // 初始长按 800ms
             delayOnTouchOnly: false,
             forceFallback: true,
@@ -1026,7 +1026,7 @@ function initHomeSortables() {
                     group: 'home-grid',
                     animation: 150,
                     ghostClass: 'sortable-ghost',
-                    dragClass: 'sortable-drag',
+                    dragClass: 'uvu-home-sortable-drag',
                     delay: 0,
                     delayOnTouchOnly: false,
                     forceFallback: true,

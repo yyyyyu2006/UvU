@@ -1,0 +1,8 @@
+/* Keep the original desktop theme; Sortable owns the preview's transform. */
+.uvu-home-sortable-drag {
+    opacity: 0.9 !important;
+    scale: 1.05;
+    animation: none !important;
+    cursor: grabbing !important;
+    z-index: 9999 !important;
+}
