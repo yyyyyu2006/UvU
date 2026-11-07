@@ -23,13 +23,13 @@ const root = path.join(__dirname, '..');
         await context.grantPermissions(['geolocation']);
         await context.setGeolocation({ latitude: 31.23, longitude: 121.47 });
         await page.goto('https://uvu-derived.test/');
-        for (const file of ['css/chat.css', 'css/modules/derived_features.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
+        for (const file of ['css/chat.css', 'css/modules/derived_features.css', 'css/modules/panel_layout.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
         await page.evaluate(() => {
             window.db = { characters: [{ id: 'c', activeArchiveId: 'a', realName: '测试角色', history: [], statusPanel: { history: [3, 2, 1].map(n => ({ timestamp: n, html: `<style>body{margin:0;background:#edf3fb}main{padding:32px;height:1800px}</style><main>历史状态 ${n}</main>` })) } }], groups: [] };
             window.currentChatId = 'c'; window.currentChatType = 'private'; window.processTemplate = html => html;
             window.saveData = async () => {}; window.showToast = message => { window.lastToast = message; };
         });
-        for (const file of ['js/chat.js', 'js/modules/message_forward.js', 'js/modules/character_avatar.js', 'js/modules/environment.js', 'js/modules/environment_ui.js']) await page.addScriptTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
+        for (const file of ['js/chat.js', 'js/modules/message_forward.js', 'js/modules/character_avatar.js', 'js/modules/environment.js', 'js/modules/environment_ui.js', 'js/modules/panel_layout.js']) await page.addScriptTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
         const chatSource = fs.readFileSync(path.join(root, 'js/chat.js'), 'utf8');
         const start = chatSource.indexOf('    if (charStatusBtn) {'), end = chatSource.indexOf('    if (toggleExpansionBtn) {', start);
         await page.evaluate(snippet => {
@@ -84,6 +84,7 @@ const root = path.join(__dirname, '..');
             await page.locator('#environment-settings button[type="submit"]').click();
             await page.waitForFunction(() => db.environmentSettings?.enabled === true);
             assert.equal(await page.evaluate(() => db.characters[0].environmentProfile.aiEnabled), false);
+            await page.locator('.panel-environment-service > summary').click();
             await page.locator('[data-service] summary').click();
             await page.locator('[name=service]').selectOption('mcp');
             await page.locator('[data-mcp] summary').click();
@@ -108,6 +109,7 @@ const root = path.join(__dirname, '..');
         await page.evaluate(() => { delete db.environmentSettings; openEnvironmentSettings(true); });
         assert.equal(await page.locator('[data-service]').evaluate(e => e.open), false);
         assert.equal(await page.locator('[data-mcp]').isVisible(), false);
+        await page.locator('.panel-environment-service > summary').click();
         await page.locator('[data-service] summary').click();
         await page.locator('[name=service]').selectOption('mcp');
         // Unsaved character controls must not be persisted by the location shortcut.

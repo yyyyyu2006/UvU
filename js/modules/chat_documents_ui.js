@@ -31,6 +31,10 @@ function openSharedDocumentDialog(message, chat) {
     const dialog = createMessageForwardDialog(message ? '查看文件' : '分享文件', 'shared-document-dialog', () => controller.abort());
     dialog.panel.classList.add('shared-document-dialog');
     const body = documentNode('div', undefined, 'shared-document-body'); dialog.panel.appendChild(body);
+    const context = documentNode('div', undefined, 'shared-document-context');
+    const contextAvatar = documentNode('img'); contextAvatar.src = target.chat.avatar || ''; contextAvatar.alt = '';
+    context.append(contextAvatar, documentNode('strong', target.chat.remarkName || target.chat.realName || '当前角色'), documentNode('small', '当前对话'));
+    body.append(context);
     let file = message?.document, reading = false;
     const input = documentNode('input'); input.type = 'file'; input.accept = '.txt,.md,.markdown,.docx,.pdf,.csv,.tsv,.xlsx,.xls'; input.setAttribute('aria-label', '选择分享文件'); input.hidden = true;
     const upload = documentNode('button', undefined, 'shared-document-upload'); upload.type = 'button'; upload.dataset.icon = 'upload'; upload.hidden = Boolean(message);
@@ -42,6 +46,8 @@ function openSharedDocumentDialog(message, chat) {
     const previewHeading = documentNode('div', undefined, 'shared-document-preview-heading'); previewHeading.append(documentNode('strong', '正文预览'));
     const edit = documentNode('button', '编辑副本'); edit.type = 'button'; edit.dataset.icon = 'pencil'; edit.hidden = !message; previewHeading.append(edit);
     const text = documentNode('textarea'); text.setAttribute('aria-label', '文件正文'); text.rows = 8; text.maxLength = SHARED_DOCUMENT_LIMIT; text.readOnly = Boolean(message);
+    const editorKey = id => 'uvu:expanded-editor-scroll:shared-document:' + encodeURIComponent(JSON.stringify([target.chatId, target.archiveId || '', id]));
+    text.scrollKey = editorKey(message?.id || crypto.randomUUID());
     editor.append(name, previewHeading, text);
     const status = documentNode('p', '', 'shared-document-help shared-document-status'); status.setAttribute('aria-live', 'polite');
     const downloads = documentNode('details', undefined, 'shared-document-downloads'); downloads.append(documentNode('summary', '下载与导出'));
@@ -52,12 +58,24 @@ function openSharedDocumentDialog(message, chat) {
     tutorial.append(documentNode('p', '选择文件，核对正文后发送。在聊天中告诉角色需要阅读或修改的内容，修改版会作为新文件返回。', 'shared-document-help'),
         documentNode('p', '支持 TXT、Markdown、DOCX、PDF、CSV、TSV、XLSX 和 XLS，每份最多 5 MB、100000 字符。文件在本机解析，发送后才随聊天请求交给模型。PDF 需包含可提取文字；图片、复杂排版、公式和宏不参与编辑。每轮最多提供最近 8 份文件、共 32000 字符，超长会标明截取。原件始终保留。', 'shared-document-help'));
     body.append(input, upload, editor, status, downloads, tutorial);
+    const tools = documentNode('div', undefined, 'shared-document-tools');
+    const expand = documentNode('button', '展开'); expand.type = 'button'; expand.setAttribute('aria-expanded', 'false');
+    expand.onclick = () => {
+        if (typeof openExpandedEditor === 'function' && !text.readOnly) { openExpandedEditor(text); return; }
+        const expanded = editor.classList.toggle('is-expanded'); expand.textContent = expanded ? '收起' : '展开';
+        expand.setAttribute('aria-expanded', String(expanded)); text.style.maxHeight = expanded ? '60dvh' : ''; text.style.height = expanded ? '50dvh' : '';
+    };
+    downloads.querySelector('summary').textContent = '导出'; tools.append(expand, downloads); editor.append(tools);
     const actions = documentNode('footer', undefined, 'shared-document-actions');
-    const send = documentNode('button', message ? '发送修改副本' : '发送文件'); send.type = 'button'; send.dataset.icon = 'send'; send.dataset.action = 'send'; actions.append(send); dialog.panel.append(actions);
+    const cancel = documentNode('button', '取消'); cancel.type = 'button'; cancel.dataset.action = 'cancel'; cancel.onclick = () => dialog.dismiss();
+    const send = documentNode('button', message ? '发送修改副本' : '发送文件'); send.type = 'button'; send.dataset.icon = 'send'; send.dataset.action = 'send'; actions.append(cancel, send); dialog.panel.append(actions);
     function refresh(resetContent = true) {
         if (resetContent) { name.value = file?.name || ''; text.value = file?.text || ''; }
         editor.hidden = downloads.hidden = actions.hidden = !file;
         choose.textContent = file ? '更换文件' : '选择文件';
+        upload.classList.toggle('is-loaded', Boolean(file));
+        if (file && upload.parentElement === body) editor.prepend(upload);
+        else if (!file && upload.parentElement !== body) body.insertBefore(upload, editor);
         status.textContent = file ? `${text.value.length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
         original.hidden = !file?.originalData;
         [original, txt, docx, send].forEach(button => button.disabled = !file || reading);
@@ -74,6 +92,7 @@ function openSharedDocumentDialog(message, chat) {
             if (controller.signal.aborted) return;
             if (!isChatSendTargetValid(target)) throw new Error('角色或存档已变化，请重新打开');
             file = validateSharedDocument({ ...parsed, originalData, originalName: parsed.name });
+            text.scrollKey = editorKey(crypto.randomUUID());
             refresh();
         } catch (error) { if (!controller.signal.aborted) { file = null; refresh(); status.textContent = error.message; } }
         finally { reading = false; if (!controller.signal.aborted) { upload.disabled = input.disabled = false; [original, txt, docx, send].forEach(button => button.disabled = !file); } }
@@ -97,6 +116,7 @@ function openSharedDocumentDialog(message, chat) {
         finally { reading = false; dialog.setBusy(false); upload.disabled = input.disabled = false; [send, txt, docx, original].forEach(button => button.disabled = !file); }
     };
     refresh();
+    window.UvUPanelLayout?.decorate(dialog.panel);
 }
 function createSharedDocumentElement(message, chat, type, isContinuous) {
     const sent = message.role === 'user';

@@ -1,0 +1,254 @@
+/* Approved second-edition layouts. Intentionally no legacy chat/input/status-template selectors. */
+.uvu-panel-layout {
+    --panel-space: 16px;
+    --panel-card-radius: 24px;
+    --panel-ink: #1b1d21;
+    --panel-muted: #626b78;
+    --panel-line: #e9ecf0;
+    --panel-canvas: #f6f7f9;
+    --panel-duration: 200ms;
+    --panel-quick: 160ms;
+    --panel-ease: cubic-bezier(.2,.7,.2,1);
+    color-scheme: light;
+}
+.uvu-panel-layout .panel-card { box-sizing: border-box; min-width: 0; padding: 20px; border: 0; border-radius: var(--panel-card-radius); background: #fff; box-shadow: 0 2px 8px #18233404; }
+.uvu-panel-layout .panel-section-title { margin: 0 0 16px; font-size: 16px; line-height: 1.5; font-weight: 600; }
+.uvu-panel-layout .panel-disclosure { min-width: 0; border: 0; background: transparent; padding: 0; border-radius: 0; }
+.uvu-panel-layout .panel-disclosure > summary { min-height: 44px; align-content: center; border-radius: 0; padding: 4px 0; font-size: 13px; line-height: 1.5; color: #4b5563; cursor: pointer; }
+.uvu-panel-layout .panel-disclosure[open] > summary { margin-bottom: 12px; }
+.uvu-panel-layout .panel-disclosure .panel-disclosure { box-shadow: none; }
+.uvu-panel-layout .panel-save-note,.uvu-panel-layout .panel-operation-status { color: #626b78; font-size: 12px; line-height: 1.6; margin: 8px 0 0; overflow-wrap: anywhere; }
+.uvu-panel-layout .panel-operation-status:empty { display: none; }
+.uvu-panel-layout .panel-error { color: #a6332c; }
+.uvu-panel-layout [hidden] { display: none !important; }
+.uvu-panel-layout :is(input,select,textarea) { scroll-margin-block: 24px; }
+.uvu-panel-layout :is(button,summary,input,select,textarea):focus-visible { outline: 2px solid #8fb4de; outline-offset: 3px; }
+.uvu-panel-layout button { transition: background-color var(--panel-quick) ease, color var(--panel-quick) ease, border-color var(--panel-quick) ease; }
+.uvu-panel-layout button:active:not(:disabled) { filter: brightness(.96); }
+.uvu-panel-layout button.panel-primary { color: #fff; background: #1b1d21; border-color: #1b1d21; }
+.uvu-panel-layout button.panel-primary:hover { background: #333942; }
+.uvu-panel-layout .panel-text-action { background: transparent; border-color: transparent; padding-inline: 0; color: #586879; justify-self: start; }
+.uvu-panel-layout label.panel-switch-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin: 0; line-height: 1.6; }
+.uvu-panel-layout label.panel-switch-row > span { flex: 1; }
+.uvu-panel-layout label.panel-switch-row > input.panel-switch { order: 2; }
+.uvu-panel-layout input.panel-switch[type=checkbox] { appearance: none; -webkit-appearance: none; position: relative; width: 42px; height: 26px; flex: 0 0 42px; border: 0; border-radius: 999px; background: #c8ced6; padding: 0; margin: 0; cursor: pointer; transition: background-color var(--panel-quick) ease; }
+.uvu-panel-layout input.panel-switch:after { content: ''; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform var(--panel-quick) var(--panel-ease); }
+.uvu-panel-layout input.panel-switch:checked { background: #282f39; }
+.uvu-panel-layout input.panel-switch:checked:after { transform: translateX(16px); }
+.uvu-panel-layout input.panel-switch:disabled { opacity: .45; cursor: default; }
+
+/* Shared file dialog: identity, document, tools, footer. */
+.shared-document-dialog.uvu-panel-layout .shared-document-context { display: flex; align-items: center; min-height: 44px; gap: 12px; margin: 0; }
+.shared-document-context img { width: 36px; height: 36px; flex: 0 0 36px; object-fit: cover; border-radius: 50%; }
+.shared-document-context strong { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.shared-document-context small { color: #626b78; margin-left: auto; white-space: nowrap; }
+.shared-document-dialog.uvu-panel-layout .shared-document-editor { padding: 20px; border: 0; border-radius: 24px; box-shadow: 0 2px 8px #18233404; }
+.shared-document-dialog.uvu-panel-layout .shared-document-body { gap: 16px; padding-inline: 16px; }
+.shared-document-dialog.uvu-panel-layout .shared-document-editor textarea { padding: 12px; border: 1px solid #e6e9ee; border-radius: 14px; background: #f8f9fb; min-height: 168px; height: 192px; max-height: 40dvh; font-size: 16px; }
+.shared-document-dialog.uvu-panel-layout .shared-document-tools { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; padding-top: 8px; }
+.shared-document-dialog.uvu-panel-layout .shared-document-tools > button,.shared-document-dialog.uvu-panel-layout .shared-document-tools > details > summary { min-height: 44px; padding: 8px; border: 0; background: transparent; font-size: 13px; }
+.shared-document-dialog.uvu-panel-layout .shared-document-downloads[open] { flex-basis: 100%; }
+.shared-document-dialog.uvu-panel-layout .shared-document-actions { padding: 12px 16px max(12px,env(safe-area-inset-bottom)); gap: 8px; }
+.shared-document-dialog.uvu-panel-layout .shared-document-actions [data-action=cancel] { color: #343b46; background: #edf0f4; border-color: transparent; }
+.shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded { width: auto; padding: 8px 0; background: transparent; border: 0; border-radius: 0; min-height: 44px; box-shadow: none; }
+.shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded small { display: none; }
+.shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded > .derived-icon { width: 16px; height: 16px; padding: 0; background: transparent; border-radius: 0; }
+.message-wrapper .shared-document-card .shared-document-card-content { align-items: flex-start; text-align: left; padding: 16px; gap: 8px; border-radius: 16px; }
+.message-wrapper .shared-document-card .shared-document-card-footer { text-align: left; font-size: 11px; }
+.message-wrapper .shared-document-card .shared-document-open { background: #1b1d21; color: #fff; padding: 6px 14px; }
+
+/* Summary and vector settings retain native form controls and separate modes. */
+#auto-memory-modal.uvu-panel-layout .auto-memory-dialog { width: min(520px,calc(100vw - 24px)); padding: 20px 16px; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-heading { top: -20px; padding-top: 8px; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form { display: flex; flex-direction: column; gap: 16px; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form > :is(fieldset,.panel-card,.panel-disclosure) { margin: 0; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form > fieldset { border: 0; padding: 20px; border-radius: 24px; }
+#auto-memory-modal.uvu-panel-layout .panel-summary-switches { display: grid; gap: 8px; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form label.panel-switch-row { min-height: 44px; margin: 0; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form input.panel-switch { width: 42px; height: 26px; flex: 0 0 42px; }
+#auto-memory-modal.uvu-panel-layout .panel-section-title { padding: 0; margin: 0 0 16px; color: #252d38; background: transparent; text-align: left; }
+#auto-memory-modal.uvu-panel-layout .panel-coverage { margin: 16px 0; }
+#auto-memory-modal.uvu-panel-layout .panel-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+#auto-memory-modal.uvu-panel-layout .panel-stats > div { display: grid; gap: 4px; }
+#auto-memory-modal.uvu-panel-layout .panel-stats strong { font-size: 26px; font-weight: 600; line-height: 1.3; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+#auto-memory-modal.uvu-panel-layout .panel-stats span { font-size: 12px; color: #626b78; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-status { background: transparent; padding: 0; color: #626b78; font-size: 12px; margin: 0; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-status.memory-error { color: #a6332c; }
+#auto-memory-modal.uvu-panel-layout :is(.panel-summary-api,.panel-rerank-api) label { margin: 12px 0; }
+#auto-memory-modal.uvu-panel-layout .panel-summary-advanced > fieldset { border: 0; margin: 0; padding: 16px; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-grid { gap: 16px; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-grid > label { margin: 0; font-size: 13px; }
+#auto-memory-modal.uvu-panel-layout #vector-api-panel { margin: 16px 0; padding: 0; border: 0; border-top: 1px solid #edf0f4; border-radius: 0; box-shadow: none; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-actions { justify-content: flex-end; display: flex; flex-wrap: wrap; padding: 8px 0; }
+#auto-memory-modal.uvu-panel-layout.vector-settings-mode .panel-coverage { display: none; }
+#auto-memory-modal.uvu-panel-layout .panel-vector-retrieval { margin-top: 16px; }
+
+/* Memory library: persistent search and concise previews; full text stays available. */
+.memory-library > .uvu-panel-layout { width: min(640px,100%); }
+.memory-library > .feature-dialog-card.uvu-panel-layout { background: #f6f7f9; }
+.memory-library .panel-library-search { display: grid; gap: 8px; font-size: 0; margin-bottom: 16px; }
+.memory-library .panel-library-search input { width: 100%; font-size: 16px; min-height: 44px; }
+.memory-library .panel-library-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.memory-library .panel-library-more > summary { font-size: 13px; }
+.memory-library .panel-library-more[open] { flex-basis: 100%; }
+.memory-library .memory-library-toolbar > .panel-library-more .memory-library-index-actions { padding: 0; }
+.memory-library .memory-library-list .memory-library-card { border: 0; border-radius: 24px; padding: 20px; }
+.memory-library .memory-library-card > pre.panel-memory-preview { max-height: 5.4em; overflow: hidden; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; color: #414d5b; }
+.memory-library .memory-library-card.panel-memory-expanded > pre.panel-memory-preview { max-height: 45dvh; overflow: auto; }
+.memory-library .memory-library-card .memory-library-pick { align-items: center; gap: 8px; min-height: 44px; }
+.memory-library .memory-library-card .memory-library-pick strong { font-size: 15px; }
+.memory-library .memory-library-card > button { min-height: 44px; }
+
+/* Tavern: live connection, handoff, visible inbox, tutorial. */
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-page { padding: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout :is(#uvu-story-bridge-settings,.uvu-bridge-handoff,.uvu-bridge-review,.uvu-bridge-guide) { padding: 20px; border: 0; border-radius: 24px; box-shadow: 0 2px 8px #18233404; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-segment { --panel-selected-index: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px; background: #f1f3f6; position: relative; isolation: isolate; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-segment:before { content: ''; position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 6px); background: #fff; border-radius: 999px; box-shadow: 0 1px 4px #0000000b; transform: translateX(calc(var(--panel-selected-index) * (100% + 4px))); transition: transform var(--panel-duration) var(--panel-ease); z-index: -1; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-segment button { min-height: 40px; border: 0; background: transparent; font-size: 13px; padding: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-segment button[aria-pressed=true] { color: #1b1d21; background: transparent; }
+#uvu-story-bridge-screen.uvu-panel-layout .kkt-item-content { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-intro { flex-basis: 100%; order: 2; }
+#uvu-story-bridge-screen.uvu-panel-layout .kkt-item-title { font-size: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config { margin-top: 0; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config #uvu-bridge-online-controls { display: grid; gap: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config .uvu-bridge-actions { padding-top: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-section-heading h3 { margin: 0; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role { display: flex; align-items: flex-end; gap: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role > label { flex: 1; min-width: 0; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role button { flex: 0 0 auto; }
+#uvu-story-bridge-screen.uvu-panel-layout :is(.panel-section-heading,.uvu-bridge-review-heading) button { border: 0; background: transparent; padding: 8px; min-height: 44px; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-review-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-review-heading h3 { margin: 0; margin-right: auto; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-range { justify-content: flex-start; gap: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-range label { width: 88px; max-width: 88px; flex-basis: 88px; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-range input { max-width: 88px; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-review-floor { border: 0; border-top: 1px solid #edf0f4; border-radius: 0; padding: 16px 0 0; background: transparent; }
+#uvu-story-bridge-screen.uvu-panel-layout .uvu-bridge-review textarea { border-radius: 14px; }
+#uvu-story-bridge-screen.uvu-panel-layout :is(.uvu-bridge-review-help,.uvu-bridge-note) { color: #626b78; }
+
+/* Voice and director remain separate, discoverable groups. */
+#minimax-tts-settings.uvu-panel-layout { border: 0; box-shadow: none; background: #f6f7f9; }
+#minimax-tts-settings.uvu-panel-layout > .kkt-item { padding: 16px !important; gap: 16px !important; background: transparent; }
+#minimax-tts-settings.uvu-panel-layout :is(.minimax-settings-section,.minimax-director-settings) { border: 0; border-radius: 24px; padding: 20px; background: #fff; box-shadow: 0 2px 8px #18233404; }
+#minimax-tts-settings.uvu-panel-layout .panel-voice-connection .minimax-settings-section { padding: 0; background: transparent; border-radius: 0; }
+#minimax-tts-settings.uvu-panel-layout .panel-director-tags { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 0 8px; color: #586b81; font-size: 13px; }
+#minimax-tts-settings.uvu-panel-layout .panel-director-api { display: block; }
+#minimax-tts-settings.uvu-panel-layout .minimax-tts-actions { padding-top: 8px; }
+#minimax-tts-settings.uvu-panel-layout :is(.minimax-tts-field,.kkt-item-subtitle) { color: #626b78; }
+
+/* MCP, location and relationship groupings; permissions always retain their labels. */
+.mcp-settings.uvu-panel-layout .mcp-body > section,.derived-settings.uvu-panel-layout .derived-body > section,.relationship-dialog.uvu-panel-layout .relationship-section { border: 0; border-radius: 24px; padding: 20px; }
+.mcp-settings.uvu-panel-layout .mcp-tool { border: 0; border-top: 1px solid #edf0f4; border-radius: 0; background: transparent; padding: 16px 0 0; }
+.mcp-settings.uvu-panel-layout .mcp-tool .mcp-help { max-height: 8em; overflow: auto; }
+.mcp-settings.uvu-panel-layout .mcp-body > details { border: 0; padding: 0 4px; border-radius: 0; background: transparent; }
+.mcp-settings.uvu-panel-layout .mcp-row { gap: 8px; }
+.mcp-settings.uvu-panel-layout .mcp-status:not(:empty) { flex-basis: 100%; }
+.mcp-settings.uvu-panel-layout .mcp-actions > button:disabled { display: none; }
+.mcp-settings.uvu-panel-layout .mcp-body :is(input,select,textarea),.derived-settings.uvu-panel-layout .derived-body :is(input:not([type=checkbox]):not([type=radio]),select,textarea) { font-size: 16px; }
+.derived-settings.uvu-panel-layout .panel-environment-overview { display: grid; gap: 8px; }
+.derived-settings.uvu-panel-layout .panel-environment-overview .environment-clock { padding: 0; border: 0; border-radius: 0; }
+.derived-settings.uvu-panel-layout .panel-environment-service > details { border: 0; background: transparent; padding: 0; border-radius: 0; }
+.derived-settings.uvu-panel-layout [data-place=char] { background: transparent; border-radius: 0; padding: 16px 0; border: 0; }
+.derived-settings.uvu-panel-layout .derived-city-results { display: grid; gap: 8px; }
+.derived-settings.uvu-panel-layout .environment-day { transition: none; }
+.derived-settings.uvu-panel-layout .avatar-candidate-preview { padding: 16px 0; border: 0; border-top: 1px solid #edf0f4; border-radius: 0; }
+.relationship-dialog.uvu-panel-layout .relationship-status { margin: 0; padding: 16px 4px; font-weight: 600; color: #252d38; }
+.relationship-dialog.uvu-panel-layout .relationship-section > button { min-height: 44px; }
+.relationship-dialog.uvu-panel-layout .panel-inline-help { font-size: 12px; }
+
+/* Editor keeps its draft, selection restoration, keyboard shortcuts and native actions. */
+.text-editor-card.uvu-panel-layout { gap: 16px; }
+.text-editor-card.uvu-panel-layout > header { margin: 0; flex-wrap: nowrap; }
+.text-editor-card.uvu-panel-layout > header strong { flex-basis: auto; white-space: normal; font-size: 17px; }
+.text-editor-card.uvu-panel-layout .panel-editor-search { flex: 0 0 auto; }
+.text-editor-card.uvu-panel-layout .panel-editor-search[open] { max-height: 40dvh; overflow: auto; }
+.text-editor-card.uvu-panel-layout .panel-editor-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; flex: 0 0 auto; }
+.text-editor-card.uvu-panel-layout .panel-editor-actions button { min-height: 44px; }
+.text-editor-card.uvu-panel-layout .editor-search { display: flex; flex-wrap: wrap; gap: 8px; }
+.text-editor-card.uvu-panel-layout .editor-search > .editor-find { flex: 1 0 100%; }
+.text-editor-card.uvu-panel-layout .editor-search > label { flex: 1 0 50%; display: flex; align-items: center; gap: 8px; }
+.text-editor-card.uvu-panel-layout .editor-search > .editor-count { margin-left: auto; }
+.text-editor-card.uvu-panel-layout .editor-search > :is([data-action=previous],[data-action=next]) { flex: 1 1 40%; }
+.text-editor-card.uvu-panel-layout .editor-search .panel-editor-replace { grid-column: 1 / -1; }
+.text-editor-card.uvu-panel-layout .editor-search > .panel-editor-replace { flex: 1 0 100%; }
+.text-editor-card.uvu-panel-layout .panel-editor-replace-content { display: flex; flex-wrap: wrap; gap: 8px; }
+.text-editor-card.uvu-panel-layout .panel-editor-replace > summary { flex-basis: 100%; }
+.text-editor-card.uvu-panel-layout .panel-editor-replace .editor-replace { flex: 1 0 100%; }
+.text-editor-card.uvu-panel-layout .editor-draft { min-height: 88px; padding: 16px; border-radius: 16px; border-color: #e5e9ee; background: #fafbfc; }
+.text-editor-card.uvu-panel-layout > footer { font-size: 12px; color: #626b78; }
+.model-picker-card.uvu-panel-layout .model-picker-list > button { min-height: 44px; white-space: normal; overflow-wrap: anywhere; display: flex; justify-content: space-between; gap: 12px; }
+.model-picker-card.uvu-panel-layout .model-picker-list > button[aria-selected=true]:after { content: '✓'; flex: 0 0 auto; color: #3c658b; }
+.model-picker-card.uvu-panel-layout .model-picker-search { font-size: 16px; min-height: 44px; }
+.model-picker-card.uvu-panel-layout .model-picker-count { font-size: 12px; color: #626b78; }
+
+/* Added status controls only. No size/layout overrides on the original front template. */
+.status-panel-actions > .status-token-toggle { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.status-panel-actions > .status-delete-toggle { margin-left: 68px; }
+.status-panel-actions > .status-delete-toggle svg { width: 18px; height: 18px; }
+.status-token-panel.uvu-panel-layout { min-height: 0; }
+.status-token-panel.uvu-panel-layout .status-token-summary { gap: 16px; flex-wrap: wrap; }
+.status-token-panel.uvu-panel-layout .status-token-summary b { color: #1b1d21; font-size: 24px; }
+.status-token-panel.uvu-panel-layout :is(.status-token-note,.status-token-context) { font-size: 12px; color: #626b78; }
+.status-token-panel.uvu-panel-layout .status-token-list { gap: 0; scrollbar-gutter: stable; }
+.status-token-panel.uvu-panel-layout .status-token-row { min-height: 40px; font-size: 13px; }
+.status-token-panel.uvu-panel-layout .status-token-worldbook-toggle { min-height: 44px; font-size: 13px; }
+.status-token-panel.uvu-panel-layout .status-token-worldbook-row { min-height: 32px; font-size: 12px; }
+
+/* Added auxiliary panels, backup controls, notification, reroll and image generation. */
+.sticker-description-card.uvu-panel-layout .sticker-description-options { border: 0; border-radius: 24px; padding: 16px; background: #f7f8fa; gap: 16px; }
+.sticker-description-card.uvu-panel-layout .sticker-description-toggle { min-height: 44px; font-size: 13px; }
+.sticker-suggestions { gap: 8px; scroll-padding-inline: 8px; }
+.sticker-suggestions button { border-radius: 14px; }
+.sticker-import-row { min-height: 64px; gap: 12px; }
+.avatar-candidate-list .avatar-candidate-row { margin-top: 16px; gap: 12px; padding: 12px 0; border-bottom: 1px solid #edf0f4; }
+.avatar-candidate-list .avatar-candidate-row label { min-height: 44px; }
+.storage-backup-modes { background: #f2f4f7; border-radius: 999px; padding: 4px; margin: 0 12px 16px; }
+.storage-backup-modes button { min-height: 44px; border: 0; background: transparent; color: #59636f; }
+.storage-backup-modes button[aria-pressed=true] { border: 0; background: #fff; color: #1b1d21; box-shadow: 0 1px 4px #0000000a; }
+#storage-backup-options > label { min-height: 44px; }
+.storage-backup-extras { border: 0; border-radius: 24px; padding: 20px; }
+.storage-backup-extras label { min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.storage-backup-extras input[type=checkbox] { width: 16px; height: 16px; flex: 0 0 16px; }
+#storage-backup-progress:not(:empty) { padding: 16px; border-radius: 16px; background: #edf5fc; color: #354f6b; line-height: 1.6; overflow-wrap: anywhere; }
+.incoming-message-toast { border: 0; border-radius: 24px; background: #fff; box-shadow: 0 6px 24px #1b263316; animation: panel-notification-in 200ms cubic-bezier(.2,.7,.2,1); }
+.incoming-message-avatar { width: 44px; height: 44px; flex-basis: 44px; }
+.regenerate-guidance-card.uvu-panel-layout { width: min(360px,calc(100vw - 32px)); padding: 20px; }
+.regenerate-guidance-card.uvu-panel-layout textarea { border-radius: 16px; padding: 12px; min-height: 120px; font-size: 16px; }
+.regenerate-guidance-card.uvu-panel-layout footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.regenerate-guidance-card.uvu-panel-layout button { min-height: 44px; }
+#pv-generated-preview { box-sizing: border-box; padding: 16px; border: 1px solid #e8ecf1; border-radius: 20px; background: #fff; margin-block: 16px; }
+#pv-generated-preview img { display: block; max-width: 100%; max-height: 35dvh; border-radius: 14px; margin: auto; object-fit: contain; }
+#pv-confirm-preview { width: 16px; height: 16px; accent-color: #4a789f; }
+#uvu-notification-preferences.uvu-panel-layout { padding: 20px; border: 0; border-radius: 24px; }
+
+/* Small entrance and disclosure transitions; never animate chat history or add delays to actions. */
+.uvu-panel-layout:is(.feature-dialog-card,.shared-document-dialog,.derived-settings,.mcp-settings,.relationship-dialog,.model-picker-card),#auto-memory-modal.uvu-panel-layout.visible .auto-memory-dialog { animation: panel-enter var(--panel-duration,200ms) cubic-bezier(.2,.7,.2,1) both; }
+.uvu-panel-layout .panel-disclosure[open]::details-content { animation: panel-content-in var(--panel-quick,160ms) ease-out; }
+@supports (interpolate-size: allow-keywords) {
+    .uvu-panel-layout .panel-disclosure { interpolate-size: allow-keywords; }
+    .uvu-panel-layout .panel-disclosure::details-content { block-size: 0; opacity: 0; overflow: clip; transition: block-size var(--panel-duration) var(--panel-ease), opacity var(--panel-quick) ease, content-visibility var(--panel-duration) allow-discrete; }
+    .uvu-panel-layout .panel-disclosure[open]::details-content { block-size: auto; opacity: 1; }
+}
+@keyframes panel-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes panel-content-in { from { opacity: .5; } to { opacity: 1; } }
+@keyframes panel-notification-in { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 380px) {
+    .uvu-panel-layout .panel-card,#auto-memory-modal.uvu-panel-layout #auto-memory-form > fieldset { padding: 16px; }
+    #uvu-story-bridge-screen.uvu-panel-layout :is(#uvu-story-bridge-settings,.uvu-bridge-handoff,.uvu-bridge-review,.uvu-bridge-guide) { padding: 16px; }
+    #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role { flex-wrap: wrap; }
+    #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role > label { flex-basis: 100%; }
+    .sticker-description-card.uvu-panel-layout .sticker-description-options { grid-template-columns: 1fr; }
+    .uvu-panel-layout .panel-stats { gap: 8px; }
+    .memory-library .uvu-panel-layout > header { gap: 8px; }
+    .memory-library .uvu-panel-layout > header strong { font-size: 16px; }
+}
+@media (pointer: coarse) {
+    .uvu-panel-layout :is(button,summary) { min-height: 44px; }
+    .uvu-panel-layout :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size: 16px; }
+    .uvu-panel-layout button:after { inset: 0; pointer-events: none; }
+    .derived-settings.uvu-panel-layout .environment-day { min-height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .uvu-panel-layout,.uvu-panel-layout *, .uvu-panel-layout *::before,.uvu-panel-layout *::after,.uvu-panel-layout *::details-content,.incoming-message-toast,#auto-memory-modal.uvu-panel-layout.visible .auto-memory-dialog { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
