@@ -22,6 +22,7 @@ function fixture(root, provider, version, type) {
         fetch:async (_url, init)=> { requests.push(JSON.parse(init.body)); return { ok:true, json:async()=>provider==='gemini'?{ candidates:[{content:{parts:[{text:'回复'}]}}] }:{choices:[{message:{content:'回复'}}]} }; },
         showApiError:error=>errors.push(error.message) });
     if (root === current) for (const file of ['modules/chat_documents.js', 'modules/vector_index_store.js', 'modules/vector_memory_tools.js', 'modules/auto_memory.js', 'modules/worldbook_rules.js', 'modules/minimax_speech.js', 'modules/voice_director.js', 'modules/mcp_transport.js', 'modules/mcp_oauth.js', 'modules/mcp_forms.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    if (root === current) vm.runInContext(fs.readFileSync(path.join(root,'js/modules/music_chat.js'),'utf8'),c);
     for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     c.handleAiReplyContent=async()=>{};
     return { c,chat,requests,errors };
@@ -70,4 +71,17 @@ test('stream path carries the same document sources to the original reply handle
     const f=fixture(current,'newapi','uwu','private'),sources=[{id:'file-1'}];let received;
     f.c.readStreamResponse=async()=> 'ordinary response';f.c.handleAiReplyContent=async(...args)=>{received=args[6];return true;};
     assert.equal(await f.c.processStream({},f.chat,'newapi','c','private',true,()=>true,undefined,undefined,sources),true);assert.equal(received,sources);
+});
+
+for (const provider of ['newapi','gemini']) test('music invitation is request scoped and keeps original history and provider flow: '+provider,async()=>{
+    const f=fixture(current,provider,'uwu','private'), now=f.c.Date.now(), api=f.c.window.UvUMusicChat;
+    const payload=api.portablePayload({version:1,track:{provider:'netease',id:'1',title:'歌名',artists:['歌手'],album:'专辑',duration:120},invitation:{id:'invite_1',chatId:'c',archiveId:'a',createdAt:now,expiresAt:now+60000,status:'pending'}});
+    f.chat.history.push({id:'music_1',role:'user',type:'music',music:payload,content:'【分享音乐】歌名',timestamp:now});
+    const before=JSON.stringify(f.chat.history);let plan;
+    f.c.handleAiReplyContent=async(...args)=>{plan=args[7];return true;};await f.c.getAiReply('c','private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.match(JSON.stringify(f.requests[0]),/本轮一起听邀请/);
+    assert.equal(plan.invitations[0].id,'invite_1');assert.equal(JSON.stringify(f.chat.history),before);
+    // A normal share carries song facts but must not install action instructions.
+    delete f.chat.history.at(-1).music.invitation;f.requests.length=0;await f.c.getAiReply('c','private');
+    assert.doesNotMatch(JSON.stringify(f.requests[0]),/本轮一起听邀请/);assert.equal(plan.invitations.length,0);
 });

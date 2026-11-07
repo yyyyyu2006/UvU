@@ -1,0 +1,101 @@
+/* Independent music surfaces only; original 1900 chat/custom CSS remains untouched. */
+#uvu-music-screen, .uvu-music-sheet { --um-green:#178a56; --um-text:#171b1a; --um-gray:#737c78; --um-line:#edf0ee; color:var(--um-text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+#uvu-music-screen { background:#fafbfa; overflow:hidden; }
+#uvu-music-screen.active { display:flex; flex-direction:column; }
+#uvu-music-screen *, .uvu-music-sheet *, .uvu-music-card * { box-sizing:border-box; }
+#uvu-music-screen [hidden], .uvu-music-sheet [hidden] { display:none!important; }
+.um-header { display:flex; align-items:center; justify-content:space-between; flex:0 0 auto; padding:12px 16px; padding-top:max(12px,env(safe-area-inset-top)); background:#fff; }
+.um-header>strong { font-size:16px; }
+.um-main { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:8px 24px 24px; }
+.um-hero { padding:20px 0 24px; }
+.um-hero>span { color:var(--um-gray); font-size:10px; letter-spacing:1.6px; }
+.um-hero h1 { font-size:28px; letter-spacing:-1px; line-height:1.3; margin:8px 0 20px; font-weight:650; }
+.um-hero-tools,.um-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.um-button { appearance:none; border:1px solid #e7ebe8; border-radius:999px; background:#fff; color:inherit; min-height:36px; padding:7px 16px; font:inherit; font-size:13px; cursor:pointer; display:inline-flex; justify-content:center; align-items:center; gap:8px; max-width:100%; }
+.um-button:disabled { opacity:.5; cursor:wait; }
+.um-button:focus-visible,.um-track-main:focus-visible { outline:2px solid #178a56; outline-offset:3px; }
+.um-button.active,.um-primary { background:#e9f5ee; border-color:#d0eadb; color:#176340; }
+.um-icon { flex:0 0 40px; width:40px; height:40px; min-height:40px; padding:10px; border-color:transparent; background:transparent; }
+.um-icon img,.um-empty>img { width:20px; height:20px; display:block; }
+.um-section { background:#fff; border:1px solid var(--um-line); border-radius:24px; padding:16px; margin-bottom:16px; }
+.um-section-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 8px; }
+.um-section h2,.um-sheet-head h2 { font-size:18px; line-height:1.4; margin:0; font-weight:600; }
+.um-track { display:flex; align-items:center; gap:4px; min-width:0; padding:8px 0; }
+.um-track+.um-track { border-top:1px solid #f4f5f4; }
+.um-track-main { min-width:0; flex:1; border:0; padding:0; display:flex; gap:12px; align-items:center; background:transparent; color:inherit; text-align:left; cursor:pointer; font:inherit; }
+.um-cover { width:48px; height:48px; flex:0 0 48px; object-fit:cover; border-radius:12px; background:#f1f4f2; padding:0; }
+.um-track-info { min-width:0; flex:1; text-align:left; }
+.um-track-info strong,.um-track-info small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.um-track-info strong { font-size:14px; font-weight:550; }
+.um-track-info small { color:var(--um-gray); font-size:12px; margin-top:3px; }
+.um-muted { color:var(--um-gray); font-size:13px; overflow-wrap:anywhere; }
+.um-empty { display:flex; flex-direction:column; align-items:center; padding:24px 8px; text-align:center; color:var(--um-gray); }
+.um-empty>img { opacity:.4; width:28px; height:28px; }
+.um-empty p { font-size:13px; }
+.um-mini { position:relative; display:flex; gap:4px; align-items:center; background:#fff; border:1px solid #e8ece9; box-shadow:0 3px 18px #132b1c08; margin:0 16px 8px; border-radius:20px; padding:8px; flex:0 0 auto; overflow:hidden; }
+.um-mini-open { display:flex; align-items:center; min-width:0; flex:1; gap:10px; background:transparent; border:0; color:inherit; cursor:pointer; }
+.um-mini .um-cover { width:40px; height:40px; flex-basis:40px; border-radius:10px; }
+.um-mini-progress { position:absolute; bottom:0; left:0; height:2px; background:#28ad70; pointer-events:none; }
+.um-nav { display:flex; justify-content:space-around; background:#fff; padding:4px 16px max(8px,env(safe-area-inset-bottom)); flex:0 0 auto; border-top:1px solid var(--um-line); }
+.um-nav .um-button { height:58px; width:72px; flex:0 1 72px; border-radius:16px; flex-direction:column; gap:4px; padding:6px; color:var(--um-gray); }
+.um-nav .um-button span { font-size:10px; }
+.um-nav .um-button.active { background:#edf6f0; color:#176340; border-color:transparent; }
+.um-search { display:flex; gap:8px; padding:16px 0; }
+.um-search input { flex:1; min-width:0; }
+.um-search input,.um-sheet-body input:not([type=range]):not([type=checkbox]) { appearance:none; border:1px solid #e4e9e6; background:#f7f9f7; min-height:42px; padding:10px 14px; border-radius:14px; font:inherit; color:inherit; width:100%; }
+.um-sources { display:flex; gap:8px; margin-bottom:16px; }
+.um-sources .um-button { padding:6px 12px; }
+.um-search-status { min-height:20px; }
+.um-playlist { width:100%; border-radius:16px; justify-content:flex-start; padding:12px; margin:4px 0; }
+.um-playlist small { color:var(--um-gray); margin-left:auto; }
+.uvu-music-sheet { position:fixed; inset:0; z-index:12000; background:#17231b45; display:flex; align-items:flex-end; justify-content:center; padding:16px; overscroll-behavior:contain; }
+.um-sheet-card { width:min(100%,480px); max-height:calc(100dvh - 32px); display:flex; flex-direction:column; border-radius:28px; background:#fff; box-shadow:0 16px 50px #17231b20; overflow:hidden; animation:um-rise .18s ease-out; }
+.um-sheet-head { display:flex; gap:16px; align-items:center; justify-content:space-between; padding:16px 20px 8px; flex:0 0 auto; }
+.um-sheet-head h2 { min-width:0; overflow-wrap:anywhere; }
+.um-sheet-body { overflow:auto; min-height:0; padding:16px 24px max(24px,env(safe-area-inset-bottom)); overscroll-behavior:contain; }
+.um-sheet-body>h2 { font-size:22px; margin:24px 0 4px; overflow-wrap:anywhere; }
+.um-artwork { display:block; width:min(100%,320px); height:auto; aspect-ratio:1; margin:0 auto; border-radius:24px; }
+.um-player-status { font-size:12px; color:var(--um-gray); overflow-wrap:anywhere; min-height:18px; }
+.um-sheet-body input[type=range] { width:100%; accent-color:var(--um-green); }
+.um-sheet-body textarea { width:100%; display:block; resize:vertical; min-height:104px; border:1px solid #e4e9e6; border-radius:16px; background:#f7f9f7; padding:12px; font-family:inherit; font-size:14px; line-height:1.6; color:inherit; margin-top:16px; }
+.um-timing { color:var(--um-gray); font-size:11px; text-align:right; }
+.um-player-controls { display:flex; justify-content:center; align-items:center; gap:24px; margin:20px 0; }
+.um-player-controls .um-primary { width:60px; height:60px; flex-basis:60px; background:#dff4e7; }
+.um-player-tools { display:flex; align-items:center; justify-content:space-between; margin:8px 0 24px; }
+.um-actions { justify-content:center; margin:16px 0 0; }
+.um-wide { width:100%; margin:4px 0; padding:12px 16px; border-radius:14px; justify-content:flex-start; }
+.um-queue-title { flex:1; min-width:0; overflow-wrap:anywhere; text-align:left; justify-content:flex-start; border:0; }
+.um-link { display:block; padding:12px; color:#176340; text-align:center; }
+.um-lyrics { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:14px; line-height:2; margin:0; }
+.um-account-form>label { display:block; margin-bottom:16px; font-size:13px; }
+.um-account-form label>input:not([type=checkbox]) { display:block; margin-top:8px; }
+.um-account-form .um-check { display:flex; align-items:center; gap:8px; }
+.um-check input { width:16px; height:16px; accent-color:var(--um-green); }
+.um-account { display:flex; gap:8px; align-items:center; padding:16px 0; border-top:1px solid var(--um-line); }
+.um-account>div { flex:1; min-width:0; }
+.um-account strong,.um-account small { display:block; overflow-wrap:anywhere; }
+.um-account small { color:var(--um-gray); font-size:12px; margin-top:4px; }
+.um-tutorial { margin-top:24px; border-top:1px solid var(--um-line); padding-top:16px; }
+.um-tutorial summary { cursor:pointer; font-size:13px; }
+.um-tutorial p { color:var(--um-gray); font-size:12px; line-height:1.8; }
+.um-tutorial pre { border-radius:12px; padding:12px; background:#f3f5f3; overflow:auto; font-size:11px; }
+.um-qr { width:min(100%,240px); margin:0 auto 24px; }
+.um-qr img,.um-qr svg { display:block; width:100%; height:auto; }
+.uvu-music-card.message-bubble { width:min(268px,100%); max-width:100%; padding:16px; color:#18241c; background:#fff; border:1px solid #e5ece7; border-radius:20px; }
+.uvu-music-card-body { display:flex; gap:12px; align-items:flex-start; }
+.uvu-music-cover { width:64px; height:64px; border-radius:14px; object-fit:cover; background:#f1f5f2; }
+.uvu-music-info { min-width:0; flex:1; }
+.uvu-music-title,.uvu-music-artist { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.uvu-music-title { font-size:14px; font-weight:600; }
+.uvu-music-artist { font-size:11px; color:#778079; margin-top:3px; }
+.uvu-music-tools { display:flex; gap:4px; margin-top:8px; }
+.uvu-music-icon { border:0; background:#f3f7f4; width:30px; height:30px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; padding:7px; cursor:pointer; }
+.uvu-music-icon img { display:block; width:16px; height:16px; }
+.uvu-music-status { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:#37794e; border-top:1px solid #edf2ee; margin-top:12px; padding-top:10px; }
+.uvu-music-target-list { display:flex; flex-direction:column; gap:8px; }
+.uvu-music-target { border:1px solid #e5ebe7; background:#fff; border-radius:16px; padding:12px; color:inherit; font:inherit; }
+@keyframes um-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+@media(min-width:700px) { .uvu-music-sheet { align-items:center; } }
+@media(max-width:350px) { .um-main { padding-left:16px; padding-right:16px; } .um-hero h1 { font-size:25px; } .um-section { padding:12px; } .um-track { gap:0; } .um-sheet-body { padding-left:20px; padding-right:20px; } }
+@media(prefers-reduced-motion:reduce) { .um-sheet-card { animation:none; } }
+@media(pointer:coarse) { .um-search input,.um-sheet-body input:not([type=range]):not([type=checkbox]),.um-sheet-body textarea { font-size:16px; } }

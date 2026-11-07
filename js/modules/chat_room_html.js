@@ -194,6 +194,7 @@ const chatRoomHtml = `
                         <span class="expansion-item-name">红包</span>
                     </div>
                     <div class="expansion-item" id="share-document-btn"><div class="expansion-item-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"/></svg></div><span class="expansion-item-name">文件</span></div>
+                    <div class="expansion-item" id="share-music-btn"><div class="expansion-item-icon"><img src="assets/music/icons/headphones.svg" alt="" width="24" height="24"></div><span class="expansion-item-name">音乐</span></div>
                 </div>
             </div>
 

@@ -173,6 +173,9 @@ function createMessageBubbleElement(message, isContinuous = false) {
 
 function createBaseMessageBubbleElement(message, isContinuous = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (message.type === 'music' && message.music && !message.isWithdrawn && window.UvUMusicChat) {
+        try { return window.UvUMusicChat.createElement(message, chat, currentChatType, isContinuous); } catch (_) { /* Existing text fallback for damaged music cards. */ }
+    }
     if (message.type === 'forwarded-chat' && message.forwardedChat && !message.isWithdrawn) {
         return createMessageForwardElement(message, chat, currentChatType, isContinuous);
     }

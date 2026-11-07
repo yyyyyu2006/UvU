@@ -1,0 +1,7 @@
+.runtime/
+.env
+.env.*
+!.env.example
+data/
+*.pem
+*.key

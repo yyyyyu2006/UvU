@@ -59,9 +59,20 @@ function harness() {
     state.tts = vm.runInContext('MiniMaxTTS', context);
     state.director = fs.existsSync(directorFile) ? vm.runInContext('VoiceDirector', context) : null;
     state.db = context.db;
+    state.window = context.window;
     state.previewVoice = vm.runInContext('previewMiniMaxVoice', context);
     return state;
 }
+
+test('voice playback suspends music, and pausing or blocked audio releases it once', async () => {
+    const h=harness(), b=bubble();let suspended=0,resumed=0;
+    h.window.UvUMusic={player:{suspendVoice(){suspended++;let used=false;return async()=>{if(!used){used=true;resumed++;}};}}};
+    await h.tts.play(b,'one');assert.equal(suspended,1);assert.equal(resumed,0);
+    await h.tts.play(b,'one');assert.equal(resumed,1,'manual voice pause resumes music');
+    h.playHook=()=>Promise.reject(Object.assign(new Error('blocked'),{name:'NotAllowedError'}));
+    await h.tts.play(b,'one');assert.equal(suspended,2);assert.equal(resumed,2,'permission failure resumes music');
+    h.sounds.at(-1).emit('ended');assert.equal(resumed,2,'cleanup does not resume twice');
+});
 
 test('late events from an old voice cannot stop or mark the new voice', async () => {
     const h = harness(), first = bubble(), second = bubble();

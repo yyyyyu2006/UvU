@@ -275,10 +275,17 @@ const MiniMaxTTS = (() => {
         showToast(message + diagnostic);
     }
 
+    function releaseMusic(session) {
+        if (!session.resumeMusic) return;
+        const resume = session.resumeMusic; session.resumeMusic = null;
+        try { Promise.resolve(resume()).catch(() => {}); } catch (_) {}
+    }
+
     async function startPlayback(session) {
         if (activeSession !== session) return;
         if (session.identity && !VoiceDirector.isCurrent(session.identity)) return stop(session);
         session.phase = 'starting';
+        if (!session.resumeMusic && window.UvUMusic?.player) session.resumeMusic = window.UvUMusic.player.suspendVoice();
         setLoading(session, true);
         try {
             await session.audio.play();
@@ -289,6 +296,7 @@ const MiniMaxTTS = (() => {
             if (activeSession !== session) return;
             if (error?.name === 'NotAllowedError') {
                 session.phase = 'blocked';
+                releaseMusic(session);
                 session.bubble.classList.remove('voice-playing');
                 showToast('音频已准备好，浏览器需要手动播放，请再次点击试听或语音气泡');
             } else if (error?.name === 'AbortError') {
@@ -343,7 +351,7 @@ const MiniMaxTTS = (() => {
         if (!override.retry && previous?.bubble === bubble && previous.cacheKey === cacheKey) {
             if (previous.phase === 'loading' || previous.phase === 'starting') return stop(previous);
             if (previous.phase === 'playing') {
-                previous.audio.pause(); previous.phase = 'paused'; bubble.dataset.speechPhase = 'paused'; bubble.classList.remove('voice-playing'); return;
+                previous.audio.pause(); previous.phase = 'paused'; releaseMusic(previous); bubble.dataset.speechPhase = 'paused'; bubble.classList.remove('voice-playing'); return;
             }
             // A prepared source must play synchronously within the retry's user gesture.
             return startPlayback(previous);
@@ -449,6 +457,7 @@ const MiniMaxTTS = (() => {
         session.audio.pause();
         session.audio.removeAttribute('src');
         session.audio.load();
+        releaseMusic(session);
         if (session.url) URL.revokeObjectURL(session.url);
         session.url = null;
         setLoading(session, false);

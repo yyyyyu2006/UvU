@@ -12,7 +12,7 @@ const STORAGE_CATEGORIES = [
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
-    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'mcpSettings', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'mcpSettings', 'musicSettings', 'musicLibrary', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
@@ -461,6 +461,8 @@ function storagePrepareImport(selection, modules) {
         if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');
         pending.mcpSettings = window.MCPServices.normalize(pending.mcpSettings, true);
     }
+    if (pending.musicLibrary !== undefined) pending.musicLibrary = window.UvUMusic.normalizeLibrary(pending.musicLibrary);
+    if (pending.musicSettings !== undefined) pending.musicSettings = storagePortableMusicSettings(pending.musicSettings);
     if (selection.other && modules.mediaCache) {
         for (const key of ['characters', 'groups']) {
             const galleries = modules.mediaCache[key];
@@ -555,6 +557,10 @@ function storageValidateModules(modules) {
         if (item.type === 'document') {
             if (typeof validateSharedDocument !== 'function') throw new Error('文件消息模块未加载，请刷新后导入');
             validateSharedDocument(item.document);
+        }
+        if (item.type === 'music') {
+            if (!window.UvUMusicChat) throw new Error('音乐消息模块未加载，请刷新后导入');
+            window.UvUMusicChat.validatePayload(item.music);
         }
         if (item.forwardedChat !== undefined) {
             object(item.forwardedChat, path + '.forwardedChat');
@@ -789,6 +795,13 @@ function storageValidateModules(modules) {
     if (modules.mcpSettings !== undefined) {
         if (!window.MCPServices) throw new Error('MCP 模块尚未加载，请刷新页面后导入');
         window.MCPServices.normalize(modules.mcpSettings, true);
+    }
+    if (modules.musicSettings !== undefined) storagePortableMusicSettings(modules.musicSettings);
+    if (modules.musicLibrary !== undefined) {
+        object(modules.musicLibrary, 'musicLibrary');
+        if (!window.UvUMusic) throw new Error('音乐模块未加载，请刷新后导入');
+        for (const key of ['favorites', 'recent', 'queue']) list(modules.musicLibrary[key], 'musicLibrary.' + key, track => window.UvUMusic.normalizeTrack(track));
+        list(modules.musicLibrary.playlists, 'musicLibrary.playlists', (item, path) => { optional(item.id, path + '.id', 'string'); optional(item.name, path + '.name', 'string'); list(item.tracks, path + '.tracks', track => window.UvUMusic.normalizeTrack(track)); });
     }
     if (modules.environmentSettings !== undefined) {
         const e = modules.environmentSettings;

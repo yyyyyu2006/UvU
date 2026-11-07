@@ -1,6 +1,32 @@
 // Additive backup UX. The existing transaction owns all persistent changes.
+function storagePortableMusicSettings(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('音乐设置格式无效');
+    const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint : '';
+    if (endpoint) { const value = new URL(endpoint); if ((value.protocol !== 'https:' && !(value.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(value.hostname))) || value.username || value.password || value.search || value.hash) throw new Error('音乐服务地址无效'); }
+    return { endpoint, providers: ['netease', 'qq'].filter(p => !Array.isArray(raw.providers) || raw.providers.includes(p)), remember: false };
+}
 function storageApplyExportOptions(modules, options = {}) {
     const result = { ...modules };
+    if (result.musicSettings !== undefined) result.musicSettings = storagePortableMusicSettings(result.musicSettings);
+    if (result.musicLibrary !== undefined) result.musicLibrary = window.UvUMusic.normalizeLibrary(result.musicLibrary);
+    if (window.UvUMusicChat) {
+        const cleanMessages = history => {
+            if (!Array.isArray(history)) return history;
+            let changed = false;
+            const clean = history.map(message => {
+                if (message.type === 'music') { changed = true; return { ...message, music: window.UvUMusicChat.portablePayload(message.music) }; }
+                if (message.forwardedChat) { const records = cleanMessages(message.forwardedChat.records); if (records !== message.forwardedChat.records) { changed = true; return { ...message, forwardedChat: { ...message.forwardedChat, records } }; } }
+                return message;
+            });
+            return changed ? clean : history;
+        };
+        for (const key of ['characters', 'groups']) if (Array.isArray(result[key])) result[key] = result[key].map(chat => {
+            const history = cleanMessages(chat.history);
+            const archives = chat.archives?.map(archive => { const history = cleanMessages(archive.data?.history); return history !== archive.data?.history ? { ...archive, data: { ...archive.data, history } } : archive; });
+            if (history === chat.history && (!archives || archives.every((item, i) => item === chat.archives[i]))) return chat;
+            return { ...chat, history, ...(archives ? { archives } : {}) };
+        });
+    }
     if (options.includeCredentials === false) {
         result._uvuBackup = { version: 1, credentialsOmitted: true };
         const redact = value => {

@@ -235,6 +235,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (!requestIsCurrent()) return;
         const documentPlan = chatType === 'private' && typeof prepareDocumentContext === 'function' ? prepareDocumentContext(historySlice) : { history: historySlice, instructions: '', sources: [] };
         historySlice = documentPlan.history;
+        const musicPlan = chatType === 'private' && typeof window !== 'undefined' && window.UvUMusicChat ? window.UvUMusicChat.requestPlan(historySlice, chat) : null;
         const buildBasePrompt = () => {
             if (chatType === 'private') {
                 systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
@@ -260,6 +261,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
         if (documentPlan.instructions) systemPrompt += documentPlan.instructions;
+        if (musicPlan?.instructions) systemPrompt += musicPlan.instructions;
 
         const lastContextMessage = historySlice[historySlice.length - 1];
         // 检查系统提示词中是否包含聊天记录占位符
@@ -687,7 +689,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let reportedUsage = null;
         if (streamEnabled) {
-            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }, documentPlan.sources) === true;
+            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }, documentPlan.sources, musicPlan) === true;
         } else {
             let result;
             try {
@@ -720,7 +722,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             
             if (!requestIsCurrent()) return;
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal, documentPlan.sources) !== false;
+            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal, documentPlan.sources, musicPlan) !== false;
         }
         if (replyDelivered && requestIsCurrent()) mcpLease?.commit();
         if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
@@ -748,7 +750,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage, documentSources = []) {
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage, documentSources = [], musicPlan = null) {
     let fullResponse = await readStreamResponse(response, apiType, onUsage);
     if (!requestIsCurrent()) return;
     if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
@@ -765,10 +767,10 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
     }
 
     // ===================
-    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal, documentSources) !== false;
+    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground, signal, documentSources, musicPlan) !== false;
 }
 
-async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal, documentSources = []) {
+async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal, documentSources = [], musicPlan = null) {
     const replyArchiveId = chat.activeArchiveId;
     let replyHistory = chat.history;
     const initialHistoryLength = chat.history.length;
@@ -783,6 +785,10 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     };
     if (!replyIsCurrent()) return;
     const documentReply = documentSources.length && typeof extractDocumentReplies === 'function' ? extractDocumentReplies(fullResponse, documentSources) : { files: [] };
+    // File bodies are opaque data. Only parse music controls outside returned files.
+    const musicResponse = documentSources.length ? documentReply.text : fullResponse;
+    if (musicPlan?.invitations?.length && window.UvUMusicChat) fullResponse = window.UvUMusicChat.extractActions(musicResponse, musicPlan.invitations).text;
+    else if (documentSources.length) fullResponse = documentReply.text;
     let mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
     const ownedMessages = new Map(), removedMessages = new Set();
     const appendReplyMessage = message => {
@@ -808,7 +814,6 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         }
         return saved;
     };
-    if (documentSources.length) fullResponse = documentReply.text;
     const rawResponse = fullResponse;
     if (fullResponse || documentReply.files.length) {
         // 1. 移除 [incipere] 标签
@@ -1450,6 +1455,10 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         if (window.BatteryInteraction && typeof window.BatteryInteraction.triggerIndependentCheck === 'function') {
             window.BatteryInteraction.triggerIndependentCheck(chat);
         }
+    }
+    if (musicPlan?.invitations?.length && replyIsCurrent() && window.UvUMusicChat) {
+        try { await window.UvUMusicChat.consumeReply(musicResponse, chat, musicPlan); }
+        catch (error) { console.warn('Music invitation update failed'); }
     }
     return true;
 }
