@@ -30,3 +30,17 @@
 .mcp-settings .mcp-actions { position: sticky; bottom: -14px; padding: 8px 0 2px; background: #fff; }
 .mcp-settings .mcp-actions button { min-height: 32px; }
 .mcp-settings .mcp-actions button:first-of-type { color: #a33a32; border-color: #e0aaa6; background: #fff7f6; }
+.mcp-settings .mcp-field-group { min-width: 0; margin: 4px 0 12px; padding: 12px; border: 1px solid #e9edf2; border-radius: 16px; display: grid; gap: 12px; }
+.mcp-settings .mcp-field-group legend { padding: 0 5px; color: #667085; font-size: 12px; }
+.mcp-settings .mcp-body { gap: 16px; }
+.mcp-settings section { border-radius: 22px; padding: 16px; background: #fff; }
+.mcp-settings details { border-radius: 16px; padding: 12px; background: #fafbfc; }
+.mcp-settings section > *, .mcp-settings details > * { margin-bottom: 12px; }
+.mcp-settings .mcp-row { gap: 8px; margin-top: 12px; }
+.mcp-settings button { border-radius: 999px; padding: 5px 12px; background: #f5f7fa; }
+.mcp-settings .mcp-tool { padding: 12px 0; }
+.mcp-settings .mcp-help { font-size: 12px; line-height: 1.6; }
+.mcp-settings :is(button,input,select,textarea):focus-visible { outline: 2px solid #7ba7da; outline-offset: 2px; }
+.mcp-settings [aria-invalid=true] { border-color: #ba4e47 !important; }
+.mcp-settings.message-forward-dialog .mcp-actions { padding: 12px 16px; margin: 0; flex-shrink: 0; }
+@media (max-width: 360px) { .mcp-settings section { padding: 12px; } .mcp-settings .mcp-field-group { padding: 8px; } }

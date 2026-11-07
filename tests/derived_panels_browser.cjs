@@ -186,6 +186,16 @@ const server = http.createServer((req, res) => {
         await shot('vector-embedding', '#auto-memory-modal .auto-memory-dialog');
         assert.equal(await page.locator('#vector-api-url').isVisible(), true);
         assert.equal(await page.locator('#vector-api-fetch-models').isVisible(), true);
+        assert.equal(await page.locator('.vector-memory-fieldset > :last-child').getAttribute('class'), 'vector-refinements');
+        const refinements = page.locator('.vector-refinements');
+        await refinements.locator(':scope > details').nth(0).locator('summary').click();
+        await page.locator('[name=vectorBodyTags]').fill('content,正文');
+        await page.locator('[aria-label="清洗预览原文"]').fill('<status>忽略</status><content>海边约定。<thinking>秘密</thinking></content>');
+        await page.getByRole('button', { name: '预览清洗', exact: true }).click();
+        assert.equal(await page.locator('.vector-clean-preview').textContent(), '海边约定。');
+        await page.locator('[name=vectorStableSources]').check();
+        await shot('vector-cleaning', '#auto-memory-modal .auto-memory-dialog', [320, 390]);
+        await refinements.locator(':scope > details').nth(0).locator('summary').click();
         await page.locator('.panel-embedding-advanced > summary').click();
         await shot('vector-advanced', '#auto-memory-modal .auto-memory-dialog', [320, 390]);
         assert.equal(await page.locator('#vector-api-batch-size').isVisible(), true);
@@ -204,6 +214,8 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => document.getElementById('vector-memory-settings-btn').click());
         assert.equal(await page.locator('[name=vectorSearchEnabled]').isChecked(), true);
         assert.equal(await page.locator('[name=vectorThreshold]').inputValue(), '0.3');
+        assert.equal(await page.locator('[name=vectorStableSources]').isChecked(), true);
+        assert.equal(await page.locator('[name=vectorBodyTags]').inputValue(), 'content,正文');
         await page.locator('#auto-memory-close').click();
         await page.evaluate(() => openCharacterAvatarSettings()); await shot('avatar', '#character-avatar-settings .derived-settings');
         await page.evaluate(() => document.getElementById('character-avatar-settings').dismissForward());

@@ -7,7 +7,7 @@ function storageApplyExportOptions(modules, options = {}) {
             if (!value || typeof value !== 'object') return value;
             if (Array.isArray(value)) return value.map(redact);
             return Object.fromEntries(Object.entries(value).map(([key, field]) =>
-                [key, /^(key|apiKey|api_key|token|accessToken|refreshToken|password|authorization|gptApiKey|novelaiApiKey|rerankKey)$/i.test(key) ? '' : redact(field)]));
+                [key, /^(key|apiKey|api_key|token|accessToken|refreshToken|password|authorization|gptApiKey|novelaiApiKey|rerankKey|rewriteKey)$/i.test(key) ? '' : redact(field)]));
         };
         for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'apiPresets', 'minimaxTtsSettings', 'environmentSettings', 'workshopSettings', 'workshopLlmPresets']) {
             if (result[key] !== undefined) result[key] = redact(result[key]);
@@ -24,7 +24,7 @@ function storageApplyExportOptions(modules, options = {}) {
 
 function storageResolveImportOptions(modules, options = {}) {
     if (!modules?._uvuBackup?.credentialsOmitted || options.credentialMode === 'clear') return modules;
-    const sensitive = /^(key|apiKey|api_key|token|accessToken|refreshToken|password|authorization|gptApiKey|novelaiApiKey|rerankKey)$/i;
+    const sensitive = /^(key|apiKey|api_key|token|accessToken|refreshToken|password|authorization|gptApiKey|novelaiApiKey|rerankKey|rewriteKey)$/i;
     const merge = (value, local) => {
         if (!value || typeof value !== 'object') return value;
         if (Array.isArray(value)) return value.map(item => {
@@ -40,8 +40,9 @@ function storageResolveImportOptions(modules, options = {}) {
                 const endpoint = key.replace('Key', 'Url');
                 return typeof value[endpoint] === 'string' && Boolean(value[endpoint]) && value[endpoint] === local[endpoint];
             }
-            if (key === 'rerankKey') {
-                const endpoint = value.rerankUrl || value.url, previous = local.rerankUrl || local.url;
+            if (key === 'rerankKey' || key === 'rewriteKey') {
+                const field = key === 'rewriteKey' ? 'rewriteUrl' : 'rerankUrl';
+                const endpoint = value[field] || (key === 'rerankKey' ? value.url : ''), previous = local[field] || (key === 'rerankKey' ? local.url : '');
                 return typeof endpoint === 'string' && Boolean(endpoint) && endpoint === previous;
             }
             return true;

@@ -35,6 +35,30 @@ test('JSON export needs no compression API and contains only selected categories
     assert.equal(data.modules.apiSettings, undefined);
 });
 
+test('chat export materializes independent vector cache only when chat and index export selected', async () => {
+    const f = fixture(); let calls = 0;
+    f.c.VectorMemoryTools = { portableExport: async modules => { calls++; modules.characters[0].memoryVectorIndex = { fromCache: true }; } };
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "chats");', f.c);
+    f.element('storage-export-format').value = 'json';
+    await f.c.handleExport(); assert.equal(calls, 1);
+    const data = JSON.parse(await f.blobs[0].text()); assert.equal(data.modules.characters[0].memoryVectorIndex.fromCache, true);
+    f.element('storage-export-vector-index').checked = false;
+    await f.c.handleExport(); assert.equal(calls, 1);
+});
+
+test('derived memory and speech settings reject malformed nested backup values', () => {
+    const f = fixture();
+    for (const value of [
+        { characters: [{ id: 'c', autoMemorySettings: { vectorChunkMaxTokens: 'oops' } }] },
+        { characters: [{ id: 'c', autoMemorySettings: { vectorExternalIndex: 'yes' } }] },
+        { vectorMemoryApiSettings: { rewriteKey: {} } },
+        { minimaxTtsSettings: { speech: { cacheMiB: -1 } } },
+        { minimaxTtsSettings: { profiles: { c: { directorMode: 'unknown' } } } },
+        { minimaxTtsSettings: { pronunciation: [{}] } }
+    ]) assert.throws(() => f.c.storageValidateModules(value));
+    assert.doesNotThrow(() => f.c.storageValidateModules({ characters: [{ id: 'c' }], minimaxTtsSettings: { voiceId: 'old' } }));
+});
+
 test('EE export remains gzip JSON; unsupported compression falls back to JSON', async () => {
     const f = fixture(); await f.c.handleExport();
     assert.match(f.downloads[0], /[.]ee$/);

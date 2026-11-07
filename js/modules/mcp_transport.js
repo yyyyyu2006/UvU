@@ -1,4 +1,4 @@
-// Remote MCP only. No stdio process, OAuth redirect, or server-initiated execution.
+// Remote MCP only. Authorization is isolated in mcp_oauth.js; no server-initiated execution.
 (function () {
     'use strict';
     const MODERN = '2026-07-28', LEGACY = ['2025-11-25', '2025-06-18', '2025-03-26'];
@@ -63,7 +63,7 @@
         } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     }
     function failure(status, rpc) {
-        const hints = { 401: '令牌无效或需要 OAuth（本版暂不支持 OAuth）', 403: '服务拒绝访问，请检查 Origin/CORS、令牌和本地网络权限', 404: '接口或会话不存在，请重新测试连接', 429: '服务限流，请稍后手动重试' };
+        const hints = { 401: '令牌已失效，请重新填写令牌或连接 OAuth', 403: '服务拒绝访问，请检查 Origin/CORS、令牌和本地网络权限', 404: '接口或会话不存在，请重新测试连接', 429: '服务限流，请稍后手动重试' };
         const error = new Error(status ? `MCP HTTP ${status}：${hints[status] || '服务请求失败'}` : 'MCP 协议错误（' + (Number.isInteger(rpc?.code) ? rpc.code : '未知') + '）');
         // Do not expose remote error bodies: they can contain credentials and private arguments.
         error.status = status; error.rpc = Number.isInteger(rpc?.code) ? { code: rpc.code, data: rpc.data } : undefined; return error;
@@ -73,7 +73,7 @@
         if (typeof token !== 'string' || token.length > 4096 || /[\r\n]/.test(token)) throw new Error('令牌格式无效');
         const mode = config.protocol || 'auto';
         if (!['auto', MODERN, ...LEGACY].includes(mode)) throw new Error('不支持的 MCP 协议版本');
-        let version = mode === 'auto' ? MODERN : mode, session = '', ready = false;
+        let version = mode === 'auto' ? MODERN : mode, session = '', ready = false, capabilities = null, recovery;
         const timeout = Math.max(1000, Math.min(60000, Number(config.timeoutMs) || 20000));
         async function rpc(method, params = {}, externalSignal, notification = false, paramHeaders = []) {
             if (externalSignal?.aborted) throw aborted();
@@ -136,12 +136,12 @@
         async function initialize(signal, preferred) {
             version = preferred || (LEGACY.includes(mode) ? mode : LEGACY[0]); session = '';
             const result = await rpc('initialize', { protocolVersion: version, capabilities: {}, clientInfo: { name: 'UvU', version: '1.0.0' } }, signal);
-            if (!LEGACY.includes(result.protocolVersion) || !result.capabilities?.tools) throw new Error('服务未提供兼容的 MCP 工具协议版本');
-            version = result.protocolVersion;
+            if (!LEGACY.includes(result.protocolVersion) || !result.capabilities || typeof result.capabilities !== 'object') throw new Error('服务未提供兼容的 MCP 协议版本');
+            version = result.protocolVersion; capabilities = result.capabilities;
             await rpc('notifications/initialized', {}, signal, true);
         }
         async function firstList(signal) {
-            if (LEGACY.includes(mode)) { await initialize(signal); return rpc('tools/list', {}, signal); }
+            if (LEGACY.includes(mode)) { await initialize(signal); return capabilities?.tools ? rpc('tools/list', {}, signal) : { tools: [] }; }
             try { return await rpc('tools/list', {}, signal); }
             catch (error) {
                 if (mode !== 'auto') throw error;
@@ -152,13 +152,37 @@
                     try { await initialize(signal, chosen); } catch (_) { throw new Error('MCP 服务协议版本协商失败'); }
                 } else if (error.status === 400 && (!error.rpc || [-32600, -32601, -32000].includes(error.rpc.code))) await initialize(signal);
                 else throw error;
-                return rpc('tools/list', {}, signal);
+                return capabilities?.tools ? rpc('tools/list', {}, signal) : { tools: [] };
             }
+        }
+        async function safeRpc(method, params, signal, headers = [], safe = true) {
+            try { return await rpc(method, params, signal, false, headers); }
+            catch (error) {
+                // Session expiration is the only automatic replay. Unknown/write calls never enter this branch.
+                if (!safe || error.status !== 404 || !session || version === MODERN || signal?.aborted) throw error;
+                if (!recovery) recovery = initialize(signal, version).finally(() => { recovery = null; });
+                await wait(recovery, signal);
+                return rpc(method, params, signal, false, headers);
+            }
+        }
+        async function list(method, key, signal) {
+            if (!ready) { if (LEGACY.includes(mode)) await initialize(signal); ready = true; }
+            if (capabilities && !capabilities[key]) return [];
+            let page = await safeRpc(method, {}, signal); const entries = [], seen = new Set();
+            for (let index = 0; index < 20; index++) {
+                if (!Array.isArray(page[key])) throw new Error('MCP 列表格式无效');
+                entries.push(...page[key]); if (entries.length > 200) throw new Error('MCP 列表超过 200 项');
+                if (!page.nextCursor) return entries;
+                if (typeof page.nextCursor !== 'string' || page.nextCursor.length > 4096 || seen.has(page.nextCursor)) throw new Error('MCP 分页无效');
+                seen.add(page.nextCursor); page = await safeRpc(method, { cursor: page.nextCursor }, signal);
+            }
+            throw new Error('MCP 分页超过限制');
         }
         return {
             get version() { return version; },
+            get capabilities() { return capabilities ? { ...capabilities } : null; },
             async listTools(signal) {
-                let page = ready ? await rpc('tools/list', {}, signal) : await firstList(signal);
+                let page = ready ? await safeRpc('tools/list', {}, signal) : await firstList(signal);
                 ready = true;
                 const tools = [], cursors = new Set(); let pages = 0;
                 while (true) {
@@ -170,13 +194,23 @@
                     if (tools.length > 200) throw new Error('工具超过 200 个，请在服务端缩小范围');
                     if (page.nextCursor === undefined || page.nextCursor === null || page.nextCursor === '') break;
                     if (typeof page.nextCursor !== 'string' || page.nextCursor.length > 4096 || cursors.has(page.nextCursor) || ++pages >= 20) throw new Error('MCP 分页无效或超过限制');
-                    cursors.add(page.nextCursor); page = await rpc('tools/list', { cursor: page.nextCursor }, signal);
+                    cursors.add(page.nextCursor); page = await safeRpc('tools/list', { cursor: page.nextCursor }, signal);
                 }
                 return tools;
             },
-            async call(name, args, signal, paramHeaders = []) {
+            async call(name, args, signal, paramHeaders = [], options = {}) {
                 if (!ready) await this.listTools(signal);
-                return rpc('tools/call', { name, arguments: args }, signal, false, paramHeaders);
+                return safeRpc('tools/call', { name, arguments: args }, signal, paramHeaders, options.safeRead === true);
+            },
+            listResources(signal) { return list('resources/list', 'resources', signal); },
+            listPrompts(signal) { return list('prompts/list', 'prompts', signal); },
+            async readResource(uri, signal) {
+                if (typeof uri !== 'string' || uri.length > 4096 || !/^[a-z][a-z0-9+.-]*:/i.test(uri) || /^(javascript|data|file|vbscript):/i.test(uri) || /[\x00-\x20]/.test(uri)) throw new Error('资源 URI 无效或不允许');
+                return safeRpc('resources/read', { uri }, signal);
+            },
+            async getPrompt(name, args = {}, signal) {
+                if (typeof name !== 'string' || !name || name.length > 128 || !args || Array.isArray(args) || typeof args !== 'object' || Object.entries(args).some(([key, value]) => ['__proto__', 'constructor', 'prototype'].includes(key) || typeof value !== 'string' || value.length > 10000)) throw new Error('提示模板名称或参数无效');
+                return safeRpc('prompts/get', { name, arguments: args }, signal);
             }
         };
     }

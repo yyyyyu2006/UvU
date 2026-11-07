@@ -207,6 +207,8 @@ function setupMiniMaxTtsSettings() {
     fields.speed.value = saved.speed || '1';
     fields.pitch.value = saved.pitch ?? '0';
     if (typeof VoiceDirector !== 'undefined') VoiceDirector.setupSettings(saved.director);
+    const speech = typeof window !== 'undefined' && window.MiniMaxSpeech;
+    if (speech) speech.setupSettings(saved);
 
     const updateRangeLabels = () => {
         document.getElementById('minimax-tts-speed-value').textContent = Number(fields.speed.value).toFixed(1);
@@ -223,6 +225,9 @@ function setupMiniMaxTtsSettings() {
     saveButton.addEventListener('click', async () => {
         const endpoint = fields.endpoint.value.trim();
         if (endpoint && !/^https:\/\//i.test(endpoint)) return showToast('MiniMax API 地址必须使用 HTTPS');
+        let additions = {};
+        try { if (speech) { speech.endpoint(endpoint); additions = speech.fromForm(); } }
+        catch (error) { return showToast(error.message); }
         const director = typeof VoiceDirector !== 'undefined' ? VoiceDirector.fromForm() : saved.director;
         if (director?.enabled) {
             try {
@@ -240,7 +245,8 @@ function setupMiniMaxTtsSettings() {
             voiceId: fields.voiceId.value.trim(),
             speed: Number(fields.speed.value),
             pitch: Number(fields.pitch.value),
-            director
+            director,
+            ...additions
         };
         saveButton.disabled = true;
         try {

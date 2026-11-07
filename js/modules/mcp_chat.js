@@ -85,19 +85,22 @@
         const current = () => m.valid(s) && m.stamp() === start && JSON.stringify(question(chat, settings.planner.recentMessages)) === JSON.stringify(q);
         const controller = new AbortController(), cancel = () => controller.abort();
         externalSignal?.addEventListener('abort', cancel, { once: true });
-        const timer = setTimeout(cancel, 30000);
+        const timer = setTimeout(cancel, settings.planner.timeoutMs);
         try {
             const tools = await m.authorized(s, controller.signal);
             if (!current()) return '';
             if (!tools.length) return manual;
             const calls = await plan(tools, q, controller.signal);
             if (!current()) return '';
-            const results = [];
-            for (const call of calls) {
-                if (!current() || controller.signal.aborted) return current() ? manual : '';
-                results.push(await m.call(call.serviceId, call.toolName, call.arguments, { scope: s, automatic: true, signal: controller.signal }));
-            }
-            return current() ? (manual + m.context(results)).slice(0, settings.planner.maxContextChars + 200) : '';
+            const results = (await m.pool(calls, settings.planner.concurrency, async call => {
+                if (!current() || controller.signal.aborted) return null;
+                try { return await m.call(call.serviceId, call.toolName, call.arguments, { scope: s, automatic: true, signal: controller.signal }); }
+                catch (error) {
+                    if (externalSignal?.aborted || !current()) throw error;
+                    m.log({ kind: 'tool', serviceId: call.serviceId, toolName: call.toolName, stage: 'call', status: '本工具未完成，保留其他结果', code: error.status || null }); return null;
+                }
+            })).filter(Boolean);
+            return current() ? (staged ? staged.withResults(results) : manual + m.context(results, Math.max(128, settings.planner.maxContextChars - manual.length))) : '';
         } catch (error) {
             if (externalSignal?.aborted) throw new DOMException('请求已取消', 'AbortError');
             m.log({ kind: 'planner', status: '自动工具未完成，继续普通聊天（可在服务中心检查连接）' });

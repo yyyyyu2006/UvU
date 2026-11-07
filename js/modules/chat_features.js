@@ -53,6 +53,7 @@ function sendMyVoiceMessage(text) {
 
 const MiniMaxTTS = (() => {
     let activeSession = null;
+    const speech = typeof window !== 'undefined' ? window.MiniMaxSpeech : null;
     const audioCache = new Map();
     const audioDetails = new WeakMap();
     const maxCachedAudio = 8;
@@ -76,14 +77,15 @@ const MiniMaxTTS = (() => {
         if (!panel) {
             panel = document.createElement('div'); panel.id = 'minimax-tts-diagnostics'; panel.className = 'feature-help';
             const detail = document.createElement('span'); detail.setAttribute('aria-live', 'polite'); panel.appendChild(detail);
-            const clear = document.createElement('button'); clear.type = 'button'; clear.textContent = '清理语音缓存';
+            const clear = document.createElement('button'); clear.type = 'button'; clear.textContent = '清理临时缓存';
             clear.addEventListener('click', () => { const info = clearCache(); showToast('已清理 ' + info.entries + ' 条语音；再次播放需调用 API 合成'); detail.textContent = '运行时语音缓存已清空；刷新也会清空缓存。'; });
             panel.appendChild(clear); session.bubble.insertAdjacentElement('afterend', panel);
         }
         const d = session.diagnostic, info = getCacheInfo();
         panel.querySelector('span').textContent = '导演 ' + d.directorMs + 'ms，合成 ' + d.synthesisMs + 'ms；' +
             (d.cacheHit ? '复用缓存' : '本次调用合成 API') + '；情绪 ' + (d.emotion || 'auto') + '，语速 ' + d.speed + '，停顿 ' + d.pauseCount + ' 处' +
-            (d.warning ? '；' + d.warning : '') + '；缓存 ' + info.entries + ' 条 / ' + (info.bytes / 1048576).toFixed(1) + 'MiB。刷新后需重新合成。';
+            (d.warning ? '；' + d.warning : '') + (d.currentUsageCharacters != null ? '；本次合成计费 ' + d.currentUsageCharacters + ' 字符' : '；接口未返回计费用量') +
+            (d.region ? '；' + d.region : '') + '；缓存 ' + info.entries + ' 条 / ' + (info.bytes / 1048576).toFixed(1) + 'MiB。' + (d.persistent ? '已启用本机音频缓存。' : '刷新后需重新合成。');
     }
 
     function getSettings() {
@@ -91,7 +93,8 @@ const MiniMaxTTS = (() => {
     }
 
     function decodeHexAudio(hex) {
-        if (typeof hex !== 'string' || !/^(?:[\da-f]{2})+$/i.test(hex)) {
+        if (typeof hex === 'string' && hex.length > 24 * 1024 * 1024) throw new Error('语音音频数据过大，已停止解码');
+        if (typeof hex !== 'string' || hex.length % 2 !== 0 || !/^[\da-f]+$/i.test(hex)) {
             throw new Error('语音服务返回了无法识别的音频数据');
         }
         const bytes = new Uint8Array(hex.length / 2);
@@ -139,21 +142,25 @@ const MiniMaxTTS = (() => {
         if (!/^https:\/\//i.test(endpoint)) throw new Error('MiniMax API 地址必须使用 HTTPS');
         if (!text || text.length > 10000) throw new Error('语音文本不能为空，且不能超过 10000 个字符');
 
-        const requestUrl = new URL(endpoint);
+        const requestUrl = speech ? speech.endpoint(endpoint) : new URL(endpoint);
         const groupId = String(settings.groupId || '').trim();
         if (groupId) requestUrl.searchParams.set('GroupId', groupId);
-        const emotion = /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(model) &&
+        const legacyEmotion = /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(model) &&
             ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'].includes(settings.emotion) ? settings.emotion : '';
+        const extra = speech ? speech.requestOptions({ ...settings, model }) : { voice_setting: { vol: 1, ...(legacyEmotion ? { emotion: legacyEmotion } : {}) } };
+        const emotion = extra.voice_setting.emotion || '';
+        const stream = Boolean(speech && speech.options(settings.speech).stream && speech.capabilities(model).stream);
         const cacheKey = JSON.stringify([requestUrl.href, apiKey, model, voiceId, settings.speed || 1, settings.pitch || 0, text,
-            emotion, settings.speechCacheKey || '']);
-        return { apiKey, requestUrl, model, voiceId, emotion, cacheKey };
+            extra, stream, settings.speechCacheKey || '']);
+        return { apiKey, requestUrl, model, voiceId, emotion, cacheKey, extra, stream };
     }
 
-    async function synthesize(text, settings = getSettings(), signal) {
-        const { apiKey, requestUrl, model, voiceId, emotion, cacheKey } = describeRequest(text, settings);
+    async function synthesize(text, settings = getSettings(), signal, onChunk) {
+        const { apiKey, requestUrl, model, voiceId, cacheKey, extra, stream } = describeRequest(text, settings);
         if (signal?.aborted) throw Object.assign(new Error('语音生成已取消'), { name: 'AbortError' });
         if (audioCache.has(cacheKey)) {
-            const cached = audioCache.get(cacheKey); cacheAudio(cacheKey, cached); return cached;
+            const cached = audioCache.get(cacheKey); cacheAudio(cacheKey, cached);
+            audioDetails.set(cached, { ...audioDetails.get(cached), cacheHit: true }); return cached;
         }
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         let stage = 'request', timer, rejectCancellation;
@@ -169,31 +176,40 @@ const MiniMaxTTS = (() => {
         }, 60000);
         const wait = promise => Promise.race([promise, cancellation]);
         try {
+            if (speech && speech.options(settings.speech).persistentCache) {
+                const stored = await wait(speech.persistent.get(cacheKey, speech.options(settings.speech)));
+                if (stored) {
+                    audioDetails.set(stored.blob, { ...stored.detail, cacheKey, cacheHit: true, persistentHit: true });
+                    cacheAudio(cacheKey, stored.blob); return stored.blob;
+                }
+            }
             const response = await wait(fetch(requestUrl.href, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
                 signal: controller?.signal || signal,
+                credentials: 'omit', redirect: 'error',
                 body: JSON.stringify({
                     model,
                     text,
-                    stream: false,
+                    stream,
                     output_format: 'hex',
                     voice_setting: {
                         voice_id: voiceId,
                         speed: Number(settings.speed) || 1,
-                        vol: 1,
                         pitch: Number(settings.pitch) || 0,
-                        ...(emotion ? { emotion } : {})
+                        ...extra.voice_setting
                     },
+                    ...(extra.language_boost ? { language_boost: extra.language_boost } : {}),
+                    ...(extra.pronunciation_dict ? { pronunciation_dict: extra.pronunciation_dict } : {}),
                     audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
                 })
             }));
 
             stage = 'response';
             let result;
-            try { result = await wait(response.json()); }
+            try { result = await wait(speech ? speech.readResponse(response, controller?.signal || signal, onChunk) : response.json()); }
             catch (error) {
-                if (error.name === 'AbortError' || error.name === 'TimeoutError') throw error;
+                if (error.name === 'AbortError' || error.name === 'TimeoutError' || /过大|语音流|语音音频|语音服务/.test(error.message)) throw error;
                 throw new Error('MiniMax 返回了无效响应 (' + response.status + ')');
             }
             if (!response.ok || (result.base_resp && result.base_resp.status_code !== 0)) {
@@ -207,14 +223,21 @@ const MiniMaxTTS = (() => {
             if (format !== 'mp3') throw new Error('MiniMax 返回的音频格式不是 MP3，请检查语音接口');
             const blob = decodeHexAudio(result.data?.audio);
             const traceId = String(result.trace_id || '');
-            audioDetails.set(blob, { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '' });
+            const detail = { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '',
+                ...(speech ? speech.usage(result) : {}), cacheHit: false };
+            audioDetails.set(blob, detail);
             cacheAudio(cacheKey, blob);
+            if (speech) {
+                const { cacheKey: ignored, ...storedDetail } = detail;
+                void speech.persistent.put(cacheKey, blob, storedDetail, speech.options(settings.speech));
+            }
             return blob;
         } catch (error) {
             error.stage = error.stage || stage;
+            for (const secret of [apiKey, String(settings.groupId || '')].filter(value => value.length >= 4)) error.message = error.message.split(secret).join('[已隐藏]');
             if (error.name !== 'AbortError' && error.name !== 'TimeoutError') {
                 const label = { request: '请求', response: '响应', decode: '音频解码' }[error.stage];
-                error.message = 'MiniMax ' + label + '阶段失败：' + error.message;
+                error.message = 'MiniMax ' + label + '阶段失败：' + error.message + (speech ? '（' + speech.region(requestUrl.href) + '）' : '');
             }
             throw error;
         } finally {
@@ -232,13 +255,16 @@ const MiniMaxTTS = (() => {
             bubble.classList.remove('voice-loading');
             bubble.removeAttribute('aria-busy');
         }
+        if (bubble.dataset) bubble.dataset.speechPhase = session.phase;
         if (bubble.id === 'minimax-tts-preview') bubble.disabled = loading;
     }
 
     function failPlayback(session, error, code = session.audio.error?.code || 0) {
         if (activeSession !== session) return;
         const details = session.blob && audioDetails.get(session.blob);
-        if (details && audioCache.get(details.cacheKey) === session.blob) audioCache.delete(details.cacheKey);
+        for (const key of details?.cacheKeys || (details?.cacheKey ? [details.cacheKey] : [])) {
+            audioCache.delete(key); if (speech) void speech.persistent.remove(key);
+        }
         const message = code || error?.name === 'NotSupportedError'
             ? getAudioPlaybackErrorMessage(code || 4)
             : '语音音频播放失败，请重试';
@@ -251,7 +277,7 @@ const MiniMaxTTS = (() => {
 
     async function startPlayback(session) {
         if (activeSession !== session) return;
-        if (session.source && !VoiceDirector.isCurrent(session.source)) return stop(session);
+        if (session.identity && !VoiceDirector.isCurrent(session.identity)) return stop(session);
         session.phase = 'starting';
         setLoading(session, true);
         try {
@@ -267,6 +293,11 @@ const MiniMaxTTS = (() => {
                 showToast('音频已准备好，浏览器需要手动播放，请再次点击试听或语音气泡');
             } else if (error?.name === 'AbortError') {
                 stop(session);
+            } else if (session.progressive) {
+                session.progressive.markFailed();
+                session.audio.pause();
+                if (session.streamPending) session.phase = 'loading';
+                else return playComplete(session);
             } else {
                 failPlayback(session, error);
             }
@@ -275,74 +306,131 @@ const MiniMaxTTS = (() => {
         }
     }
 
-    async function play(bubble, text, settings) {
+    function playComplete(session) {
+        session.progressive?.dispose(); session.progressive = null;
+        session.audio.pause();
+        if (session.url) URL.revokeObjectURL(session.url);
+        session.url = URL.createObjectURL(session.blob);
+        session.audio.src = session.url;
+        return startPlayback(session);
+    }
+
+    async function play(bubble, text, settings, override = {}) {
         if (!bubble) return;
-        let ttsSettings, cacheKey, directorSettings, source;
+        let ttsSettings, cacheKey, directorSettings, source, identity;
         try {
-            const savedSettings = settings || getSettings();
-            const boundVoice = !settings && typeof VoiceDirector !== 'undefined' ? VoiceDirector.voiceIdFor(bubble) : null;
+            let savedSettings = settings || getSettings();
+            const hasDirector = typeof VoiceDirector !== 'undefined';
+            const role = !settings && hasDirector ? VoiceDirector.roleFor(bubble) : null;
+            if (speech) savedSettings = speech.resolveSettings(savedSettings, role);
+            if (override.manual) savedSettings = { ...savedSettings, emotion: override.manual.emotion,
+                speed: Number.isFinite(Number(override.manual.speed)) ? Math.max(.5, Math.min(2, Number(override.manual.speed))) : 1 };
+            const boundVoice = !settings && hasDirector ? VoiceDirector.voiceIdFor(bubble) : null;
             ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : boundVoice ?? bubble.dataset.voiceId, savedSettings) };
             ({ cacheKey } = describeRequest(text, ttsSettings));
-            if (typeof VoiceDirector !== 'undefined') {
-                directorSettings = VoiceDirector.settings(savedSettings.director);
+            if (hasDirector) {
+                identity = VoiceDirector.identity(bubble, text);
+                directorSettings = VoiceDirector.settings(override.plain || override.manual ? { enabled: false } : savedSettings.director);
                 source = VoiceDirector.capture(bubble, text, directorSettings);
-                if (source) cacheKey = JSON.stringify([cacheKey, directorSettings, source.key]);
+                cacheKey = JSON.stringify([cacheKey, directorSettings, source?.key || identity?.key]);
+                if (override.retry) VoiceDirector.invalidate(directorSettings, source);
             }
         } catch (error) {
             if (error.name !== 'AbortError') showToast(error.message);
             return;
         }
         const previous = activeSession;
-        if (previous?.bubble === bubble && previous.cacheKey === cacheKey) {
+        if (!override.retry && previous?.bubble === bubble && previous.cacheKey === cacheKey) {
             if (previous.phase === 'loading' || previous.phase === 'starting') return stop(previous);
             if (previous.phase === 'playing') {
-                previous.audio.pause();
-                previous.phase = 'paused';
-                bubble.classList.remove('voice-playing');
-                return;
+                previous.audio.pause(); previous.phase = 'paused'; bubble.dataset.speechPhase = 'paused'; bubble.classList.remove('voice-playing'); return;
             }
             // A prepared source must play synchronously within the retry's user gesture.
             return startPlayback(previous);
         }
         stop();
-        const session = { bubble, cacheKey, source, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
-        activeSession = session;
-        setLoading(session, true);
-        try {
-            let speechText = text;
-            session.diagnostic = { directorMs: 0, synthesisMs: 0, emotion: '', speed: Number(ttsSettings.speed) || 1, pauseCount: 0, warning: '', cacheHit: false };
-            const directorStarted = Date.now();
-            if (source) {
-                const direction = await VoiceDirector.prepare(text, directorSettings, source, session.controller.signal);
-                if (activeSession !== session) return;
-                if (!VoiceDirector.isCurrent(source)) return stop(session);
-                session.diagnostic.directorMs = Date.now() - directorStarted;
-                session.diagnostic.warning = direction.warning || '';
-                session.diagnostic.emotion = direction.emotion || '';
-                session.diagnostic.pauseCount = direction.pauseCount || 0;
-                if (direction.warning) showToast(direction.warning);
-                speechText = direction.text.length <= 10000 ? direction.text : text;
-                ttsSettings = { ...ttsSettings, emotion: direction.emotion, speechCacheKey: cacheKey,
-                    speed: Math.round(Math.max(0.5, Math.min(2, (Number(ttsSettings.speed) || 1) * direction.speedMultiplier)) * 100) / 100 };
-            }
-            const audioKey = describeRequest(speechText, ttsSettings).cacheKey;
-            const cached = audioCache.get(audioKey);
-            const synthesisStarted = Date.now();
-            session.blob = cached || await synthesize(speechText, ttsSettings, session.controller.signal);
-            session.diagnostic.synthesisMs = Date.now() - synthesisStarted;
-            session.diagnostic.cacheHit = Boolean(cached);
-            session.diagnostic.speed = Number(ttsSettings.speed) || 1;
-            lastDiagnostic = { ...session.diagnostic };
-            showDiagnostics(session);
+        const session = { bubble, cacheKey, source, identity, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
+        activeSession = session; setLoading(session, true);
+        session.onEnded = () => { if (activeSession === session && !session.streamPending) stop(session); };
+        session.onError = () => {
             if (activeSession !== session) return;
-            if (source && !VoiceDirector.isCurrent(source)) return stop(session);
-            session.onEnded = () => { if (activeSession === session) stop(session); };
-            session.onError = () => failPlayback(session);
-            session.audio.addEventListener('ended', session.onEnded);
-            session.audio.addEventListener('error', session.onError);
-            session.url = URL.createObjectURL(session.blob);
-            session.audio.src = session.url;
-            return startPlayback(session);
+            if (session.progressive) {
+                session.progressive.markFailed(); session.audio.pause();
+                if (session.streamPending) session.phase = 'loading';
+                else void playComplete(session);
+            } else failPlayback(session);
+        };
+        session.audio.addEventListener('ended', session.onEnded);
+        session.audio.addEventListener('error', session.onError);
+        try {
+            const playback = speech?.options(ttsSettings.speech);
+            const lines = playback?.segmented ? speech.segments(text, playback.segmentChars) : [text];
+            const blobs = [], details = [];
+            session.diagnostic = { directorMs: 0, synthesisMs: 0, emotion: ttsSettings.emotion || '', speed: Number(ttsSettings.speed) || 1,
+                pauseCount: 0, warning: '', cacheHit: true, segments: lines.length, directorUsage: [],
+                region: speech ? speech.region(ttsSettings.endpoint) : '', persistent: playback?.persistentCache === true };
+            for (const line of lines) {
+                if (activeSession !== session || identity && !VoiceDirector.isCurrent(identity)) return stop(session);
+                let speechText = line, lineSettings = ttsSettings;
+                if (source) {
+                    const lineSource = lines.length === 1 ? source : VoiceDirector.capture(bubble, line, directorSettings);
+                    if (override.retry) VoiceDirector.invalidate(directorSettings, lineSource);
+                    const directorStarted = Date.now();
+                    const direction = await VoiceDirector.prepare(line, directorSettings, lineSource, session.controller.signal);
+                    if (activeSession !== session) return;
+                    if (!VoiceDirector.isCurrent(lineSource)) return stop(session);
+                    session.diagnostic.directorMs += Date.now() - directorStarted;
+                    session.diagnostic.warning = direction.warning || session.diagnostic.warning;
+                    session.diagnostic.emotion = direction.emotion || session.diagnostic.emotion;
+                    session.diagnostic.pauseCount += direction.pauseCount || 0;
+                    if (direction.usage) session.diagnostic.directorUsage.push({ ...direction.usage, cacheHit: direction.cacheHit === true });
+                    if (direction.warning) showToast(direction.warning);
+                    speechText = direction.text.length <= 10000 ? direction.text : line;
+                    lineSettings = { ...ttsSettings, emotion: direction.emotion, speechCacheKey: cacheKey,
+                        speed: Math.round(Math.max(0.5, Math.min(2, (Number(ttsSettings.speed) || 1) * direction.speedMultiplier)) * 100) / 100 };
+                }
+                const audioKey = describeRequest(speechText, lineSettings).cacheKey;
+                const cached = audioCache.get(audioKey);
+                if (lines.length === 1 && playback?.stream && !cached) {
+                    session.streamPending = true;
+                    session.progressive = speech.streamPlayer(session.audio, session.controller.signal, () => {
+                        if (activeSession === session) { session.progressiveStarted = true; void startPlayback(session); }
+                    }, () => {
+                        if (activeSession !== session) return;
+                        session.audio.pause();
+                        if (session.streamPending) session.phase = 'loading';
+                        else if (session.blob) void playComplete(session);
+                    });
+                }
+                const synthesisStarted = Date.now();
+                const blob = await synthesize(speechText, lineSettings, session.controller.signal, session.progressive ? hex => {
+                    if (identity && !VoiceDirector.isCurrent(identity)) { stop(session); return; }
+                    session.progressive?.push(hex);
+                } : undefined);
+                session.diagnostic.synthesisMs += Date.now() - synthesisStarted;
+                const detail = audioDetails.get(blob) || {};
+                session.diagnostic.cacheHit = session.diagnostic.cacheHit && Boolean(detail.cacheHit);
+                session.diagnostic.speed = Number(lineSettings.speed) || 1;
+                blobs.push(blob); details.push(detail);
+            }
+            session.blob = blobs.length === 1 ? blobs[0] : new Blob(blobs, { type: 'audio/mpeg' });
+            const sum = field => details.every(d => d[field] != null) ? details.reduce((n, d) => n + d[field], 0) : null;
+            Object.assign(session.diagnostic, { usageCharacters: sum('usageCharacters'), audioMs: sum('audioMs'),
+                currentUsageCharacters: details.every(d => d.cacheHit || d.usageCharacters != null)
+                    ? details.reduce((n, d) => n + (d.cacheHit ? 0 : d.usageCharacters), 0) : null });
+            if (blobs.length > 1) audioDetails.set(session.blob, { format: 'mp3', usageCharacters: sum('usageCharacters'), audioMs: sum('audioMs'), cacheKeys: details.map(d => d.cacheKey).filter(Boolean) });
+            lastDiagnostic = { ...session.diagnostic };
+            if (activeSession !== session) return;
+            if (identity && !VoiceDirector.isCurrent(identity)) return stop(session);
+            showDiagnostics(session);
+            speech?.inspect(bubble, session.diagnostic, () => play(bubble, text, settings, { plain: true }),
+                directorSettings?.enabled ? () => play(bubble, text, settings, { retry: true }) : null,
+                manual => play(bubble, text, settings, { manual }), ttsSettings.model || 'speech-2.8-hd');
+            session.streamPending = false;
+            if (session.progressive && !session.progressive.failed && session.progressiveStarted) {
+                session.progressive.end(); setLoading(session, false); return;
+            }
+            return playComplete(session);
         } catch (error) {
             if (activeSession !== session) return;
             stop(session);
@@ -355,6 +443,7 @@ const MiniMaxTTS = (() => {
         if (activeSession === session) activeSession = null;
         session.phase = 'stopped';
         session.controller.abort();
+        session.progressive?.dispose(); session.progressive = null;
         if (session.onEnded) session.audio.removeEventListener('ended', session.onEnded);
         if (session.onError) session.audio.removeEventListener('error', session.onError);
         session.audio.pause();
@@ -370,7 +459,7 @@ const MiniMaxTTS = (() => {
         return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
-    return { play, synthesize, resolveVoiceId, getCacheInfo, clearCache, getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
+    return { play, synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
 })();
 
 function getAudioPlaybackErrorMessage(code) {
@@ -384,6 +473,9 @@ function getAudioPlaybackErrorMessage(code) {
 }
 
 async function previewMiniMaxVoice() {
+    let additions = {};
+    try { if (typeof window !== 'undefined' && window.MiniMaxSpeech) additions = window.MiniMaxSpeech.fromForm(); }
+    catch (error) { showToast(error.message); return; }
     const settings = {
         apiKey: document.getElementById('minimax-tts-key')?.value.trim(),
         endpoint: document.getElementById('minimax-tts-endpoint')?.value.trim(),
@@ -392,7 +484,8 @@ async function previewMiniMaxVoice() {
         voiceId: document.getElementById('minimax-tts-voice')?.value.trim(),
         speed: document.getElementById('minimax-tts-speed')?.value,
         pitch: document.getElementById('minimax-tts-pitch')?.value,
-        director: typeof VoiceDirector !== 'undefined' ? VoiceDirector.fromForm() : undefined
+        director: typeof VoiceDirector !== 'undefined' ? VoiceDirector.fromForm() : undefined,
+        ...additions
     };
     const button = document.getElementById('minimax-tts-preview');
     return MiniMaxTTS.play(button, '你好，这是角色语音试听。', settings);

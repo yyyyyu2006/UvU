@@ -1,0 +1,11 @@
+.vector-refinements { display: grid; gap: 8px; margin-top: 16px; }
+.vector-refinements > details { border: 1px solid #e9edf2; border-radius: 20px; background: #fff; padding: 12px 16px; }
+.vector-refinements > details > summary { font-size: 14px; font-weight: 600; cursor: pointer; }
+.vector-refinement-fields { display: grid; gap: 12px; margin-top: 16px; min-width: 0; }
+.vector-refinement-fields > label { display: grid; gap: 6px; font-size: 13px; color: #38404c; }
+.vector-refinement-fields > .auto-memory-check { display: flex; align-items: center; gap: 8px; }
+.vector-refinement-fields .auto-memory-check input { width: 16px; height: 16px; margin: 0; flex: 0 0 16px; }
+.vector-refinement-fields > button { justify-self: start; min-height: 32px; padding: 6px 14px; border-radius: 999px; }
+.vector-refinement-fields input:not([type=checkbox]), .vector-refinement-fields textarea { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
+.vector-clean-preview { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; margin: 0; font-family: inherit; font-size: 14px; line-height: 1.6; }
+.vector-clean-preview:empty { display: none; }

@@ -185,3 +185,32 @@ test('director timeout falls back and cleans its timer', async () => {
     assert.match(result.warning, /超时/);
     assert.equal(f.timers.size, 0);
 });
+
+
+test('normal speech identity and role resolution remain guarded when director is disabled', () => {
+    const f = fixture(); f.director.bind(f.bubble, f.chat, f.message, 'private');
+    assert.equal(f.director.roleFor(f.bubble), f.chat);
+    const identity = f.director.identity(f.bubble, '原文');
+    assert.equal(f.director.isCurrent(identity), true);
+    f.chat.activeArchiveId = 'another';
+    assert.equal(f.director.isCurrent(identity), false);
+    assert.throws(() => f.director.roleFor(f.bubble), { name: 'AbortError' });
+});
+
+test('director reports returned usage separately and explicit retry invalidates only its own plan', async () => {
+    const f = fixture(), source = capture(f);
+    f.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(f.reply) } }], usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 } }) });
+    const result = await f.director.prepare('对不起，是我没考虑周全。', f.settings, source);
+    assert.equal(result.usage.inputTokens, 12); assert.equal(result.usage.outputTokens, 4);
+    await f.director.prepare(source.text, f.settings, source); assert.equal(f.calls.length, 1);
+    f.director.invalidate(f.settings, source);
+    await f.director.prepare(source.text, f.settings, source); assert.equal(f.calls.length, 2);
+});
+
+test('director pause controls cannot add more than 4.5 seconds total', async () => {
+    const f = fixture(), line = '一，二，三，四，五。';
+    f.reply.pauses = ['一，','二，','三，','四，'].map(after => ({ after, seconds: 1.5 }));
+    const source = f.director.capture({}, line, f.settings);
+    const result = await f.director.prepare(line, f.settings, source);
+    assert.equal(result.pauseCount, 3); assert.equal(result.pauseSeconds, 4.5);
+});

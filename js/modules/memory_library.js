@@ -251,7 +251,7 @@ function openMemoryLibrary() {
             }));
             list.append(card);
         }
-        status.textContent = `共 ${all.length} 篇记忆；历史剧情索引 ${Object.keys(chat.memoryVectorIndex || {}).filter(id => id.startsWith('history:')).length} 组。`;
+        status.textContent = `共 ${all.length} 篇记忆；历史剧情索引 ${Object.keys(chat.memoryVectorIndex || {}).filter(id => /^(history|message):/.test(id)).length} 组。`;
     };
     const edit = journal => {
         try { assertCurrent(); } catch (error) { showToast(error.message); return; }
@@ -289,7 +289,7 @@ function openMemoryLibrary() {
         try {
             assertCurrent();
             if (!getAutoMemorySettings(chat).vectorSearchEnabled) throw new Error('请先在自动记忆设置中启用并配置向量 API');
-            await getVectorMemoryContext(chat, '回顾历史剧情的重要事件、约定和关系', control.signal, { fullIndex: true, rebuild, shouldPause: () => job.paused,
+            await getVectorMemoryContext(chat, '回顾历史剧情的重要事件、约定和关系', control.signal, { fullIndex: true, indexOnly: true, rebuild, shouldPause: () => job.paused,
                 onProgress: progress => { if (!closed) status.textContent = `共 ${progress.totalSources} 个来源 / ${progress.totalChunks} 个分块；待建立 ${progress.pendingChunks} 块；本次已完成 ${progress.completedBatches} 批。`; } });
             assertCurrent(); refresh(); status.textContent += job.paused ? ' 已暂停，完成的索引已保存。' : ' 索引已更新。';
         } catch (error) { if (!closed) status.textContent = error.message; }

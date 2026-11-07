@@ -81,3 +81,28 @@ test('modern MCP headers encode non-ASCII names and mirror approved primitive pa
     await client.call('天气',{location:{city:'北京'},count:2},undefined,[{name:'City',path:['location','city'],type:'string'},{name:'Count',path:['count'],type:'integer'}]);
     const headers=requests.at(-1).init.headers;assert.match(headers['Mcp-Name'],/^=\?base64\?/);assert.equal(headers['Mcp-Param-Count'],'2');assert.match(headers['Mcp-Param-City'],/^=\?base64\?/);
 });
+test('expired legacy sessions recover once only for explicitly safe reads', async () => {
+    let sessions = 0, calls = 0;
+    const f = fixture(body => {
+        if (body.method === 'initialize') return json({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{tools:{},resources:{},prompts:{}}}},200,{'Mcp-Session-Id':'s'+(++sessions)});
+        if (!body.id) return new Response(null,{status:202});
+        if (body.method === 'tools/call') return ++calls === 1 ? json({},404) : reply(body,{content:[{type:'text',text:'ok'}]});
+        return reply(body,{tools:[]});
+    });
+    const c=f.api.create({url:'https://tools.test/mcp',protocol:'2025-06-18'});await c.listTools();
+    assert.equal((await c.call('read',{},undefined,[],{safeRead:true})).content[0].text,'ok');
+    assert.equal(sessions,2);assert.equal(calls,2);assert.equal(c.version,'2025-06-18');
+});
+test('resources and prompts require explicit preview and preserve protocol/session', async () => {
+    const f=fixture(body=>reply(body,body.method==='tools/list'?{tools:[]}:body.method==='resources/list'?{resources:[{name:'notes',uri:'memo://notes'}]}:body.method==='prompts/list'?{prompts:[{name:'review'}]}:body.method==='resources/read'?{contents:[{uri:body.params.uri,text:'hello'}]}:{messages:[{role:'user',content:{type:'text',text:'preview'}}]}));
+    const c=f.api.create({url:'https://tools.test/mcp'});await c.listTools();
+    assert.equal((await c.listResources())[0].uri,'memo://notes');assert.equal((await c.listPrompts())[0].name,'review');
+    assert.equal((await c.readResource('memo://notes')).contents[0].text,'hello');assert.equal((await c.getPrompt('review',{topic:'x'})).messages[0].content.text,'preview');
+    await assert.rejects(c.readResource('javascript:alert(1)'),/资源/);
+    await assert.rejects(c.getPrompt('review',{topic:{x:1}}),/参数/);
+    assert.equal(f.requests.filter(x=>x.body.method==='tools/call').length,0);
+});
+test('legacy resources-only services can be discovered without requiring tools capability',async()=>{
+    const f=fixture(body=>body.method==='initialize'?reply(body,{protocolVersion:'2025-11-25',capabilities:{resources:{}}}):!body.id?new Response(null,{status:202}):body.method==='resources/list'?reply(body,{resources:[{name:'a',uri:'memo://a'}]}):json({},400));
+    const client=f.api.create({url:'https://tools.test/mcp',protocol:'2025-11-25'});assert.equal((await client.listTools()).length,0);assert.equal((await client.listResources()).length,1);assert.equal(f.requests.some(x=>x.body.method==='tools/list'),false);
+});

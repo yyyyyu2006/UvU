@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm'), fs = require('node:fs'), path = require('node:path');
 
-function fixture(saved = {}) {
+function fixture(saved = {}, speech) {
     const elements = new Map(), toasts = [];
     function el(id) {
         if (!elements.has(id)) elements.set(id, { id, value: '', checked: false, hidden: false, dataset: {},
@@ -11,7 +11,7 @@ function fixture(saved = {}) {
     }
     const db = { minimaxTtsSettings: saved };
     let saves = 0;
-    const c = vm.createContext({ db, URL, window: {}, document: { getElementById: el },
+    const c = vm.createContext({ db, URL, window: { MiniMaxSpeech: speech }, document: { getElementById: el },
         showToast: text => toasts.push(text), previewMiniMaxVoice() {}, saveData: async () => { saves++; if (state.fail) throw new Error('quota'); } });
     for (const file of ['js/modules/voice_director.js', 'js/modules/settings_api.js']) {
         vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), c);
@@ -54,4 +54,21 @@ test('failed voice settings save restores the previous settings object', async (
     await assert.doesNotReject(f.save());
     assert.equal(f.db.minimaxTtsSettings, old);
     assert.ok(f.toasts.some(text => /失败/.test(text)));
+});
+
+
+test('speech refinements setup and save preserve optional profiles and pronunciation fields', async () => {
+    let setup;
+    const added = { profiles: { a: { voiceId: 'a-voice' } }, speech: { stream: true }, pronunciation: ['晴/(qing2)'] };
+    const f = fixture({ voiceId: 'global' }, { setupSettings: value => { setup = value; }, fromForm: () => added, endpoint: value => new URL(value || 'https://api.minimaxi.com/v1/t2a_v2') });
+    assert.equal(setup.voiceId, 'global'); await f.save();
+    assert.equal(f.db.minimaxTtsSettings.profiles.a.voiceId, 'a-voice');
+    assert.equal(f.db.minimaxTtsSettings.speech.stream, true); assert.equal(f.db.minimaxTtsSettings.pronunciation[0], '晴/(qing2)');
+});
+
+test('invalid pronunciation cannot replace saved speech settings', async () => {
+    const old = { voiceId: 'voice' };
+    const f = fixture(old, { setupSettings() {}, endpoint: value => new URL(value || 'https://api.minimaxi.com'), fromForm() { throw Error('发音词典格式错误'); } });
+    await assert.doesNotReject(f.save()); assert.equal(f.db.minimaxTtsSettings, old); assert.equal(f.saves, 0);
+    assert.match(f.toasts[0], /发音/);
 });

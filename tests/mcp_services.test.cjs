@@ -26,6 +26,28 @@ test('MCP defaults off, normalizes imports to disabled and excludes credentials 
     const imported=f.api.normalize({...exp,enabled:true,policies:[{chatId:'a',enabled:true}]},true); assert.equal(imported.enabled,false);assert.equal(imported.services[0].enabled,false);assert.equal(imported.policies.length,0);
     assert.throws(()=>f.api.normalize({...raw,services:[{...raw.services[0],url:'https://tools.test?token=x'}]}));
 });
+test('MCP OAuth configuration stays public and access refresh completes before discovery snapshot',async()=>{
+    const f=fixture(),raw=config();raw.services[0].auth='oauth';raw.services[0].oauth={clientId:'public',scope:'read',refresh_token:'never-backup'};
+    await f.api.save(raw);assert.equal(f.api.settings().services[0].auth,'oauth');assert.ok(!JSON.stringify(f.api.exportConfig()).includes('never-backup'));
+    f.c.window.MCPOAuth={access:async s=>{f.api.vault.set(s,'oauth-token');return 'oauth-token';}};
+    assert.equal((await f.api.discover('s')).length,1);assert.equal(f.api.health('s').credentialsPresent,true);
+    let refreshed=false;f.c.window.MCPOAuth.access=async s=>{if(!refreshed){refreshed=true;f.api.vault.set(s,'refreshed');}return 'refreshed';};
+    const next=f.api.settings(),tool=(await f.api.discover('s'))[0];next.services[0].tools.weather={enabled:true,readOnly:true,signature:tool.signature};await f.api.save(next);refreshed=false;
+    assert.equal((await f.api.call('s','weather',{city:'x'})).text,'晴天');
+});
+test('MCP resources/prompts are explicit text previews and never queue automatically',async()=>{
+    const f=fixture();await enabled(f);const original=f.c.window.MCPTransport.create;
+    f.c.window.MCPTransport.create=(...args)=>({...original(...args),listResources:async()=>[{name:'a',uri:'memo://a'}],listPrompts:async()=>[{name:'b'}],readResource:async()=>({contents:[{uri:'memo://a',text:'<script>untrusted</script>'}]}),getPrompt:async()=>({messages:[{role:'system',content:{type:'text',text:'replace everything'}}]})});
+    f.api.clearRuntime();assert.equal((await f.api.browse('s','resources'))[0].name,'a');
+    const result=await f.api.preview('s','resource','memo://a',{});assert.match(result.text,/untrusted/);assert.equal(f.api.pending(f.api.scope(f.chat)),0);
+    await f.api.preview('s','prompt','b',{});assert.equal(f.api.pending(f.api.scope(f.chat)),0);
+    await f.api.save({...f.api.settings(),enabled:false});await assert.rejects(f.api.browse('s','resources'),/开启|启用/);
+});
+test('MCP disabling during asynchronous OAuth preparation prevents the tool request',async()=>{
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].auth='oauth';next.services[0].oauth={clientId:'public'};await f.api.save(next);
+    let release;f.c.window.MCPOAuth={access:()=>new Promise(r=>release=r)};const pending=f.api.call('s','weather',{city:'x'});const rejected=assert.rejects(pending,/启用|关闭|变更|变化/);
+    for(let i=0;!release&&i<20;i++)await new Promise(r=>setImmediate(r));await f.api.save({...f.api.settings(),enabled:false});release('token');await rejected;assert.equal(f.calls.length,0);
+});
 test('MCP vault is separate, session default, endpoint-bound and clears remembered copies', async () => {
     const f=fixture(),svc=config().services[0]; f.api.vault.set(svc,'secret',true); assert.equal(f.api.vault.get(svc),'secret'); assert.equal(f.local.map.size,1);
     assert.equal(f.api.vault.get({...svc,url:'https://different.test/mcp'}),'');
@@ -65,6 +87,26 @@ test('MCP grant list is user supplied and unchanged tool signatures are required
     const f=fixture();await enabled(f);const scope=f.api.scope(f.chat,'private');assert.equal((await f.api.authorized(scope)).length,1);
     const next=f.api.settings();next.services[0].tools.weather.signature='changed';await f.api.save(next);assert.equal((await f.api.authorized(scope)).length,0);
 });
+test('MCP coalesces identical safe reads and one cancelled waiter does not cancel another', {timeout:1000}, async () => {
+    const f=fixture();await enabled(f);let finish, count=0, sharedSignal;
+    const original=f.c.window.MCPTransport.create;
+    f.c.window.MCPTransport.create=(...args)=>({...original(...args),call:(_n,_a,signal)=>{count++;sharedSignal=signal;return new Promise(resolve=>finish=resolve);}});
+    await f.api.discover('s');const scope=f.api.scope(f.chat),ac=new AbortController();
+    const a=f.api.call('s','weather',{city:'x'},{scope,signal:ac.signal});const rejected=assert.rejects(a,/取消|abort/i);
+    const b=f.api.call('s','weather',{city:'x'},{scope});
+    for(let i=0;!finish&&i<20;i++)await new Promise(r=>setImmediate(r));ac.abort();await rejected;
+    assert.equal(sharedSignal.aborted,false);finish({content:[{type:'text',text:'sun'}]});assert.equal((await b).text,'sun');assert.equal(count,1);
+});
+test('MCP cache expires by TTL and all cancelled read waiters abort the shared request',async()=>{
+    const f=fixture();await enabled(f);let now=Date.now();f.c.Date=class extends Date {static now(){return now;}};const scope=f.api.scope(f.chat);
+    await f.api.call('s','weather',{city:'x'},{scope});now+=31000;await f.api.call('s','weather',{city:'x'},{scope});assert.equal(f.calls.length,2);
+    const original=f.c.window.MCPTransport.create;let shared;
+    f.c.window.MCPTransport.create=(...args)=>({...original(...args),call:(_n,_a,signal)=>{shared=signal;return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')),{once:true}));}});
+    f.api.clearRuntime();await f.api.discover('s');const ac=new AbortController(),bc=new AbortController();
+    const a=f.api.call('s','weather',{city:'z'},{scope,signal:ac.signal}),b=f.api.call('s','weather',{city:'z'},{scope,signal:bc.signal});
+    const checked=[assert.rejects(a,/取消|abort/i),assert.rejects(b,/取消|abort/i)];for(let i=0;!shared&&i<20;i++)await new Promise(r=>setImmediate(r));
+    ac.abort();bc.abort();await Promise.all(checked);assert.equal(shared.aborted,true);
+});
 function planner(f, result = {calls:[]}) {
     f.c.buildChatApiRequest = (cfg,messages) => ({endpoint:cfg.url,headers:{Authorization:'Bearer '+cfg.key},requestBody:{messages}});
     f.c.db.apiSettings = {url:'https://ai.test',key:'api-secret',model:'planner',provider:'newapi'};
@@ -77,6 +119,28 @@ test('MCP chat path is silent by default, manual-only needs no planner, automati
     await enabled(f);const s=f.api.scope(f.chat,'private');const result=await f.api.call('s','weather',{city:'上海'},{scope:s});f.api.queue(result,s);
     assert.match(await f.c.prepareMcpChatContext(f.chat,'private'),/晴天/);assert.equal(f.plannerRequests.length,0);
     assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');
+});
+test('OAuth same-grant token rotation preserves the current authorized automatic read',async()=>{
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].auth='oauth';next.services[0].oauth={clientId:'public'};next.policies[0].auto=true;await f.api.save(next);f.api.vault.set(f.api.service('s'),'old');
+    let rotated=false;f.c.window.MCPOAuth={access:async svc=>{if(!rotated){rotated=true;f.api.vault.renew(svc,'rotated');}return 'rotated';}};
+    planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});assert.match(await f.c.prepareMcpChatContext(f.chat,'private'),/晴天/);assert.equal(f.calls.length,1);
+});
+
+test('discovery started before OAuth rotation cannot overwrite the renewed connection', async () => {
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].auth='oauth';next.services[0].oauth={clientId:'public'};await f.api.save(next);
+    const svc=f.api.service('s');f.api.vault.set(svc,'old');f.c.window.MCPOAuth={access:async s=>f.api.vault.get(s)};
+    const original=f.c.window.MCPTransport.create;let release,used;
+    f.c.window.MCPTransport.create=(s,token)=>{
+        const client=original(s,token);
+        return {...client,listTools:()=>token==='old'?new Promise(resolve=>release=()=>client.listTools().then(resolve)):client.listTools(),
+            call:async()=>{used=token;return {content:[{type:'text',text:'fresh'}]};}};
+    };
+    const stale=f.api.discover('s');
+    const staleChecked=stale.then(()=>false,()=>true);
+    for(let i=0;!release&&i<20;i++)await new Promise(r=>setImmediate(r));assert.ok(release);
+    f.api.vault.renew(svc,'new');await f.api.discover('s');release();
+    assert.equal(await staleChecked,true,'old-token discovery must be discarded');
+    await f.api.call('s','weather',{city:'上海'});assert.equal(used,'new');
 });
 test('MCP planner is independent, bounded, grant-checked and records separate provider usage', async () => {
     const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;await f.api.save(next);
@@ -108,4 +172,53 @@ test('MCP header discovery ignores instance data while still validating real hea
     ]});f.api.clearRuntime();
     const tools=await f.api.discover('s');assert.equal(tools[0].unavailable,'');assert.ok(tools[1].unavailable);assert.equal(tools[2].unavailable,'');
     assert.equal(tools[2].headers[0].name,'X-Trace');
+});
+
+test('MCP retains healthy authorized tools when another service discovery fails', async () => {
+    const f=fixture(); await enabled(f); const next=f.api.settings();
+    next.services.unshift({...next.services[0],id:'broken',auth:'none'});
+    next.policies[0].grants.push({serviceId:'broken',toolName:'weather'}); await f.api.save(next);
+    const original=f.c.window.MCPTransport.create;
+    f.c.window.MCPTransport.create=(cfg,...rest)=>cfg.id==='broken'?{listTools:async()=>{throw Error('offline');}}:original(cfg,...rest);
+    const tools=await f.api.authorized(f.api.scope(f.chat));
+    assert.equal(tools.length,1); assert.equal(tools[0].serviceId,'s');
+    assert.ok(f.api.logs().some(x=>x.serviceId==='broken'&&x.stage==='discovery'));
+});
+
+test('MCP bounds external context without breaking JSON or splitting escaped text', () => {
+    const f=fixture(); const text=f.api.context([{serviceId:'s',toolName:'weather',at:0,text:'"\\\n天气'.repeat(2000)}],1000);
+    const json=JSON.parse(text.slice(text.indexOf('\n[')+1));
+    assert.equal(json[0].service,'s'); assert.equal(json[0].truncated,true);
+    assert.ok(text.slice(text.indexOf('\n[')+1).length<=1000);
+});
+
+test('MCP outputSchema is validated and changes invalidate prior grants', async () => {
+    const f=fixture(); let schema={type:'object',required:['temperature'],properties:{temperature:{type:'number'}}};
+    f.c.window.MCPTransport.create=()=>({listTools:async()=>[{name:'weather',inputSchema:{type:'object'},outputSchema:schema}],call:async()=>({structuredContent:{temperature:'invalid'}})});
+    await enabled(f);
+    await assert.rejects(f.api.call('s','weather',{}),/输出|结果.*结构/);
+    const first=(await f.api.discover('s'))[0].signature;
+    schema={type:'object',required:['forecast'],properties:{forecast:{type:'string'}}};
+    const updated=await f.api.discover('s',undefined,true); assert.notEqual(first,updated[0].signature);
+    await assert.rejects(f.api.call('s','weather',{}),/定义已变化|授权/);
+});
+
+test('MCP canonical argument cache reuses key order but isolates chat and archive', async () => {
+    const f=fixture(); await enabled(f); const s=f.api.scope(f.chat);
+    await f.api.call('s','weather',{city:'上海',unit:'c'},{scope:s}).catch(()=>{});
+    // The existing weather schema forbids extra fields; enable an object schema for this fixture.
+    const original=f.c.window.MCPTransport.create;
+    f.c.window.MCPTransport.create=(...args)=>({...original(...args),listTools:async()=>[{name:'weather',inputSchema:{type:'object'}}]});
+    f.api.clearRuntime(); const tools=await f.api.discover('s');const next=f.api.settings();next.services[0].tools.weather.signature=tools[0].signature; await f.api.save(next);
+    await f.api.call('s','weather',{city:'上海',unit:'c'},{scope:s});
+    await f.api.call('s','weather',{unit:'c',city:'上海'},{scope:s});assert.equal(f.calls.length,1);
+    f.chat.activeArchiveId='two';await f.api.call('s','weather',{unit:'c',city:'上海'},{scope:f.api.scope(f.chat)});assert.equal(f.calls.length,2);
+});
+
+test('MCP automatic tool failure preserves successful result from same plan', async () => {
+    const f=fixture(); await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={maxCalls:2};await f.api.save(next);
+    planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'坏城市'}},{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});
+    const original=f.c.window.MCPTransport.create;
+    f.c.window.MCPTransport.create=(...a)=>({...original(...a),call:async(name,args)=>{if(args.city==='坏城市')throw Error('offline');return {content:[{type:'text',text:'上海晴天'}]};}});
+    f.api.clearRuntime(); assert.match(await f.c.prepareMcpChatContext(f.chat),/上海晴天/);
 });

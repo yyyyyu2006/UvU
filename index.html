@@ -2977,18 +2977,21 @@ node setup-server-plugin.js</code></pre>
     <script src="js/modules/chat_ai_call.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/notifications.js?v=20261106-feature-audit"></script>
     <script src="js/modules/chat_ai.js?v=20261106-documents"></script>
-<script src="js/modules/voice_director.js?v=20261106-feature-audit"></script>
+<script src="js/modules/minimax_speech.js?v=20261107-refinement"></script>
+<script src="js/modules/voice_director.js?v=20261107-refinement"></script>
 <script src="js/modules/chat_image_generation.js?v=20261106-feature-audit"></script>
-<script src="js/modules/chat_features.js?v=20261106-feature-audit"></script>
+<script src="js/modules/chat_features.js?v=20261107-refinement"></script>
 <script src="js/modules/chat_ops.js?v=20261106-audit-repairs"></script>
 <script src="js/modules/message_forward.js?v=20261104-derived-features"></script>
 <script src="js/modules/character_avatar.js?v=20261107-layout-compact"></script>
-<link rel="stylesheet" href="css/modules/mcp.css?v=20261105-mcp-center">
+<link rel="stylesheet" href="css/modules/mcp.css?v=20261107-refinement">
 <script src="js/vendor/mcp_schema.js?v=8.17.1-3.0.1"></script>
-<script src="js/modules/mcp_transport.js?v=20261105-mcp-center"></script>
-<script src="js/modules/mcp_services.js?v=20261106-feature-audit"></script>
-<script src="js/modules/mcp_chat.js?v=20261106-feature-audit"></script>
-<script src="js/modules/mcp_ui.js?v=20261107-panel-system"></script>
+<script src="js/modules/mcp_transport.js?v=20261107-refinement"></script>
+<script src="js/modules/mcp_oauth.js?v=20261107-refinement"></script>
+<script src="js/modules/mcp_forms.js?v=20261107-refinement"></script>
+<script src="js/modules/mcp_services.js?v=20261107-refinement"></script>
+<script src="js/modules/mcp_chat.js?v=20261107-refinement"></script>
+<script src="js/modules/mcp_ui.js?v=20261107-refinement"></script>
 <script src="js/modules/environment.js?v=20261105-mcp-center"></script>
 <script src="js/modules/environment_ui.js?v=20261107-panel-system-2"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261105-chat-image-generation">
@@ -3003,7 +3006,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/settings_chat.js?v=20261105-audit-repairs"></script> <!-- 聊天设置与管理 -->
 <script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/model_picker.js?v=20261106-model-picker"></script>
-<script src="js/modules/settings_api.js?v=20261106-model-picker"></script> <!-- API 设置与预设 -->
+<script src="js/modules/settings_api.js?v=20261107-refinement"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261104-global-css-token-toolbar"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js?v=20261106-feature-audit"></script> <!-- 主页预设导入导出 -->
@@ -3096,15 +3099,17 @@ node setup-server-plugin.js</code></pre>
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261103-documents"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/auto_memory.js?v=20261106-feature-audit"></script>
+<script src="js/modules/vector_index_store.js?v=20261107-refinement"></script>
+<script src="js/modules/vector_memory_tools.js?v=20261107-refinement"></script>
+<script src="js/modules/auto_memory.js?v=20261107-refinement"></script>
 <script src="js/modules/bridge_text.js?v=20261106-feature-audit"></script>
 <script src="js/modules/bridge_summary.js?v=20261106-feature-audit"></script>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
 <script src="js/modules/story_bridge.js?v=20261106-feature-audit"></script>
-<script src="js/modules/memory_library.js?v=20261107-panel-system"></script>
+<script src="js/modules/memory_library.js?v=20261107-refinement"></script>
 <script src="js/modules/storage_html.js?v=20261106-feature-audit"></script> <!-- 存储空间HTML注入 -->
-<script src="js/modules/storage.js?v=20261106-documents"></script>
-<script src="js/modules/storage_features.js?v=20261106-feature-audit"></script>   <!-- 存储空间分析图表 -->
+<script src="js/modules/storage.js?v=20261107-refinement"></script>
+<script src="js/modules/storage_features.js?v=20261107-refinement"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->
 <script src="js/modules/tutorial.js"></script>  <!-- 教程、更新日志、GitHub备份 -->
@@ -3133,11 +3138,13 @@ node setup-server-plugin.js</code></pre>
 
 <!-- [4. 程序入口] -->
 <link rel="stylesheet" href="css/modules/notification_preferences.css?v=20261106-feature-audit">
+<link rel="stylesheet" href="css/modules/vector_memory.css?v=20261107-refinement">
+<link rel="stylesheet" href="css/modules/minimax_speech.css?v=20261107-refinement">
 <link rel="stylesheet" href="css/modules/feature_refinements.css?v=20261106-feature-audit">
 <link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261107-panel-system-2">
 <link rel="stylesheet" href="css/modules/panel_layout.css?v=20261107-layout-compact">
 <script src="js/modules/feature_dialogs.js?v=20261106-feature-audit"></script>
-<script src="js/modules/panel_layout.js?v=20261107-layout-compact"></script>
+<script src="js/modules/panel_layout.js?v=20261107-refinement"></script>
 <script src="js/main.js?v=20261106-documents"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

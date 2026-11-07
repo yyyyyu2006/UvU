@@ -661,6 +661,12 @@ function storageValidateModules(modules) {
         for (const key of ['statusPanel', 'autoMemorySettings', 'vectorMemorySettings', 'friendRelationship', 'avatarAutonomy', 'environmentProfile', 'privateSessions', 'gossipSessions', 'peekData']) {
             if (item[key] !== undefined && item[key] !== null) object(item[key], path + '.' + key);
         }
+        if (item.autoMemorySettings) {
+            const value = item.autoMemorySettings, prefix = path + '.autoMemorySettings.';
+            for (const key of ['vectorStableSources', 'vectorRetrievalOnly', 'vectorQueryCache', 'vectorHybridEnabled', 'vectorDeduplicateSources', 'vectorRewriteEnabled', 'vectorRerankThresholdEnabled', 'vectorTokenBudgetEnabled', 'vectorExternalIndex', 'vectorChunkTokenBudgetEnabled']) optional(value[key], prefix + key, 'boolean');
+            for (const key of ['vectorBodyTags', 'vectorExcludeTags']) optional(value[key], prefix + key, 'string');
+            for (const key of ['vectorChunkSize', 'vectorChunkOverlap', 'vectorChunkMaxTokens', 'vectorBatchMaxTokens', 'vectorContextMaxTokens', 'vectorRerankThreshold']) optional(value[key], prefix + key, 'number');
+        }
         if (item.friendRelationship) {
             const relationship = item.friendRelationship, prefix = path + '.friendRelationship';
             optional(relationship.revision, prefix + '.revision', 'number');
@@ -743,6 +749,7 @@ function storageValidateModules(modules) {
     for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
     }
+    if (modules.vectorMemoryApiSettings) for (const key of ['rewriteUrl', 'rewriteKey', 'rewriteModel']) optional(modules.vectorMemoryApiSettings[key], 'vectorMemoryApiSettings.' + key, 'string');
     if (modules.minimaxTtsSettings !== undefined) {
         const settings = modules.minimaxTtsSettings;
         for (const key of ['endpoint', 'apiKey', 'groupId', 'model', 'voiceId']) optional(settings[key], 'minimaxTtsSettings.' + key, 'string');
@@ -752,6 +759,31 @@ function storageValidateModules(modules) {
             optional(settings.director.enabled, 'minimaxTtsSettings.director.enabled', 'boolean');
             for (const key of ['provider', 'endpoint', 'apiKey', 'model', 'prompt']) optional(settings.director[key], 'minimaxTtsSettings.director.' + key, 'string');
             for (const key of ['contextMessages', 'timeoutSec']) optional(settings.director[key], 'minimaxTtsSettings.director.' + key, 'number');
+        }
+        const stringList = (value, path, count, length, dictionary = false) => {
+            if (value === undefined) return;
+            if (!Array.isArray(value) || value.length > count || value.some(x => typeof x !== 'string' || x.length > length || dictionary && !/^[^<>\r\n/]{1,60}\/[^<>\r\n]{1,100}$/.test(x))) fail(path, '有效文本列表');
+        };
+        stringList(settings.pronunciation, 'minimaxTtsSettings.pronunciation', 100, 160, true);
+        if (settings.speech !== undefined) {
+            const value = settings.speech, prefix = 'minimaxTtsSettings.speech.'; object(value, 'minimaxTtsSettings.speech');
+            for (const key of ['stream', 'segmented', 'persistentCache']) optional(value[key], prefix + key, 'boolean');
+            optional(value.language, prefix + 'language', 'string');
+            for (const [key, min, max] of [['cacheMiB', 8, 128], ['cacheDays', 1, 30], ['segmentChars', 300, 2500], ['volume', 0, 10]]) {
+                optional(value[key], prefix + key, 'number');
+                if (value[key] !== undefined && (value[key] < min || value[key] > max)) fail(prefix + key, `${min}–${max} 范围内数字`);
+            }
+            stringList(value.favoriteVoices, prefix + 'favoriteVoices', 200, 200);
+        }
+        if (settings.profiles !== undefined) {
+            object(settings.profiles, 'minimaxTtsSettings.profiles');
+            for (const [id, value] of Object.entries(settings.profiles)) {
+                const prefix = 'minimaxTtsSettings.profiles.' + id; object(value, prefix);
+                for (const key of ['voiceId', 'directorMode', 'style']) optional(value[key], prefix + '.' + key, 'string');
+                if (value.directorMode !== undefined && !['inherit', 'off'].includes(value.directorMode)) fail(prefix + '.directorMode', '有效导演模式');
+                if (value.style !== undefined && !['', 'natural', 'restrained', 'expressive'].includes(value.style)) fail(prefix + '.style', '有效表达风格');
+                stringList(value.dictionary, prefix + '.dictionary', 100, 160, true);
+            }
         }
     }
     if (modules.mcpSettings !== undefined) {
@@ -1026,6 +1058,7 @@ async function handleExport() {
 
             exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
             exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
+            if (exportSelection.chats && exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined') await VectorMemoryTools.portableExport(exportData.modules);
         }
 
         // 2. Worldbooks

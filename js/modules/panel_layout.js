@@ -125,6 +125,7 @@
             [enable, embedding, retrieval, ranking].forEach((section, index) => {
                 if (section) { section.dataset.vectorSection = ['enable', 'embedding', 'retrieval', 'rerank'][index]; vector.append(section); }
             });
+            const refinements = q(vector, '.vector-refinements'); if (refinements) vector.append(refinements);
             // Keep the API controls in their existing details/form and retain callbacks.
             vectorApi.classList.add('panel-disclosure');
             const apiActions = make('div', 'panel-vector-api-actions');
@@ -285,7 +286,7 @@
                 button.closest('.app-header,.panel-segment,.model-picker-list,.environment-calendar')) continue;
             button.classList.add('panel-compact-action');
         }
-        if (root.classList.contains('mcp-settings')) {
+        if (root.classList.contains('mcp-settings') && root.closest('#mcp-services')) {
             const row = q(root, '.mcp-body > section:not(.panel-mcp-global) > .mcp-row');
             if (row && row.querySelectorAll(':scope > button').length === 4) {
                 row.classList.add('panel-mcp-service-actions');

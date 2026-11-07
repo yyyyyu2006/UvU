@@ -94,6 +94,19 @@ const VoiceDirector = (() => {
         return String(chat.minimaxTtsVoiceId || '').trim();
     }
 
+    function roleFor(bubble) {
+        const binding = bindings.get(bubble);
+        if (!binding) return null;
+        voiceIdFor(bubble); // Validate the original chat/archive before resolving a profile.
+        if (binding.type !== 'group') return binding.chat;
+        const member = binding.chat.members?.find(item => item.id === binding.message.senderId);
+        return member?.originalCharId ? db.characters?.find(item => item.id === member.originalCharId) || null : null;
+    }
+
+    function identity(bubble, text) {
+        return capture(bubble, text, { enabled: true, contextMessages: 0 });
+    }
+
     function payloadFor(binding, text, count) {
         if (!binding) return { character: null, messages: [], line: text };
         const { chat, message, type, archiveId, content } = binding;
@@ -147,6 +160,7 @@ const VoiceDirector = (() => {
         const speedMultiplier = typeof value.speedMultiplier === 'number' && value.speedMultiplier >= 0.8 && value.speedMultiplier <= 1.2
             ? value.speedMultiplier : 1;
         const inserts = [], positions = new Set();
+        let pauseSeconds = 0;
         for (const pause of (Array.isArray(value.pauses) ? value.pauses.slice(0, 6) : [])) {
             if (!pause || typeof pause.after !== 'string' || !pause.after.length || pause.after.length > 120 ||
                 !/[，。！？；：、,.!?;:]$/.test(pause.after) || typeof pause.seconds !== 'number' ||
@@ -154,6 +168,8 @@ const VoiceDirector = (() => {
             const index = text.indexOf(pause.after), position = index + pause.after.length;
             if (index < 0 || text.lastIndexOf(pause.after) !== index || position >= text.length || positions.has(position)) continue;
             if (!text.slice(position).trim()) continue;
+            if (pauseSeconds + pause.seconds > 4.5) continue;
+            pauseSeconds += pause.seconds;
             positions.add(position);
             inserts.push({ position, seconds: Math.round(pause.seconds * 100) / 100 });
         }
@@ -161,7 +177,7 @@ const VoiceDirector = (() => {
         for (const item of inserts.sort((a, b) => b.position - a.position)) {
             spoken = spoken.slice(0, item.position) + `<#${item.seconds}#>` + spoken.slice(item.position);
         }
-        return { text: spoken, emotion: emotions.has(value.emotion) ? value.emotion : '', speedMultiplier, pauseCount: inserts.length };
+        return { text: spoken, emotion: emotions.has(value.emotion) ? value.emotion : '', speedMultiplier, pauseCount: inserts.length, pauseSeconds: Math.round(pauseSeconds * 100) / 100 };
     }
 
     function request(config, payload) {
@@ -186,13 +202,25 @@ const VoiceDirector = (() => {
                 messages: [{ role: 'system', content: instruction }, { role: 'user', content: input }] } };
     }
 
+    function invalidate(value, source) {
+        plans.delete(JSON.stringify([settings(value), source?.key || source?.text || '']));
+    }
+
+    function usage(data, provider) {
+        const info = provider === 'gemini' ? data.usageMetadata || {} : data.usage || {};
+        const safe = v => Number.isFinite(v) && v >= 0 ? v : null;
+        return { inputTokens: safe(provider === 'gemini' ? info.promptTokenCount : info.prompt_tokens),
+            outputTokens: safe(provider === 'gemini' ? info.candidatesTokenCount : info.completion_tokens),
+            totalTokens: safe(provider === 'gemini' ? info.totalTokenCount : info.total_tokens) };
+    }
+
     async function prepare(text, value, source, signal) {
         const config = settings(value), fallback = { text, emotion: '', speedMultiplier: 1 };
         if (!config.enabled) return fallback;
         if (signal?.aborted || !isCurrent(source)) throw aborted();
         if (source?.warning) return { ...fallback, warning: source.warning + '；本次使用普通语音' };
         const key = JSON.stringify([config, source?.key || text]);
-        if (plans.has(key)) return { ...plans.get(key), ...(source?.warning ? { warning: source.warning } : {}) };
+        if (plans.has(key)) return { ...plans.get(key), cacheHit: true, ...(source?.warning ? { warning: source.warning } : {}) };
         const controller = new AbortController();
         const cancel = () => controller.abort();
         signal?.addEventListener('abort', cancel, { once: true });
@@ -202,7 +230,8 @@ const VoiceDirector = (() => {
             const { endpoint, headers, body } = request(config, source?.payload || { character: null, messages: [], line: text });
             const response = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
             if (!response.ok) throw new Error(`导演 API HTTP ${response.status}`);
-            const data = await response.json();
+            const helper = typeof window !== 'undefined' && window.MiniMaxSpeech;
+            const data = helper ? await helper.readResponse(response, controller.signal, null, 1048576) : await response.json();
             if (signal?.aborted || !isCurrent(source)) throw aborted();
             if (timedOut) throw new Error('导演 API 超时');
             let output = config.provider === 'gemini'
@@ -210,7 +239,7 @@ const VoiceDirector = (() => {
                 : data.choices?.[0]?.message?.content;
             if (typeof output !== 'string' || output.length > 12000) throw new Error('导演未返回有效语气参数');
             output = output.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-            const result = controls(text, JSON.parse(output));
+            const result = { ...controls(text, JSON.parse(output)), usage: usage(data, config.provider), cacheHit: false };
             plans.set(key, result);
             while (plans.size > 32) plans.delete(plans.keys().next().value);
             return { ...result, ...(source?.warning ? { warning: source.warning } : {}) };
@@ -251,5 +280,5 @@ const VoiceDirector = (() => {
         field('enabled').addEventListener('change', toggle);
     }
 
-    return { settings, bind, voiceIdFor, capture, isCurrent, prepare, fromForm, setupSettings };
+    return { settings, bind, voiceIdFor, roleFor, identity, capture, isCurrent, prepare, invalidate, fromForm, setupSettings };
 })();

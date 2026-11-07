@@ -78,6 +78,15 @@ test('share backups redact standalone memory and vector service credentials too'
  c.db.memoryApiSettings={url:'https://memory.test',key:'LOCAL-MEMORY'};
  assert.equal(c.storageResolveImportOptions(out,{credentialMode:'preserve'}).memoryApiSettings.key,'LOCAL-MEMORY');
 });
+
+test('query rewrite credentials redact and only restore for identical rewrite endpoint',()=>{
+ const c=fixture();c.db.vectorMemoryApiSettings={url:'https://embed.test',key:'LOCAL',rewriteUrl:'https://rewrite.test',rewriteKey:'PRIVATE'};
+ const incoming=c.storageApplyExportOptions({vectorMemoryApiSettings:{url:'https://embed.test',key:'REMOTE',rewriteUrl:'https://other.test',rewriteKey:'REMOTE-SECRET'}},{includeCredentials:false});
+ assert.equal(incoming.vectorMemoryApiSettings.rewriteKey,'');
+ assert.equal(c.storageResolveImportOptions(incoming,{credentialMode:'preserve'}).vectorMemoryApiSettings.rewriteKey,'');
+ incoming.vectorMemoryApiSettings.rewriteUrl='https://rewrite.test';
+ assert.equal(c.storageResolveImportOptions(incoming,{credentialMode:'preserve'}).vectorMemoryApiSettings.rewriteKey,'PRIVATE');
+});
 test('workshop compatibility keys are redacted and preserved only at their own unchanged provider endpoints',()=>{
  const c=fixture();c.db.workshopSettings={gptApiUrl:'https://gpt.local',gptApiKey:'LOCAL-GPT',novelaiApiUrl:'https://nai.local',novelaiApiKey:'LOCAL-NAI'};
  const source={workshopSettings:{gptApiUrl:'https://gpt.local',gptApiKey:'FOREIGN-GPT',novelaiApiUrl:'https://nai.other',novelaiApiKey:'FOREIGN-NAI'}};

@@ -1,0 +1,26 @@
+.minimax-speech-advanced { display: grid; gap: 16px; min-width: 0; margin-block: 16px; }
+.minimax-speech-advanced > details { background: #fff; border: 1px solid #ededf0; border-radius: 20px; padding: 16px; min-width: 0; }
+.minimax-speech-advanced summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.minimax-speech-advanced details[open] > :not(summary) { margin-top: 12px; }
+.minimax-speech-profile { display: grid; gap: 12px; }
+.minimax-speech-profile[hidden] { display: none; }
+.minimax-speech-advanced input[type=checkbox] { width: 16px; height: 16px; margin: 0 0 0 8px; vertical-align: middle; }
+.minimax-speech-note { font-size: 12px; line-height: 1.5; color: #687080; margin: 0; overflow-wrap: anywhere; }
+.minimax-voice-list { display: grid; gap: 8px; max-height: 280px; overflow-y: auto; }
+.minimax-voice-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.minimax-speech-advanced .minimax-voice-row button { min-width: 0; padding: 6px 10px; font-size: 12px; border-radius: 999px; flex: 0 0 auto; }
+.minimax-speech-advanced .minimax-voice-row button:first-child { flex: 1 1 auto; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.minimax-speech-advanced .btn { min-height: 30px; padding: 6px 12px; font-size: 12px; border-radius: 999px; }
+.minimax-message-diagnostic { margin: 4px 0 8px; max-width: 290px; font-size: 12px; color: #687080; }
+.minimax-message-diagnostic summary { cursor: pointer; }
+.minimax-message-diagnostic p { overflow-wrap: anywhere; line-height: 1.5; }
+.minimax-message-diagnostic .minimax-tts-actions { gap: 8px; }
+.minimax-message-diagnostic button { padding: 5px 10px; font-size: 12px; border: 1px solid #e8e9ed; border-radius: 999px; background: #fff; }
+
+.minimax-speech-advanced .minimax-speech-check { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.minimax-speech-advanced :is(select,textarea) { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; color: #30343b; }
+.minimax-speech-advanced textarea { resize: vertical; }
+.minimax-speech-advanced input[type=checkbox] { flex: 0 0 16px; padding: 0; }
+
+.minimax-message-diagnostic .minimax-manual-controls { display: grid; grid-template-columns: minmax(0,1fr) 58px auto; align-items: center; gap: 8px; margin-top: 8px; }
+.minimax-manual-controls :is(select,input) { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid #e8e9ed; border-radius: 10px; padding: 5px; font: inherit; color: #30343b; background: #fff; }
