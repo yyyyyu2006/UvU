@@ -51,6 +51,7 @@ const server = http.createServer((req,res) => {
         },base);
         assert.equal(await page.locator('[data-id="app-uvu-music"]').count(),1); assert.equal(await page.locator('[data-id="app-placeholder"] [data-target="uvu-story-bridge-screen"]').count(),1);
         await page.evaluate(()=>UvUMusicUI.open());
+        assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)','music has a white surface');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.parentElement.className),'phone-screen');
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
         await page.getByRole('searchbox',{name:'搜索音乐'}).fill('秋日');await page.getByRole('searchbox',{name:'搜索音乐'}).press('Enter');
@@ -61,7 +62,10 @@ const server = http.createServer((req,res) => {
         assert.equal(await page.locator('.um-mini-open').count(),1,'replaying same song after stop rebuilds mini controls');
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.waitForSelector('.um-artwork');
         await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'player-390.png')});
-        await page.getByRole('button',{name:'歌词',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('给你写'));await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.getByRole('button',{name:'歌词',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('给你写'));
+        assert.doesNotMatch(await page.locator('.um-lyrics').innerText(),/\[\d{1,3}:\d{2}/,'lyric timestamps stay out of the reading card');
+        assert.equal(await page.locator('.um-lyrics').evaluate(n=>getComputedStyle(n).textAlign),'center');
+        await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'lyrics-white-390.png')});await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'播放队列',exact:true}).click();assert.equal(await page.locator('.um-queue-title').count(),2);await page.getByRole('button',{name:'关闭',exact:true}).click();
         // Captured private-chat destination, music card and explicit invitation acceptance.
         await page.evaluate(()=>{openChatRoom('music-char','private'); document.getElementById('share-music-btn').click();});
@@ -76,8 +80,39 @@ const server = http.createServer((req,res) => {
             await handleAiReplyContent(raw,chat,chat.id,'private',false,undefined,sources,plan);
             return{status:chat.history.find(m=>m.music)?.music.invitation.status,returned:chat.history.findLast(m=>m.type==='document')?.document.text,literal};
         });assert.equal(decision.status,'accepted');assert.equal(decision.returned,decision.literal,'file body protocol examples remain literal content');
+        await page.waitForSelector('.um-together-float:not([hidden])');
+        assert.match(await page.locator('.um-together-float').innerText(),/一起听/);
+        await page.waitForTimeout(650);await page.screenshot({path:path.join(out,'together-white-390.png')});
+        for(const width of [320,390]) { await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-together-float').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'together indicator fits '+width); }
+        assert.ok(await page.locator('.um-together-float').evaluate(n=>n.getBoundingClientRect().top>=document.getElementById('chat-room-header-default').getBoundingClientRect().bottom-1),'together indicator stays below original header');
+        await page.locator('.um-together-float [aria-label="暂停一起听"]').click();
+        await page.waitForFunction(()=>!UvUMusic.player.snapshot().playing);
+        assert.match(await page.locator('.um-together-float').innerText(),/已暂停/);
+        await page.locator('.um-together-float [aria-label="继续一起听"]').click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing);
+        await page.locator('.um-together-float [aria-label="打开一起听播放器"]').click();await page.waitForSelector('.um-artwork');await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.evaluate(()=>{currentChatId='different-char';document.getElementById('chat-room-title').textContent='别的角色';});
+        await page.waitForFunction(()=>document.querySelector('.um-together-float')?.hidden);
+        await page.evaluate(()=>openChatRoom('music-char','private'));await page.waitForSelector('.um-together-float:not([hidden])');
+        await page.evaluate(()=>document.getElementById('chat-room-screen').classList.add('multi-select-active'));await page.waitForFunction(()=>document.querySelector('.um-together-float').hidden);
+        await page.evaluate(()=>document.getElementById('chat-room-screen').classList.remove('multi-select-active'));await page.waitForSelector('.um-together-float:not([hidden])');
+        await page.locator('.um-together-float [aria-label="暂停一起听"]').click();
+        await page.evaluate(()=>{window.musicTestArchive=db.characters[0].activeArchiveId;db.characters[0].activeArchiveId='other-archive';document.getElementById('chat-room-title').textContent='其他存档';});
+        await page.waitForFunction(()=>document.querySelector('.um-together-float').hidden);
+        await page.evaluate(async()=>{const chat=db.characters[0];chat.activeArchiveId=window.musicTestArchive;const message=chat.history.find(m=>m.music?.invitation);await UvUMusicChat.listen(message.music.track,{chat,message});});
+        await page.waitForSelector('.um-together-float:not([hidden])');
         await page.evaluate(()=>UvUMusicUI.open());await page.locator('#uvu-music-screen [data-um-tab="home"]').click();
         assert.match(await page.locator('.um-main').innerText(),/与林间一起听/);
+        const beforeMenu = await page.evaluate(()=>UvUMusic.player.snapshot().track.id);
+        assert.ok(await page.locator('.um-artwork-shelf [aria-label="更多 · 秋日来信 1"]').count(),'recent artwork keeps its song menu');
+        await page.locator('.um-artwork-shelf [aria-label="更多 · 秋日来信 1"]').click();
+        await page.getByRole('button',{name:'播放下一首',exact:true}).waitFor();
+        assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().track.id),beforeMenu,'opening a recent-song menu does not replace playback');
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.waitForTimeout(350);await page.screenshot({path:path.join(out,'home-white-390.png')});
+        await page.evaluate(()=>openChatRoom('music-char','private'));await page.waitForSelector('.um-together-float:not([hidden])');
+        await page.locator('.um-together-float [aria-label="结束一起听"]').click();await page.waitForFunction(()=>document.querySelector('.um-together-float').hidden);
+        assert.equal(await page.evaluate(()=>db.characters[0].history.find(m=>m.music?.invitation).music.invitation.status),'ended','indicator end saves the existing invitation state');
+        await page.evaluate(()=>UvUMusicUI.open());
         await page.evaluate(()=>UvUMusic.player.stop());
         assert.doesNotMatch(await page.locator('.um-main').innerText(),/与林间一起听/,'stop clears home listening status');
         await page.evaluate(()=>openChatRoom('music-char','private'));await page.waitForSelector('.uvu-music-card');await page.waitForTimeout(350);await page.screenshot({path:path.join(out,'card-390.png')});
@@ -88,6 +123,7 @@ const server = http.createServer((req,res) => {
         // Actual IndexedDB local import + HTMLAudio decode/play, not an Audio stub.
         await page.locator('#um-local-files').setInputFiles({name:'本地测试.wav',mimeType:'audio/wav',buffer:wav});await page.waitForFunction(()=>UvUMusic.library().favorites.length===1);
         await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
+        await page.evaluate(async()=>{const list=await UvUMusic.addPlaylist('晚风与来信');await UvUMusic.addToPlaylist(list.id,UvUMusic.library().favorites[0]);UvUMusicUI.open();});
         for(const width of [320,390,768]){
             await page.setViewportSize({width,height:844});await page.evaluate(()=>UvUMusicUI.open());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();
             const issues=await page.evaluate(()=>{const screen=document.getElementById('uvu-music-screen'),box=screen.getBoundingClientRect();return[...screen.querySelectorAll('button,input,.um-section')].filter(n=>n.getClientRects().length&& !n.hidden).filter(n=>{const r=n.getBoundingClientRect();return r.left<box.left-1||r.right>box.right+1;}).map(n=>n.outerHTML.slice(0,180));});assert.deepEqual(issues,[],'music controls fit '+width);
