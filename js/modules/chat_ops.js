@@ -1469,7 +1469,7 @@ function recalculateChatStatus(chat) {
     for (let i = chat.history.length - 1; i >= 0; i--) {
         const msg = chat.history[i];
         // 忽略被撤回的消息
-        if (msg.isWithdrawn) continue;
+        if (msg.isWithdrawn || msg.type === 'calendar') continue;
 
         const match = msg.content.match(updateStatusRegex);
         if (match) {

@@ -10,6 +10,8 @@
 .um-hero { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 0 24px; }
 .um-hero>span { color:var(--um-gray); font-size:10px; letter-spacing:1.6px; }
 .um-hero h1 { font-size:34px; letter-spacing:-1.2px; line-height:1.2; margin:0; font-weight:700; }
+.um-hero h1 .um-home-title { appearance:none; background:none; border:0; padding:4px 0; margin:0; color:inherit; font:inherit; letter-spacing:inherit; line-height:inherit; cursor:pointer; text-align:left; }
+.um-hero h1 .um-home-title:focus-visible { outline:2px solid #afc5dd; outline-offset:4px; border-radius:8px; }
 .um-hero-tools,.um-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .um-button { appearance:none; border:1px solid #e7ebe8; border-radius:999px; background:#fff; color:inherit; min-height:36px; padding:7px 16px; font:inherit; font-size:13px; cursor:pointer; display:inline-flex; justify-content:center; align-items:center; gap:8px; max-width:100%; }
 .um-button:disabled { opacity:.5; cursor:wait; }

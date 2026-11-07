@@ -262,6 +262,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (mcpContext) systemPrompt += mcpContext;
         if (documentPlan.instructions) systemPrompt += documentPlan.instructions;
         if (musicPlan?.instructions) systemPrompt += musicPlan.instructions;
+        // Explicit calendar grants only; disabled path appends an empty string.
+        if (chatType === 'private' && typeof window !== 'undefined' && window.UvUCalendar) {
+            try { systemPrompt += window.UvUCalendar.context(chat); }
+            catch (_) { console.warn('Calendar reference unavailable; continuing ordinary reply'); }
+        }
 
         const lastContextMessage = historySlice[historySlice.length - 1];
         // 检查系统提示词中是否包含聊天记录占位符
@@ -741,6 +746,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         chatGenerationRequests.delete(generationRequest);
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
+        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof window !== 'undefined' && window.UvUCalendarAI) {
+            window.UvUCalendarAI.afterReply(chat).catch(() => console.warn('Optional calendar planning did not change the reply'));
+        }
         if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterAvatar === 'function') {
             checkCharacterAvatar(chat).catch(error => console.warn('Character avatar check failed:', error.message));
         }

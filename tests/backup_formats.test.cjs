@@ -144,3 +144,15 @@ test('1900 and current group-only members retain null original character links',
     assert.equal(modules.groups[0].members[0].originalCharId,null);
     modules.groups[0].members[0].originalCharId={bad:true};assert.throws(()=>f.c.storageValidateModules(modules),/originalCharId/);
 });
+
+
+test('calendar records export with settings and old backups preserve existing calendar', async () => {
+    const f=fixture(); for(const name of ['calendar_core.js','calendar_chat.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules',name),'utf8'),f.c);
+    const C=f.c.window.UvUCalendar;f.c.db.calendarData=C.state();f.c.db.calendarData.moods.push({id:'m',owner:'user',date:'2026-11-07',mood:'happy',color:'#171719',note:'test',at:10,source:'manual'});
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "settings");',f.c);
+    f.element('storage-export-format').value='json';await f.c.handleExport();const json=JSON.parse(await f.blobs[0].text());assert.equal(json.modules.calendarData.moods[0].note,'test');
+    assert.doesNotThrow(()=>f.c.storageValidateModules(json.modules));assert.equal(f.c.storagePrepareImport({settings:true},json.modules).calendarData.moods.length,1);
+    const before=JSON.stringify(f.c.db.calendarData);assert.equal(f.c.storagePrepareImport({settings:true},{apiSettings:{}}).calendarData,undefined);assert.equal(JSON.stringify(f.c.db.calendarData),before);
+    assert.throws(()=>f.c.storageValidateModules({calendarData:{...json.modules.calendarData,events:{}}}),/结构/);
+    const card={id:'c',role:'user',content:'日历分享',type:'calendar',calendar:{version:1,title:'日程',date:'2026-11-07',text:'散步'}};assert.doesNotThrow(()=>f.c.storageValidateModules({characters:[{id:'x',history:[card]}]}));card.calendar.date='2026-02-30';assert.throws(()=>f.c.storageValidateModules({characters:[{id:'x',history:[card]}]}),/日期/);
+});

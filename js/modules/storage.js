@@ -12,7 +12,7 @@ const STORAGE_CATEGORIES = [
 ];
 
 const STORAGE_IMPORT_SETTING_KEYS = [
-    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'mcpSettings', 'musicSettings', 'musicLibrary', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
+    'apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'calendarData', 'minimaxTtsSettings', 'mcpSettings', 'musicSettings', 'musicLibrary', 'apiPresets', 'cotSettings', 'cotPresets', 'homeScreenMode',
     'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'chatFolders', 'fontSizeScale', 'savedKeyboardHeight',
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
@@ -558,6 +558,10 @@ function storageValidateModules(modules) {
             if (typeof validateSharedDocument !== 'function') throw new Error('文件消息模块未加载，请刷新后导入');
             validateSharedDocument(item.document);
         }
+        if (item.type === 'calendar') {
+            if (!window.UvUCalendarChat) throw new Error('日历卡片模块未加载，请刷新后导入');
+            window.UvUCalendarChat.validate(item.calendar);
+        }
         if (item.type === 'music') {
             if (!window.UvUMusicChat) throw new Error('音乐消息模块未加载，请刷新后导入');
             window.UvUMusicChat.validatePayload(item.music);
@@ -802,6 +806,10 @@ function storageValidateModules(modules) {
         if (!window.UvUMusic) throw new Error('音乐模块未加载，请刷新后导入');
         for (const key of ['favorites', 'recent', 'queue']) list(modules.musicLibrary[key], 'musicLibrary.' + key, track => window.UvUMusic.normalizeTrack(track));
         list(modules.musicLibrary.playlists, 'musicLibrary.playlists', (item, path) => { optional(item.id, path + '.id', 'string'); optional(item.name, path + '.name', 'string'); list(item.tracks, path + '.tracks', track => window.UvUMusic.normalizeTrack(track)); });
+    }
+    if (modules.calendarData !== undefined) {
+        if (!window.UvUCalendar) throw new Error('日历模块未就绪，请刷新后重试');
+        window.UvUCalendar.validate(modules.calendarData);
     }
     if (modules.environmentSettings !== undefined) {
         const e = modules.environmentSettings;

@@ -176,6 +176,9 @@ function createBaseMessageBubbleElement(message, isContinuous = false) {
     if (message.type === 'music' && message.music && !message.isWithdrawn && window.UvUMusicChat) {
         try { return window.UvUMusicChat.createElement(message, chat, currentChatType, isContinuous); } catch (_) { /* Existing text fallback for damaged music cards. */ }
     }
+    if (message.type === 'calendar' && message.calendar && !message.isWithdrawn && window.UvUCalendarChat) {
+        try { return window.UvUCalendarChat.createElement(message, chat, currentChatType, isContinuous); } catch (_) { /* Damaged calendar cards retain the ordinary text fallback. */ }
+    }
     if (message.type === 'forwarded-chat' && message.forwardedChat && !message.isWithdrawn) {
         return createMessageForwardElement(message, chat, currentChatType, isContinuous);
     }

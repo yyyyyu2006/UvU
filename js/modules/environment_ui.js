@@ -174,6 +174,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
 }
 
 function openEnvironmentCalendar() {
+    if (window.UvUCalendarUI) return window.UvUCalendarUI.open();
     const controller = new AbortController(); let refreshController, timer;
     const dialog = createMessageForwardDialog('日历与天气', 'environment-calendar', () => { controller.abort(); refreshController?.abort(); clearInterval(timer); });
     dialog.panel.classList.add('derived-settings', 'environment-calendar');

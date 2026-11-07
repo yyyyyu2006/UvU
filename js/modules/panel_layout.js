@@ -254,6 +254,7 @@
         root.addEventListener('focusin', e => { if (search.contains(e.target)) find.open = true; });
     }
     function environment(root) {
+        if (root.classList.contains('uvu-calendar')) return;
         const body = q(root, '.derived-body'); if (!body) return;
         if (root.classList.contains('environment-calendar')) {
             const clock = q(body, '.environment-clock'), weather = clock?.nextElementSibling;

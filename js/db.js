@@ -165,7 +165,7 @@ const globalSettingKeys = [
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
     'workshopSettings', 'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder',
     'homeLayoutPages', 'widgetTemplates', 'addedWidgets', 'backupReminderSettings',
-    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'uvuStoryBridgeSettings', 'mcpSettings', 'musicSettings', 'musicLibrary'
+    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'calendarData', 'minimaxTtsSettings', 'uvuStoryBridgeSettings', 'mcpSettings', 'musicSettings', 'musicLibrary'
 ];
 
 

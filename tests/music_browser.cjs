@@ -69,6 +69,7 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'播放 秋日来信 1',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing);
         await page.evaluate(async()=>{const track=UvUMusic.player.snapshot().track;UvUMusic.player.stop();await UvUMusic.player.play(track);});
         assert.equal(await page.locator('.um-mini-open').count(),1,'replaying same song after stop rebuilds mini controls');
+        await page.locator('.um-home-title').click();assert.equal(await page.locator('#home-screen').evaluate(n=>n.classList.contains('active')),true,'title returns directly to phone desktop');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),true,'title navigation keeps audio playing');await page.evaluate(()=>UvUMusicUI.open());
         // Real HTMLAudio naturally emits pause before ended: prove automatic advance without synthetic events.
         await page.evaluate(async()=>{const a=UvUMusic.player.snapshot().track,b={...a,id:'2',title:'暮色',provider:'qq'};UvUMusic.player.setMode('order');await UvUMusic.player.play(a,[a,b],{label:'浏览器测试队列'});UvUMusic.player.seek(9.9);});
         await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='2'&&UvUMusic.player.snapshot().playing);

@@ -1,0 +1,104 @@
+/* Only the derived calendar, its editors, and calendar cards. */
+.uvu-calendar,.uvu-calendar-surface{--cal-ink:#19191c;--cal-gray:#f5f5f7;--cal-muted:#818188;--cal-blue:#eaf3fd;box-sizing:border-box;color:var(--cal-ink);background:#fff!important;font-size:14px;line-height:1.5}
+.uvu-calendar.message-forward-dialog{width:min(560px,calc(100vw - 24px))!important;max-width:560px!important;max-height:min(94dvh,1000px)!important;display:flex!important;flex-direction:column;overflow:hidden!important;border:0!important;border-radius:28px!important;padding:0!important;box-shadow:0 12px 48px #00000012!important}
+.uvu-calendar .message-forward-header{padding:20px 20px 8px;flex-shrink:0;border:0;align-items:center}
+.uvu-calendar .calendar-home{font-size:24px!important;font-weight:700!important;background:transparent!important;padding:4px 0!important;min-height:0!important;box-shadow:none!important;color:#171719!important}
+.uvu-calendar .calendar-body{overflow-y:auto;overscroll-behavior:contain;padding:8px 20px 24px;min-height:0;scrollbar-width:thin;display:flex;flex-direction:column;gap:16px}
+.uvu-calendar button,.uvu-calendar-surface button{width:auto;min-height:32px;padding:6px 12px;border:0;border-radius:999px;background:#f2f2f5;color:#242428;font:inherit;line-height:1.4;box-shadow:none;cursor:pointer;flex:none}
+.uvu-calendar button:focus-visible,.uvu-calendar-surface button:focus-visible{outline:2px solid #759bc9;outline-offset:3px}
+.uvu-calendar button:disabled,.uvu-calendar-surface button:disabled{opacity:.45;cursor:default}
+.uvu-calendar .calendar-topbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.uvu-calendar select,.uvu-calendar-surface select,.uvu-calendar-surface input,.uvu-calendar-surface textarea{box-sizing:border-box;width:100%;min-width:0;max-width:100%;padding:9px 12px;border:1px solid #e9e9ed;border-radius:12px;background:#f8f8fa;color:#202024;font:inherit}
+.uvu-calendar .calendar-topbar select{flex:1 1 140px;width:0;min-height:34px;border:0}
+.uvu-calendar .calendar-topbar button{padding:6px 10px;min-width:32px}
+.uvu-calendar .calendar-topbar .calendar-icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:7px!important}
+.uvu-calendar .calendar-icon-button svg{display:block;width:16px;height:16px}
+.uvu-calendar .calendar-clock{font-size:12px!important;color:#818188!important;white-space:normal!important;background:none!important;padding:0!important;border:0!important;box-shadow:none!important;margin:0!important}
+.uvu-calendar .calendar-weather{font-size:13px;margin:-10px 0 0;color:#5d6d7f;min-height:0}
+.uvu-calendar .calendar-weather:empty{display:none}
+.uvu-calendar .calendar-month-card{border-radius:24px;background:#fff;padding:0;border:0}
+.uvu-calendar .calendar-month-nav{display:flex;align-items:center;gap:8px;margin:0 0 20px}
+.uvu-calendar h2{font-size:20px;font-weight:650;letter-spacing:-.5px;margin:0 auto 0 0}
+.uvu-calendar h3{font-size:16px;font-weight:650;margin:0}
+.uvu-calendar h4{font-size:14px;margin:0 0 12px}
+.uvu-calendar .calendar-month-nav button{padding:4px 10px;min-width:30px;min-height:30px}
+.uvu-calendar .calendar-weekdays,.uvu-calendar .calendar-month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));column-gap:6px;text-align:center}
+.uvu-calendar .calendar-weekdays{font-size:12px;color:#97979e;margin-bottom:12px}
+.uvu-calendar .calendar-month{row-gap:12px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.uvu-calendar .calendar-month.is-range-mode{touch-action:none}
+.uvu-calendar .calendar-day{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;background:transparent!important;min-width:0!important;min-height:0!important;width:100%!important;margin:0!important;padding:0!important;border-radius:0!important;isolation:isolate}
+.uvu-calendar .calendar-face,.uvu-calendar .calendar-disc{position:relative;display:block;width:min(100%,40px);aspect-ratio:1;border-radius:50%;z-index:1}
+.uvu-calendar .calendar-face svg{display:block;width:100%;height:100%}
+.uvu-calendar .calendar-disc{background:#f5f5f7}
+.uvu-calendar .calendar-day-number{font-size:11px;color:#87878e;line-height:1.2;z-index:1}
+.uvu-calendar .calendar-day.is-selected .calendar-face,.uvu-calendar .calendar-day.is-selected .calendar-disc{outline:2px solid #b6cee9;outline-offset:2px}
+.uvu-calendar .calendar-day.is-today .calendar-day-number{font-weight:750;color:#2e67a5}
+.uvu-calendar .calendar-day.in-range:before{content:"";position:absolute;top:0;left:-3px;right:-3px;height:min(10vw,40px);background:#eaf3fd;z-index:0}
+.uvu-calendar .calendar-day.range-start.in-range:before{left:5px;border-radius:24px 0 0 24px}
+.uvu-calendar .calendar-day.range-end.in-range:before{right:5px;border-radius:0 24px 24px 0}
+.uvu-calendar .calendar-day.has-event .calendar-disc:after{content:"";position:absolute;width:5px;height:5px;background:#8caed4;border-radius:50%;left:calc(50% - 2.5px);top:calc(50% - 2.5px)}
+.uvu-calendar .calendar-day.has-period .calendar-disc{background:#eac3cb}
+.uvu-calendar .calendar-day.predicted-period .calendar-disc{background:#fbf2f4;border:1px dashed #d7abb5;box-sizing:border-box}
+.uvu-calendar .calendar-holiday{position:absolute;right:0;top:0;font-size:9px;line-height:1;color:#9c9296;z-index:2}
+.uvu-calendar .calendar-range-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#777780}
+.uvu-calendar .calendar-range-label{flex:1 1 120px;font-variant-numeric:tabular-nums}
+.uvu-calendar .calendar-range-bar button{font-size:12px;min-height:28px;padding:4px 9px}
+.uvu-calendar .calendar-range-bar [aria-pressed=true]{background:#eaf3fd;color:#42668d}
+.uvu-calendar .calendar-tabs{display:flex;gap:4px;padding:4px;border-radius:999px;background:#f5f5f7}
+.uvu-calendar .calendar-tabs button{flex:1;padding:7px 8px;background:transparent;font-size:13px}
+.uvu-calendar .calendar-tabs [aria-selected=true]{background:#fff;box-shadow:0 1px 5px #00000009}
+.uvu-calendar .calendar-detail{display:flex;flex-direction:column;gap:16px}
+.uvu-calendar .calendar-section-heading{display:flex;align-items:center;justify-content:space-between}
+.uvu-calendar .calendar-inline-actions,.uvu-calendar-surface .calendar-inline-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.uvu-calendar .calendar-inline-actions select{width:auto;flex:1 1 120px}
+.uvu-calendar .calendar-primary,.uvu-calendar-surface [type=submit]{background:#19191c!important;color:#fff!important}
+.uvu-calendar .calendar-timeline{display:flex;flex-direction:column;gap:16px}
+.uvu-calendar .calendar-timeline-row{display:grid;grid-template-columns:48px minmax(0,1fr);gap:12px;align-items:start}
+.uvu-calendar .calendar-timeline-row time{font-size:12px;color:#93939b;padding-top:14px;white-space:pre-line;font-variant-numeric:tabular-nums}
+.uvu-calendar .calendar-event-card{border-radius:20px;text-align:left;padding:14px 16px;border-left:3px solid var(--event-color);background:#f5f5f7;display:flex;flex-direction:column;gap:4px;white-space:normal;overflow-wrap:anywhere;min-width:0}
+.uvu-calendar .calendar-event-card strong{font-size:14px;font-weight:600}
+.uvu-calendar .calendar-event-card span{color:#93939b;font-size:12px}
+.uvu-calendar .calendar-event-card span:empty{display:none}
+.uvu-calendar .calendar-event-card p{margin:4px 0 0;font-size:14px;color:#66666e;white-space:pre-wrap}
+.uvu-calendar .calendar-empty-state{padding:20px 0;color:#a0a0a8;text-align:center;font-size:13px;margin:0}
+.uvu-calendar .calendar-mood-records{padding:16px;border-radius:24px;background:#f7f7f9}
+.uvu-calendar .calendar-mood-record{display:flex;gap:12px;align-items:center;width:100%;padding:8px 0;background:none;text-align:left;border-radius:0}
+.uvu-calendar .calendar-mood-record .calendar-face{width:32px;flex:none}
+.uvu-calendar .calendar-mood-record span:last-child{color:#8e8e96;font-size:12px;overflow-wrap:anywhere;min-width:0}
+.uvu-calendar .calendar-prediction{padding:20px;background:#fcf5f6;border-radius:24px;color:#86636c}
+.uvu-calendar .calendar-prediction p{margin:6px 0;font-size:14px}
+.uvu-calendar .calendar-prediction small{font-size:12px}
+.uvu-calendar .calendar-period-record{display:flex;flex-direction:column;gap:4px;text-align:left;padding:16px;border-radius:20px;background:#f7f7f9}
+.uvu-calendar .calendar-period-record span{font-size:12px;color:#98989f}
+.uvu-calendar .calendar-data-details{padding-top:8px;border-top:1px solid #f0f0f3;font-size:12px;color:#8e8e96}
+.uvu-calendar details summary,.uvu-calendar-surface details summary{cursor:pointer;font-size:13px;padding:8px 0}
+.uvu-calendar .calendar-feedback,.uvu-calendar-surface .calendar-feedback{font-size:12px;color:#71849a;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.uvu-calendar .calendar-feedback:empty,.uvu-calendar-surface .calendar-feedback:empty{display:none}
+.uvu-calendar .calendar-muted,.uvu-calendar-surface .calendar-muted{font-size:12px;color:#8d8d95;line-height:1.6;overflow-wrap:anywhere}
+.calendar-editor.message-forward-dialog{width:min(440px,calc(100vw - 24px));max-height:90dvh;padding:0!important;border:0;border-radius:28px;display:flex;flex-direction:column;overflow:hidden}
+.calendar-editor .message-forward-header{padding:20px 20px 12px;border:0;flex:none}
+.calendar-editor .calendar-editor-body{padding:4px 20px 20px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:16px}
+.calendar-editor .calendar-editor-fields{display:flex;flex-direction:column;gap:16px}
+.calendar-editor .calendar-fields-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.calendar-editor .calendar-field{display:flex;flex-direction:column;gap:6px;font-size:12px;color:#85858d;min-width:0}
+.calendar-editor input,.calendar-editor textarea,.calendar-editor select{font-size:14px}
+.calendar-editor input[type=color]{height:36px;padding:4px;width:64px}
+.calendar-editor .calendar-check{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:400}
+.calendar-editor .calendar-check input{width:16px;height:16px;padding:0;flex:none;accent-color:#45454a}
+.calendar-editor .calendar-editor-actions{display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:-20px;background:#fff;padding:12px 0}
+.calendar-editor .calendar-danger{color:#aa606b;background:#fbf1f3}
+.calendar-editor section{display:flex;flex-direction:column;gap:12px}
+.calendar-editor h3{font-size:15px;font-weight:650;margin:0 0 4px}
+.calendar-editor .calendar-mood-picker{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.calendar-editor .calendar-mood-picker button{background:transparent;padding:6px 0;display:flex;flex-direction:column;gap:6px;align-items:center;font-size:11px;border-radius:16px}
+.calendar-editor .calendar-mood-picker [aria-pressed=true]{background:#f0f3f7}
+.calendar-editor .calendar-face{width:38px;height:38px;display:block}
+.calendar-editor .calendar-face svg{width:100%;height:100%}
+.calendar-editor .calendar-palette{display:flex;gap:12px;justify-content:center}
+.calendar-editor .calendar-palette button{height:24px;width:24px;min-height:24px;padding:0}
+.calendar-editor .calendar-palette [aria-pressed=true]{outline:2px solid #c6c8cf;outline-offset:3px}
+.calendar-chat-card{display:flex;flex-direction:column;gap:8px;max-width:260px;padding:16px 20px;border-radius:20px;background:#f7f7fa;color:#222;font-size:14px;text-align:left;cursor:pointer;border:0}
+.calendar-chat-card small{color:#96969d;font-size:12px}
+.calendar-chat-card p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:360px){.uvu-calendar .calendar-body{padding-left:14px;padding-right:14px}.uvu-calendar .calendar-weekdays,.uvu-calendar .calendar-month{column-gap:4px}.uvu-calendar .calendar-topbar{gap:4px}.uvu-calendar .calendar-topbar button{font-size:12px;padding:5px 8px}.uvu-calendar h2{font-size:18px}.calendar-editor .calendar-editor-body{padding-left:16px;padding-right:16px}}
+@media(prefers-reduced-motion:no-preference){.uvu-calendar .calendar-detail{animation:calendar-reveal .16s ease-out}.uvu-calendar .calendar-face svg{transition:opacity .15s ease}.uvu-calendar button:active,.calendar-editor button:active{opacity:.7}@keyframes calendar-reveal{from{opacity:.5;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}}

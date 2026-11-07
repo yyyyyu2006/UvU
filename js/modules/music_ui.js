@@ -240,7 +240,10 @@
         if (!screen) return; renderedLibrary = librarySource(); applyAppearance();
         const previousScroll = scroll === undefined ? main.scrollTop : scroll; main.replaceChildren();
         screen.querySelectorAll('[data-um-tab]').forEach(b => { const selected = b.dataset.umTab === tab; b.classList.toggle('active', selected); b.setAttribute('aria-selected', String(selected)); });
-        const hero = el('header', undefined, 'um-hero'), tools = el('div', undefined, 'um-hero-tools'); hero.append(el('h1', libraryPage || ({home:'主页',discover:'新发现',radio:'广播',library:'资料库',search:'搜索'}[tab])), tools);
+        const hero = el('header', undefined, 'um-hero'), tools = el('div', undefined, 'um-hero-tools');
+        const heading = el('h1'), homeTitle = el('button', libraryPage || ({home:'主页',discover:'新发现',radio:'广播',library:'资料库',search:'搜索'}[tab]), 'um-home-title');
+        homeTitle.type = 'button'; homeTitle.title = '返回小手机桌面'; homeTitle.onclick = () => { closeSheet(); if (typeof switchScreen === 'function') switchScreen('home-screen'); };
+        heading.append(homeTitle); hero.append(heading, tools);
         if (libraryPage) tools.append(button('返回资料库', () => { libraryPage = ''; render(0); }, 'chevron-left'));
         if (tab === 'library' && !libraryPage) tools.append(button('新建歌单', () => createPlaylist(), 'list-plus', 'um-round-fill'));
         tools.append(button('音乐账号与设置', accountsPanel, 'user-round', 'um-avatar')); main.append(hero);
