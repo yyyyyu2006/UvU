@@ -48,7 +48,13 @@ function openSharedDocumentDialog(message, chat) {
     const text = documentNode('textarea'); text.setAttribute('aria-label', '文件正文'); text.rows = 8; text.maxLength = SHARED_DOCUMENT_LIMIT; text.readOnly = Boolean(message);
     const editorKey = id => 'uvu:expanded-editor-scroll:shared-document:' + encodeURIComponent(JSON.stringify([target.chatId, target.archiveId || '', id]));
     text.scrollKey = editorKey(message?.id || crypto.randomUUID());
-    editor.append(name, previewHeading, text);
+    const fileHeader = documentNode('div', undefined, 'shared-document-file-header');
+    const fileIcon = documentNode('span', undefined, 'shared-document-file-icon');
+    fileIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 15h6M9 18h4"/></svg>';
+    const fileIdentity = documentNode('div', undefined, 'shared-document-file-identity');
+    const fileMeta = documentNode('small', '', 'shared-document-file-meta');
+    fileIdentity.append(name, fileMeta); fileHeader.append(fileIcon, fileIdentity);
+    editor.append(fileHeader, previewHeading, text);
     const status = documentNode('p', '', 'shared-document-help shared-document-status'); status.setAttribute('aria-live', 'polite');
     const downloads = documentNode('details', undefined, 'shared-document-downloads'); downloads.append(documentNode('summary', '下载与导出'));
     const exportActions = documentNode('div', undefined, 'shared-document-export-actions');
@@ -58,6 +64,15 @@ function openSharedDocumentDialog(message, chat) {
     tutorial.append(documentNode('p', '选择文件，核对正文后发送。在聊天中告诉角色需要阅读或修改的内容，修改版会作为新文件返回。', 'shared-document-help'),
         documentNode('p', '支持 TXT、Markdown、DOCX、PDF、CSV、TSV、XLSX 和 XLS，每份最多 5 MB、100000 字符。文件在本机解析，发送后才随聊天请求交给模型。PDF 需包含可提取文字；图片、复杂排版、公式和宏不参与编辑。每轮最多提供最近 8 份文件、共 32000 字符，超长会标明截取。原件始终保留。', 'shared-document-help'));
     body.append(input, upload, editor, status, downloads, tutorial);
+    tutorial.hidden = true; tutorial.id = 'shared-document-instructions';
+    const help = documentNode('button', undefined, 'shared-document-info'); help.type = 'button';
+    help.setAttribute('aria-label', '使用说明'); help.setAttribute('aria-controls', tutorial.id); help.setAttribute('aria-expanded', 'false');
+    help.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5M12 16.5v.5"/></svg>';
+    help.onclick = () => { tutorial.hidden = !tutorial.hidden; tutorial.open = !tutorial.hidden; help.setAttribute('aria-expanded', String(!tutorial.hidden)); if (!tutorial.hidden) tutorial.scrollIntoView({ block: 'nearest' }); };
+    const header = dialog.panel.querySelector('.message-forward-header');
+    const back = header.querySelector('.message-forward-close'); back.setAttribute('aria-label', '取消');
+    back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+    header.append(help);
     const tools = documentNode('div', undefined, 'shared-document-tools');
     const expand = documentNode('button', '展开'); expand.type = 'button'; expand.setAttribute('aria-expanded', 'false');
     expand.onclick = () => {
@@ -72,9 +87,13 @@ function openSharedDocumentDialog(message, chat) {
     function refresh(resetContent = true) {
         if (resetContent) { name.value = file?.name || ''; text.value = file?.text || ''; }
         editor.hidden = downloads.hidden = actions.hidden = !file;
-        choose.textContent = file ? '更换文件' : '选择文件';
+        choose.textContent = file ? '更换' : '选择文件';
+        upload.setAttribute('aria-label', file ? '更换文件' : '选择文件');
+        const extension = (file?.name.split('.').pop() || 'TEXT').toUpperCase();
+        const size = file?.bytes;
+        fileMeta.textContent = file ? extension + (Number.isFinite(size) ? ' · ' + (size < 1024 ? size + ' B' : size < 1048576 ? Math.ceil(size / 1024) + ' KB' : (size / 1048576).toFixed(1) + ' MB') : '') : '';
         upload.classList.toggle('is-loaded', Boolean(file));
-        if (file && upload.parentElement === body) editor.prepend(upload);
+        if (file && upload.parentElement === body) fileHeader.append(upload);
         else if (!file && upload.parentElement !== body) body.insertBefore(upload, editor);
         status.textContent = file ? `${text.value.length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
         original.hidden = !file?.originalData;

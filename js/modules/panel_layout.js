@@ -97,12 +97,17 @@
         const apiVisible = () => { api.hidden = form.elements.namedItem('apiSource').value !== 'memory'; };
         form.elements.namedItem('apiSource').addEventListener('change', apiVisible);
         const summaryAdvanced = [...form.children].filter(el => el.matches('fieldset:not(.vector-memory-fieldset)') && el.querySelector('[name=mergeEnabled]'));
-        disclose(summaryAdvanced, '合并与压缩', 'panel-summary-advanced');
+        const compression = disclose(summaryAdvanced, '合并与压缩', 'panel-summary-advanced');
         const requirements = field('requirements');
-        disclose([requirements], '补充要求', 'panel-summary-extra');
+        const extra = disclose([requirements], '补充要求', 'panel-summary-extra');
+        const custom = form.elements.namedItem('summaryPrompt')?.closest('details');
+        if (custom) { custom.classList.add('panel-disclosure'); q(custom, 'summary').textContent = '自定义总结提示词'; }
+        group([compression, extra, custom], '', 'panel-summary-options');
         label(q(root, '#auto-memory-run'), '保存并总结一批'); label(q(form, 'button[type=submit]'), '保存');
         const guidance = [...form.querySelectorAll(':scope > .auto-memory-guide')];
-        for (const guide of guidance) form.insertBefore(guide, q(form, '.auto-memory-actions'));
+        guidance.forEach(guide => guide.classList.add('panel-disclosure'));
+        const guides = group(guidance, '', 'panel-summary-guides');
+        if (guides) form.insertBefore(guides, q(form, '.auto-memory-actions'));
         const vector = q(root, '.vector-memory-fieldset'), vectorApi = q(root, '#vector-api-panel');
         if (vector && vectorApi) {
             const rerankFlag = field('vectorRerankEnabled');
@@ -188,6 +193,7 @@
         };
         for (const id of ['uvu-bridge-handoff-start', 'uvu-bridge-handoff-end']) q(root, '#' + id).addEventListener('input', updateRange);
         new MutationObserver(updateRange).observe(q(root, '#uvu-bridge-handoff-source'), { childList: true, subtree: true, characterData: true }); updateRange();
+        group([q(root, '#uvu-bridge-handoff-receipt'), q(root, '#uvu-bridge-handoff-source'), rangeDetails], '', 'panel-bridge-metadata');
         const handoffButton = q(root, '#uvu-bridge-handoff'); handoffButton.classList.add('panel-primary'); label(handoffButton, '交接所选消息');
         label(q(root, '#uvu-bridge-export-file'), '导出线上文件'); label(q(root, '#uvu-bridge-import-file'), '导入剧情文件');
         const note = q(handoff, ':scope > p.uvu-bridge-note'); disclose([note], '交接说明', 'panel-handoff-help');
@@ -213,6 +219,7 @@
     }
     function editor(root) {
         const header = q(root, ':scope > header'), search = q(root, '.editor-search'), footer = q(root, ':scope > footer'); if (!header || !search || !footer) return;
+        footer.textContent = '应用后请在原页面保存。';
         const actions = make('div', 'panel-editor-actions');
         [...header.querySelectorAll('button')].forEach(button => actions.append(button)); footer.after(actions);
         const find = disclose([search], '查找与替换', 'panel-editor-search', Boolean(q(search, '.editor-find')?.value));
@@ -264,12 +271,17 @@
         if (planner) q(planner, 'summary').textContent = '自动调用配置';
         const logs = [...body.querySelectorAll(':scope > details')].find(el => /最近调用与用量/.test(el.firstElementChild?.textContent));
         if (logs) q(logs, 'summary').textContent = '调用记录';
+        const options = [...body.querySelectorAll(':scope > details')];
+        const transfers = q(body, ':scope > .mcp-row');
+        // Keep the existing disclosure nodes and callbacks together, including live permissions.
+        const settings = group([...options.filter(el => !el.classList.contains('mcp-tutorial')), transfers, q(body, ':scope > .mcp-tutorial')], '', 'panel-mcp-options');
+        settings?.querySelectorAll(':scope > details').forEach(el => el.classList.add('panel-disclosure'));
     }
     function actions(root) {
         // Compact task actions only; keep original headers, circular controls and lists intact.
         if (root.classList.contains('status-token-panel')) return;
         for (const button of root.querySelectorAll('button')) {
-            if (button.matches('#auto-memory-close,.message-forward-close,[data-action=close],.shared-document-upload') ||
+            if (button.matches('#auto-memory-close,.message-forward-close,[data-action=close],.shared-document-upload,.shared-document-info') ||
                 button.closest('.app-header,.panel-segment,.model-picker-list,.environment-calendar')) continue;
             button.classList.add('panel-compact-action');
         }

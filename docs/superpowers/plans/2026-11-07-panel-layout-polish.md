@@ -92,3 +92,15 @@ Approved scope: clearer vector sections, smaller derived action pills, separated
 Root causes: fieldset/nested guide padding and margins accumulate; coarse-pointer rule makes small MCP actions 44px high; Tavern header inherits column direction, recovery sits outside its action row.
 
 Verification: 636/636 unit tests pass; actual application layout and expanded vector fields at 320/390/768; compact action dimensions and vector save/reopen; ST/TT mode and rollback, MCP HTTP/SSE discover/permissions/calls with the panel layer, document/calendar/status history and local icon workflows all pass. Read-only independent review found no actionable issue. Closing vector disclosures immediately clears their content to prevent a transient stale height. Existing mixed line endings retained byte-for-byte in index.html; no original CSS, prompt, AI, storage or bridge behavior files changed.
+
+
+## Follow-up: compact related settings and file identity
+
+Approved screenshot corrections: combine summary help into one card; group summary advanced and MCP secondary disclosures as adjacent rows; group Tavern receipt/source/range metadata; narrow the connection action columns; shorten avatar prose; narrow expanded editor and use 14px body; match file mockup with identity header and left preview tools.
+
+- Preserve original field nodes, form membership, handlers, dynamic status, ST/TT visibility and send targets.
+- Keep type levels at 18px dialog / 16px section / 14px body / 12px metadata; editable form fields stay 16px on touch except the explicitly requested 14px document editor.
+- Do not add a nonfunctional mockup caption field or change file send contracts.
+- Verify actual computed spacing, 320/390/768 layouts, collapsed/expanded settings, draft restoration, file export/send and original chat control compatibility before main publication.
+
+Verification: 636/636 unit checks passed; actual-app browser verified adjacent related rows and compact connection columns at 320/390/768, 14px expanded editor including touch mode, narrow and keyboard-short viewports, summary/vector saves and visibility, file drafts/progress/apply, file help toggle, MCP permission expansion and Tavern archive detail expansion. File parser/send/edit/export/storage workflow, MCP HTTP/SSE authorization/call/export workflow and icon/callback workflow all passed. Screenshots inspected for file, summary options, MCP options, Tavern metadata, avatar and editor. Independent read-only review found no actionable regression. Native disclosure opening checks wait for visible animated content; closing discards content height immediately. index.html preserves its original mixed EOL bytes, with only four asset version changes.

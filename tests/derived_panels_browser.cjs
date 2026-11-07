@@ -51,6 +51,24 @@ const server = http.createServer((req, res) => {
             const failures = await page.evaluate(({name, width}) => {
                 const failures = [], check = (ok, text) => { if (!ok) failures.push(text); };
                 const rect = el => el.getBoundingClientRect();
+                if (name === 'summary') {
+                    for (const [selector, count] of [['.panel-summary-guides', 2], ['.panel-summary-options', 3]]) {
+                        const rows = [...document.querySelectorAll(selector + ' > details')];
+                        check(rows.length === count, selector + ' retains related controls');
+                        for (let i = 1; i < rows.length; i++) check(rect(rows[i]).top - rect(rows[i - 1]).bottom <= 2, selector + ' rows stay adjacent');
+                        check(rows.every(el => el.open || rect(el).height <= 46), selector + ' closed rows have no padded empty card');
+                    }
+                }
+                if (name === 'editor' || name === 'editor-tools') {
+                    const editor = document.querySelector('.text-editor-card'), draft = editor.querySelector('.editor-draft');
+                    check(rect(editor).width <= Math.min(680, width - 32) + 1, 'Expanded editor has narrower side margins');
+                    check(getComputedStyle(draft).fontSize === '14px', 'Expanded editor body stays 14px on touch');
+                }
+                if (name === 'file-preview') {
+                    const header = document.querySelector('.shared-document-file-header');
+                    check(Boolean(header.querySelector('.shared-document-name')) && Boolean(header.querySelector('.shared-document-upload')), 'File identity and replace share a header');
+                    check(rect(header.querySelector('.shared-document-upload')).width < 60, 'File replace action stays small');
+                }
                 if (name === 'vector') {
                     const field = document.querySelector('.vector-memory-fieldset');
                     check([...field.querySelectorAll(':scope > section')].map(el => el.dataset.vectorSection).join(',') === 'enable,embedding,retrieval,rerank', 'Vector sections follow enable → embedding → retrieval → rerank');
@@ -60,7 +78,11 @@ const server = http.createServer((req, res) => {
                     check(guide && parseFloat(getComputedStyle(guide).paddingTop) === 0 && parseFloat(getComputedStyle(guide).borderTopWidth) === 0, 'Retrieval help has no extra nested card');
                 }
                 if (name === 'mcp') {
-                    const row = document.querySelector('.mcp-settings .mcp-body > section:not(.panel-mcp-global) > .mcp-row');
+                    const settings = document.querySelector('.panel-mcp-options'), rows = [...settings.querySelectorAll(':scope > details')];
+                    check(rows.length === 4, 'MCP permission, API, logs and guide remain available');
+                    for (let i = 1; i < 3; i++) check(rect(rows[i]).top - rect(rows[i - 1]).bottom <= 2, 'MCP lower settings stay adjacent');
+                    check(rows.every(el => el.open || rect(el).height <= 46), 'MCP closed settings do not reserve empty space');
+                    const row = document.querySelector('.mcp-settings .panel-mcp-service-actions');
                     const buttons = [...(row?.querySelectorAll(':scope > button') || [])];
                     check(buttons.length === 4, 'All four service actions stay available');
                     check(buttons.every(el => rect(el).height <= 36 && parseFloat(getComputedStyle(el).paddingLeft) <= 10), 'MCP actions use compact padding and height');
@@ -70,6 +92,11 @@ const server = http.createServer((req, res) => {
                     const pair = document.getElementById('uvu-bridge-pair'), reconnect = document.getElementById('uvu-bridge-reconnect'), disconnect = document.getElementById('uvu-bridge-disconnect'), recover = document.getElementById('uvu-bridge-recover');
                     check(Math.abs(rect(pair).y - rect(reconnect).y) < 1 && Math.abs(rect(disconnect).y - rect(recover).y) < 1, 'Connection actions align in two rows');
                     check(rect(disconnect).y - rect(pair).bottom >= 11, 'Connection action rows have breathing room');
+                    check(rect(reconnect).left - rect(pair).right <= 32, 'Tavern connection columns stay close together');
+                    const rows = [...document.querySelectorAll('.panel-bridge-metadata > details')];
+                    check(rows.length === 3, 'Tavern receipt, archive and range share one group');
+                    for (let i = 1; i < rows.length; i++) check(rect(rows[i]).top - rect(rows[i - 1]).bottom <= 2, 'Tavern handoff metadata stays adjacent');
+                    check(rows.every(el => el.open || rect(el).height <= 46), 'Tavern closed metadata does not retain padding');
                     const title = document.querySelector('#uvu-story-bridge-settings .kkt-item-title'), toggle = document.getElementById('uvu-bridge-enabled');
                     check(Math.abs((rect(title).y + rect(title).height / 2) - (rect(toggle).y + rect(toggle).height / 2)) < 2, 'Connection title and switch share one row');
                 }
@@ -108,6 +135,10 @@ const server = http.createServer((req, res) => {
         await page.getByLabel('选择分享文件').setInputFiles({ name: '约定与计划.txt', mimeType: 'text/plain', buffer: Buffer.from('周末计划\n'.repeat(80)) });
         await page.locator('#shared-document-dialog .shared-document-actions').waitFor({ state: 'visible' });
         await shot('file-preview', '#shared-document-dialog .shared-document-dialog');
+        await page.getByRole('button', { name: '使用说明', exact: true }).click();
+        assert.equal(await page.locator('.shared-document-tutorial').isVisible(), true);
+        await page.getByRole('button', { name: '使用说明', exact: true }).click();
+        assert.equal(await page.locator('.shared-document-tutorial').isVisible(), false);
         await page.locator('.shared-document-tools > button').click();
         await page.locator('.editor-draft').fill('暂存的文件草稿\n'.repeat(80));
         await page.locator('.editor-draft').evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
@@ -135,9 +166,13 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('#memory-api-panel').isVisible(), false);
         await page.evaluate(() => { const input = document.querySelector('#auto-memory-form [name=requirements]'); input.dispatchEvent(new Event('invalid', { bubbles: false })); });
         assert.equal(await page.locator('.panel-summary-extra').evaluate(el => el.open), true, 'Validation exposes collapsed settings');
-        const summaryHelp = page.locator('#auto-memory-form > .auto-memory-guide').filter({ has: page.locator('summary', { hasText: '记忆注入说明' }) });
+        const summaryHelp = page.locator('#auto-memory-form > .panel-summary-guides > .auto-memory-guide').filter({ has: page.locator('summary', { hasText: '记忆注入说明' }) });
         assert.equal(await summaryHelp.locator('p').isVisible(), false); await summaryHelp.locator('summary').click();
+        await summaryHelp.locator('p').waitFor({ state: 'visible' });
         assert.equal(await summaryHelp.locator('p').isVisible(), true);
+        await summaryHelp.locator('summary').click();
+        await page.locator('.panel-summary-guides').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(out, 'summary-options-390.png'), animations: 'disabled' });
         await page.locator('#auto-memory-form [name=keepRecent]').fill('10');
         await page.locator('#auto-memory-form button[type=submit]').click();
         await page.waitForFunction(() => db.characters[0].autoMemorySettings?.keepRecent === 10 && !document.getElementById('auto-memory-modal').classList.contains('visible'));
@@ -178,6 +213,11 @@ const server = http.createServer((req, res) => {
         await page.locator('.regenerate-guidance-card [data-action=reroll]').click();
         assert.equal(await page.evaluate(() => window.layoutReroll), '稍微温柔一点');
         await page.evaluate(() => openMcpSettings()); await shot('mcp', '#mcp-services .mcp-settings');
+        await page.locator('.panel-mcp-options').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(out, 'mcp-options-390.png'), animations: 'disabled' });
+        const permission = page.locator('.panel-mcp-options > details').first();
+        await permission.locator('summary').click(); await permission.locator('p').waitFor({ state: 'visible' });
+        await permission.locator('summary').click();
         await page.evaluate(() => document.getElementById('mcp-services').dismissForward());
         await page.evaluate(() => openRelationshipDialog()); await shot('relationship', '.relationship-dialog');
         await page.evaluate(() => document.getElementById('chat-relationship-dialog').dismissForward());
@@ -275,6 +315,11 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('.panel-segment').evaluate(el => getComputedStyle(el, '::before').transitionDuration), '0s');
         await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.locator('.uvu-bridge-review').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'tavern-review-390.png'), animations: 'disabled' });
+        await page.locator('.panel-bridge-metadata').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(out, 'tavern-metadata-390.png'), animations: 'disabled' });
+        await page.locator('#uvu-bridge-handoff-source > summary').click();
+        assert.equal(await page.locator('#uvu-bridge-handoff-source .uvu-bridge-handoff-detail-body').isVisible(), true);
+        await page.locator('#uvu-bridge-handoff-source > summary').click();
         await page.locator('#uvu-bridge-st-guide > summary').click(); assert.equal(await page.locator('#uvu-bridge-st-guide ol').isVisible(), true);
         await page.evaluate(() => openChatRoom('layout-char', 'private'));
         const after = await page.evaluate(() => { const b = document.getElementById('send-message-btn') || document.querySelector('#chat-room-screen .chat-input-area'); return b ? { html: b.outerHTML, width: getComputedStyle(b).width } : null; });
