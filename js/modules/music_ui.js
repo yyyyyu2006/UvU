@@ -1,7 +1,7 @@
 (function (root) {
     'use strict';
-    const M = root.UvUMusic, names = { netease: '网易云', qq: 'QQ 音乐', local: '本地' };
-    let screen, main, mini, tab = 'home', sheet, sheetClose, searchController, searchSequence = 0, query = '', provider = 'all', results = [], searchPage = 1, hasMore = false, searchError = '', debounce, shareTarget, renderedLibrary, searchLoading = false, favoriteLimit = 50, playbackSignature = '';
+    const M = root.UvUMusic, names = { netease: '网易云', qq: 'QQ 音乐', local: '本地', 'gd-netease': 'GD · 网易云' };
+    let screen, main, mini, tab = 'home', sheet, sheetClose, searchController, searchSequence = 0, query = '', provider = '', results = [], searchPage = 1, hasMore = false, searchError = '', debounce, shareTarget, renderedLibrary, searchLoading = false, favoriteLimit = 50, playbackSignature = '';
     const librarySource = () => typeof db !== 'undefined' ? db.musicLibrary : root.db?.musicLibrary;
     const el = (tag, text, cls = '') => { const node = document.createElement(tag); node.className = cls; if (text !== undefined) node.textContent = text; return node; };
     const toast = error => { if (typeof showToast === 'function') showToast(String(error?.message || error).slice(0, 250)); };
@@ -116,7 +116,7 @@
         if (tab === 'search') return renderSearch();
         const lib = M.library();
         const hero = el('div', undefined, 'um-hero'); hero.append(el('h1', tab === 'library' ? '资料库' : '今天，听点什么'), el('div', undefined, 'um-hero-tools'));
-        hero.lastChild.append(button('连接账号', accountsPanel), button('导入音乐', () => document.getElementById('um-local-files').click())); main.append(hero);
+        hero.lastChild.append(button('音乐源', accountsPanel), button('导入音乐', () => document.getElementById('um-local-files').click())); main.append(hero);
         if (tab === 'home') {
             const recent = section('最近播放'); main.append(recent); trackRows(recent, lib.recent.slice(0, 12)); if (!lib.recent.length) empty(recent, '从一首喜欢的歌开始');
             const together = section('一起听'); const invite = root.UvUMusicChat?.session?.();
@@ -134,19 +134,22 @@
         main.scrollTop = previousScroll;
     }
     function renderSearch() {
+        if (!provider) provider = M.settings().endpoint ? 'all' : 'gd-netease';
         const form = el('form', undefined, 'um-search'), input = el('input'); input.type = 'search'; input.placeholder = '歌曲、歌手或专辑'; input.setAttribute('aria-label', '搜索音乐'); input.value = query;
         const submit = button('搜索', () => runSearch(true), 'search'); form.append(input, submit); form.onsubmit = e => { e.preventDefault(); query = input.value.trim(); void runSearch(true); };
-        input.oninput = () => { query = input.value.trim(); clearTimeout(debounce); searchController?.abort(); ++searchSequence; searchLoading = false; searchError = ''; results = []; hasMore = false; renderSearchResults(); debounce = setTimeout(() => void runSearch(true), 450); };
+        input.oninput = () => { query = input.value.trim(); clearTimeout(debounce); searchController?.abort(); ++searchSequence; searchLoading = false; searchError = ''; results = []; hasMore = false; renderSearchResults(); debounce = setTimeout(() => void runSearch(true), provider === 'gd-netease' ? 900 : 450); };
         const sources = el('div', undefined, 'um-sources');
-        for (const [id, label] of [['all', '全部'], ['netease', '网易云'], ['qq', 'QQ 音乐']]) { const b = button(label, () => { query = input.value.trim(); provider = id; for (const child of sources.children) { const active = child === b; child.classList.toggle('active', active); child.setAttribute('aria-pressed', String(active)); } void runSearch(true); }); b.classList.toggle('active', id === provider); b.setAttribute('aria-pressed', String(id === provider)); sources.append(b); }
-        main.append(form, sources, el('p', searchError, 'um-muted um-search-status'));
+        const credit = publicCredit(); credit.hidden = provider !== 'gd-netease';
+        for (const [id, label] of [['gd-netease', '公共源'], ['all', '账号全部'], ['netease', '网易云'], ['qq', 'QQ 音乐']]) { const b = button(label, () => { query = input.value.trim(); provider = id; credit.hidden = id !== 'gd-netease'; for (const child of sources.children) { const active = child === b; child.classList.toggle('active', active); child.setAttribute('aria-pressed', String(active)); } void runSearch(true); }); b.classList.toggle('active', id === provider); b.setAttribute('aria-pressed', String(id === provider)); sources.append(b); }
+        main.append(form, sources, credit, el('p', searchError, 'um-muted um-search-status'));
         main.append(el('div', undefined, 'um-search-results'), el('div', undefined, 'um-search-more')); renderSearchResults();
     }
     function renderSearchResults() {
         if (tab !== 'search') return;
         const list = main.querySelector('.um-search-results'); if (!list) return;
         main.querySelector('.um-search-status').textContent = searchError; list.replaceChildren(); trackRows(list, results);
-        if (!results.length && !searchError) empty(list, query ? '没有找到歌曲' : '搜索网易云与 QQ 音乐');
+        if (provider === 'gd-netease' && !M.settings().publicSources.includes('gd-netease')) empty(list, '开启公共源后即可搜索', button('开启公共源', accountsPanel));
+        else if (!results.length && !searchError) empty(list, query ? '没有找到歌曲' : provider === 'gd-netease' ? '搜索公共网易云曲库' : '搜索网易云与 QQ 音乐');
         const more = main.querySelector('.um-search-more'); more.replaceChildren(); if (hasMore) { const b = button('加载更多', () => runSearch(false), undefined, 'um-load-more'); b.disabled = searchLoading; more.append(b); }
     }
     async function runSearch(reset) {
@@ -206,7 +209,8 @@
     }
     function tutorial() {
         const details = el('details', undefined, 'um-tutorial'); details.append(el('summary', '连接教程'));
-        details.append(el('p', '本地音乐可以直接使用。网易云和 QQ 音乐需要你自己的音乐服务；GitHub Pages 只运行界面。'));
+        details.append(el('p', '公共源：在上方开启 GD 音乐台后，到搜索页选择“公共源”。个人学习使用，无需部署、登录或填写服务地址；当前接入网易云。搜索结果不保证可播放，遇到限流请稍后再试。'));
+        details.append(el('p', '本地音乐可以直接使用。账号源的网易云和 QQ 音乐需要你自己的音乐服务；GitHub Pages 只运行界面。以下步骤仅用于账号源。'));
         details.append(el('p', '1. 在支持 Node.js 22 的电脑或服务器中，进入 UvU 仓库目录，执行：'));
         const code = el('pre'); code.append(el('code', 'node services/music-gateway/setup.mjs\nnode services/music-gateway/start.mjs')); details.append(code);
         details.append(el('p', '2. 复制 services/music-gateway/.env.example 为同目录的 .env，填好允许访问的 UvU 网页来源。用下面命令启动；线上使用还需要配置 HTTPS。'));
@@ -217,13 +221,34 @@
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }
+    function publicCredit() {
+        const line = el('p', undefined, 'um-muted um-public-credit'), link = el('a', 'GD 音乐台');
+        link.href = 'https://music.gdstudio.xyz/'; link.target = '_blank'; link.rel = 'noopener noreferrer';
+        line.append(document.createTextNode('来源：'), link); return line;
+    }
     function accountsPanel() {
         const controller = new AbortController(); let alive = true;
         modal('音乐账号', body => {
+            const publicBox = section('公共音乐'), publicLabel = el('label', undefined, 'um-check um-public-toggle'), publicCheck = el('input');
+            publicCheck.type = 'checkbox'; publicCheck.checked = M.settings().publicSources.includes('gd-netease'); publicCheck.setAttribute('aria-label', '启用 GD 音乐台公共源');
+            publicLabel.append(publicCheck, document.createTextNode('GD 音乐台 · 网易云'));
+            const publicStatus = el('p', '个人学习、非商业使用；每 5 分钟最多 50 次请求。', 'um-muted'); publicStatus.setAttribute('aria-live','polite');
+            publicBox.append(publicLabel, publicStatus, publicCredit()); body.append(publicBox);
+            publicCheck.onchange = async () => {
+                const wanted = publicCheck.checked; publicCheck.disabled = true;
+                try {
+                    await M.saveSettings({ publicSources: wanted ? ['gd-netease'] : [] });
+                    clearTimeout(debounce); searchController?.abort(); ++searchSequence; searchLoading = false; results = []; hasMore = false; searchError = '';
+                    if (wanted) provider = 'gd-netease'; else if (provider === 'gd-netease') provider = 'all';
+                    if (tab === 'search') render();
+                    if (alive) publicStatus.textContent = wanted ? '已开启。到搜索页选择“公共源”即可使用。' : '已关闭';
+                } catch (error) { if (alive) { publicCheck.checked = !wanted; publicStatus.textContent = error.message; } }
+                finally { publicCheck.disabled = false; }
+            };
             const form = el('form', undefined, 'um-account-form'), label = el('label', '音乐服务地址'), input = el('input'); input.type = 'url'; input.placeholder = 'https://music.example.com'; input.value = M.settings().endpoint; label.append(input);
             const remember = el('label', undefined, 'um-check'), checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = M.settings().remember; remember.append(checkbox, document.createTextNode('记住此设备'));
             const output = el('p', '', 'um-muted'); output.setAttribute('aria-live', 'polite'); const accounts = el('div', undefined, 'um-accounts');
-            form.append(label, remember, button('保存并连接', () => connect()), output); form.onsubmit = e => { e.preventDefault(); void connect(); }; body.append(form, accounts, tutorial());
+            form.append(el('h2','账号音乐'), label, remember, button('保存并连接', () => connect()), output); form.onsubmit = e => { e.preventDefault(); void connect(); }; body.append(form, accounts, tutorial());
             async function refresh() {
                 const data = await M.accounts(controller.signal); if (!alive) return; accounts.replaceChildren();
                 for (const p of ['netease', 'qq']) {

@@ -16,3 +16,10 @@ test('music metadata export strips source URLs and unrecognized credentials rega
     assert.equal(value.musicLibrary.favorites[0].url, undefined);
     assert.equal(value.musicSettings.cookie, undefined);
 });
+
+test('portable music settings retain only explicitly enabled known public sources', () => {
+    const sandbox={URL,window:{},console};vm.createContext(sandbox);vm.runInContext(read('js/modules/storage_features.js'),sandbox);
+    const result=sandbox.storagePortableMusicSettings({endpoint:'',publicSources:['gd-netease','unknown'],remember:true,token:'secret'});
+    assert.deepEqual(JSON.parse(JSON.stringify(result.publicSources)),['gd-netease']);assert.equal(result.token,undefined);assert.equal(result.remember,false);
+    assert.match(read('index.html'), /music_public\.js/);
+});

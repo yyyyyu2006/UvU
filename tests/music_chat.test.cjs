@@ -20,6 +20,15 @@ function fixture() {
     return { c, api: c.UvUMusicChat, chat, plays };
 }
 const command = (id, action = 'accept') => '<uvu_music>' + JSON.stringify({ invitationId: id, action }) + '</uvu_music>';
+
+test('public-source cards preserve their source and safe artwork ID through portable validation', async () => {
+    const {api,chat}=fixture();
+    await api.share({...track(),provider:'gd-netease',artworkId:'109951166139384942',pageUrl:'https://music.163.com/song?id=1',url:'https://signed.invalid/stream'});
+    const payload=api.portablePayload(chat.history[0].music);
+    assert.equal(payload.track.provider,'gd-netease');assert.equal(payload.track.artworkId,'109951166139384942');assert.equal(payload.track.url,undefined);
+    assert.doesNotThrow(()=>api.validatePayload(payload));
+    assert.throws(()=>api.validatePayload({...payload,track:{...payload.track,artworkId:'../x'}}));
+});
 test('ordinary history and ordinary reply are identical without an invitation', () => {
     const { api, chat } = fixture(), history = [{ role: 'user', content: 'hello' }];
     const plan = api.requestPlan(history, chat);

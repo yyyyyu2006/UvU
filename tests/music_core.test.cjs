@@ -67,7 +67,7 @@ test('gateway tokens stay outside settings and are scoped to canonical endpoint'
     assert.equal(authenticated[1].options.headers.Authorization, 'Bearer session-two.test');
     assert.ok(h.calls.every(call => call.options.credentials === 'omit'));
     assert.equal(h.local.size, 2);
-    assert.deepEqual(Object.keys(h.db.musicSettings).sort(), ['endpoint', 'providers', 'remember']);
+    assert.deepEqual(Object.keys(h.db.musicSettings).sort(), ['endpoint', 'providers', 'publicSources', 'remember']);
     assert.throws(() => h.music.request('https://other.test/accounts'));
 });
 
@@ -351,4 +351,34 @@ test('local deletion waits for metadata commit before stopping the current playe
     assert.equal(h.music.player.snapshot().playing, true); assert.equal(h.urls.size, 1);
     pending.resolve(); await deleting;
     assert.equal(h.music.player.snapshot().playing, false); assert.equal(h.urls.size, 0);
+});
+
+test('public music requires explicit activation and keeps its provider separate from account music', async () => {
+    const h = harness(); let count = 0;
+    const song = track('1857979755', {provider:'gd-netease',artworkId:'109951166139384942'});
+    h.context.window.UvUPublicMusic = {search:async()=>{count++;return{tracks:[song],hasMore:false,errors:[]};},lyrics:async()=>({lyric:'words'})};
+    await assert.rejects(h.music.search('song',['gd-netease']), /开启/); assert.equal(count,0);
+    await h.music.saveSettings({publicSources:['gd-netease','unknown']});
+    assert.deepEqual(plain(h.music.settings().publicSources),['gd-netease']);
+    const found = await h.music.search('song',['gd-netease']); assert.equal(found.tracks[0].provider,'gd-netease');
+    assert.equal(found.tracks[0].artworkId,song.artworkId); assert.notEqual(h.music.key(song),h.music.key(track(song.id)));
+    assert.equal((await h.music.lyrics(song)).lyric,'words'); assert.equal(h.calls.length,0); assert.equal(h.session.size,0);
+});
+
+test('public playback retains safe cover metadata but never stores the media URL; disabling stops playback', async () => {
+    const h = harness({musicSettings:{publicSources:['gd-netease']}});
+    const song = track('1857979755',{provider:'gd-netease'});
+    h.context.window.UvUPublicMusic = {stream:async()=>({url:'https://m801.music.126.net/a.mp3',cover:'https://p2.music.126.net/a.jpg',availability:'unknown'})};
+    await h.music.player.play(song); await tick();
+    assert.equal(h.music.player.snapshot().playing,true); assert.equal(h.music.player.snapshot().track.cover,'https://p2.music.126.net/a.jpg');
+    assert.ok(!JSON.stringify(h.db).includes('a.mp3')); assert.equal(h.calls.length,0);
+    await h.music.saveSettings({publicSources:[]}); assert.equal(h.music.player.snapshot().playing,false);
+});
+
+test('disabling public source while a stream resolves cannot start late audio', async () => {
+    const h = harness({musicSettings:{publicSources:['gd-netease']}}), pending = deferred();
+    h.context.window.UvUPublicMusic = {stream:()=>pending.promise};
+    const playing = h.music.player.play(track('1',{provider:'gd-netease'})); await tick();
+    await h.music.saveSettings({publicSources:[]}); pending.resolve({url:'https://m801.music.126.net/a.mp3',availability:'unknown'}); await playing;
+    assert.equal(h.sounds.length,0); assert.equal(h.music.player.snapshot().playing,false);
 });

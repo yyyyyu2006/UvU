@@ -17,11 +17,11 @@
         const safe = safeURL(value);
         if (!safe) return '';
         const hostname = new URL(safe).hostname;
-        return (provider === 'netease' && hostname === 'music.163.com') ||
+        return (['netease', 'gd-netease'].includes(provider) && hostname === 'music.163.com') ||
             (provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(hostname)) ? safe : '';
     }
     function portableTrack(raw) {
-        if (!raw || !['netease', 'qq', 'local'].includes(raw.provider) || !['string', 'number'].includes(typeof raw.id) || !String(raw.id) || !raw.title) throw new Error('歌曲信息无效');
+        if (!raw || !['netease', 'qq', 'local', 'gd-netease'].includes(raw.provider) || !['string', 'number'].includes(typeof raw.id) || !String(raw.id) || !raw.title) throw new Error('歌曲信息无效');
         if (typeof root.UvUMusic?.normalizeTrack === 'function') raw = root.UvUMusic.normalizeTrack(raw);
         const id = text(raw.id, 160).trim();
         if (!id || /[\r\n]/.test(id)) throw new Error('歌曲信息无效');
@@ -29,6 +29,7 @@
             album: text(raw.album, 300), cover: safeURL(raw.cover), duration: Math.min(86400, Math.max(0, Number(raw.duration) || 0)) };
         if (safePage(raw.pageUrl, raw.provider)) result.pageUrl = safePage(raw.pageUrl, raw.provider);
         if (raw.provider === 'local' && /^[a-zA-Z0-9_-]{1,160}$/.test(raw.localId || '')) result.localId = raw.localId;
+        if (raw.provider === 'gd-netease' && /^\d{1,24}$/.test(raw.artworkId || '')) result.artworkId = String(raw.artworkId);
         if (['unknown', 'full', 'preview', 'unavailable'].includes(raw.availability)) result.availability = raw.availability;
         return result;
     }
@@ -36,12 +37,13 @@
         if (!value || value.version !== 1 || !value.track || Object.keys(value).some(key => !['version', 'track', 'lyrics', 'invitation'].includes(key))) throw new Error('音乐消息无效');
         const track = value.track;
         portableTrack(track);
-        if (Object.keys(track).some(key => !['provider', 'id', 'title', 'artists', 'album', 'cover', 'duration', 'pageUrl', 'localId', 'availability'].includes(key)) ||
+        if (Object.keys(track).some(key => !['provider', 'id', 'title', 'artists', 'album', 'cover', 'duration', 'pageUrl', 'localId', 'artworkId', 'availability'].includes(key)) ||
             typeof track.id !== 'string' || !track.id || track.id.length > 160 || /[\r\n]/.test(track.id) || typeof track.title !== 'string' || !track.title || track.title.length > 300 ||
             !Array.isArray(track.artists) || track.artists.length > 12 || track.artists.some(item => typeof item !== 'string' || item.length > 120) ||
             typeof track.album !== 'string' || track.album.length > 300 || typeof track.cover !== 'string' || (track.cover && !safeURL(track.cover)) ||
             !Number.isFinite(track.duration) || track.duration < 0 || track.duration > 86400 || (track.pageUrl && !safePage(track.pageUrl, track.provider)) ||
             (track.localId !== undefined && (track.provider !== 'local' || !/^[a-zA-Z0-9_-]{1,160}$/.test(track.localId))) ||
+            (track.artworkId !== undefined && (track.provider !== 'gd-netease' || typeof track.artworkId !== 'string' || !/^\d{1,24}$/.test(track.artworkId))) ||
             (track.availability !== undefined && !['unknown', 'full', 'preview', 'unavailable'].includes(track.availability))) throw new Error('歌曲信息无效');
         if (value.lyrics !== undefined && (typeof value.lyrics !== 'string' || value.lyrics.length > LYRICS_LIMIT)) throw new Error('音乐歌词无效');
         if (value.invitation) {

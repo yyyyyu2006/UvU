@@ -26,11 +26,11 @@
         return safe.replace(/\/$/, '').replace(/\/v1$/, '');
     }
     function normalizeSettings(raw = {}) {
-        return { endpoint: endpoint(raw.endpoint), providers: PROVIDERS.filter(provider => !Array.isArray(raw.providers) || raw.providers.includes(provider)), remember: raw.remember === true };
+        return { endpoint: endpoint(raw.endpoint), providers: PROVIDERS.filter(provider => !Array.isArray(raw.providers) || raw.providers.includes(provider)), publicSources: Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [], remember: raw.remember === true };
     }
     function settings() { return normalizeSettings(database().musicSettings || {}); }
     function normalizeTrack(raw) {
-        if (!raw || typeof raw !== 'object' || !['netease', 'qq', 'local'].includes(raw.provider)) throw new Error('Invalid music provider');
+        if (!raw || typeof raw !== 'object' || !['netease', 'qq', 'local', 'gd-netease'].includes(raw.provider)) throw new Error('Invalid music provider');
         const id = text(String(raw.id ?? ''), 160).trim();
         if (!id || /[\r\n]/.test(id)) throw new Error('Invalid music track ID');
         const result = { provider: raw.provider, id, title: text(raw.title, 300) || 'Untitled',
@@ -38,7 +38,8 @@
             album: text(raw.album, 300), cover: safeURL(raw.cover, true), duration: number(raw.duration),
             availability: ['full', 'preview', 'unavailable'].includes(raw.availability) ? raw.availability : 'unknown' };
         const page = safeURL(raw.pageUrl, true);
-        if (page && ((raw.provider === 'netease' && new URL(page).hostname === 'music.163.com') || (raw.provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(new URL(page).hostname)))) result.pageUrl = page;
+        if (page && ((['netease', 'gd-netease'].includes(raw.provider) && new URL(page).hostname === 'music.163.com') || (raw.provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(new URL(page).hostname)))) result.pageUrl = page;
+        if (raw.provider === 'gd-netease' && /^\d{1,24}$/.test(raw.artworkId || '')) result.artworkId = String(raw.artworkId);
         if (raw.provider === 'local' && /^[a-zA-Z0-9_-]{1,160}$/.test(raw.localId || '')) result.localId = raw.localId;
         return result;
     }
@@ -81,6 +82,7 @@
         return persist('musicSettings', current => normalizeSettings({ ...current, ...patch })).then(next => {
             const token = tokenGet(next.endpoint);
             if (token) tokenSet(next.endpoint, token, next.remember);
+            if (state.track?.provider === 'gd-netease' && !next.publicSources.includes('gd-netease')) stop();
             return next;
         });
     }
@@ -224,6 +226,11 @@
         })();
     }
     function provider(value) { if (!PROVIDERS.includes(value)) throw new Error('Invalid music provider'); return value; }
+    function publicAdapter() {
+        if (!settings().publicSources.includes('gd-netease')) throw new Error('请先在音乐设置中开启 GD 音乐台公共源');
+        if (!root.UvUPublicMusic) throw new Error('公共音乐模块尚未加载，请刷新页面');
+        return root.UvUPublicMusic;
+    }
     const part = value => { const output = text(String(value ?? ''), 200); if (!output) throw new Error('Missing music ID'); return encodeURIComponent(output); };
     const user = raw => raw && typeof raw === 'object' ? { id: text(String(raw.id ?? ''), 160), name: text(raw.name, 160), avatar: safeURL(raw.avatar, true) } : undefined;
     const resultTracks = raw => ({ tracks: tracks(raw.tracks, 200), hasMore: raw.hasMore === true });
@@ -244,6 +251,11 @@
     }
     async function search(q, selected = settings().providers, page = 1, signal) {
         const query = text(q, 200).trim(); if (!query) return { tracks: [], errors: [], hasMore: false };
+        if (Array.isArray(selected) && selected.includes('gd-netease')) {
+            if (selected.some(value => PROVIDERS.includes(value))) throw new Error('请分别选择公共源或账号源搜索');
+            const raw = await publicAdapter().search('gd-netease', query, page, signal); publicAdapter(); aborted(signal);
+            return { ...resultTracks(raw), errors: [] };
+        }
         const providers = PROVIDERS.filter(value => Array.isArray(selected) && selected.includes(value));
         if (!providers.length) return { tracks: [], errors: [], hasMore: false };
         const raw = await request('/search?providers=' + providers.join(',') + '&q=' + encodeURIComponent(query) + '&page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal });
@@ -256,6 +268,7 @@
     async function playlist(value, id, page = 1, signal) { return resultTracks(await request('/playlist/' + provider(value) + '/' + part(id) + '?page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal })); }
     async function lyrics(track, signal) {
         const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
+        if (value.provider === 'gd-netease') { const raw = await publicAdapter().lyrics(value, signal); publicAdapter(); aborted(signal); return { lyric: text(raw.lyric,100000), translation: text(raw.translation,100000) }; }
         const raw = await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
         return { lyric: text(raw.lyric, 100000), translation: text(raw.translation, 100000) };
     }
@@ -379,10 +392,11 @@
             if (!record?.blob) throw new Error('Local audio is missing on this device');
             return { blob: record.blob, availability: 'full' };
         }
-        const result = await request('/track/' + track.provider + '/' + part(track.id) + '/stream', { signal });
+        const result = track.provider === 'gd-netease' ? await publicAdapter().stream(track, signal) : await request('/track/' + track.provider + '/' + part(track.id) + '/stream', { signal });
+        if (track.provider === 'gd-netease') publicAdapter();
         if (result.availability === 'unavailable') throw new Error('This track is unavailable for this account');
         const url = safeURL(result.url); if (!url) throw new Error('Music gateway returned an unsafe media URL');
-        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown' };
+        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(track.provider === 'gd-netease' && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}) };
     }
     function play(track, queue) {
         restore(true);
@@ -400,7 +414,7 @@
             const current = new Audio(); audio = current;
             objectURL = source.blob ? URL.createObjectURL(source.blob) : '';
             current.preload = 'metadata'; current.src = objectURL || source.url; current.referrerPolicy = 'no-referrer';
-            state.track = { ...value, availability: source.availability };
+            state.track = { ...value, availability: source.availability, ...(source.cover ? {cover:source.cover} : {}) };
             const valid = () => audio === current;
             current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(); } });
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
@@ -408,7 +422,7 @@
             current.addEventListener('error', () => { if (valid()) fail(new Error('Audio could not be loaded')); });
             current.addEventListener('pause', () => { if (valid() && current.paused && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
             await playAudio(current, generation);
-            if (generation === intent && state.playing) persist('musicLibrary', stored => ({ ...stored, recent: [value, ...stored.recent.filter(item => key(item) !== key(value))].slice(0, 100) })).catch(() => {});
+            if (generation === intent && state.playing) { const played = { ...state.track }; persist('musicLibrary', stored => ({ ...stored, recent: [played, ...stored.recent.filter(item => key(item) !== key(played))].slice(0, 100) })).catch(() => {}); }
         }).catch(error => { if (generation === intent && !controller.signal.aborted) fail(error); });
     }
     function toggle() {

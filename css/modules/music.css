@@ -71,6 +71,10 @@
 .um-account-form label>input:not([type=checkbox]) { display:block; margin-top:8px; }
 .um-account-form .um-check { display:flex; align-items:center; gap:8px; }
 .um-check input { width:16px; height:16px; accent-color:var(--um-green); }
+.um-public-toggle { display:flex; align-items:center; gap:8px; padding:8px 0; font-size:14px; }
+.um-public-credit { font-size:12px; }
+.um-public-credit a { color:var(--um-green); text-decoration:none; }
+.um-account-form>h2 { font-size:18px; margin:24px 0 16px; }
 .um-account { display:flex; gap:8px; align-items:center; padding:16px 0; border-top:1px solid var(--um-line); }
 .um-account>div { flex:1; min-width:0; }
 .um-account strong,.um-account small { display:block; overflow-wrap:anywhere; }
