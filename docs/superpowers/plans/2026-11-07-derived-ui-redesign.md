@@ -22,8 +22,8 @@
 
 - [x] 1. Consolidate shared styling for file, summary/vector memory, MCP, Tavern, voice/director, environment/calendar, relationship, editor, model picker, sticker/backup/notifications and Token add-on panels. Verify with existing and actual-app browser fixtures at 320/390/768px.
 - [x] 2. Group MiniMax connection/voice/director controls; simplify Tavern headings/actions and collapse only the tutorial; organize summary guidance and retain all setting controls. Shorten redundant new-panel copy without changing behavior. Verify DOM order, disclosure behavior and callback regressions.
-- [ ] 3. Review screenshots and run relevant browser checks plus full unit suite and whitespace diff. Obtain a final independent review, fix substantive findings, commit/push main under existing authorization.
-- [ ] 4. Track Pages deployment and verify live new file markup and versioned CSS. Failed Nov 6 run 42240005709 built successfully but deploy timed out; do not alter app code or SW based on that hosting failure.
+- [x] 3. Review screenshots and run relevant browser checks plus full unit suite and whitespace diff. Obtain a final independent review, fix substantive findings, commit/push main under existing authorization.
+- [x] 4. Track Pages deployment and verify live new file markup and versioned CSS. Failed Nov 6 run 42240005709 built successfully but deploy timed out; do not alter app code or SW based on that hosting failure.
 
 ## Progress
 
@@ -32,4 +32,9 @@
 
 - Verification: 636/636 unit tests; actual 12-panel app checks at 320/390/768 and 420px height; file parsing/target pinning/short viewport; MCP authorization and real local JSON/SSE; icons, relationship checkbox and keyboard dialog tests passed. HTML IDs and control tags retained.
 - Independent review found shared button specificity masking calendar states. Fixed by lowering mixed ID root specificity with :where and retaining explicit day-state styles; actual-app regression observed failure then pass for today/holiday/workday/selected. No outstanding findings.
-- Deliberate scope: solid white content cards replace the previous nested glass blur; original 1900/custom chat styling and all JavaScript implementations untouched.
+- Deliberate scope: solid white content cards replace the previous nested glass blur; original 1900/custom chat styling and prompt/reply/data implementations untouched. Environment UI only relocates existing provenance nodes into a disclosure.
+
+- Pages run 42334279437 for 55deb16 completed successfully; live root Last-Modified Nov 7 03:30:54 UTC includes the new panel asset fingerprint and MiniMax card sections. Previous failure was deployment timeout, resolved by publishing the new commit.
+- Touch pass: 16px text inputs across added panels and 36px compact controls; expanded hit areas no longer create horizontal overflow. Actual touch fixtures and short viewport tests passed, including calendar state regression.
+
+- Calendar provenance/cache details now sit under a bottom disclosure; weather/date interaction and data requests unchanged. Actual-app test verifies hidden/open behavior; document/calendar regressions and full 636-test suite passed.

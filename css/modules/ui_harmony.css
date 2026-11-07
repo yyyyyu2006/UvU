@@ -318,3 +318,10 @@
 :is(.worldbook-advanced,#uvu-notification-preferences,.relationship-settings) input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: #4a789f; }
 #uvu-notification-preferences button { padding: 7px 12px; border: 1px solid #e5e7eb; border-radius: 999px; background: #f5f6f8; color: #353b43; font-size: 12px; box-shadow: none; }
 .shared-document-dialog .message-forward-close { border-radius: 999px; }
+
+/* Touch inputs keep 16px text so mobile Safari does not zoom on focus. */
+@media (pointer: coarse) {
+    :is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,#auto-memory-modal,#uvu-story-bridge-screen) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size: 16px; }
+    :is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,:where(#auto-memory-modal,#uvu-story-bridge-screen)) button { min-height: 36px; }
+    :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button::after { inset: -4px 0; }
+}

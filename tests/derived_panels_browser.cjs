@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
     const origin = 'http://127.0.0.1:' + server.address().port;
     const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
     try {
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, serviceWorkers: 'block' });
         await context.addInitScript(() => { localStorage.setItem('lastSeenVersion', '1.8.9'); localStorage.setItem('storage_persist_prompted', 'true'); });
         await context.route('**/*', route => {
             const url = route.request().url();
@@ -50,7 +50,11 @@ const server = http.createServer((req, res) => {
             const panel = page.locator(selector); await panel.waitFor({ state: 'visible' });
             for (const width of widths) {
                 await page.setViewportSize({ width, height: 844 });
-                const info = await panel.evaluate(el => ({ width: el.getBoundingClientRect().width, scroll: el.scrollWidth, client: el.clientWidth, hidden: el.querySelectorAll('[hidden]').length }));
+                const info = await panel.evaluate(el => {
+                    const edge = el.getBoundingClientRect();
+                    return { width: edge.width, scroll: el.scrollWidth, client: el.clientWidth, hidden: el.querySelectorAll('[hidden]').length,
+                        overflow: [...el.querySelectorAll('*')].filter(n => n.getClientRects().length && (n.getBoundingClientRect().right > edge.right + 1 || n.scrollWidth > n.clientWidth + 1)).slice(0, 6).map(n => ({ tag: n.tagName, class: n.className, text: n.textContent.slice(0, 40), width: n.getBoundingClientRect().width, scroll: n.scrollWidth, client: n.clientWidth })) };
+                });
                 assert.ok(info.width <= width + 1, `${name}/${width}: ${JSON.stringify(info)}`);
                 assert.ok(info.scroll <= info.client + 1, `${name}/${width}: horizontal overflow ${JSON.stringify(info)}`);
                 await page.screenshot({ path: path.join(out, `${name}-${width}.png`), animations: 'disabled' });
@@ -65,6 +69,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => openSharedDocumentDialog());
         await shot('file-empty', '#shared-document-dialog .shared-document-dialog');
         assert.equal(await page.locator('#shared-document-dialog .message-forward-close').evaluate(el => getComputedStyle(el).borderRadius), '999px');
+        assert.equal(await page.locator('#shared-document-dialog .shared-document-name').evaluate(el => getComputedStyle(el).fontSize), '16px', 'Touch inputs retain readable size to avoid mobile focus zoom');
         await page.evaluate(() => document.getElementById('shared-document-dialog').dismissForward());
         await page.evaluate(() => openMemoryLibrary()); await shot('memory', '.memory-library .feature-dialog-card');
         await page.locator('.memory-library [data-action=close]').click();
@@ -85,6 +90,12 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => openEnvironmentSettings(true)); await shot('environment', '#environment-settings .derived-settings');
         await page.evaluate(() => document.getElementById('environment-settings').dismissForward());
         await page.evaluate(() => openEnvironmentCalendar()); await shot('calendar', '.environment-calendar');
+        const sourceDetails = page.locator('.environment-calendar .environment-data-details');
+        assert.equal(await sourceDetails.count(), 1);
+        assert.equal(await sourceDetails.locator('.environment-data-status').isVisible(), false);
+        await sourceDetails.locator('summary').click();
+        assert.equal(await sourceDetails.locator('.environment-data-status').isVisible(), true);
+        await sourceDetails.locator('summary').click();
         const dayStyles = await page.locator('.environment-calendar .environment-day').first().evaluate(el => {
             const result = {};
             for (const state of ['', 'is-today', 'is-offday', 'is-workday', 'is-selected']) {

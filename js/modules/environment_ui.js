@@ -191,7 +191,9 @@ function openEnvironmentCalendar() {
     const previous = environmentNode('button', '上月'), title = environmentNode('strong'), next = environmentNode('button', '下月'), today = environmentNode('button', '今天'); nav.append(previous, title, next, today);
     const grid = environmentNode('div', undefined, 'environment-month'); grid.setAttribute('aria-label', '月份日期');
     const detail = environmentNode('p', '', 'derived-status'), source = environmentNode('p', '', 'derived-help');
-    body.append(clock, weather, metadata, nav, grid, detail, source);
+    const dataDetails = environmentNode('details', undefined, 'environment-data-details');
+    dataDetails.append(environmentNode('summary', '数据来源'), metadata, source);
+    body.append(clock, weather, nav, grid, detail, dataDetails);
     const annotation=environmentNode('details'),annotationHeading=environmentNode('summary','本机节日显示补注（可选）'),annotationScope=environmentNode('p','','derived-help'),annotationHelp=environmentNode('p','只保存本机的地区、时区和所选日期；不修改数据源、不进入 AI 感知。来源未标记放假时，节日／纪念日不代表法定休息日。','derived-help');
     const annotationKind=environmentNode('select'),annotationText=environmentNode('textarea'),annotationSave=environmentNode('button','保存本机补注'),annotationDelete=environmentNode('button','删除本机补注'),annotationStatus=environmentNode('p','','derived-status');
     annotationKind.setAttribute('aria-label','本机节日显示类型');annotationText.setAttribute('aria-label','本机节日备注');annotationText.maxLength=500;annotationText.rows=3;annotationText.style.width='100%';annotationText.style.boxSizing='border-box';
