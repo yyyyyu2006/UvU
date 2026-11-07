@@ -6,7 +6,7 @@
     const number = (value, max = 86400) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Number(value))) : 0;
     const abortError = () => new DOMException('Music request cancelled', 'AbortError');
     const database = () => typeof db !== 'undefined' ? db : (root.db || (root.db = {}));
-    const listeners = new Set(), directSources = new Map(), sessions = new Map();
+    const listeners = new Set(), directSources = new Map(), sessions = new Map(), lyricCache=new Map();
     let saveTail = Promise.resolve(), sequence = 0, queueTimer, sleepTimer, blobDatabase;
 
     function safeURL(value, portable = false) {
@@ -57,8 +57,8 @@
             if (!value || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.id || '') || seen.has(value.id)) return false;
             seen.add(value.id); return true;
         }).map(value => ({ id: value.id, name: text(value.name, 160) || 'Playlist', tracks: tracks(value.tracks, 1000) })),
-        recent: tracks(raw.recent, 100), queue: tracks(raw.queue, MAX_QUEUE),
-        playerPrefs: { mode: ['order', 'shuffle', 'one'].includes(raw.playerPrefs?.mode) ? raw.playerPrefs.mode : 'order' } };
+        recent: tracks(raw.recent, 100), queue: tracks(raw.queue, MAX_QUEUE), searches: [...new Set((Array.isArray(raw.searches) ? raw.searches : []).filter(v => typeof v === 'string').map(v => text(v,200).trim()).filter(Boolean))].slice(0,12),
+        playerPrefs: { mode: ['order', 'list', 'shuffle', 'one'].includes(raw.playerPrefs?.mode) ? raw.playerPrefs.mode : 'order', skipUnavailable: raw.playerPrefs?.skipUnavailable === true, queueLabel: text(raw.playerPrefs?.queueLabel,100) } };
     }
     const library = () => normalizeLibrary(database().musicLibrary || {});
     async function writeSetting(name, value) {
@@ -109,6 +109,16 @@
         return editPlaylist(id, item => { if (!item.tracks.some(track => key(track) === key(value))) { if (item.tracks.length >= 1000) throw new Error('Playlist track limit reached'); item.tracks.push(value); } });
     }
     const removeFromPlaylist = (id, trackKey) => editPlaylist(id, item => { item.tracks = item.tracks.filter(track => key(track) !== trackKey); });
+    const renamePlaylist = (id, name) => editPlaylist(id, item => { item.name = text(name,160).trim() || item.name; });
+    const reorderPlaylist = (id, from, to) => editPlaylist(id, item => { if (Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= 0 && from < item.tracks.length && to < item.tracks.length) item.tracks.splice(to,0,item.tracks.splice(from,1)[0]); });
+    const removePlaylistTracks = (id, keys) => editPlaylist(id, item => { const selected=new Set(keys); item.tracks=item.tracks.filter(t=>!selected.has(key(t))); });
+    async function updateLocal(track, patch) {
+        const value=normalizeTrack(track); if(value.provider!=='local') throw new Error('只能编辑本地歌曲资料');
+        const next=normalizeTrack({...value,title:text(patch.title,300).trim()||value.title,artists:Array.isArray(patch.artists)?patch.artists:value.artists,album:patch.album===undefined?value.album:text(patch.album,300),cover:patch.cover===undefined?value.cover:safeURL(patch.cover,true)}), id=key(value);
+        const replace=list=>list.map(t=>key(t)===id?next:t);
+        await persist('musicLibrary', current=>({...current,favorites:replace(current.favorites),recent:replace(current.recent),queue:replace(current.queue),playlists:current.playlists.map(p=>({...p,tracks:replace(p.tracks)}))}));
+        state.queue=replace(state.queue); if(state.track&&key(state.track)===id){state.track={...next,duration:state.duration};metadataKey='';}saveQueue();emit();return next;
+    }
 
     const vaultKey = host => 'uvu.music.session.v1:' + encodeURIComponent(host);
     function tokenGet(host) { try { return sessionStorage.getItem(vaultKey(host)) || localStorage.getItem(vaultKey(host)) || ''; } catch (_) { return ''; } }
@@ -267,11 +277,13 @@
     }
     async function playlist(value, id, page = 1, signal) { return resultTracks(await request('/playlist/' + provider(value) + '/' + part(id) + '?page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal })); }
     async function lyrics(track, signal) {
-        const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
-        if (value.provider === 'gd-netease') { const raw = await publicAdapter().lyrics(value, signal); publicAdapter(); aborted(signal); return { lyric: text(raw.lyric,100000), translation: text(raw.translation,100000) }; }
-        const raw = await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
-        return { lyric: text(raw.lyric, 100000), translation: text(raw.translation, 100000) };
+        aborted(signal);const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
+        if(value.provider==='gd-netease')publicAdapter();const id=(value.provider==='gd-netease'?'public':settings().endpoint)+':'+key(value),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return copy(saved.value);
+        const raw=value.provider==='gd-netease'?await publicAdapter().lyrics(value,signal):await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
+        if(value.provider==='gd-netease')publicAdapter();aborted(signal);const result={lyric:text(raw.lyric,100000),translation:text(raw.translation,100000)};
+        if(lyricCache.size>=20)lyricCache.delete(lyricCache.keys().next().value);lyricCache.set(id,{value:result,until:Date.now()+600000});return copy(result);
     }
+    function clearMetadataCache(){const count=lyricCache.size;lyricCache.clear();root.UvUPublicMusic?.clearCache?.();return count;}
 
     function localDB() {
         if (!blobDatabase) blobDatabase = new Promise((resolve, reject) => {
@@ -293,7 +305,7 @@
     }
     async function importLocal(file) {
         if (!file || typeof file.size !== 'number' || file.size <= 0 || file.size > 30 * 1024 * 1024 || !/^audio\/(mpeg|mp3|mp4|aac|x-m4a|ogg|wav|x-wav|webm|flac|x-flac)$/i.test(file.type || '')) throw new Error('Choose an audio file up to 30 MB');
-        const id = makeId(), value = normalizeTrack({ provider: 'local', id, localId: id, title: text(file.name, 300).replace(/\.[^.]+$/, ''), artists: [], availability: 'full' });
+        const meta=await root.UvUMusicMetadata?.read(file)||{},id = makeId(), value = normalizeTrack({ provider: 'local', id, localId: id, title: text(file.name, 300).replace(/\.[^.]+$/, ''), artists: [],...meta, availability: 'full' });
         await localRecord('readwrite', store => store.put({ id, blob: file }));
         try { await toggleFavorite(value); } catch (error) { try { await localRecord('readwrite', store => store.delete(id)); } catch (_) {} throw error; }
         return value;
@@ -334,12 +346,16 @@
         saveTail = pending; return pending;
     }
 
-    const state = { track: null, queue: [], index: -1, playing: false, phase: 'idle', position: 0, duration: 0, mode: 'order', error: '', sleepAt: 0 };
+    const state = { track: null, queue: [], index: -1, playing: false, phase: 'idle', position: 0, duration: 0, mode: 'order', error: '', errorCode: '', sleepAt: 0, skipUnavailable:false, queueLabel:'', queueVersion:0 };
+    let shuffleBag=[], visits=[], visitIndex=-1, priority=[];
+    const failedKeys=new Set();
+    function resetShuffle(current=state.track){shuffleBag=state.queue.map(key).filter(id=>!current||id!==key(current));for(let i=shuffleBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffleBag[i],shuffleBag[j]]=[shuffleBag[j],shuffleBag[i]];}}
+    function queueChanged(){state.index=state.track?state.queue.findIndex(t=>key(t)===key(state.track)):-1;const ids=new Set(state.queue.map(key));shuffleBag=shuffleBag.filter(id=>ids.has(id));priority=priority.filter(id=>ids.has(id));saveQueue();emit();}
     let restored = false, restoredLibrary, playerTouched = false, audio = null, objectURL = '', intent = 0, seekRevision = 0, loadController, metadataKey = '';
     function restore(touch = false) {
         const raw = database().musicLibrary;
         if (!restored || (!playerTouched && raw !== restoredLibrary)) {
-            restored = true; restoredLibrary = raw; const stored = library(); state.queue = stored.queue; state.mode = stored.playerPrefs.mode;
+            restored = true; restoredLibrary = raw; const stored = library(); state.queue = stored.queue; state.mode = stored.playerPrefs.mode;state.skipUnavailable=stored.playerPrefs.skipUnavailable;state.queueLabel=stored.playerPrefs.queueLabel;resetShuffle();
         }
         if (touch) playerTouched = true;
     }
@@ -366,7 +382,7 @@
     function saveQueue() {
         clearTimeout(queueTimer);
         queueTimer = setTimeout(() => {
-            persist('musicLibrary', current => ({ ...current, queue: tracks(state.queue, MAX_QUEUE), playerPrefs: { mode: state.mode } })).catch(() => {});
+            persist('musicLibrary', current => ({ ...current, queue: tracks(state.queue, MAX_QUEUE), playerPrefs: { mode: state.mode, skipUnavailable:state.skipUnavailable,queueLabel:state.queueLabel } })).catch(() => { if(typeof root.showToast==='function')root.showToast('播放队列未保存，请检查存储空间'); });
         }, 250); queueTimer?.unref?.();
     }
     function unload() {
@@ -374,15 +390,26 @@
         if (audio) { const old = audio; audio = null; old.pause(); old.removeAttribute('src'); old.load(); }
         if (objectURL) { URL.revokeObjectURL(objectURL); objectURL = ''; }
     }
-    function fail(error) { state.playing = false; audio?.pause(); state.phase = error?.name === 'NotAllowedError' ? 'blocked' : 'error'; state.error = state.phase === 'blocked' ? 'Tap play to allow audio playback' : text(error?.message, 300) || 'Audio playback failed'; emit(); }
+    function fail(error) {
+        if(state.phase==='error'||state.phase==='blocked')return Promise.resolve(false);
+        const wasAttempting=state.playing||state.phase==='loading';
+        state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
+        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
+        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试'}[state.errorCode];emit();
+        if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable'].includes(state.errorCode)&&state.track){
+            failedKeys.add(key(state.track));const next=state.queue.find((t,i)=>i>state.index&&!failedKeys.has(key(t)))||state.queue.find(t=>!failedKeys.has(key(t)));
+            if(next&&failedKeys.size<Math.min(state.queue.length,5))return play(next,undefined,{keepFailures:true});
+            state.error+='；已停止自动跳过';emit();
+        }return Promise.resolve(false);
+    }
     function playAudio(current, generation) {
         if (!current || generation !== intent) return Promise.resolve();
-        state.error = '';
+        state.error = ''; state.errorCode=''; state.phase='loading';
         let result; try { result = current.play(); } catch (error) { result = Promise.reject(error); }
         return Promise.resolve(result).then(() => {
             if (generation !== intent || audio !== current) { if (audio !== current) current.pause(); return; }
             state.playing = true; state.phase = 'playing'; emit();
-        }, error => { if (generation === intent && audio === current) fail(error); });
+        }, error => { if (generation === intent && audio === current) return fail(error); });
     }
     async function resolveSource(track, signal) {
         if (track.provider === 'local') {
@@ -398,15 +425,18 @@
         const url = safeURL(result.url); if (!url) throw new Error('Music gateway returned an unsafe media URL');
         return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(track.provider === 'gd-netease' && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}) };
     }
-    function play(track, queue) {
+    function play(track, queue, options = {}) {
         restore(true);
         const value = normalizeTrack(track), generation = ++intent;
-        if (queue !== undefined) { state.queue = tracks(queue, MAX_QUEUE); }
+        if(!options.keepFailures)failedKeys.clear();
+        if (queue !== undefined) { state.queue = tracks(queue, MAX_QUEUE);state.queueVersion++;state.queueLabel=text(options.label,100);visits=[];visitIndex=-1;priority=[]; }
         let index = state.queue.findIndex(item => key(item) === key(value));
         if (index < 0) { if (state.queue.length >= MAX_QUEUE) state.queue.pop(); state.queue.push(value); index = state.queue.length - 1; }
-        state.index = index; saveQueue();
-        if (audio && state.track && key(state.track) === key(value)) return playAudio(audio, generation);
-        unload(); state.track = value; state.position = 0; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = ''; emit();
+        state.index = index;
+        if(!options.historyMove&&visits[visitIndex]!==key(value)){visits=visits.slice(0,visitIndex+1);visits.push(key(value));if(visits.length>1000)visits.shift();visitIndex=visits.length-1;}
+        if(queue!==undefined)resetShuffle(value);shuffleBag=shuffleBag.filter(id=>id!==key(value));saveQueue();
+        if (audio && state.track && key(state.track) === key(value) && state.phase!=='error') return playAudio(audio, generation);
+        unload(); state.track = value; state.position = 0; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = '';state.errorCode=''; emit();
         const controller = new AbortController(); loadController = controller;
         return resolveSource(value, controller.signal).then(async source => {
             if (generation !== intent || controller.signal.aborted) return;
@@ -419,13 +449,14 @@
             current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(); } });
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
             current.addEventListener('ended', () => { if (valid() && state.playing) advance(1, true); });
-            current.addEventListener('error', () => { if (valid()) fail(new Error('Audio could not be loaded')); });
-            current.addEventListener('pause', () => { if (valid() && current.paused && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
+            current.addEventListener('error', () => { if (valid()) void fail(new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error')); });
+            current.addEventListener('pause', () => { if (valid() && current.paused && !current.ended && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
             await playAudio(current, generation);
             if (generation === intent && state.playing) { const played = { ...state.track }; persist('musicLibrary', stored => ({ ...stored, recent: [played, ...stored.recent.filter(item => key(item) !== key(played))].slice(0, 100) })).catch(() => {}); }
-        }).catch(error => { if (generation === intent && !controller.signal.aborted) fail(error); });
+        }).catch(error => { if (generation === intent && !controller.signal.aborted) return fail(error); });
     }
     function toggle() {
+        if(['error','blocked'].includes(state.phase))return retry();
         restore(true); const generation = ++intent;
         if (state.playing || state.phase === 'loading') {
             if (state.phase === 'loading') { loadController?.abort(); unload(); }
@@ -441,7 +472,15 @@
         if (ended && state.mode === 'one') { if (audio) audio.currentTime = 0; state.position = 0; return playAudio(audio, ++intent); }
         if (direction < 0 && state.position > 3) { seek(0); return Promise.resolve(); }
         let index = state.index + direction;
-        if (state.mode === 'shuffle' && state.queue.length > 1) { const offset = 1 + Math.floor(Math.random() * (state.queue.length - 1)); index = (Math.max(0, state.index) + offset) % state.queue.length; }
+        if(direction<0&&state.mode==='shuffle'){
+            while(visitIndex>0){visitIndex--;const previous=state.queue.find(t=>key(t)===visits[visitIndex]);if(previous)return play(previous,undefined,{historyMove:true});}
+            return Promise.resolve();
+        }
+        const pending=direction>0&&priority.shift();if(pending){const next=state.queue.find(t=>key(t)===pending);if(next)return play(next);}
+        if(direction>0&&state.mode==='shuffle'&&state.queue.length>1){
+            if(visitIndex<visits.length-1){visitIndex++;const forward=state.queue.find(t=>key(t)===visits[visitIndex]);if(forward)return play(forward,undefined,{historyMove:true});}
+            if(!shuffleBag.length)resetShuffle();const nextId=shuffleBag.shift(),next=state.queue.find(t=>key(t)===nextId);if(next)return play(next);
+        }
         if (ended && state.mode === 'order' && index >= state.queue.length) { ++intent; state.playing = false; state.phase = 'paused'; emit(); return Promise.resolve(); }
         index = (index + state.queue.length) % state.queue.length;
         return play(state.queue[index]);
@@ -451,17 +490,22 @@
         ++seekRevision;
         if (audio) { const position = Math.min(number(seconds), state.duration || number(seconds)); try { audio.currentTime = position; state.position = position; emit(); } catch (_) {} }
     }
-    function setMode(mode) { restore(true); if (!['order', 'shuffle', 'one'].includes(mode)) throw new Error('Invalid play mode'); state.mode = mode; saveQueue(); emit(); }
+    function setMode(mode) { restore(true); if (!['order', 'list', 'shuffle', 'one'].includes(mode)) throw new Error('Invalid play mode'); state.mode = mode;resetShuffle(); saveQueue(); emit(); }
     function enqueue(track, next = false) {
-        restore(true); const value = normalizeTrack(track); if (state.queue.length >= MAX_QUEUE) return false;
-        if (state.queue.some(item => key(item) === key(value))) return false;
-        state.queue.splice(next ? Math.max(0, state.index + 1) : state.queue.length, 0, value); saveQueue(); emit(); return true;
+        restore(true); const value = normalizeTrack(track),id=key(value),existing=state.queue.findIndex(item=>key(item)===id);
+        if(existing>=0&&!next)return false;if(existing<0&&state.queue.length>=MAX_QUEUE)return false;
+        if(existing>=0)state.queue.splice(existing,1);state.index=state.track?state.queue.findIndex(t=>key(t)===key(state.track)):-1;
+        state.queue.splice(next?Math.max(0,state.index+1):state.queue.length,0,value);
+        if(next)priority=[id,...priority.filter(v=>v!==id)];if(!shuffleBag.includes(id)&&(!state.track||id!==key(state.track)))shuffleBag.push(id);queueChanged();return true;
     }
     function remove(index) {
         restore(true); if (!Number.isInteger(index) || index < 0 || index >= state.queue.length) return;
-        const current = state.track && key(state.track); state.queue.splice(index, 1);
-        state.index = current ? state.queue.findIndex(item => key(item) === current) : -1; saveQueue(); emit();
+        state.queue.splice(index, 1);queueChanged();
     }
+    function move(from,to){restore(true);if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=state.queue.length||to>=state.queue.length)return;state.queue.splice(to,0,state.queue.splice(from,1)[0]);queueChanged();}
+    function clear(){restore(true);state.queue=state.track?[state.track]:[];priority=[];shuffleBag=[];visits=state.track?[key(state.track)]:[];visitIndex=visits.length-1;queueChanged();}
+    function retry(){const t=state.track;if(!t)return Promise.resolve();if(audio&&state.phase==='blocked'){state.phase='paused';return playAudio(audio,++intent);}unload();return play(t);}
+    function setSkipUnavailable(value){restore(true);state.skipUnavailable=value===true;saveQueue();emit();}
     function stop() { ++intent; unload(); state.track = null; state.index = -1; state.position = state.duration = 0; state.playing = false; state.phase = 'idle'; state.error = ''; clearTimeout(sleepTimer); state.sleepAt = 0; emit(); }
     function setSleep(minutes) {
         clearTimeout(sleepTimer); const delay = number(minutes, 1440) * 60000; state.sleepAt = delay ? Date.now() + delay : 0;
@@ -481,7 +525,7 @@
         };
     }
     const player = { snapshot, subscribe(fn) { if (typeof fn !== 'function') throw new Error('Music subscriber must be a function'); listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
-        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, setSleep, stop, suspendVoice };
+        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setSleep, stop, suspendVoice };
     if (typeof navigator !== 'undefined' && navigator.mediaSession?.setActionHandler) {
         for (const [name, action] of Object.entries({ play: () => { if (!state.playing) toggle(); }, pause: () => { if (state.playing) toggle(); }, previoustrack: player.previous, nexttrack: player.next, stop,
             seekto: details => seek(details.seekTime), seekbackward: details => seek(state.position - (details.seekOffset || 10)), seekforward: details => seek(state.position + (details.seekOffset || 10)) })) {
@@ -490,7 +534,8 @@
     }
     const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, saveSettings, request,
         connect: signal => request('/health', { signal }), accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
-        search, playlists, playlist, lyrics, importLocal, importURL, deleteLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist,
+        search, playlists, playlist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
+        rememberSearch:q=>persist('musicLibrary',current=>({...current,searches:[text(q,200).trim(),...current.searches.filter(v=>v!==text(q,200).trim())].filter(Boolean).slice(0,12)})),clearSearches:()=>persist('musicLibrary',current=>({...current,searches:[]})),
         clearRecent: () => persist('musicLibrary', current => ({ ...current, recent: [] })),
         deletePlaylist: id => persist('musicLibrary', current => ({ ...current, playlists: current.playlists.filter(item => item.id !== id) })), player };
     root.UvUMusic = api; globalThis.UvUMusic = api;

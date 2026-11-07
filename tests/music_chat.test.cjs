@@ -213,3 +213,20 @@ test('listening session reflects voice pause and disappears when playback stops 
     c.UvUMusic.player.snapshot = () => ({ track: null, playing: false, phase: 'idle' });
     assert.equal(api.session(), null);
 });
+
+test('continuous listening follows only the explicitly allowed queue and never rewrites invitation facts', async () => {
+    const {api,c,chat}=fixture();let state={track:track(),queue:[track(),{...track(),id:'2',title:'Second'}],queueVersion:4,phase:'playing',playing:true};
+    c.UvUMusic.player.snapshot=()=>state;await api.share(track(),{invite:true});const plan=api.requestPlan(chat.history,chat);await api.consumeReply(command(plan.invitations[0].id),chat,plan);
+    const original=JSON.stringify(chat.history);assert.equal(api.setContinuous(true),true);
+    state={...state,track:state.queue[1]};assert.equal(api.session().track.id,'2');assert.equal(api.session().continuous,true);assert.equal(JSON.stringify(chat.history),original);
+    state={...state,track:{...track(),id:'foreign'}};assert.equal(api.session(),null);
+});
+
+test('continuous session is invalidated by a replaced queue or switched archive', async () => {
+    for(const change of ['queue','archive']){
+        const {api,c,chat}=fixture();let state={track:track(),queue:[track()],queueVersion:1,phase:'playing',playing:true};c.UvUMusic.player.snapshot=()=>state;
+        await api.share(track(),{invite:true});const p=api.requestPlan(chat.history,chat);await api.consumeReply(command(p.invitations[0].id),chat,p);api.setContinuous(true);
+        if(change==='queue')state={...state,queueVersion:2};else chat.activeArchiveId='other';assert.equal(api.session(),null,change);
+        if(change==='archive'){chat.activeArchiveId='archive-a';assert.equal(api.session(),null,'switching back cannot revive a stale session');}
+    }
+});

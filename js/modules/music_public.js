@@ -97,5 +97,5 @@
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('公共源歌词格式无效');
         return {lyric:clean(raw.lyric,100000).replace(/\\r\\n|\\n/g,'\n'),translation:clean(raw.tlyric,100000).replace(/\\r\\n|\\n/g,'\n')};
     }
-    root.UvUPublicMusic = {search,stream,lyrics};
+    root.UvUPublicMusic = {search,stream,lyrics,clearCache:()=>cache.clear()};
 })(typeof window !== 'undefined' ? window : globalThis);

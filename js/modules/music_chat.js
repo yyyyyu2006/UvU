@@ -132,13 +132,22 @@
             (typeof relationshipCanChat !== 'function' || relationshipCanChat(record.chat, 'private'));
     }
     function session() {
-        if (!sourceActive(activeSession) || activeSession.message.music.invitation.status !== 'accepted') return null;
+        if (!sourceActive(activeSession) || activeSession.message.music.invitation.status !== 'accepted') {activeSession=null;return null;}
         const { chat, message } = activeSession;
-        const playback = root.UvUMusic.player.snapshot(), track = message.music.track;
-        if (!playback?.track || playback.track.provider !== track.provider || String(playback.track.id) !== track.id) {
+        const playback = root.UvUMusic.player.snapshot(), invited = message.music.track;
+        const same=playback?.track&&playback.track.provider===invited.provider&&String(playback.track.id)===invited.id;
+        const continuous=activeSession.continuous===true;
+        if (!playback?.track || (continuous ? playback.queueVersion!==activeSession.queueVersion||!activeSession.allowed.has(playback.track.provider+':'+playback.track.id) : !same)) {
             activeSession = null; return null;
         }
-        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: portableTrack(track), localPlayback: playback.playing === true };
+        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: portableTrack(playback.track), continuous, localPlayback: playback.playing === true };
+    }
+    function setContinuous(enabled){
+        if(!session())return false;const state=root.UvUMusic.player.snapshot();
+        activeSession.continuous=enabled===true;activeSession.queueVersion=state.queueVersion;
+        activeSession.allowed=new Set([...(state.queue||[]),state.track].filter(Boolean).map(t=>t.provider+':'+t.id));
+        // Turning off while a later song plays ends this runtime session, without rewriting old messages.
+        if(!enabled)session();notify();return true;
     }
     async function listen(track, binding) {
         if (!binding || !binding.chat || !binding.message || binding.message.music?.invitation?.status !== 'accepted') throw new Error('一起听邀请尚未接受');
@@ -283,12 +292,10 @@
         const cover = node('img', undefined, 'uvu-music-cover'); cover.src = track.cover || 'assets/music/icons/music-2.svg'; cover.alt = track.album || track.title; cover.loading = 'lazy'; cover.referrerPolicy = 'no-referrer';
         cover.onerror = () => { cover.onerror = null; cover.src = 'assets/music/icons/music-2.svg'; };
         const details = node('div', undefined, 'uvu-music-info'); details.append(node('strong', track.title, 'uvu-music-title'), node('span', track.artists.join(' / ') || '未知歌手', 'uvu-music-artist'));
-        const tools = node('div', undefined, 'uvu-music-tools');
-        tools.append(control('play', '播放歌曲', () => message.music.invitation?.status === 'accepted' && bindingMatches(chat, message.music.invitation) ?
-            listen(track, { chat, message }) : root.UvUMusic.player.play(track)),
-            control('share-2', '分享歌曲', () => share(track, { target })),
-            control('headphones', '邀请一起听', () => share(track, { invite: true, target })));
-        details.append(tools); body.append(cover, details); card.append(body);
+        const start=()=>message.music.invitation?.status==='accepted'&&bindingMatches(chat,message.music.invitation)?listen(track,{chat,message}):root.UvUMusic.player.play(track);
+        body.append(cover,details);card.append(body);
+        if(root.UvUMusicCard)root.UvUMusicCard.attach({card,body,track,message,chat,start,target});
+        else card.append(control('play','播放歌曲',start));
         const invitation = payload.invitation;
         if (invitation) {
             const status = node('div', undefined, 'uvu-music-status');
@@ -302,7 +309,8 @@
             };
             renderStatus(); card.append(status);
             // The response normally rerenders the chat; update mounted cards immediately as well.
-            if (typeof root.addEventListener === 'function') {
+            if(root.UvUMusicCard)root.UvUMusicCard.setStatus(card,renderStatus);
+            else if (typeof root.addEventListener === 'function') {
                 const refresh = () => { if (wrapper.isConnected) renderStatus(); else root.removeEventListener('music-chat-state', refresh); };
                 root.addEventListener('music-chat-state', refresh);
             }
@@ -312,5 +320,5 @@
         (chat.timestampStyle === 'avatar' ? info : card).append(time);
         row.append(info, card); wrapper.append(row); return wrapper;
     }
-    root.UvUMusicChat = { share, listen, end, session, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
+    root.UvUMusicChat = { share, listen, end, session, setContinuous, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
 })(window);

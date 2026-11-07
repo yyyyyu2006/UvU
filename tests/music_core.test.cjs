@@ -37,6 +37,66 @@ function harness(initial = {}, extras = {}) {
     return h;
 }
 
+test('native pause before ended advances, list wraps, and manual pause never advances', async () => {
+    const h = harness(), a = h.music.importURL('https://media.test/a', {id:'a'}), b = h.music.importURL('https://media.test/b', {id:'b'});
+    await h.music.player.play(a,[a,b]); let audio=h.sounds.at(-1); audio.ended=true;audio.paused=true;audio.emit('pause');audio.emit('ended');await tick();
+    assert.equal(h.music.player.snapshot().track.id,'b');
+    h.music.player.setMode('list');audio=h.sounds.at(-1);audio.ended=true;audio.paused=true;audio.emit('pause');audio.emit('ended');await tick();
+    assert.equal(h.music.player.snapshot().track.id,'a');
+    await h.music.player.toggle();audio=h.sounds.at(-1);audio.ended=true;audio.emit('ended');await tick();assert.equal(h.music.player.snapshot().track.id,'a');
+    h.music.player.stop();
+});
+
+test('shuffle exhausts a round and previous follows actual history; explicit next has priority', async () => {
+    const h=harness(), songs=['a','b','c','d'].map(id=>h.music.importURL('https://media.test/'+id,{id}));
+    await h.music.player.play(songs[0],songs);h.music.player.setMode('shuffle');const heard=['a'];
+    for(let i=0;i<3;i++){await h.music.player.next();heard.push(h.music.player.snapshot().track.id);}
+    assert.equal(new Set(heard).size,4);await h.music.player.previous();assert.equal(h.music.player.snapshot().track.id,heard[2]);
+    assert.equal(h.music.player.enqueue(songs[0],true),true);await h.music.player.next();assert.equal(h.music.player.snapshot().track.id,'a');
+    h.music.player.stop();
+});
+
+test('queue reorder and clear retain current audio; repeated failure skipping stops after one bounded pass', async () => {
+    const h=harness({musicSettings:{endpoint:'https://one.test'}});const songs=['a','b','c'].map(id=>track(id));await h.music.player.play(songs[1],songs);
+    h.music.player.move(0,2);assert.deepEqual(plain(h.music.player.snapshot().queue.map(t=>t.id)),['b','c','a']);assert.equal(h.music.player.snapshot().index,0);
+    h.music.player.clear();assert.deepEqual(plain(h.music.player.snapshot().queue.map(t=>t.id)),['b']);assert.equal(h.music.player.snapshot().playing,true);
+    h.music.player.setSkipUnavailable(true);h.music.player.setMode('list');h.fetch=async url=>{if(url.endsWith('/session'))return{token:'session'};throw new Error('Network unavailable');};
+    await h.music.player.play(songs[0],songs);await tick();await tick();
+    assert.equal(h.music.player.snapshot().phase,'error');assert.equal(h.music.player.snapshot().playing,false);assert.ok(h.calls.length<12);
+    h.music.player.stop();
+});
+
+test('playlist and local metadata edits persist, preserve binary identity and roll back failed writes', async () => {
+    const h=harness();const song=h.music.importURL('https://media.test/a',{id:'a',title:'Old'});await h.music.toggleFavorite(song);const p=await h.music.addPlaylist('Old list');await h.music.addToPlaylist(p.id,song);
+    await h.music.renamePlaylist(p.id,'New list');await h.music.updateLocal(song,{title:'New',artists:['Artist'],cover:'javascript:bad'});
+    assert.equal(h.music.library().favorites[0].title,'New');assert.equal(h.music.library().playlists[0].tracks[0].title,'New');assert.equal(h.music.library().favorites[0].cover,'');
+    h.failSave=true;await assert.rejects(h.music.renamePlaylist(p.id,'Failed'));assert.equal(h.music.library().playlists[0].name,'New list');h.music.player.stop();
+});
+
+test('lyric cache is bounded, explicitly clearable, and never bypasses cancellation',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}});let count=0;h.fetch=async url=>url.endsWith('/session')?{token:'token'}:(count++,{lyric:'[00:01]Hi'});
+    await h.music.lyrics(track('a'));await h.music.lyrics(track('a'));assert.equal(count,1);
+    const controller=new AbortController();controller.abort();await assert.rejects(h.music.lyrics(track('a'),controller.signal),{name:'AbortError'});
+    h.music.clearMetadataCache();await h.music.lyrics(track('a'));assert.equal(count,2);
+});
+
+test('fresh shuffle queues start with requested track once and permission retry reuses current audio',async()=>{
+    const h=harness(),songs=['a','b','c'].map(id=>h.music.importURL('https://media.test/'+id,{id}));h.music.player.setMode('shuffle');await h.music.player.play(songs[0],songs);const heard=['a'];for(let i=0;i<2;i++){await h.music.player.next();heard.push(h.music.player.snapshot().track.id);}assert.equal(new Set(heard).size,3);
+    h.playHook=()=>Promise.reject(Object.assign(new Error('blocked'),{name:'NotAllowedError'}));await h.music.player.play(songs[0]);const before=h.sounds.length;h.playHook=null;await h.music.player.retry();assert.equal(h.sounds.length,before);assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
+});
+
+test('replacing a shuffle queue includes the previous song in its first round',async()=>{
+    const h=harness({}, {Math:Object.assign(Object.create(Math),{random:()=>0})}),songs=['a','b','c'].map(id=>h.music.importURL('https://media.test/'+id,{id}));await h.music.player.play(songs[0]);h.music.player.setMode('shuffle');await h.music.player.play(songs[1],songs);const heard=['b'];for(let i=0;i<2;i++){await h.music.player.next();heard.push(h.music.player.snapshot().track.id);}assert.deepEqual(heard.sort(),['a','b','c']);h.music.player.stop();
+});
+
+test('player toggle retries a failed stream through source resolution and retains failure text',async()=>{
+    const h=harness({musicSettings:{endpoint:'https://one.test'}});await h.music.player.play(track('a'));h.sounds.at(-1).emit('error');const count=h.calls.filter(c=>c.url.endsWith('/stream')).length;h.playHook=()=>Promise.reject(new Error('Network audio error'));await h.music.player.toggle();assert.equal(h.calls.filter(c=>c.url.endsWith('/stream')).length,count+1);assert.equal(h.music.player.snapshot().phase,'error');assert.ok(h.music.player.snapshot().error);h.music.player.stop();
+});
+
+test('late audio errors after manual pause never trigger automatic skipping',async()=>{
+    const h=harness(),songs=['a','b'].map(id=>h.music.importURL('https://media.test/'+id,{id}));h.music.player.setSkipUnavailable(true);await h.music.player.play(songs[0],songs);await h.music.player.toggle();h.sounds.at(-1).emit('error');await tick();assert.equal(h.music.player.snapshot().track.id,'a');assert.equal(h.music.player.snapshot().playing,false);h.music.player.stop();
+});
+
 test('portable tracks allowlist fields and reject active URLs', () => {
     const h = harness(); assert.ok(h.music, 'UvUMusic global is installed');
     const value = h.music.normalizeTrack(track('1', { cookie: 'secret', url: 'https://signed.test/song?token=private', cover: 'javascript:alert(1)', pageUrl: 'https://bad.test/?token=secret', artists: ['A', 2] }));

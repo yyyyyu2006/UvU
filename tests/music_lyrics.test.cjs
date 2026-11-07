@@ -21,3 +21,10 @@ test('lyrics formatter safely handles absent and bounded input', () => {
     assert.equal(format(null), ''); assert.equal(format({ lyric: 'x' }), '');
     assert.ok(format('字'.repeat(110000)).length <= 100000);
 });
+
+test('timed lyric parsing sorts repeated times, honors offset and keeps displayed words clean',()=>{
+    const c=vm.createContext({});c.window=c;vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/music_lyrics.js'),'utf8'),c);
+    const parsed=c.UvUMusicLyrics.parse('[offset:500]\n[00:03.50][00:01.00]<00:01.00>Hello\n[00:02]World');
+    assert.deepEqual(JSON.parse(JSON.stringify(parsed)),[{time:1.5,text:'Hello'},{time:2.5,text:'World'},{time:4,text:'Hello'}]);
+    assert.deepEqual(JSON.parse(JSON.stringify(c.UvUMusicLyrics.parse('第一段\n\n第二段'))),[{time:null,text:'第一段'},{time:null,text:''},{time:null,text:'第二段'}]);
+});
