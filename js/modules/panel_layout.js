@@ -112,7 +112,20 @@
             const advancedNodes = ['batch-size', 'query-prefix', 'document-prefix', 'task-mode', 'timeout'].map(id => q(root, '#vector-api-' + id)?.closest('label'));
             disclose(advancedNodes, '嵌入高级设置', 'panel-embedding-advanced');
             q(vectorApi, 'summary').textContent = '嵌入模型';
-            const grid = q(vector, '.auto-memory-grid'); disclose([grid], '检索设置', 'panel-vector-retrieval');
+            const grid = q(vector, '.auto-memory-grid');
+            const enable = group([field('vectorSearchEnabled')], '', 'panel-vector-enable');
+            const embedding = group([vectorApi], '', 'panel-vector-embedding');
+            const retrieval = group([grid, q(vector, ':scope > .auto-memory-guide')], '检索设置', 'panel-vector-retrieval');
+            const ranking = group([rerankFlag, rerank], '', 'panel-vector-rerank');
+            [enable, embedding, retrieval, ranking].forEach((section, index) => {
+                if (section) { section.dataset.vectorSection = ['enable', 'embedding', 'retrieval', 'rerank'][index]; vector.append(section); }
+            });
+            // Keep the API controls in their existing details/form and retain callbacks.
+            vectorApi.classList.add('panel-disclosure');
+            const apiActions = make('div', 'panel-vector-api-actions');
+            const fetchModels = q(root, '#vector-api-fetch-models'), testApi = q(root, '#vector-api-test');
+            fetchModels.before(apiActions); apiActions.append(fetchModels, testApi);
+            label(fetchModels, '获取模型'); label(testApi, '测试接口');
             const rerankVisible = () => { if (rerank) rerank.hidden = !form.elements.namedItem('vectorRerankEnabled').checked; };
             form.elements.namedItem('vectorRerankEnabled').addEventListener('change', rerankVisible);
             const sync = () => { apiVisible(); rerankVisible(); };
@@ -154,7 +167,10 @@
         q(root, '#uvu-bridge-review-title').textContent = '待审核剧情';
         const help = q(review, '.uvu-bridge-review-help'); disclose([help], '审核说明', 'panel-review-help');
         const onlineActions = q(root, '#uvu-bridge-online-actions');
-        if (config) config.append(onlineActions, q(root, '#uvu-bridge-recover'));
+        if (config) {
+            config.append(onlineActions);
+            onlineActions.append(q(root, '#uvu-bridge-recover'));
+        }
         const syncButton = q(root, '#uvu-bridge-sync');
         const syncTransport = () => { syncButton.hidden = onlineActions.hidden || onlineActions.style.display === 'none'; };
         new MutationObserver(syncTransport).observe(onlineActions, { attributes: true, attributeFilter: ['hidden', 'style'] }); syncTransport();
@@ -249,6 +265,23 @@
         const logs = [...body.querySelectorAll(':scope > details')].find(el => /最近调用与用量/.test(el.firstElementChild?.textContent));
         if (logs) q(logs, 'summary').textContent = '调用记录';
     }
+    function actions(root) {
+        // Compact task actions only; keep original headers, circular controls and lists intact.
+        if (root.classList.contains('status-token-panel')) return;
+        for (const button of root.querySelectorAll('button')) {
+            if (button.matches('#auto-memory-close,.message-forward-close,[data-action=close],.shared-document-upload') ||
+                button.closest('.app-header,.panel-segment,.model-picker-list,.environment-calendar')) continue;
+            button.classList.add('panel-compact-action');
+        }
+        if (root.classList.contains('mcp-settings')) {
+            const row = q(root, '.mcp-body > section:not(.panel-mcp-global) > .mcp-row');
+            if (row && row.querySelectorAll(':scope > button').length === 4) {
+                row.classList.add('panel-mcp-service-actions');
+                const test = row.lastElementChild;
+                label(test, '测试工具'); test.title = '测试连接并刷新工具';
+            }
+        }
+    }
     function extra(root) {
         root.querySelectorAll('.relationship-help').forEach(p => { if (!p.closest('details')) disclose([p], '规则说明', 'panel-inline-help'); });
         if (root.classList.contains('relationship-dialog')) {
@@ -290,7 +323,7 @@
                 while (parent && parent !== root) { if (parent.tagName === 'DETAILS') parent.open = true; parent = parent.parentElement; }
             }, true);
         }
-        libraryRows(root); extra(root);
+        libraryRows(root); extra(root); actions(root);
     }
     function start() {
         document.querySelectorAll(roots).forEach(decorate);

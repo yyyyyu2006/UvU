@@ -77,3 +77,18 @@
 - Review caught an overlapping status delete control; retained its existing gap around the original close button. Calendar state colors do not animate.
 - A test fixture journal lacked the original required range field; supplied a valid fixture rather than modifying original diary code. Disabled default backup reminder in the test fixture only.
 - EOL restoration preserves exact bytes of unchanged lines in existing touched files. Only new scoped CSS/JS, added file UI, asset registration, tests and this plan are changed; no existing CSS or reply/prompt/storage/bridge implementation files modified.
+
+
+## Follow-up: screenshot layout corrections
+
+Approved scope: clearer vector sections, smaller derived action pills, separated Tavern connection rows. Work inline under the existing approved design and main publication authorization.
+
+- [x] Reproduce actual computed layouts; check vector grouping, MCP wrapping, Tavern heading and recovery spacing at 320/390/768.
+- [x] Keep vector controls inside their fieldset/form; present enable, embedding, retrieval, rerank in that order. Place help inside its matching section and keep API status visible on expansion.
+- [x] Compact only added action buttons to 32px with 6px/10px padding (36px on touch); preserve icon/close/calendar/model controls. Keep action groups 8px apart.
+- [x] Put Tavern connection/recovery into a two-column action grid with 12px row gaps. Keep existing ST/TT visibility handlers on original nodes.
+- [x] Verify save, validation, dynamic MCP rows, ST/TT visibility, narrow/short screens and unchanged original chat controls; inspect screenshots, run regressions, publish verified assets.
+
+Root causes: fieldset/nested guide padding and margins accumulate; coarse-pointer rule makes small MCP actions 44px high; Tavern header inherits column direction, recovery sits outside its action row.
+
+Verification: 636/636 unit tests pass; actual application layout and expanded vector fields at 320/390/768; compact action dimensions and vector save/reopen; ST/TT mode and rollback, MCP HTTP/SSE discover/permissions/calls with the panel layer, document/calendar/status history and local icon workflows all pass. Read-only independent review found no actionable issue. Closing vector disclosures immediately clears their content to prevent a transient stale height. Existing mixed line endings retained byte-for-byte in index.html; no original CSS, prompt, AI, storage or bridge behavior files changed.

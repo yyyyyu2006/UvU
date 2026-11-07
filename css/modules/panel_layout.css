@@ -78,10 +78,23 @@
 #auto-memory-modal.uvu-panel-layout .panel-summary-advanced > fieldset { border: 0; margin: 0; padding: 16px; }
 #auto-memory-modal.uvu-panel-layout .auto-memory-grid { gap: 16px; }
 #auto-memory-modal.uvu-panel-layout .auto-memory-grid > label { margin: 0; font-size: 13px; }
-#auto-memory-modal.uvu-panel-layout #vector-api-panel { margin: 16px 0; padding: 0; border: 0; border-top: 1px solid #edf0f4; border-radius: 0; box-shadow: none; }
+#auto-memory-modal.uvu-panel-layout #vector-api-panel { margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
 #auto-memory-modal.uvu-panel-layout .auto-memory-actions { justify-content: flex-end; display: flex; flex-wrap: wrap; padding: 8px 0; }
 #auto-memory-modal.uvu-panel-layout.vector-settings-mode .panel-coverage { display: none; }
-#auto-memory-modal.uvu-panel-layout .panel-vector-retrieval { margin-top: 16px; }
+#auto-memory-modal.uvu-panel-layout.vector-settings-mode #auto-memory-form > .vector-memory-fieldset { display: grid; gap: 16px; padding: 0; background: transparent; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset > legend { display: none; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset > .panel-card { margin: 0; padding: 16px; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset .panel-disclosure > summary { min-height: 36px; margin: 0; padding: 0; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset .panel-disclosure[open] > summary { margin-bottom: 16px; }
+#auto-memory-modal.uvu-panel-layout .panel-vector-retrieval .panel-section-title { margin-bottom: 16px; font-size: 14px; }
+#auto-memory-modal.uvu-panel-layout #auto-memory-form .vector-memory-fieldset .auto-memory-guide { margin: 8px 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset .auto-memory-guide > summary { min-height: 36px; padding: 0; margin: 0; }
+#auto-memory-modal.uvu-panel-layout .vector-memory-fieldset .auto-memory-guide[open] > summary { margin-bottom: 8px; }
+#auto-memory-modal.uvu-panel-layout .panel-vector-rerank .panel-rerank-api { margin-top: 8px; }
+#auto-memory-modal.uvu-panel-layout .panel-vector-api-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 16px 8px; }
+#auto-memory-modal.uvu-panel-layout .panel-vector-api-actions > button { width: auto; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-actions { margin-top: 0; }
+#auto-memory-modal.uvu-panel-layout .auto-memory-actions .btn { width: auto; height: auto; padding: 6px 14px; }
 
 /* Memory library: persistent search and concise previews; full text stays available. */
 .memory-library > .uvu-panel-layout { width: min(640px,100%); }
@@ -106,12 +119,15 @@
 #uvu-story-bridge-screen.uvu-panel-layout .panel-segment:before { content: ''; position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 6px); background: #fff; border-radius: 999px; box-shadow: 0 1px 4px #0000000b; transform: translateX(calc(var(--panel-selected-index) * (100% + 4px))); transition: transform var(--panel-duration) var(--panel-ease); z-index: -1; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-segment button { min-height: 40px; border: 0; background: transparent; font-size: 13px; padding: 8px; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-segment button[aria-pressed=true] { color: #1b1d21; background: transparent; }
-#uvu-story-bridge-screen.uvu-panel-layout .kkt-item-content { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .kkt-item-content { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+#uvu-story-bridge-screen.uvu-panel-layout .kkt-item-content > .panel-switch-row { align-items: center; margin: 0; flex: 0 0 auto; }
+#uvu-story-bridge-screen.uvu-panel-layout input.panel-switch[type=checkbox] { width: 42px; height: 26px; flex: 0 0 42px; margin: 0; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-intro { flex-basis: 100%; order: 2; }
 #uvu-story-bridge-screen.uvu-panel-layout .kkt-item-title { font-size: 16px; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config { margin-top: 0; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config #uvu-bridge-online-controls { display: grid; gap: 16px; }
-#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config .uvu-bridge-actions { padding-top: 16px; }
+#uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-config #uvu-bridge-online-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: center; justify-items: start; gap: 12px 16px; padding-top: 24px; }
+#uvu-story-bridge-screen.uvu-panel-layout #uvu-bridge-online-actions > button { max-width: 100%; white-space: normal; text-align: center; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-section-heading h3 { margin: 0; }
 #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-role { display: flex; align-items: flex-end; gap: 8px; }
@@ -222,6 +238,12 @@
 #pv-confirm-preview { width: 16px; height: 16px; accent-color: #4a789f; }
 #uvu-notification-preferences.uvu-panel-layout { padding: 20px; border: 0; border-radius: 24px; }
 
+/* Compact task pills are scoped to added panels; icons, calendar days and model rows keep their sizing. */
+:is(.uvu-panel-layout,#auto-memory-modal.uvu-panel-layout,#uvu-story-bridge-screen.uvu-panel-layout) button.panel-compact-action { box-sizing: border-box; width: auto; min-width: 0; min-height: 32px; height: auto; margin: 0; padding: 5px 10px; font-size: 12px; line-height: 1.4; gap: 4px; }
+.uvu-panel-layout button.panel-compact-action > .derived-icon { width: 14px; height: 14px; }
+.mcp-settings.uvu-panel-layout .panel-mcp-service-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+#mcp-services .mcp-settings.uvu-panel-layout .panel-mcp-service-actions > button { padding-inline: 6px; }
+
 /* Small entrance and disclosure transitions; never animate chat history or add delays to actions. */
 .uvu-panel-layout:is(.feature-dialog-card,.shared-document-dialog,.derived-settings,.mcp-settings,.relationship-dialog,.model-picker-card),#auto-memory-modal.uvu-panel-layout.visible .auto-memory-dialog { animation: panel-enter var(--panel-duration,200ms) cubic-bezier(.2,.7,.2,1) both; }
 .uvu-panel-layout .panel-disclosure[open]::details-content { animation: panel-content-in var(--panel-quick,160ms) ease-out; }
@@ -229,6 +251,7 @@
     .uvu-panel-layout .panel-disclosure { interpolate-size: allow-keywords; }
     .uvu-panel-layout .panel-disclosure::details-content { block-size: 0; opacity: 0; overflow: clip; transition: block-size var(--panel-duration) var(--panel-ease), opacity var(--panel-quick) ease, content-visibility var(--panel-duration) allow-discrete; }
     .uvu-panel-layout .panel-disclosure[open]::details-content { block-size: auto; opacity: 1; }
+    #auto-memory-modal.uvu-panel-layout .vector-memory-fieldset .panel-disclosure:not([open])::details-content { transition: none; }
 }
 @keyframes panel-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes panel-content-in { from { opacity: .5; } to { opacity: 1; } }
@@ -244,7 +267,8 @@
     .memory-library .uvu-panel-layout > header strong { font-size: 16px; }
 }
 @media (pointer: coarse) {
-    .uvu-panel-layout :is(button,summary) { min-height: 44px; }
+    .uvu-panel-layout summary { min-height: 44px; }
+    :is(.uvu-panel-layout,#auto-memory-modal.uvu-panel-layout,#uvu-story-bridge-screen.uvu-panel-layout) button.panel-compact-action { min-height: 36px; }
     .uvu-panel-layout :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size: 16px; }
     .uvu-panel-layout button:after { inset: 0; pointer-events: none; }
     .derived-settings.uvu-panel-layout .environment-day { min-height: 36px; }

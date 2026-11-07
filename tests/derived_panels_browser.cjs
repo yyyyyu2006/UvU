@@ -46,10 +46,44 @@ const server = http.createServer((req, res) => {
             return b ? { html: b.outerHTML, width: getComputedStyle(b).width } : null;
         });
         assert.notEqual(original, null, 'Original chat button must exist for compatibility assertion');
+        const layoutFailures = [];
+        async function checkActionLayout(name, width) {
+            const failures = await page.evaluate(({name, width}) => {
+                const failures = [], check = (ok, text) => { if (!ok) failures.push(text); };
+                const rect = el => el.getBoundingClientRect();
+                if (name === 'vector') {
+                    const field = document.querySelector('.vector-memory-fieldset');
+                    check([...field.querySelectorAll(':scope > section')].map(el => el.dataset.vectorSection).join(',') === 'enable,embedding,retrieval,rerank', 'Vector sections follow enable → embedding → retrieval → rerank');
+                    const save = document.querySelector('#auto-memory-form > .auto-memory-actions button[type=submit]');
+                    check(rect(save).width < 110 && rect(save).height <= 36, 'Vector save is a compact action');
+                    const guide = field.querySelector('.panel-vector-retrieval .auto-memory-guide');
+                    check(guide && parseFloat(getComputedStyle(guide).paddingTop) === 0 && parseFloat(getComputedStyle(guide).borderTopWidth) === 0, 'Retrieval help has no extra nested card');
+                }
+                if (name === 'mcp') {
+                    const row = document.querySelector('.mcp-settings .mcp-body > section:not(.panel-mcp-global) > .mcp-row');
+                    const buttons = [...(row?.querySelectorAll(':scope > button') || [])];
+                    check(buttons.length === 4, 'All four service actions stay available');
+                    check(buttons.every(el => rect(el).height <= 36 && parseFloat(getComputedStyle(el).paddingLeft) <= 10), 'MCP actions use compact padding and height');
+                    if (width >= 390) check(new Set(buttons.map(el => Math.round(rect(el).y))).size === 1, 'MCP actions fit one row at regular mobile width');
+                }
+                if (name === 'tavern') {
+                    const pair = document.getElementById('uvu-bridge-pair'), reconnect = document.getElementById('uvu-bridge-reconnect'), disconnect = document.getElementById('uvu-bridge-disconnect'), recover = document.getElementById('uvu-bridge-recover');
+                    check(Math.abs(rect(pair).y - rect(reconnect).y) < 1 && Math.abs(rect(disconnect).y - rect(recover).y) < 1, 'Connection actions align in two rows');
+                    check(rect(disconnect).y - rect(pair).bottom >= 11, 'Connection action rows have breathing room');
+                    const title = document.querySelector('#uvu-story-bridge-settings .kkt-item-title'), toggle = document.getElementById('uvu-bridge-enabled');
+                    check(Math.abs((rect(title).y + rect(title).height / 2) - (rect(toggle).y + rect(toggle).height / 2)) < 2, 'Connection title and switch share one row');
+                }
+                return failures;
+            }, {name, width});
+            layoutFailures.push(...failures.map(text => `${name}/${width}: ${text}`));
+        }
         async function shot(name, selector, widths = [320, 390, 768]) {
             const panel = page.locator(selector); await panel.waitFor({ state: 'visible' });
+            await panel.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))));
             for (const width of widths) {
                 await page.setViewportSize({ width, height: 844 });
+                // Viewport changes can restart intrinsic-size disclosure transitions.
+                await panel.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {}))));
                 const info = await panel.evaluate(el => {
                     const edge = el.getBoundingClientRect();
                     return { width: edge.width, scroll: el.scrollWidth, client: el.clientWidth, hidden: el.querySelectorAll('[hidden]').length,
@@ -57,6 +91,7 @@ const server = http.createServer((req, res) => {
                 });
                 assert.ok(info.width <= width + 1, `${name}/${width}: ${JSON.stringify(info)}`);
                 assert.ok(info.scroll <= info.client + 1, `${name}/${width}: horizontal overflow ${JSON.stringify(info)}`);
+                await checkActionLayout(name, width);
                 await page.screenshot({ path: path.join(out, `${name}-${width}.png`), animations: 'disabled' });
             }
             if (!['voice', 'tavern', 'notification', 'backup'].includes(name)) {
@@ -108,9 +143,32 @@ const server = http.createServer((req, res) => {
         await page.waitForFunction(() => db.characters[0].autoMemorySettings?.keepRecent === 10 && !document.getElementById('auto-memory-modal').classList.contains('visible'));
         await page.evaluate(() => document.getElementById('vector-memory-settings-btn').click());
         assert.equal(await summaryHelp.isVisible(), false); assert.equal(await page.locator('.auto-memory-range').isVisible(), false);
-        await page.locator('#vector-api-panel > summary').click(); await shot('vector', '#auto-memory-modal .auto-memory-dialog');
+        await page.locator('#vector-api-panel > summary').click();
+        const closedVector = await page.locator('#vector-api-panel').evaluate(el => ({ height: el.getBoundingClientRect().height, summaryHeight: el.firstElementChild.getBoundingClientRect().height }));
+        assert.equal(closedVector.height, closedVector.summaryHeight, 'Closing embedding settings immediately hides inner content');
+        await shot('vector', '#auto-memory-modal .auto-memory-dialog');
+        await page.locator('#vector-api-panel > summary').click();
+        await shot('vector-embedding', '#auto-memory-modal .auto-memory-dialog');
+        assert.equal(await page.locator('#vector-api-url').isVisible(), true);
+        assert.equal(await page.locator('#vector-api-fetch-models').isVisible(), true);
+        await page.locator('.panel-embedding-advanced > summary').click();
+        await shot('vector-advanced', '#auto-memory-modal .auto-memory-dialog', [320, 390]);
+        assert.equal(await page.locator('#vector-api-batch-size').isVisible(), true);
         await page.locator('[name=vectorRerankEnabled]').check(); assert.equal(await page.locator('.panel-rerank-api').isVisible(), true);
+        await shot('vector-rerank', '#auto-memory-modal .auto-memory-dialog', [320, 390]);
+        assert.equal(await page.locator('#vector-api-rerank-model').isVisible(), true);
         await page.locator('[name=vectorRerankEnabled]').uncheck(); assert.equal(await page.locator('.panel-rerank-api').isVisible(), false);
+        await page.locator('[name=vectorSearchEnabled]').check();
+        await page.locator('#vector-api-url').fill('https://fixture.invalid/v1');
+        await page.locator('#vector-api-key').fill('layout-vector-fixture');
+        await page.locator('#vector-api-embedding-model').fill('layout-embedding');
+        await page.locator('[name=vectorTopK]').fill('4');
+        await page.locator('[name=vectorThreshold]').fill('0.3');
+        await page.locator('#auto-memory-form button[type=submit]').click();
+        await page.waitForFunction(() => db.characters[0].autoMemorySettings?.vectorTopK === 4 && !document.getElementById('auto-memory-modal').classList.contains('visible'));
+        await page.evaluate(() => document.getElementById('vector-memory-settings-btn').click());
+        assert.equal(await page.locator('[name=vectorSearchEnabled]').isChecked(), true);
+        assert.equal(await page.locator('[name=vectorThreshold]').inputValue(), '0.3');
         await page.locator('#auto-memory-close').click();
         await page.evaluate(() => openCharacterAvatarSettings()); await shot('avatar', '#character-avatar-settings .derived-settings');
         await page.evaluate(() => document.getElementById('character-avatar-settings').dismissForward());
@@ -221,6 +279,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => openChatRoom('layout-char', 'private'));
         const after = await page.evaluate(() => { const b = document.getElementById('send-message-btn') || document.querySelector('#chat-room-screen .chat-input-area'); return b ? { html: b.outerHTML, width: getComputedStyle(b).width } : null; });
         assert.deepEqual(after, original); assert.deepEqual(errors, []);
+        assert.deepEqual(layoutFailures, [], 'Reported layouts must be organized, compact and aligned');
         console.log('PASS actual app: derived panels at 320/390/768; file close pill, summary/vector separation and help, visible Tavern review/tutorial, voice director, model search, original chat controls unchanged.');
     } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); process.exitCode = 1; server.closeAllConnections(); server.close(); });
