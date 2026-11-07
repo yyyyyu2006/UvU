@@ -25,7 +25,7 @@ Review focus: stale audio/request events; queue mutation during loading; deleted
 
 ## Task 4: Verification and delivery
 - [x] Full Node suite, music browser at 320/390/768, native real-audio end test, desktop drag; syntax/diff and screenshots.
-- [ ] Review complete diff, fix important findings with regressions, update music docs, commit/push main and verify Pages assets.
+- [x] Review complete diff, fix important findings with regressions, update music docs, commit/push main and verify Pages assets.
 
 ## Evidence / rulings
 - BASE bbcb9d9. Existing scratch outputs is excluded. Native inline work under standing main authorization.
@@ -38,3 +38,4 @@ Review focus: stale audio/request events; queue mutation during loading; deleted
 - Final Node command: D:/node.exe --test --test-isolation=none tests/*.test.cjs — 812 passed, 0 failed.
 - Browser: D:/node.exe tests/music_browser.cjs — passed at 320/390/768; no page errors. D:/node.exe tests/home_drag_browser.cjs — passed including persistence/reload.
 - Syntax checks and git diff --check passed. Original prompt/reply files and 1900 beautification are outside the diff. Remote account entitlement, iOS background playback and lock-screen behavior remain real-device verification limits.
+- Delivery: feature commit 302e78d pushed to main; remote SHA matched. Pages index includes the new script/cache keys, and all 8 changed music JS/CSS assets matched local content after line-ending normalization. GitHub Actions API was rate-limited; deployment was verified directly against public assets instead.
