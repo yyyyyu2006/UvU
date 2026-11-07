@@ -4,15 +4,18 @@
     const node = (tag, text, cls = '') => { const e = document.createElement(tag); e.className = cls; if (text !== undefined) e.textContent = text; return e; };
     const button = (text, action, cls = '') => { const b = node('button', text, cls); b.type = 'button'; b.onclick = action; return b; };
     const iconButton = (name, label, action) => { const b = button('', action, 'calendar-icon-button'); b.setAttribute('aria-label', label); b.title = label; const icon = root.DerivedIcons?.create(name); if (icon) b.append(icon); else b.textContent = label; return b; };
-    const colors = ['#171719', '#85a9c7', '#9a8cc1', '#cfac6c', '#91ad99', '#c88d95'];
-    const moodPaths = { happy: 'M12 21 Q20 29 28 21', calm: 'M14 24 L26 24', tired: 'M14 25 Q20 22 26 25', sad: 'M12 27 Q20 18 28 27', upset: 'M13 25 L27 25' };
-    function face(mood, color = '#171719') {
+    const colors = [C().moodColor, '#171719', '#9a8cc1', '#cfac6c', '#91ad99', '#c88d95'];
+    const moodIcons = { happy: 'smile', calm: 'meh', tired: 'annoyed', sad: 'frown', upset: 'angry' };
+    function face(mood, color = C().moodColor) {
         const wrap = node('span', undefined, 'calendar-face' + (mood ? ' is-recorded' : ''));
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 40 40'); svg.setAttribute('aria-hidden', 'true');
-        const part = (tag, attrs) => { const e = document.createElementNS(svg.namespaceURI, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); svg.append(e); };
-        part('circle', { cx: 20, cy: 20, r: 19, fill: mood ? color : '#f0f0f3' });
-        if (mood) { part('circle', { cx: 14, cy: 15, r: 1.8, fill: '#fff' }); part('circle', { cx: 26, cy: 15, r: 1.8, fill: '#fff' }); part('path', { d: moodPaths[mood] || moodPaths.calm, fill: 'none', stroke: '#fff', 'stroke-width': 2.3, 'stroke-linecap': 'round' }); }
-        wrap.append(svg); return wrap;
+        if (!mood) return wrap;
+        wrap.style.setProperty('--mood-color', color);
+        const rgb = color.slice(1).match(/../g).map(v => parseInt(v, 16));
+        wrap.style.color = rgb[0] * .299 + rgb[1] * .587 + rgb[2] * .114 > 160 ? '#35546f' : '#fff';
+        const svg = root.DerivedIcons?.create(moodIcons[mood]);
+        if (svg) { svg.dataset.moodIcon = moodIcons[mood]; wrap.append(svg); }
+        else { wrap.textContent = C().moods[mood] || ''; wrap.style.backgroundColor = color; }
+        return wrap;
     }
     function field(form, label, type = 'text', value = '') {
         const row = node('label', label, 'calendar-field'), input = node(type === 'textarea' ? 'textarea' : 'input'); if (type !== 'textarea') input.type = type;
@@ -68,7 +71,7 @@
         if (original) d.footer.prepend(button('删除', () => { if (confirm('删除所选范围内的日程？')) d.run(() => save(true)); }, 'calendar-danger'));
     }
     function editMood(key, date, original) {
-        const d = editor('记录心情'); let mood = original?.mood || 'happy', color = original?.color || '#171719';
+        const d = editor('记录心情'); let mood = original?.mood || 'happy', color = original?.color || C().moodColor;
         const picker = node('div', undefined, 'calendar-mood-picker'); d.fields.append(picker);
         for (const [value, label] of Object.entries(C().moods)) {
             const b = button('', () => { mood = value; paint(); }); b.dataset.mood = value; b.setAttribute('aria-label', label); b.append(face(value), node('span', label)); picker.append(b);
@@ -77,7 +80,7 @@
         colors.forEach(value => { const b = button('', () => { color = value; paint(); }); b.style.backgroundColor = value; b.setAttribute('aria-label', '颜色 ' + value); b.dataset.color = value; palette.append(b); });
         const note = field(d.fields, '心情备注', 'textarea', original?.note || ''); note.maxLength = 1000; note.rows = 3;
         const day = field(d.fields, '日期', 'date', date);
-        function paint() { picker.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mood === mood))); palette.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.color === color))); }
+        function paint() { picker.querySelectorAll('button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.mood === mood)); b.querySelector('.calendar-face')?.replaceWith(face(b.dataset.mood, color)); }); palette.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.color === color))); }
         paint(); d.form.onsubmit = ev => { ev.preventDefault(); d.run(async () => { if (key !== 'user' && !C().resolve(key)) throw new Error('角色或存档已变化'); await C().saveMood({ id: original?.id, owner: key, date: day.value, mood, color, note: note.value }, original); }); };
         if (original) d.footer.prepend(button('删除', () => { if (confirm('删除这条心情？')) d.run(() => C().removeRecord('moods', original.id, original)); }, 'calendar-danger'));
     }

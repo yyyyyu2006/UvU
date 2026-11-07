@@ -75,7 +75,7 @@
             const mood = ticket.proposal.mood;
             if (mood && !data.moods.some(m => m.owner === s.owner && m.date === proposal.date && m.source === 'manual')) {
                 data.moods = data.moods.filter(m => !(m.owner === s.owner && m.date === proposal.date && m.source === 'ai'));
-                data.moods.push({ id: C().id(), owner: s.owner, date: proposal.date, mood: mood.mood, note: mood.note, color: '#171719', source: 'ai', at: Date.now() });
+                data.moods.push({ id: C().id(), owner: s.owner, date: proposal.date, mood: mood.mood, note: mood.note, color: C().moodColor, source: 'ai', at: Date.now() });
             }
             const p = data.profiles.find(p => p.owner === s.owner) || C().profile(s.owner); p.generatedDates = [...new Set([...p.generatedDates, proposal.date])].slice(-90); if (!data.profiles.includes(p)) data.profiles.push(p);
         }, { expected: s.revision, guard: () => valid(s) && (!update || C().profile(s.owner).autonomy) });
