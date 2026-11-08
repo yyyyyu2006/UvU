@@ -1,0 +1,22 @@
+# Free music gateway only. The UvU frontend stays on GitHub Pages.
+services:
+  - type: web
+    name: uvu-music
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: services/music-gateway
+    buildCommand: node setup.mjs
+    startCommand: node render-start.mjs
+    healthCheckPath: /v1/health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - services/music-gateway/**
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: MUSIC_ORIGINS
+        value: https://yyyyyu2006.github.io

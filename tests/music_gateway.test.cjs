@@ -49,6 +49,15 @@ test('gateway exposes health and authenticated contract without raw provider fie
     assert.deepEqual((await s.request('GET', '/track/netease/123/lyrics', token)).body, { lyric: '[00:01]hello', translation: 'translated' });
 });
 
+test('Render health declares ephemeral hosting without publishing private deployment configuration', async t => {
+    const s=await setup({ephemeralDeployment:true});t.after(()=>s.gateway.close());
+    const health=(await s.request('GET','/health')).body;
+    assert.deepEqual(health.deployment,{provider:'render',ephemeral:true});
+    assert.doesNotMatch(JSON.stringify(health),/vault|cookie|credential|encryptionKey/);
+    const local=await setup();t.after(()=>local.gateway.close());
+    assert.equal((await local.request('GET','/health')).body.deployment,undefined);
+});
+
 test('each session/provider has isolated credentials and QR state stays private', async t => {
     const s = await setup(); t.after(() => s.gateway.close());
     const a = await s.session(), b = await s.session();

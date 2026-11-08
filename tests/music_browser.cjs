@@ -12,7 +12,7 @@ const server = http.createServer((req,res) => {
     if (u.pathname.startsWith('/v1/')) {
         res.setHeader('Content-Type','application/json'); const send = value => res.end(JSON.stringify(value));
         if (u.pathname === '/v1/session') return send({token:'browser-fixture'});
-        if (u.pathname === '/v1/health') return send({ok:true,ready:true,providers:['netease','qq']});
+        if (u.pathname === '/v1/health') return send({ok:true,ready:true,providers:['netease','qq'],deployment:{provider:'render',ephemeral:true}});
         if (u.pathname === '/v1/accounts') return send({accounts:[{provider:'netease',loggedIn:authorized,user:{name:'本地测试账号'}},{provider:'qq',loggedIn:false}]});
         if (u.pathname.endsWith('/qr')) return send({id:'fixture_qr',url:'https://music.163.com/login?codekey=fixture',image:'',expiresAt:Date.now()+180000});
         if (u.pathname.endsWith('/qr/fixture_qr')) { authorized=true; return send({status:'authorized',user:{name:'本地测试账号'}}); }
@@ -262,6 +262,8 @@ const server = http.createServer((req,res) => {
         shippedEndpoint='https://music-default.test'; authorized=false;
         await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.UvUMusicUI);
         await page.evaluate(()=>UvUMusicUI.accounts());
+        await page.waitForFunction(()=>document.querySelector('.um-hosting-note')?.hidden===false);
+        assert.match(await page.locator('.um-hosting-note').innerText(),/重启后需重新扫码/);
         assert.equal(await page.locator('.um-gateway-settings').evaluate(n=>n.open),false);
         assert.equal(await page.getByLabel('音乐服务地址',{exact:true}).inputValue(),'');
         for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'account sheet fits '+width);}
@@ -271,10 +273,11 @@ const server = http.createServer((req,res) => {
         assert.equal(await page.evaluate(()=>db.musicSettings.endpoint),'','login preferences never pin the shipped endpoint in backup');
         await page.getByRole('button',{name:'关闭',exact:true}).click();
         gatewayOffline=true;await page.evaluate(()=>UvUMusicUI.accounts());
-        await page.waitForFunction(()=>document.querySelector('.um-sheet-body')?.textContent.includes('音乐服务连接失败'));
+        await page.waitForFunction(()=>document.querySelector('.um-sheet-body')?.textContent.includes('正在连接音乐服务'));
         await page.getByRole('button',{name:'扫码登录',exact:true}).last().click();
-        await page.waitForFunction(()=>document.querySelector('.um-qr')?.nextElementSibling.textContent.includes('Failed to fetch'));
+        await page.waitForFunction(()=>document.querySelector('.um-qr')?.nextElementSibling.textContent.includes('正在连接音乐服务'));
         await page.getByRole('button',{name:'关闭',exact:true}).click(); gatewayOffline=false;
+        await page.waitForFunction(()=>!document.querySelector('.um-sheet-card'));
         assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, unconfigured and built-in gateway, QR login fixture, gateway outage, stream and IndexedDB WAV audio, invite/card, queue/lyrics, reload.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

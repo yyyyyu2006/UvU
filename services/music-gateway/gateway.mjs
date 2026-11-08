@@ -189,7 +189,7 @@ export async function createGateway(options = {}) {
             if (method === 'GET' && route === '/v1/health') {
                 const ready = await engineReady();
                 assertOpen();
-                return { status: 200, headers, body: { ok: ready, ready, providers: PROVIDERS, engine: { installed: ready, revision: ENGINE_REVISION }, ...(!ready ? { error: 'engine_not_installed' } : {}) } };
+                return { status: 200, headers, body: { ok: ready, ready, providers: PROVIDERS, engine: { installed: ready, revision: ENGINE_REVISION }, ...(options.ephemeralDeployment === true ? { deployment: { provider: 'render', ephemeral: true } } : {}), ...(!ready ? { error: 'engine_not_installed' } : {}) } };
             }
             await cleanup();
             assertOpen();

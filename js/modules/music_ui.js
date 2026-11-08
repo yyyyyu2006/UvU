@@ -382,6 +382,7 @@
         const details = el('details', undefined, 'um-tutorial'); details.append(el('summary', '连接教程'));
         details.append(el('p', '公共源：在上方开启 GD 音乐台后，到搜索页选择“公共源”。个人学习使用，无需部署、登录或填写服务地址；当前接入网易云。搜索结果不保证可播放，遇到限流请稍后再试。'));
         details.append(el('p', '已内置音乐服务时，直接点网易云或 QQ 音乐的“扫码登录”，无需填写地址。未部署时账号登录暂不可用；本地音乐和公共源仍可使用。下面是部署者操作，玩家无需执行。'));
+        details.append(el('p', '免费 Render：部署者在 Render 控制台选 New → Blueprint，连接 UvU 仓库并使用根目录 render.yaml，确认方案为 Free。成功后将分配的 HTTPS 地址填入音乐服务配置。免费实例闲置后会休眠，连接时可能需要等待约一分钟；服务重启后需要重新扫码，“记住此设备”不能跨重启保留平台登录。无需执行下面的自建服务器命令。'));
         details.append(el('p', '1. 在支持 Node.js 22 的电脑或服务器中，进入 UvU 仓库目录，执行：'));
         const code = el('pre'); code.append(el('code', 'node services/music-gateway/launch.mjs')); details.append(code);
         details.append(el('p', '2. 命令会安装引擎、首次生成私密配置并启动网关。部署者配置 HTTPS 并验证后，将公开服务地址填入 js/modules/music_config.js 的 endpoint，再更新网页。该文件只放地址，不放密钥。已有 .env 不会被覆盖，修改配置后可用下方命令启动。'));
@@ -422,9 +423,10 @@
             const form = el('form', undefined, 'um-account-form'), label = el('label', '音乐服务地址'), input = el('input'); input.type = 'url'; input.placeholder = M.gateway().defaultEndpoint || 'https://music.example.com'; input.value = M.gateway().customEndpoint; label.append(input);
             const remember = el('label', undefined, 'um-check'), checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = M.settings().remember; remember.append(checkbox, document.createTextNode('记住此设备'));
             const output = el('p', '', 'um-muted'); output.setAttribute('aria-live', 'polite'); const accounts = el('div', undefined, 'um-accounts');
+            const hostingNote = el('p', '', 'um-muted um-hosting-note'); hostingNote.hidden = true;
             const accountBox = section('账号音乐'), service = el('details', undefined, 'um-gateway-settings'), serviceTitle = el('summary', M.settings().endpoint ? '更换音乐服务' : '配置音乐服务');
             form.append(label, button('保存并连接', () => connect())); form.onsubmit = e => { e.preventDefault(); void connect(); };
-            service.append(serviceTitle, form); accountBox.append(remember, accounts, output, service);
+            service.append(serviceTitle, form); accountBox.append(remember, accounts, output, hostingNote, service);
             body.append(accountBox, button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
             checkbox.onchange = async () => {
                 checkbox.disabled = true;
@@ -445,6 +447,10 @@
                 }
             }
             async function refresh() {
+                const health = await M.connect(controller.signal); if (!alive) return;
+                if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请由部署者检查部署日志');
+                hostingNote.hidden = health.deployment?.ephemeral !== true;
+                hostingNote.textContent = hostingNote.hidden ? '' : '免费服务重启后需重新扫码登录';
                 const data = await M.accounts(controller.signal); if (alive) drawAccounts(data);
             }
             let connecting = false;
@@ -453,24 +459,28 @@
                 try {
                     await M.saveSettings({ endpoint: input.value.trim(), remember: checkbox.checked }); if (!alive) return;
                     drawAccounts();
-                    const health = await M.connect(controller.signal); if (!alive) return;
-                    if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请由部署者执行教程中的 launch 命令');
                     await refresh(); if (!alive) return; output.textContent = ''; serviceTitle.textContent = '更换音乐服务'; service.open = false;
                 }
                 catch (e) { if (alive) output.textContent = e.message; }
                 finally { connecting = false; }
             }
             drawAccounts();
-            if (M.settings().endpoint) void refresh().catch(e => { if (alive) output.textContent = '音乐服务连接失败：' + e.message; });
+            if (M.settings().endpoint) {
+                output.textContent = '正在连接音乐服务…';
+                void refresh().then(() => { if (alive) output.textContent = ''; }).catch(e => { if (alive) output.textContent = '音乐服务连接失败：' + e.message; });
+            }
             else output.textContent = '音乐登录服务尚未部署';
         }, () => { alive = false; controller.abort(); });
     }
     function qrPanel(p) {
         let alive = true, timer; const controller = new AbortController();
         modal(names[p] + ' · 扫码登录', body => {
-            const area = el('div', undefined, 'um-qr'), status = el('p', '正在获取二维码…'); status.setAttribute('aria-live', 'polite'); body.append(area, status);
+            const area = el('div', undefined, 'um-qr'), status = el('p', '正在连接音乐服务…'); status.setAttribute('aria-live', 'polite'); body.append(area, status);
             void (async () => {
                 try {
+                    const health = await M.connect(controller.signal); if (!alive) return;
+                    if (!health.ok || health.ready === false) throw new Error('音乐平台引擎尚未就绪，请稍后重试或联系部署者');
+                    status.textContent = '正在获取二维码…';
                     const qr = await M.createQR(p, controller.signal); if (!alive) return;
                     if (/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(qr.image || '') && qr.image.length < 600000) { const image = el('img'); image.src = qr.image; image.alt = names[p] + ' 登录二维码'; area.append(image); }
                     else if (qr.url && root.qrcode) { const value = new URL(qr.url); const allowed = p === 'netease' ? ['music.163.com'] : ['y.qq.com', 'ssl.ptlogin2.qq.com', 'xui.ptlogin2.qq.com']; if (value.protocol !== 'https:' || !allowed.includes(value.hostname) || qr.url.length > 2000) throw new Error('登录二维码地址无效'); const code = root.qrcode(0, 'M'); code.addData(qr.url); code.make(); area.innerHTML = code.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); }

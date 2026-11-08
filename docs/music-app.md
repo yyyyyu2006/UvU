@@ -94,6 +94,8 @@ node --env-file=services/music-gateway/.env services/music-gateway/start.mjs
 
 ## 一次部署，玩家扫码
 
+没有额外服务器预算时，可以先使用仓库根目录的 `render.yaml` 部署 Free Web Service，详见 [Render 免费部署教程](music-render.md)。登录面板会先等待服务唤醒；免费模式重启后需要重新扫码，账号设置中有对应提示。Render 服务实际创建并验证前，内置地址继续留空。
+
 部署者在仓库根目录运行 `node services/music-gateway/launch.mjs`，脚本自动检查并安装固定版本引擎、首次创建私密配置并启动服务。线上还需配置自己服务器的 HTTPS；Pages 页面无法运行 Node 或自动部署云服务器。已有配置不会被覆盖。
 
 部署者在 `js/modules/music_config.js` 填好公开 HTTPS 服务地址并更新网页后，玩家直接点网易云/QQ音乐的“扫码登录” → 用对应官方 App 授权 → 账号“歌单” → “导入到资料库”。不需要玩家填写地址或运行服务脚本。自定义服务可在「更换音乐服务」填写；留空并保存恢复内置地址。

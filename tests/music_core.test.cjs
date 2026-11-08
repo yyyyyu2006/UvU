@@ -84,6 +84,74 @@ test('a browser refusing programmatic volume still plays audio',async()=>{
     assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
 });
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
+test('health wakeup uses no session or credentials and waits longer than normal provider requests', async () => {
+    const timers = [], h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {setTimeout(fn, ms){timers.push(ms);return setTimeout(fn,ms);}});
+    h.fetch = async () => ({ok:true,ready:true,deployment:{provider:'render',ephemeral:true}});
+    const health = await h.music.connect();
+    assert.equal(health.deployment.ephemeral, true);
+    assert.deepEqual(h.calls.map(c=>c.url), ['https://free.onrender.com/v1/health']);
+    assert.equal(h.calls[0].options.headers.Authorization, undefined);
+    assert.ok(timers[0] > 89000 && timers[0] <= 90000);
+    h.fetch = async url => url.endsWith('/session') ? {token:'test-token'} : {accounts:[]};
+    await h.music.accounts(); assert.equal(timers.at(-1),20000);
+});
+test('closing a cold service wakeup aborts it and a changed host cannot return old health', async () => {
+    const h=harness({musicSettings:{endpoint:'https://free.onrender.com'}}), pending=deferred(), controller=new AbortController();
+    h.fetch=async (url,options)=>new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')),{once:true});pending.promise.then(resolve,reject);});
+    const waking=h.music.connect(controller.signal);controller.abort();await assert.rejects(waking,{name:'AbortError'});
+    const late=deferred();h.fetch=()=>late.promise;const old=h.music.connect();
+    await h.music.saveSettings({endpoint:'https://other.test'});late.resolve({ok:true,ready:true});
+    await assert.rejects(old,{name:'AbortError'});
+});
+
+test('health wakeup retries transient Render loading failures without creating a session', async () => {
+    for (const first of ['503', 'network', 'html']) {
+        let count = 0;
+        const h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {
+            setTimeout(fn, ms) { return setTimeout(fn, ms < 10000 ? 1 : ms); }
+        });
+        h.fetch = async () => {
+            count++;
+            if (count === 1) {
+                if (first === 'network') throw new TypeError('Failed to fetch');
+                if (first === 'html') throw new Error('Music gateway returned invalid JSON');
+                h.status = 503; return {};
+            }
+            h.status = 200; return {ok:true,ready:true};
+        };
+        assert.equal((await h.music.connect()).ready, true);
+        assert.equal(count, 2); assert.equal(h.session.size, 0);
+        assert.ok(h.calls.every(c => c.url.endsWith('/health') && !c.options.headers.Authorization));
+    }
+});
+
+test('health retry delay is cancellable and permanent errors are not retried', async () => {
+    const controller = new AbortController(), waiting = deferred();
+    const h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {
+        setTimeout(fn, ms) { if (ms < 10000) waiting.resolve(); return setTimeout(fn,ms); }
+    });
+    h.status = 503; h.fetch = async () => ({});
+    const waking = h.music.connect(controller.signal); await waiting.promise; controller.abort();
+    await assert.rejects(waking,{name:'AbortError'}); assert.equal(h.calls.length,1);
+    h.status = 401;
+    await assert.rejects(h.music.connect(), error => error.status === 401);
+    assert.equal(h.calls.length,2);
+});
+
+test('health retries stop at a single total 90-second deadline', async () => {
+    let now = 0;
+    class Clock extends Date { static now() { return now; } }
+    const h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {
+        Date: Clock,
+        setTimeout(fn, ms) {
+            return ms <= 5000 ? setTimeout(() => { now += ms; fn(); }, 1) : setTimeout(fn, ms);
+        }
+    });
+    h.status = 503; h.fetch = async () => ({});
+    await assert.rejects(h.music.connect(), /连接超时/);
+    assert.equal(now, 90000); assert.ok(h.calls.length < 25);
+    assert.equal(h.session.size, 0);
+});
 test('built-in gateway supports QR login directly without saving or manually connecting', async () => {
     const window = new EventTarget(); window.UvUMusicConfig = { endpoint: 'https://default.test/v1/' };
     const h = harness({}, { window });
@@ -417,7 +485,7 @@ test('a late session response for the old endpoint cannot install credentials or
 test('session creation requests server persistence and explains a disabled encrypted vault', async () => {
     const h = harness({ musicSettings: { endpoint: 'https://one.test', remember: true } });
     h.status = 400; h.fetch = async () => ({ error: { code: 'persistence_disabled', message: 'Request could not be completed' } });
-    await assert.rejects(h.music.connect(), error => error.code === 'persistence_disabled' && /记住登录/.test(error.message) && /加密/.test(error.message));
+    await assert.rejects(h.music.accounts(), error => error.code === 'persistence_disabled' && /记住登录/.test(error.message) && /加密/.test(error.message));
     assert.deepEqual(JSON.parse(h.calls[0].options.body), { remember: true });
     assert.equal(h.local.size, 0);
 });

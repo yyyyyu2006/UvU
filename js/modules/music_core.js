@@ -264,11 +264,11 @@
         error.status = status; if (code) error.code = code; if (message) error.gatewayMessage = message;
         return error;
     }
-    async function transport(host, path, { method = 'GET', body, signal, token } = {}) {
+    async function transport(host, path, { method = 'GET', body, signal, token, timeoutMs = 20000 } = {}) {
         aborted(signal);
         const controller = new AbortController(), relay = () => controller.abort();
         signal?.addEventListener('abort', relay, { once: true });
-        const timer = setTimeout(() => controller.abort(), 20000); timer?.unref?.();
+        const timer = setTimeout(() => controller.abort(), timeoutMs); timer?.unref?.();
         try {
             const response = await fetch(host + '/v1' + path, { method, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', signal: controller.signal,
                 headers: { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -312,6 +312,38 @@
         })();
     }
     function provider(value) { if (!PROVIDERS.includes(value)) throw new Error('Invalid music provider'); return value; }
+    async function connect(signal) {
+        const host = settings().endpoint;
+        if (!host) throw new Error('音乐登录服务尚未配置，请由部署者配置服务地址');
+        // A public health check can wake free hosting without creating or sending account credentials.
+        const deadline = Date.now() + 90000;
+        let attempt = 0;
+        while (true) {
+            aborted(signal);
+            if (settings().endpoint !== host) throw abortError();
+            const remaining = deadline - Date.now();
+            if (remaining <= 0) throw new Error('音乐服务连接超时；免费服务可能仍在唤醒，请稍后重试');
+            try {
+                const result = await transport(host, '/health', { signal, timeoutMs: remaining });
+                if (settings().endpoint !== host) throw abortError();
+                return result;
+            } catch (error) {
+                aborted(signal);
+                if (settings().endpoint !== host) throw abortError();
+                if (error.name === 'AbortError') throw new Error('音乐服务连接超时；免费服务可能仍在唤醒，请稍后重试');
+                // Render can serve a 503/loading HTML page before the gateway and its CORS headers exist.
+                if (![502, 503, 504].includes(error.status) && error.name !== 'TypeError' && error.message !== 'Music gateway returned invalid JSON') throw error;
+                const delay = Math.min(1000 * ++attempt, 5000, deadline - Date.now());
+                if (delay <= 0) continue;
+                await new Promise((resolve, reject) => {
+                    const cancel = () => { clearTimeout(timer); signal?.removeEventListener('abort', cancel); reject(abortError()); };
+                    const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve(); }, delay);
+                    signal?.addEventListener('abort', cancel, { once: true });
+                    if (signal?.aborted) cancel();
+                });
+            }
+        }
+    }
     function publicAdapter() {
         if (!settings().publicSources.includes('gd-netease')) throw new Error('请先在音乐设置中开启 GD 音乐台公共源');
         if (!root.UvUPublicMusic) throw new Error('公共音乐模块尚未加载，请刷新页面');
@@ -621,7 +653,7 @@
         }
     }
     const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, gateway, saveSettings, request,
-        connect: signal => request('/health', { signal }), accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
+        connect, accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
         search, playlists, playlist, parsePlaylistReference, previewPlaylist, importPlaylist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
         rememberSearch:q=>persist('musicLibrary',current=>({...current,searches:[text(q,200).trim(),...current.searches.filter(v=>v!==text(q,200).trim())].filter(Boolean).slice(0,12)})),clearSearches:()=>persist('musicLibrary',current=>({...current,searches:[]})),
         clearRecent: () => persist('musicLibrary', current => ({ ...current, recent: [] })),
