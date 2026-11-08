@@ -13,6 +13,48 @@ function fixture() {
     return Object.assign(h,{api:context.UvUPublicMusic,calls,context});
 }
 const row = {id:'1857979755',name:'LOFi',artist:['WhoYouth'],album:'LOFi',pic_id:'109951166139384942',source:'netease'};
+
+test('platform matching keeps NetEase identity and QQ requires title and artist agreement', async () => {
+    const h=fixture(), original={provider:'netease',id:'123',title:'Track',artists:['Singer'],album:'Record',cover:'https://p3.music.126.net/cover.jpg'};
+    const direct=await h.api.match(original);
+    assert.equal(direct.id,'123');assert.equal(direct.provider,'gd-netease');assert.equal(h.calls.length,0);
+    const qq={provider:'qq',id:'QQMID',title:'LOFi',artists:['WhoYouth'],album:'LOFi'};
+    h.body=[{...row,id:'111',artist:['Someone Else']},{...row,id:'222',name:'LOFi (Live)'},row];
+    const found=await h.api.match(qq);assert.equal(found.id,row.id);assert.equal(qq.id,'QQMID');
+    await h.api.match(qq);assert.equal(h.calls.length,1,'matching is cached without storing audio');
+    const cancelled=new AbortController();cancelled.abort();await assert.rejects(h.api.match(qq,cancelled.signal),{name:'AbortError'});
+    await assert.rejects(h.api.match({...qq,title:'Different'}),/匹配|一致/);
+});
+
+test('matching rejects ambiguous recordings, missing singers and unsupported identities', async () => {
+    const h=fixture(),qq={provider:'qq',id:'abc',title:'LOFi',artists:['WhoYouth'],album:''};
+    h.body=[row,{...row,id:'456',album:'Compilation'}];
+    await assert.rejects(h.api.match(qq),/版本|匹配/);
+    await assert.rejects(h.api.match({...qq,artists:[]}),/歌手/);
+    h.api.clearCache();h.body=[{...row,artist:['WhoYouth','Guest']}];
+    await assert.rejects(h.api.match(qq),/匹配/,'a duet is not interchangeable with the original solo recording');
+    await assert.rejects(h.api.match({provider:'netease',id:'bad'}),/标识/);
+    await assert.rejects(h.api.match({provider:'local',id:'123'}),/来源/);
+});
+
+test('clearing public metadata removes QQ matching results as well as search results', async () => {
+    const h=fixture();h.body=[row];const qq={provider:'qq',id:'abc',title:'LOFi',artists:['WhoYouth']};
+    await h.api.match(qq);h.api.clearCache();await h.api.match(qq);assert.equal(h.calls.length,2);
+});
+test('QQ matching cache is bounded, expires, and cancelled pending searches never populate it', async () => {
+    const h=fixture();h.body=[row];const qq={provider:'qq',id:'0',title:'LOFi',artists:['WhoYouth']};
+    await h.api.match(qq);
+    for(let n=1;n<=100;n++)await h.api.match({...qq,id:String(n)});
+    assert.equal(h.calls.length,1,'search metadata is reused without bulk network requests');
+    h.now=1061000;await h.api.match(qq);assert.equal(h.calls.length,2,'oldest matching record was evicted');
+    h.now=88001000;await h.api.match(qq);assert.equal(h.calls.length,3,'matching records expire');
+    let finish;h.reply=()=>new Promise(resolve=>finish=resolve);
+    const controller=new AbortController(),pending=h.api.match({...qq,title:'Pending'},controller.signal);
+    controller.abort();finish({ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify([{...row,name:'Pending'}])});
+    await assert.rejects(pending,{name:'AbortError'});
+    h.reply=null;h.body=[{...row,name:'Pending'}];await h.api.match({...qq,title:'Pending'});
+    assert.equal(h.calls.length,5,'cancelled metadata was not cached');
+});
 test('public search uses the documented source, bounds fields, and never sends login state', async () => {
     const h=fixture(); assert.ok(h.api,'public adapter exists'); h.body=[{...row,cookie:'private',url:'https://private.test'}];
     const result=await h.api.search('gd-netease','lofi',1);

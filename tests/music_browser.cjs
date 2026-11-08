@@ -6,7 +6,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
 const song = id => ({ provider:'netease', id, title:'秋日来信 ' + id, artists:['林间'], album:'来信', duration:10, availability:'full' });
 const wav = Buffer.alloc(44 + 8000 * 2 * 10); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16); wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(wav.length - 44,40);
-let base, searches = 0, authorized = false, publicCalls = 0, shippedEndpoint = '', gatewayOffline = false;
+let base, searches = 0, authorized = false, publicCalls = 0, accountStreams = 0, shippedEndpoint = '', gatewayOffline = false;
 const server = http.createServer((req,res) => {
     const u = new URL(req.url,'http://test');
     if (u.pathname.startsWith('/v1/')) {
@@ -17,7 +17,7 @@ const server = http.createServer((req,res) => {
         if (u.pathname.endsWith('/qr')) return send({id:'fixture_qr',url:u.pathname.includes('/qq/')?'https://xui.ptlogin2.qq.com/cgi-bin/xlogin':'https://music.163.com/login?codekey=fixture',image:'',expiresAt:Date.now()+180000});
         if (u.pathname.endsWith('/qr/fixture_qr')) { authorized=true; return send({status:'authorized',user:{name:'本地测试账号'}}); }
         if (u.pathname === '/v1/search') { searches++; return send({tracks:u.searchParams.get('q')==='滚动'?Array.from({length:30},(_,i)=>song(String(i+1))):[song('1'),{...song('2'),provider:'qq',title:'暮色'}],hasMore:false,errors:[]}); }
-        if (u.pathname.endsWith('/stream')) return send({url:base+'/fixture.wav',availability:'full'});
+        if (u.pathname.endsWith('/stream')) { accountStreams++; return send({url:base+'/fixture.wav',availability:'full'}); }
         if (u.pathname.endsWith('/lyrics')) return send({lyric:'[00:00.00]给你写一封秋日的信\n[00:03.00]把想念寄给晚风'});
         if (u.pathname.endsWith('/playlists')) return send({playlists:[{id:'123',name:'秋日歌单',count:3}]});
         if (u.pathname.startsWith('/v1/playlist/')) { const p=u.pathname.split('/')[3],tracks=(u.searchParams.get('page')==='2'?['2','3']:['1','2']).map(id=>({...song(id),provider:p}));return send({tracks,hasMore:u.searchParams.get('page')!=='2'}); }
@@ -44,7 +44,8 @@ const server = http.createServer((req,res) => {
             }
             if(url.startsWith('https://music-api.gdstudio.xyz/api.php')) {
                 publicCalls++; const params=new URL(url).searchParams;
-                const body=params.get('types')==='search'?[{id:'1857979755',name:'公共测试曲',artist:['林间'],album:'测试',source:'netease'}]:params.get('types')==='lyric'?{lyric:'[00:00]公共歌词\\n[00:02]第二句'}:{url:'https://m801.music.126.net/uvu-fixture.wav',br:128};
+                const matched=params.get('name')?.startsWith('秋日来信 ');
+                const body=params.get('types')==='search'?[{id:'1857979755',name:matched?params.get('name').replace(/ 林间$/,''):'公共测试曲',artist:['林间'],album:matched?'来信':'测试',source:'netease'}]:params.get('types')==='lyric'?{lyric:'[00:00]公共歌词\\n[00:02]第二句'}:{url:'https://m801.music.126.net/uvu-fixture.wav',br:128};
                 return route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(body)});
             }
             if(url==='https://m801.music.126.net/uvu-fixture.wav') return route.fulfill({status:200,contentType:'audio/wav',headers:{'Access-Control-Allow-Origin':'*'},body:wav});
@@ -178,12 +179,40 @@ const server = http.createServer((req,res) => {
         await page.setViewportSize({width:390,height:844});await page.getByRole('textbox',{name:'歌单名称',exact:true}).fill('链接导入测试');await page.screenshot({path:path.join(out,'playlist-import-390.png')});
         await page.getByRole('button',{name:'保存歌单',exact:true}).click();await page.waitForFunction(()=>UvUMusic.library().playlists.some(p=>p.name==='链接导入测试'&&p.tracks.length===3));
         assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),false,'import never starts audio');
+        // Imported platform identities stay intact while the global preference routes audio/lyrics publicly.
+        await page.locator('.um-playlist').filter({hasText:'链接导入测试'}).click();
+        await page.getByRole('checkbox',{name:'公共源播放',exact:true}).check();
+        await page.waitForFunction(()=>UvUMusic.settings().playbackSource==='public');
+        for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'public playback row fits '+width);}
+        await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'playlist-public-390.png')});
+        const accountBeforePublic=accountStreams;
+        await page.getByRole('button',{name:'播放 秋日来信 1',exact:true}).click();
+        await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='netease');
+        assert.equal(accountStreams,accountBeforePublic,'imported NetEase songs bypass account stream');
+        assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().track.id),'1');
+        assert.match(await page.evaluate(async()=> (await UvUMusic.lyrics(UvUMusic.player.snapshot().track)).lyric),/公共歌词/);
+        await page.getByRole('checkbox',{name:'公共源播放',exact:true}).uncheck();await page.waitForFunction(()=>!UvUMusic.player.snapshot().playing);
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.getByRole('button',{name:'导入歌单',exact:true}).click();await page.getByRole('combobox',{name:'音乐平台',exact:true}).selectOption('qq');await page.getByRole('textbox',{name:'歌单链接',exact:true}).fill('456');
         await page.getByRole('button',{name:'预览歌单',exact:true}).click();await page.waitForSelector('.um-import-preview .um-track');await page.getByRole('button',{name:'关闭',exact:true}).click();assert.equal(await page.evaluate(()=>UvUMusic.library().playlists.length),1,'closing a QQ preview saves nothing');
         // Existing account playlists use the same preview and atomic import flow.
         await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('button',{name:'歌单',exact:true}).click();await page.getByRole('button',{name:'秋日歌单',exact:true}).click();
         await page.getByRole('button',{name:'导入到资料库',exact:true}).click();await page.waitForSelector('.um-import-preview .um-track');assert.equal(await page.getByRole('textbox',{name:'歌单名称',exact:true}).inputValue(),'秋日歌单');await page.getByRole('button',{name:'保存歌单',exact:true}).click();
         await page.waitForFunction(()=>UvUMusic.library().playlists.length===2);
+        await page.evaluate(async()=>{const draft=await UvUMusic.previewPlaylist('456','qq');await UvUMusic.importPlaylist({...draft,name:'QQ 公共播放测试'});UvUMusicUI.open();});
+        await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();
+        await page.locator('.um-playlist').filter({hasText:'QQ 公共播放测试'}).click();await page.getByRole('checkbox',{name:'公共源播放',exact:true}).check();
+        await page.waitForFunction(()=>UvUMusic.settings().playbackSource==='public');
+        const beforeQQPublic=accountStreams;
+        await page.getByRole('button',{name:'播放 秋日来信 1',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='qq');
+        assert.equal(accountStreams,beforeQQPublic,'QQ matches a public recording without account playback');
+        assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().track.id),'1','QQ identity is retained');
+        await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
+        assert.equal(await page.evaluate(()=>UvUMusic.settings().playbackSource),'public','public playback preference survives reload');
+        await page.evaluate(()=>UvUMusicUI.accounts());assert.equal(await page.getByRole('checkbox',{name:'公共源播放',exact:true}).isChecked(),true);
+        await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).uncheck();await page.waitForFunction(()=>UvUMusic.settings().playbackSource!=='public');
+        assert.equal(await page.getByRole('checkbox',{name:'公共源播放',exact:true}).isChecked(),false);
+        await page.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>UvUMusicUI.open());
         // Actual IndexedDB local import + HTMLAudio decode/play, not an Audio stub.
         await page.locator('#um-local-files').setInputFiles({name:'本地测试.wav',mimeType:'audio/wav',buffer:wav});await page.waitForFunction(()=>UvUMusic.library().favorites.length===1);
         await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'歌曲',exact:true}).click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
@@ -209,9 +238,10 @@ const server = http.createServer((req,res) => {
         assert.equal(await page.evaluate(()=>UvUMusic.library().playlists.find(p=>p.name==='链接导入测试')?.tracks.length),3,'imported playlist survives reload');
         // Public source works with no gateway, only after explicit activation.
         await page.evaluate(async()=>{await UvUMusic.saveSettings({endpoint:'',publicSources:[]});UvUMusicUI.open();});
+        const beforeDisabledPublic=publicCalls;
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
         await page.getByRole('searchbox',{name:'搜索音乐'}).fill('公共');await page.getByRole('searchbox',{name:'搜索音乐'}).press('Enter');
-        assert.equal(publicCalls,0,'disabled source sends no public requests');
+        assert.equal(publicCalls,beforeDisabledPublic,'disabled source sends no public requests');
         await page.getByRole('button',{name:'开启公共源',exact:true}).click();
         await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).check();await page.waitForFunction(()=>UvUMusic.settings().publicSources.includes('gd-netease'));
         await page.getByRole('button',{name:'关闭',exact:true}).click();

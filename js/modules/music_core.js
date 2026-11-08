@@ -26,7 +26,9 @@
         return safe.replace(/\/$/, '').replace(/\/v1$/, '');
     }
     function normalizeSettings(raw = {}) {
-        return { endpoint: endpoint(raw.endpoint), providers: PROVIDERS.filter(provider => !Array.isArray(raw.providers) || raw.providers.includes(provider)), publicSources: Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [], remember: raw.remember === true };
+        const publicSources = Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [];
+        return { endpoint: endpoint(raw.endpoint), providers: PROVIDERS.filter(provider => !Array.isArray(raw.providers) || raw.providers.includes(provider)), publicSources, remember: raw.remember === true,
+            ...(publicSources.length && raw.playbackSource === 'public' ? {playbackSource:'public'} : {}) };
     }
     const defaultEndpoint = (() => {
         try { const value = endpoint(root.UvUMusicConfig?.endpoint); return value.startsWith('https://') ? value : ''; }
@@ -90,10 +92,12 @@
         saveTail = pending; return pending;
     }
     function saveSettings(patch) {
-        return persist('musicSettings', current => normalizeSettings({ ...current, ...patch })).then(next => {
+        let previous;
+        return persist('musicSettings', current => { previous = current; return normalizeSettings({ ...current, ...patch }); }).then(next => {
             const host = settings().endpoint, token = tokenGet(host);
             if (token) tokenSet(host, token, next.remember);
             if (state.track?.provider === 'gd-netease' && !next.publicSources.includes('gd-netease')) stop();
+            if (PROVIDERS.includes(state.track?.provider) && previous.playbackSource !== next.playbackSource) stop();
             return settings();
         });
     }
@@ -349,6 +353,15 @@
         if (!root.UvUPublicMusic) throw new Error('公共音乐模块尚未加载，请刷新页面');
         return root.UvUPublicMusic;
     }
+    const usesPublic = track => track.provider === 'gd-netease' || (PROVIDERS.includes(track.provider) && settings().playbackSource === 'public');
+    async function publicTrack(track, signal) {
+        if (track.provider === 'gd-netease') { publicAdapter(); return track; }
+        const matched = normalizeTrack(await publicAdapter().match(track, signal));
+        aborted(signal); publicAdapter();
+        if (!usesPublic(track)) throw abortError();
+        if (matched.provider !== 'gd-netease') throw new Error('公共源匹配结果无效');
+        return matched;
+    }
     const part = value => { const output = text(String(value ?? ''), 200); if (!output) throw new Error('Missing music ID'); return encodeURIComponent(output); };
     const user = raw => raw && typeof raw === 'object' ? { id: text(String(raw.id ?? ''), 160), name: text(raw.name, 160), avatar: safeURL(raw.avatar, true) } : undefined;
     const resultTracks = raw => ({ tracks: tracks(raw.tracks, 200), hasMore: raw.hasMore === true });
@@ -391,9 +404,12 @@
     }
     async function lyrics(track, signal) {
         aborted(signal);const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
-        if(value.provider==='gd-netease')publicAdapter();const id=(value.provider==='gd-netease'?'public':settings().endpoint)+':'+key(value),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return copy(saved.value);
-        const raw=value.provider==='gd-netease'?await publicAdapter().lyrics(value,signal):await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
-        if(value.provider==='gd-netease')publicAdapter();aborted(signal);const result={lyric:text(raw.lyric,100000),translation:text(raw.translation,100000)};
+        const isPublic = usesPublic(value), resolved = isPublic ? await publicTrack(value,signal) : value;
+        aborted(signal);
+        const id=(isPublic?'public':settings().endpoint)+':'+key(resolved),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return copy(saved.value);
+        const raw=isPublic?await publicAdapter().lyrics(resolved,signal):await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
+        if (isPublic !== usesPublic(value)) throw abortError();
+        if(isPublic)publicAdapter();aborted(signal);const result={lyric:text(raw.lyric,100000),translation:text(raw.translation,100000)};
         if(lyricCache.size>=20)lyricCache.delete(lyricCache.keys().next().value);lyricCache.set(id,{value:result,until:Date.now()+600000});return copy(result);
     }
     function clearMetadataCache(){const count=lyricCache.size;lyricCache.clear();root.UvUPublicMusic?.clearCache?.();return count;}
@@ -507,9 +523,9 @@
         if(state.phase==='error'||state.phase==='blocked')return Promise.resolve(false);
         const wasAttempting=state.playing||state.phase==='loading';
         state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
-        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
-        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试'}[state.errorCode];emit();
-        if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable'].includes(state.errorCode)&&state.track){
+        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
+        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试'}[state.errorCode];emit();
+        if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable','public_match'].includes(state.errorCode)&&state.track){
             failedKeys.add(key(state.track));const next=state.queue.find((t,i)=>i>state.index&&!failedKeys.has(key(t)))||state.queue.find(t=>!failedKeys.has(key(t)));
             if(next&&failedKeys.size<Math.min(state.queue.length,5))return play(next,undefined,{keepFailures:true});
             state.error+='；已停止自动跳过';emit();
@@ -532,11 +548,14 @@
             if (!record?.blob) throw new Error('Local audio is missing on this device');
             return { blob: record.blob, availability: 'full' };
         }
-        const result = track.provider === 'gd-netease' ? await publicAdapter().stream(track, signal) : await request('/track/' + track.provider + '/' + part(track.id) + '/stream', { signal });
-        if (track.provider === 'gd-netease') publicAdapter();
+        const isPublic = usesPublic(track), resolved = isPublic ? await publicTrack(track,signal) : track;
+        aborted(signal);
+        const result = isPublic ? await publicAdapter().stream(resolved, signal) : await request('/track/' + track.provider + '/' + part(track.id) + '/stream', { signal });
+        if (isPublic !== usesPublic(track)) throw abortError();
+        if (isPublic) publicAdapter();
         if (result.availability === 'unavailable') throw new Error('This track is unavailable for this account');
         const url = safeURL(result.url); if (!url) throw new Error('Music gateway returned an unsafe media URL');
-        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(track.provider === 'gd-netease' && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}) };
+        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(isPublic && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}) };
     }
     function play(track, queue, options = {}) {
         restore(true);

@@ -165,3 +165,6 @@
 .um-player-sheet .um-player-status:empty{display:none}
 @media(max-width:350px){#uvu-music-screen .um-hero h1{font-size:31px}#uvu-music-screen .um-hero-tools{gap:4px}#uvu-music-screen .um-hero{padding-left:16px;padding-right:16px}#uvu-music-screen .um-nav .um-button span{font-size:10px}.um-player-sheet .um-now-playing{padding-left:22px;padding-right:22px}.um-player-sheet .um-artwork{margin:18px auto}.um-collection-sheet .um-playlist-tools{gap:10px}}
 @media(prefers-reduced-motion:no-preference){#uvu-music-screen .um-button,.uvu-music-sheet .um-button{transition:background-color .16s,color .16s,transform .16s}#uvu-music-screen .um-button:active,.uvu-music-sheet .um-button:active{transform:scale(.97)}}
+.um-collection-sheet .um-public-playback { display:flex; align-items:center; gap:8px; width:fit-content; margin:0 20px 24px; font-size:14px; color:var(--um-text); cursor:pointer; }
+.um-collection-sheet .um-public-playback[hidden] { display:none; }
+.um-collection-sheet .um-public-playback input { width:16px; height:16px; margin:0; flex:none; accent-color:var(--um-green); }

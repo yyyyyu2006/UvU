@@ -3,7 +3,7 @@
     'use strict';
     const API = 'https://music-api.gdstudio.xyz/api.php', PROVIDER = 'gd-netease';
     const MAX_BYTES = 2 * 1024 * 1024, WINDOW = 300000, BUDGET_KEY = 'uvu-music-public-budget-v1';
-    const cache = new Map(); let times = [], blockedUntil = 0;
+    const cache = new Map(), matches = new Map(); let times = [], blockedUntil = 0;
     const clean = (value, max = 300) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, max) : '';
     const abort = () => new DOMException('公共音乐请求已取消', 'AbortError');
     function check(signal) { if (signal?.aborted) throw abort(); }
@@ -80,6 +80,35 @@
         }
         return {tracks,errors:[],hasMore:raw.length>=20};
     }
+    const canonical = value => clean(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu, '');
+    const mismatch = message => Object.assign(new Error(message), {code:'public_match'});
+    async function match(track, signal) {
+        check(signal);
+        if (!track || !['netease', 'qq', PROVIDER].includes(track.provider)) throw new Error('不支持匹配此音乐来源');
+        const title = clean(track.title), artists = (Array.isArray(track.artists) ? track.artists : []).filter(v => typeof v === 'string').slice(0,12).map(v => clean(v,120));
+        if (track.provider !== 'qq') return {provider:PROVIDER,id:id(track.id),title,artists,album:clean(track.album),duration:0,availability:'unknown'};
+        if (!canonical(title) || !artists.some(canonical)) throw mismatch('缺少歌名或歌手，无法可靠匹配公共源，请手动搜索');
+        const identity = JSON.stringify([clean(String(track.id),160),title,artists,clean(track.album)]), saved = matches.get(identity);
+        if (saved && saved.until > Date.now()) return JSON.parse(JSON.stringify(saved.track));
+        const found = await search(PROVIDER, (title + ' ' + artists[0]).slice(0,200), 1, signal);
+        check(signal);
+        const candidates = [], seen = new Set(), originalSingers = new Set(artists.map(canonical).filter(Boolean));
+        for (const song of found.tracks) {
+            if (seen.has(song.id) || canonical(song.title) !== canonical(title)) continue;
+            const singers = new Set(song.artists.map(canonical).filter(Boolean));
+            if (singers.size !== originalSingers.size || ![...originalSingers].every(artist => singers.has(artist))) continue;
+            seen.add(song.id);
+            const albumMatch = canonical(track.album) && canonical(track.album) === canonical(song.album);
+            candidates.push({song,score:albumMatch ? 1 : 0});
+        }
+        candidates.sort((a,b) => b.score-a.score);
+        if (!candidates.length) throw mismatch('公共源未匹配到相同歌名和歌手，请在公共源中手动搜索');
+        if (candidates.length > 1 && candidates[0].score === candidates[1].score) throw mismatch('公共源存在多个同名版本，请在公共源中手动选择');
+        const result = candidates[0].song;
+        if (matches.size >= 100) matches.delete(matches.keys().next().value);
+        matches.set(identity,{track:result,until:Date.now()+86400000});
+        return JSON.parse(JSON.stringify(result));
+    }
     async function stream(track, signal) {
         source(track.provider); const trackId = id(track.id);
         const raw = await get({types:'url',id:trackId,br:128},signal);
@@ -97,5 +126,5 @@
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('公共源歌词格式无效');
         return {lyric:clean(raw.lyric,100000).replace(/\\r\\n|\\n/g,'\n'),translation:clean(raw.tlyric,100000).replace(/\\r\\n|\\n/g,'\n')};
     }
-    root.UvUPublicMusic = {search,stream,lyrics,clearCache:()=>cache.clear()};
+    root.UvUPublicMusic = {search,match,stream,lyrics,clearCache:()=>{cache.clear();matches.clear();}};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -23,6 +23,20 @@
     }
     const clock = seconds => { const n = Math.floor(Math.max(0, Number(seconds) || 0)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
     function section(title, action) { const box = el('section', undefined, 'um-section'), head = el('div', undefined, 'um-section-head'); head.append(el('h2', title)); if (action) head.append(action); box.append(head); return box; }
+    function publicPlaybackControl(onBusy = () => {}) {
+        const label = el('label', undefined, 'um-check um-public-playback'), check = el('input');
+        check.type = 'checkbox'; check.checked = M.settings().playbackSource === 'public';
+        check.setAttribute('aria-label', '公共源播放');
+        label.title = '用于全部网易云和 QQ 歌曲；QQ 歌曲按歌名与歌手匹配';
+        label.append(check, document.createTextNode('公共源播放'));
+        check.onchange = async () => {
+            const wanted = check.checked; check.disabled = true; onBusy(true);
+            try { await M.saveSettings(wanted ? { publicSources:['gd-netease'], playbackSource:'public' } : { playbackSource:'account' }); }
+            catch (error) { toast(error); }
+            finally { check.checked = M.settings().playbackSource === 'public'; check.disabled = false; onBusy(false); }
+        };
+        return label;
+    }
     function empty(parent, title, action) { const box = el('div', undefined, 'um-empty'); box.append(icon('music-2'), el('p', title)); if (action) box.append(action); parent.append(box); }
     function trackRows(parent, tracks, options = {}) {
         tracks.forEach(track => {
@@ -153,12 +167,15 @@
             const hero=el('div',undefined,'um-collection-art');
             if(item.kind==='favorites')hero.append(icon('star-solid'));else hero.append(cover(item.tracks?.[0]||{cover:item.cover}));
             const heading=el('div',undefined,'um-collection-name'),count=el('small');heading.append(el('h1',item.name),count);
-            const tools=el('div',undefined,'um-playlist-tools'),list = el('div',undefined,'um-playlist-songs'), footer = el('div', undefined, 'um-actions'); body.append(hero,heading,tools,list,footer);
+            const tools=el('div',undefined,'um-playlist-tools'),list = el('div',undefined,'um-playlist-songs'), footer = el('div', undefined, 'um-actions');
+            const playback = publicPlaybackControl(); playback.hidden = true;
+            body.append(hero,heading,tools,playback,list,footer);
             const dock=el('div',undefined,'um-bottom um-compact-bottom'),dockMini=el('div',undefined,'um-mini');
             dock.append(button('回到主页',()=>{closeSheet();selectTab('home');},'house'),dockMini,button('前往搜索',()=>{closeSheet();selectTab('search');},'search'));overlay.querySelector('.um-sheet-card').append(dock);
             unsubscribe=M.player.subscribe(state=>paintMini(dockMini,state));
             const draw=()=>{tools.replaceChildren();list.replaceChildren();
                 count.textContent=tracks.length+' 首歌曲';footer.classList.toggle('um-editing',editing);
+                playback.hidden = !tracks.some(t => t.provider === 'netease' || t.provider === 'qq');
                 const play=button('播放全部',()=>tracks.length&&M.player.play(tracks[0],tracks,{label:item.name}),undefined,'um-play-pill');play.replaceChildren(icon('play-solid'),el('span','播放'));
                 const shuffle=button('随机播放',()=>{if(!tracks.length)return;M.player.setMode('shuffle');return M.player.play(tracks[Math.floor(Math.random()*tracks.length)],tracks,{label:item.name});},'shuffle');play.disabled=shuffle.disabled=!tracks.length;
                 tools.append(shuffle,play,button(managed?(editing?'完成':'管理'):'播放队列',()=>{if(managed){editing=!editing;draw();}else queuePanel();},managed?'list-filter':'list-music'));
@@ -391,7 +408,7 @@
         details.append(el('p', '网页和服务在同一台电脑时，可用 http://127.0.0.1:8787 测试。手机上的 127.0.0.1 指手机自身；连接电脑服务请使用配置好的 HTTPS 地址。'));
         details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
-        details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请在官方平台打开后复制完整链接。账号歌单中也可点“导入到资料库”。最多保存 1000 首歌曲资料，不下载音频，不改变播放权限。需要已连接音乐网关；公共源当前不支持读取歌单。'));
+        details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，匹配不明确时请手动搜索。已有歌单无需重新导入；公共源不保证每首歌可用。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }
@@ -409,9 +426,10 @@
             publicCheck.type = 'checkbox'; publicCheck.checked = M.settings().publicSources.includes('gd-netease'); publicCheck.setAttribute('aria-label', '启用 GD 音乐台公共源');
             publicLabel.append(publicCheck, document.createTextNode('GD 音乐台 · 网易云'));
             const publicStatus = el('p', '个人学习、非商业使用；每 5 分钟最多 50 次请求。', 'um-muted'); publicStatus.setAttribute('aria-live','polite');
-            publicBox.append(publicLabel, publicStatus, publicCredit()); body.append(publicBox);
+            const playback = publicPlaybackControl(busy => { publicCheck.disabled = busy; if (!busy) publicCheck.checked = M.settings().publicSources.includes('gd-netease'); });
+            publicBox.append(publicLabel, playback, publicStatus, publicCredit()); body.append(publicBox);
             publicCheck.onchange = async () => {
-                const wanted = publicCheck.checked; publicCheck.disabled = true;
+                const wanted = publicCheck.checked; publicCheck.disabled = true; playback.querySelector('input').disabled = true;
                 try {
                     await M.saveSettings({ publicSources: wanted ? ['gd-netease'] : [] });
                     clearTimeout(debounce); searchController?.abort(); ++searchSequence; searchLoading = false; results = []; hasMore = false; searchError = '';
@@ -419,7 +437,7 @@
                     if (tab === 'search') render();
                     if (alive) publicStatus.textContent = wanted ? '已开启。到搜索页选择“公共源”即可使用。' : '已关闭';
                 } catch (error) { if (alive) { publicCheck.checked = !wanted; publicStatus.textContent = error.message; } }
-                finally { publicCheck.disabled = false; }
+                finally { publicCheck.disabled = false; playback.querySelector('input').disabled = false; playback.querySelector('input').checked = M.settings().playbackSource === 'public'; }
             };
             const form = el('form', undefined, 'um-account-form'), label = el('label', '音乐服务地址'), input = el('input'); input.type = 'url'; input.placeholder = M.gateway().defaultEndpoint || 'https://music.example.com'; input.value = M.gateway().customEndpoint; label.append(input);
             const remember = el('label', undefined, 'um-check'), checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = M.settings().remember; remember.append(checkbox, document.createTextNode('记住此设备'));

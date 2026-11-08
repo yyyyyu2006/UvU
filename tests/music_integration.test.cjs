@@ -22,4 +22,8 @@ test('portable music settings retain only explicitly enabled known public source
     const result=sandbox.storagePortableMusicSettings({endpoint:'',publicSources:['gd-netease','unknown'],remember:true,token:'secret'});
     assert.deepEqual(JSON.parse(JSON.stringify(result.publicSources)),['gd-netease']);assert.equal(result.token,undefined);assert.equal(result.remember,false);
     assert.match(read('index.html'), /music_public\.js/);
+    const preferred=sandbox.storagePortableMusicSettings({...result,playbackSource:'public',remember:true});
+    assert.equal(preferred.playbackSource,'public');assert.equal(preferred.remember,false);
+    assert.equal(sandbox.storagePortableMusicSettings({...preferred,publicSources:[]}).playbackSource,undefined);
+    assert.equal(sandbox.storagePortableMusicSettings({...preferred,playbackSource:'unknown'}).playbackSource,undefined);
 });

@@ -627,3 +627,38 @@ test('disabling public source while a stream resolves cannot start late audio', 
     await h.music.saveSettings({publicSources:[]}); pending.resolve({url:'https://m801.music.126.net/a.mp3',availability:'unknown'}); await playing;
     assert.equal(h.sounds.length,0); assert.equal(h.music.player.snapshot().playing,false);
 });
+
+test('imported platform songs use public playback and matching lyrics without login or changing original IDs', async () => {
+    const h=harness({musicSettings:{publicSources:['gd-netease'],playbackSource:'public'}}),seen=[];
+    h.context.window.UvUPublicMusic={
+        match:async value=>({...value,provider:'gd-netease',id:'987'}),
+        stream:async value=>{seen.push(value);return{url:'https://m801.music.126.net/public.mp3',availability:'unknown'};},
+        lyrics:async value=>{seen.push(value);return{lyric:'matching recording'};}
+    };
+    const original=track('QQMID',{provider:'qq'});await h.music.player.play(original);
+    assert.equal(h.music.player.snapshot().playing,true);assert.equal(h.music.player.snapshot().track.provider,'qq');
+    assert.equal(h.music.player.snapshot().track.id,'QQMID');assert.equal(h.music.player.snapshot().track.availability,'unknown');
+    assert.equal((await h.music.lyrics(original)).lyric,'matching recording');
+    assert.ok(seen.every(t=>t.provider==='gd-netease'&&t.id==='987'));assert.equal(h.calls.length,0);
+    assert.ok(!JSON.stringify(h.db).includes('public.mp3'));h.music.player.stop();
+});
+
+test('switching playback source cancels pending public resolution and normal lyrics stay isolated', async () => {
+    const h=harness({musicSettings:{endpoint:'https://one.test',publicSources:['gd-netease'],playbackSource:'public'}}),pending=deferred();
+    h.context.window.UvUPublicMusic={match:async v=>({...v,provider:'gd-netease'}),stream:()=>pending.promise,lyrics:async()=>({lyric:'public lyrics'})};
+    const song=track('123');assert.equal((await h.music.lyrics(song)).lyric,'public lyrics');
+    const playing=h.music.player.play(song);await tick();await h.music.saveSettings({playbackSource:'account'});
+    pending.resolve({url:'https://m801.music.126.net/late.mp3'});await playing;assert.equal(h.sounds.length,0);
+    h.fetch=async url=>url.endsWith('/session')?{token:'ok'}:{lyric:'account lyrics'};
+    assert.equal((await h.music.lyrics(song)).lyric,'account lyrics');
+    await h.music.saveSettings({playbackSource:'public'});await h.music.saveSettings({publicSources:[]});
+    assert.notEqual(h.music.settings().playbackSource,'public','disabling public source also resets public routing');
+});
+test('public matching failure offers manual search instead of a misleading network error', async () => {
+    const h=harness({musicSettings:{publicSources:['gd-netease'],playbackSource:'public'}});
+    h.context.window.UvUPublicMusic={match:async()=>{throw Object.assign(new Error('公共源存在多个同名版本，请在公共源中手动选择'),{code:'public_match'});}};
+    await h.music.player.play(track('QQMID',{provider:'qq'}));
+    assert.equal(h.music.player.snapshot().errorCode,'public_match');
+    assert.match(h.music.player.snapshot().error,/手动搜索/);assert.doesNotMatch(h.music.player.snapshot().error,/网络/);
+    assert.equal(h.sounds.length,0);h.music.player.stop();
+});

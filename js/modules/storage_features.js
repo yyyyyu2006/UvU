@@ -3,7 +3,9 @@ function storagePortableMusicSettings(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('音乐设置格式无效');
     const endpoint = typeof raw.endpoint === 'string' ? raw.endpoint : '';
     if (endpoint) { const value = new URL(endpoint); if ((value.protocol !== 'https:' && !(value.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(value.hostname))) || value.username || value.password || value.search || value.hash) throw new Error('音乐服务地址无效'); }
-    return { endpoint, providers: ['netease', 'qq'].filter(p => !Array.isArray(raw.providers) || raw.providers.includes(p)), publicSources: Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [], remember: false };
+    const publicSources = Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [];
+    return { endpoint, providers: ['netease', 'qq'].filter(p => !Array.isArray(raw.providers) || raw.providers.includes(p)), publicSources, remember: false,
+        ...(publicSources.length && raw.playbackSource === 'public' ? {playbackSource:'public'} : {}) };
 }
 function storageApplyExportOptions(modules, options = {}) {
     const result = { ...modules };
