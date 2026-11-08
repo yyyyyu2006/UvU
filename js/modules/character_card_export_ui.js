@@ -44,25 +44,25 @@
         } finally { reader.cancel().catch(() => {}); reader.releaseLock(); }
         return new Blob(chunks, { type: response.headers.get('content-type') || 'application/octet-stream' });
     }
-    async function normalizeCover(source, name, signal) {
-        alive(signal); const canvas = document.createElement('canvas'), context = canvas.getContext('2d');
-        if (!context) throw new Error('浏览器无法生成 PNG 图片');
-        if (!source) {
-            canvas.width = 600; canvas.height = 800; context.fillStyle = '#f5f7fa'; context.fillRect(0, 0, 600, 800);
-            context.fillStyle = '#394653'; context.font = '48px sans-serif'; context.textAlign = 'center'; context.textBaseline = 'middle'; context.fillText(name.slice(0, 8), 300, 400, 520);
-        } else {
-            const blob = await imageBlob(source, signal), url = URL.createObjectURL(blob), image = new Image();
-            try {
-                const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('封面图片无法解码，请换一张 PNG、JPEG 或 WebP')); image.src = url; });
-                await wait(loaded, signal); alive(signal);
-                const width = image.naturalWidth, height = image.naturalHeight;
-                if (!width || !height || width > 16384 || height > 16384 || width * height > 64 * 1024 * 1024) throw new Error('封面像素过大，请缩小图片后重试');
-                const scale = Math.min(1, 2048 / Math.max(width, height)); canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
-                context.drawImage(image, 0, 0, canvas.width, canvas.height);
-            } finally { image.src = ''; URL.revokeObjectURL(url); }
-        }
-        const blob = await wait(new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('封面 PNG 编码失败')), 'image/png')), signal);
-        alive(signal); const bytes = new Uint8Array(await wait(blob.arrayBuffer(), signal)); canvas.width = canvas.height = 1; return bytes;
+    async function loadPortrait(source, signal) {
+        alive(signal); if (!source) return null;
+        const blob = await imageBlob(source, signal), url = URL.createObjectURL(blob), image = new Image();
+        try {
+            const loaded = new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('封面图片无法解码，请换一张 PNG、JPEG 或 WebP')); image.src = url; });
+            await wait(loaded, signal); alive(signal);
+            const width = image.naturalWidth, height = image.naturalHeight;
+            if (!width || !height || width > 16384 || height > 16384 || width * height > 64 * 1024 * 1024) throw new Error('封面像素过大，请缩小图片后重试');
+            return image;
+        } catch (error) { image.src = ''; throw error; }
+        finally { image.onload = image.onerror = null; URL.revokeObjectURL(url); }
+    }
+    async function normalizeCover(source, data, signal) {
+        const canvas = document.createElement('canvas'), image = await loadPortrait(source, signal);
+        try {
+            alive(signal); root.UvUCardCover.draw(canvas, data, data.extensions.uvu.cover, image);
+            const blob = await wait(new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('封面 PNG 编码失败')), 'image/png')), signal);
+            alive(signal); return new Uint8Array(await wait(blob.arrayBuffer(), signal));
+        } finally { if (image) image.src = ''; canvas.width = canvas.height = 1; }
     }
     function open(chat) {
         if (!chat || !db.characters.includes(chat)) return;
@@ -72,17 +72,32 @@
         panel.setAttribute('aria-label', '导出角色卡');
         const head = el('header', 'cc-head'), title = el('h2', '', '导出角色卡'), close = button('', () => overlay.remove(), 'cc-close'); close.append(icon('x')); close.setAttribute('aria-label', '关闭角色卡导出'); close.dataset.action = 'close';
         head.append(title, el('span', 'cc-format', 'PNG'), close);
-        const body = el('div', 'cc-body'), person = el('div', 'cc-person'), portrait = el('div', 'cc-portrait', scope.data.name.slice(0, 1)), info = el('div', 'cc-person-info');
-        let cover = scope.data.avatar, localUrl, job = null;
-        const preview = source => {
-            portrait.replaceChildren(); if (!source) { portrait.textContent = scope.data.name.slice(0, 1); return; }
-            const image = el('img'); image.alt = '角色卡封面'; image.referrerPolicy = 'no-referrer';
-            if (/^(https?:|data:image\/(png|jpeg|webp);base64,|blob:|assets\/|\/)/i.test(source)) { image.src = source; image.onerror = () => { image.remove(); portrait.textContent = scope.data.name.slice(0, 1); }; portrait.append(image); }
-            else portrait.textContent = scope.data.name.slice(0, 1);
-        };
-        preview(cover); info.append(el('h3', '', scope.data.name), el('p', 'cc-muted', '角色卡 V2'));
+        const original = scope.data.original ? C().retain(scope.data.original).data : {}, coverFields = {};
+        const coverData = { name: scope.data.name, description: scope.data.persona, extensions: original.extensions };
+        const initialCover = root.UvUCardCover.profile(coverData);
+        const body = el('div', 'cc-body'), person = el('div', 'cc-person'), portrait = el('canvas', 'cc-portrait'), info = el('div', 'cc-person-info');
+        portrait.setAttribute('role', 'img'); portrait.setAttribute('aria-label', '角色卡预览');
+        let cover = scope.data.avatar, previewImage = null, previewJob = null, job = null;
+        const readCover = () => Object.fromEntries(Object.entries(coverFields).map(([key, input]) => [key, input.value]));
+        const repaint = () => root.UvUCardCover.draw(portrait, coverData, readCover(), previewImage);
+        async function preview() {
+            previewJob?.abort(); const controller = new AbortController(); previewJob = controller;
+            if (previewImage) previewImage.src = ''; previewImage = null; repaint();
+            try {
+                const image = await loadPortrait(cover, controller.signal);
+                if (controller.signal.aborted || !overlay.isConnected) { if (image) image.src = ''; return; }
+                previewImage = image; repaint();
+            } catch (error) { if (!controller.signal.aborted && overlay.isConnected && !job) { message.textContent = error.message; message.setAttribute('role', 'alert'); } }
+        }
+        info.append(el('h3', '', scope.data.name));
         const upload = el('input'); upload.type = 'file'; upload.accept = 'image/png,image/jpeg,image/webp'; upload.hidden = true; upload.setAttribute('aria-label', '更换角色卡封面');
-        const choose = button('封面', () => upload.click(), 'cc-cover-button'); info.append(choose, upload); person.append(portrait, info); body.append(person);
+        const choose = button('更换头像', () => upload.click(), 'cc-cover-button'); info.append(choose, upload); person.append(portrait, info); body.append(person);
+        const coverDetails = el('details', 'cc-cover-fields'), coverSummary = el('summary', '', '卡面资料'); coverSummary.append(icon('chevron-down')); coverDetails.append(coverSummary);
+        for (const [key, text] of [['birthday', '生日'], ['identity', '身份'], ['nationality', '国籍']]) {
+            const label = el('label', 'cc-field', text), input = el('input'); input.type = 'text'; input.maxLength = 80; input.value = initialCover[key]; input.placeholder = '—';
+            input.addEventListener('input', repaint); label.append(input); coverFields[key] = input; coverDetails.append(label);
+        }
+        body.append(coverDetails);
         const persona = el('details', 'cc-persona'), ps = el('summary', '', '角色人设'); ps.append(icon('chevron-down')); persona.append(ps);
         const personaText = el('p', '', scope.data.persona || '未填写人设'); persona.append(personaText); body.append(persona);
         const bookSection = el('section', 'cc-books'), bookHead = el('div', 'cc-section-head'), allLabel = el('label', 'cc-all', '全选'), all = check('全选世界书', selected.size > 0);
@@ -106,7 +121,7 @@
         if (scope.missingIds.length) bookSection.append(el('p', 'cc-note', scope.missingIds.length + ' 条绑定内容已不存在，未纳入导出'));
         body.append(bookSection);
         const more = el('details', 'cc-more'), moreSummary = el('summary', '', '更多设置'); moreSummary.append(icon('chevron-down')); more.append(moreSummary);
-        const original = scope.data.original ? C().retain(scope.data.original).data : {}, fields = {};
+        const fields = {};
         for (const [key, text, value] of [['creator', '作者', original.creator || ''], ['version', '版本', original.character_version || '1.0']]) {
             const label = el('label', 'cc-field', text), input = el('input'); input.type = 'text'; input.value = value; input.maxLength = key === 'creator' ? 2000 : 200; label.append(input); fields[key] = input; more.append(label);
         }
@@ -114,12 +129,12 @@
         const foot = el('footer', 'cc-foot'), count = el('p', 'cc-count'), cancel = button('取消生成', () => job?.abort(), 'cc-cancel'), run = button('导出 PNG', generate, 'cc-export-button'); run.prepend(icon('download')); cancel.hidden = true;
         foot.append(count, cancel, run); const message = el('p', 'cc-message'); message.setAttribute('aria-live', 'polite');
         panel.append(head, body, foot, message); overlay.append(panel); (document.querySelector('.phone-screen') || document.body).append(overlay);
-        const observer = new MutationObserver(() => { if (!overlay.isConnected) { job?.abort(); if (localUrl) URL.revokeObjectURL(localUrl); observer.disconnect(); } }); observer.observe(overlay.parentElement, { childList: true });
+        const observer = new MutationObserver(() => { if (!overlay.isConnected) { job?.abort(); previewJob?.abort(); if (previewImage) previewImage.src = ''; portrait.width = portrait.height = 1; observer.disconnect(); } }); observer.observe(overlay.parentElement, { childList: true });
         overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
         upload.addEventListener('change', () => {
             const file = upload.files[0]; if (!file) return;
             if (file.size > MAX_IMAGE || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { message.textContent = '请选择 16 MiB 以内的 PNG、JPEG 或 WebP'; return; }
-            if (localUrl) URL.revokeObjectURL(localUrl); localUrl = URL.createObjectURL(file); cover = file; preview(localUrl); message.textContent = ''; upload.value = '';
+            cover = file; message.textContent = ''; message.removeAttribute('role'); preview(); upload.value = '';
         });
         all.addEventListener('change', () => { selected.clear(); if (all.checked) scope.data.entries.forEach(entry => selected.add(entry.id)); update(); });
         function update() {
@@ -138,8 +153,8 @@
             const controls = [...panel.querySelectorAll('input,button')].filter(node => node !== close && node !== cancel), previous = controls.map(node => node.disabled);
             controls.forEach(node => { node.disabled = true; }); cancel.hidden = false; message.textContent = '正在生成…'; message.removeAttribute('role');
             try {
-                guard(); const card = C().build(scope, [...selected], { creator: fields.creator.value, version: fields.version.value });
-                const coverBytes = await normalizeCover(cover, scope.data.name, controller.signal); alive(controller.signal); guard();
+                guard(); const card = C().build(scope, [...selected], { creator: fields.creator.value, version: fields.version.value, cover: readCover() });
+                const coverBytes = await normalizeCover(cover, card.data, controller.signal); alive(controller.signal); guard();
                 const bytes = P().write(coverBytes, card);
                 if (JSON.stringify(P().read(bytes)) !== JSON.stringify(card)) throw new Error('导出文件读回校验失败');
                 alive(controller.signal); guard(); const blob = new Blob([bytes], { type: 'image/png' }), url = URL.createObjectURL(blob), link = el('a');
@@ -149,7 +164,7 @@
             } catch (error) { if (overlay.isConnected) { message.textContent = error.name === 'AbortError' ? '生成已取消或超时，可重试' : error.message; message.setAttribute('role', 'alert'); } }
             finally { clearTimeout(timeout); job = null; controls.forEach((node, i) => { node.disabled = previous[i]; }); cancel.hidden = true; }
         }
-        update(); return overlay;
+        update(); preview(); return overlay;
     }
     document.addEventListener('click', event => {
         if (!event.target.closest('#export-character-card-btn')) return;

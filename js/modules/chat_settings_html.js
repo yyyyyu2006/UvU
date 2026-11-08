@@ -4,7 +4,7 @@ const chatSettingsHtml = `
             <div class="title-container">
                 <h1 class="title">聊天设置</h1>
             </div>
-            <div class="placeholder"></div>
+            <button type="button" id="export-character-card-btn" class="cc-header-export" aria-label="导出角色卡" title="导出角色卡">${window.UvULucide?.download || '↓'}</button>
         </header>
         <main class="content">
             <div class="kkt-settings-container">
@@ -60,8 +60,6 @@ const chatSettingsHtml = `
                                 </div>
                             </div>
                         </div>
-
-                        <div class="cc-export-entry"><button type="button" id="export-character-card-btn">导出角色卡</button></div>
 
                         <!-- 关联世界书 (移到我的信息前) -->
                         <div class="kkt-group" style="margin-top:15px;">

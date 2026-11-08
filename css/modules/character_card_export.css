@@ -1,6 +1,7 @@
 /* Scoped export surfaces; original chat and custom beauty rules stay untouched. */
-.cc-export-entry { display:flex; justify-content:flex-end; margin:8px 0 16px; }
-.cc-export-entry button { width:auto; min-height:32px; margin:0; padding:6px 14px; border:0; border-radius:20px; background:#edf4fd; color:#527498; font:inherit; font-size:13px; }
+#chat-settings-screen>.app-header .cc-header-export { display:grid; place-items:center; flex:none; width:40px; height:40px; margin:0; padding:10px; border:0; border-radius:50%; background:#f1f5fa; color:#527498; cursor:pointer; }
+#chat-settings-screen>.app-header .cc-header-export svg { width:18px; height:18px; }
+.cc-header-export:focus-visible { outline:2px solid #91b7e6; outline-offset:2px; }
 .cc-export-overlay.feature-dialog { position:absolute; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; background:rgba(28,35,44,.28); }
 .cc-export-overlay .cc-export-dialog { display:flex; flex-direction:column; width:100%; max-width:392px; max-height:min(92dvh,840px); min-height:0; margin:0; padding:0; border:0; border-radius:24px; background:#fff; color:#242b33; box-shadow:0 8px 36px #182a3b12; overflow:hidden; font-size:14px; line-height:1.6; }
 .cc-export-dialog * { box-sizing:border-box; }
@@ -14,17 +15,18 @@
 .cc-export-dialog .cc-icon { display:inline-flex; align-items:center; flex:none; }
 .cc-export-dialog .cc-icon svg { width:16px; height:16px; }
 .cc-export-dialog .cc-body { min-height:0; padding:16px 24px 0; overflow-y:auto; overscroll-behavior:contain; }
-.cc-export-dialog .cc-person { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
-.cc-export-dialog .cc-portrait { display:grid; place-items:center; flex:none; width:72px; height:88px; overflow:hidden; border-radius:16px; background:#f0f4f8; color:#74869a; font-size:24px; }
-.cc-export-dialog .cc-portrait img { width:100%; height:100%; object-fit:cover; }
-.cc-export-dialog .cc-person-info { min-width:0; }
-.cc-export-dialog .cc-person-info h3 { font-size:20px; font-weight:600; overflow-wrap:anywhere; }
-.cc-export-dialog .cc-muted { color:#7b8590; font-size:12px; }
-.cc-export-dialog .cc-cover-button { display:inline-flex; min-height:28px; margin-top:8px; padding:3px 12px; border-radius:20px; background:#f1f4f8; color:#5e7187; font-size:12px; }
+.cc-export-dialog .cc-person { display:flex; flex-direction:column; align-items:center; gap:16px; margin-bottom:16px; }
+.cc-export-dialog .cc-portrait { display:block; flex:none; width:min(100%,240px); height:auto; aspect-ratio:3/4; border-radius:8px; background:#fff; box-shadow:0 4px 20px #182a3b0c; }
+.cc-export-dialog .cc-person-info { display:flex; align-items:center; gap:16px; width:100%; min-width:0; }
+.cc-export-dialog .cc-person-info h3 { flex:1; min-width:0; font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+.cc-export-dialog .cc-cover-button { display:inline-flex; align-items:center; flex:none; min-height:32px; padding:5px 12px; border-radius:20px; background:#f1f4f8; color:#5e7187; font-size:12px; }
 .cc-export-dialog summary { display:flex; align-items:center; justify-content:space-between; gap:8px; list-style:none; }
 .cc-export-dialog summary::-webkit-details-marker { display:none; }
 .cc-export-dialog summary .cc-icon { color:#8b96a2; }
 .cc-export-dialog details[open]>summary>.cc-chevron { transform:rotate(90deg); }
+.cc-export-dialog .cc-cover-fields { margin-bottom:16px; padding:12px 16px; border:1px solid #eef0f3; border-radius:16px; }
+.cc-export-dialog .cc-cover-fields>summary { min-height:24px; }
+.cc-export-dialog .cc-cover-fields[open]>summary { margin-bottom:8px; }
 .cc-export-dialog .cc-persona { margin-bottom:24px; padding:12px 16px; border-radius:16px; background:#f6f7f9; }
 .cc-export-dialog .cc-persona p { margin-top:12px; color:#626d7a; white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; }
 .cc-export-dialog .cc-section-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }

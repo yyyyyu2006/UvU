@@ -90,7 +90,8 @@ async function parseCharPng(file) {
         reader.onerror = () => reject(new Error('读取角色卡封面失败'));
         reader.readAsDataURL(file);
     });
-    return { data, avatar };
+    const restoredAvatar = window.UvUCardCover ? await window.UvUCardCover.restoreAvatar(avatar, data.data) : avatar;
+    return { data, avatar: restoredAvatar };
 }
 
 function parseCharJson(file) {

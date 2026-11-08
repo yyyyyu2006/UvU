@@ -106,6 +106,7 @@
         data.tags = previous.tags || []; data.alternate_greetings = previous.alternate_greetings || [];
         data.extensions = safe(previous.extensions || {}); delete data.extensions.uvu;
         data.extensions.uvu = { version: 1 };
+        if (root.UvUCardCover && (metadata.cover || previous.extensions?.uvu?.cover)) data.extensions.uvu.cover = root.UvUCardCover.profile({ ...data, extensions: previous.extensions }, metadata.cover || {});
         const books = scope.data.entries.filter(book => selected.has(book.id)).sort((a, b) => {
             const order = book => book.rules?.advancedEnabled ? number(book.rules.order, book.depth ?? 100) : number(book.depth, 100);
             return order(a) - order(b);
