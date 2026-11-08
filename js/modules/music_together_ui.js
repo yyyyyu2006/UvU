@@ -26,10 +26,19 @@
         function update() {
             const s = root.UvUMusicChat?.session();
             const visible = Boolean(s);
-            const screen = phone.querySelector('.screen.active');
-            const top = screen?.querySelector('header:not([hidden])');
-            const y = top?.getBoundingClientRect().bottom - phone.getBoundingClientRect().top;
-            bar.style.top = Math.max(8, Number.isFinite(y) && y > 0 ? y + 8 : 8) + 'px';
+            // Music sheets live outside the phone's stacking context. Keep the same
+            // controls above their scrolling body, then return them when the sheet closes.
+            const card = visible ? document.querySelector('.uvu-music-sheet .um-sheet-card') : null;
+            const host = card || phone;
+            if (bar.parentElement !== host) host.insertBefore(bar, card?.querySelector('.um-sheet-body') || null);
+            bar.classList.toggle('um-together-on-sheet', Boolean(card));
+            if (card) bar.style.removeProperty('top');
+            else {
+                const screen = phone.querySelector('.screen.active');
+                const top = screen?.querySelector('header:not([hidden])');
+                const y = top?.getBoundingClientRect().bottom - phone.getBoundingClientRect().top;
+                bar.style.top = Math.max(8, Number.isFinite(y) && y > 0 ? y + 8 : 8) + 'px';
+            }
             bar.hidden = !visible; sessionId = visible ? s.id : ''; if (!visible) return;
             const chat = typeof db !== 'undefined' ? db.characters.find(c => c.id === s.chatId) : null;
             const label = '与' + (chat?.remarkName || chat?.realName || '角色') + '一起听' + (s.localPlayback ? '' : ' · 已暂停');
@@ -40,7 +49,9 @@
             const src = 'assets/music/icons/' + (s.localPlayback ? 'pause' : 'play') + '.svg'; if (toggleIcon.getAttribute('src') !== src) toggleIcon.src = src;
         }
         root.UvUMusic.player.subscribe(update); root.addEventListener('music-chat-state', update);
+        root.addEventListener('music-sheet-state', update);
         new MutationObserver(update).observe(phone, { attributes: true, subtree: true, attributeFilter: ['class'] });
+        new MutationObserver(update).observe(document.body, { childList: true });
         root.addEventListener('resize', update);
         if (typeof ResizeObserver === 'function') new ResizeObserver(update).observe(phone);
         const title = document.getElementById('chat-room-title'); if (title) new MutationObserver(update).observe(title, { childList: true, characterData: true, subtree: true });

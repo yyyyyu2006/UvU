@@ -64,7 +64,13 @@
         overlay.addEventListener('keydown', keyHandler); overlay.onclick = event => { if (event.target === overlay) closeSheet(); };
         sheetClose = () => { onClose?.(); previousFocus?.isConnected && previousFocus.focus(); }; document.body.append(overlay); render(body, overlay); card.focus(); return body;
     }
-    function closeSheet() { if (!sheet) return; const done = sheetClose; sheet.remove(); sheet = sheetClose = null; done?.(); }
+    function closeSheet() {
+        if (!sheet) return;
+        const done = sheetClose; sheet.remove(); sheet = sheetClose = null;
+        // Return portalled controls before the dialog restores focus to its opener.
+        root.dispatchEvent(new CustomEvent('music-sheet-state'));
+        done?.();
+    }
     function share(track, invite = false) {
         const capturedTarget = shareTarget, controller = new AbortController(); let alive = true;
         modal(invite ? '邀请一起听' : '分享音乐', body => {

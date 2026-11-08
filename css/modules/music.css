@@ -178,4 +178,5 @@
 
 /* App-wide presentation, outside individual screen visibility and scrolling. */
 .phone-screen > .um-together-float { position:absolute;z-index:180;left:50%;transform:translateX(-50%);width:min(320px,calc(100% - 32px));box-sizing:border-box;margin:0;box-shadow:0 4px 18px #0000000c; }
+.uvu-music-sheet .um-together-on-sheet { align-self:center; width:min(320px,calc(100% - 32px)); box-sizing:border-box; margin:8px 16px 12px; }
 .um-together-info strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
