@@ -1,0 +1,63 @@
+/* Scoped export surfaces; original chat and custom beauty rules stay untouched. */
+.cc-export-entry { display:flex; justify-content:flex-end; margin:8px 0 16px; }
+.cc-export-entry button { width:auto; min-height:32px; margin:0; padding:6px 14px; border:0; border-radius:20px; background:#edf4fd; color:#527498; font:inherit; font-size:13px; }
+.cc-export-overlay.feature-dialog { position:absolute; inset:0; z-index:2000; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box; background:rgba(28,35,44,.28); }
+.cc-export-overlay .cc-export-dialog { display:flex; flex-direction:column; width:100%; max-width:392px; max-height:min(92dvh,840px); min-height:0; margin:0; padding:0; border:0; border-radius:24px; background:#fff; color:#242b33; box-shadow:0 8px 36px #182a3b12; overflow:hidden; font-size:14px; line-height:1.6; }
+.cc-export-dialog * { box-sizing:border-box; }
+.cc-export-dialog h2,.cc-export-dialog h3,.cc-export-dialog p { margin:0; }
+.cc-export-dialog button,.cc-export-dialog input { font:inherit; }
+.cc-export-dialog button { width:auto; margin:0; box-shadow:none; border:0; }
+.cc-export-dialog .cc-head { display:flex; align-items:center; gap:12px; padding:20px 24px 8px; flex:none; }
+.cc-export-dialog .cc-head h2 { flex:1; font-size:20px; font-weight:600; letter-spacing:-.4px; }
+.cc-export-dialog .cc-format { padding:3px 10px; border-radius:20px; background:#f4f6f8; color:#74808d; font-size:12px; }
+.cc-export-dialog .cc-close { display:grid; place-items:center; width:32px; height:32px; min-width:32px; padding:8px; border-radius:50%; background:#f4f6f8; color:#74808d; }
+.cc-export-dialog .cc-icon { display:inline-flex; align-items:center; flex:none; }
+.cc-export-dialog .cc-icon svg { width:16px; height:16px; }
+.cc-export-dialog .cc-body { min-height:0; padding:16px 24px 0; overflow-y:auto; overscroll-behavior:contain; }
+.cc-export-dialog .cc-person { display:flex; align-items:center; gap:16px; margin-bottom:24px; }
+.cc-export-dialog .cc-portrait { display:grid; place-items:center; flex:none; width:72px; height:88px; overflow:hidden; border-radius:16px; background:#f0f4f8; color:#74869a; font-size:24px; }
+.cc-export-dialog .cc-portrait img { width:100%; height:100%; object-fit:cover; }
+.cc-export-dialog .cc-person-info { min-width:0; }
+.cc-export-dialog .cc-person-info h3 { font-size:20px; font-weight:600; overflow-wrap:anywhere; }
+.cc-export-dialog .cc-muted { color:#7b8590; font-size:12px; }
+.cc-export-dialog .cc-cover-button { display:inline-flex; min-height:28px; margin-top:8px; padding:3px 12px; border-radius:20px; background:#f1f4f8; color:#5e7187; font-size:12px; }
+.cc-export-dialog summary { display:flex; align-items:center; justify-content:space-between; gap:8px; list-style:none; }
+.cc-export-dialog summary::-webkit-details-marker { display:none; }
+.cc-export-dialog summary .cc-icon { color:#8b96a2; }
+.cc-export-dialog details[open]>summary>.cc-chevron { transform:rotate(90deg); }
+.cc-export-dialog .cc-persona { margin-bottom:24px; padding:12px 16px; border-radius:16px; background:#f6f7f9; }
+.cc-export-dialog .cc-persona p { margin-top:12px; color:#626d7a; white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; }
+.cc-export-dialog .cc-section-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.cc-export-dialog .cc-section-head h3 { font-size:14px; font-weight:600; }
+.cc-export-dialog .cc-all { display:flex; align-items:center; gap:8px; min-height:32px; margin:0; color:#75818e; font-size:12px; }
+.cc-export-dialog input[type=checkbox] { appearance:auto; width:16px; height:16px; min-width:16px; min-height:16px; margin:0; padding:0; border-radius:3px; accent-color:#91b7e6; flex:none; }
+.cc-export-dialog .cc-book { padding:12px 0; border-bottom:1px solid #f0f2f4; }
+.cc-export-dialog .cc-book:last-child { border-bottom:0; }
+.cc-export-dialog .cc-book-select,.cc-export-dialog .cc-entry-select { display:flex; align-items:center; gap:12px; min-height:32px; margin:0; }
+.cc-export-dialog .cc-book-name { min-width:0; flex:1; overflow-wrap:anywhere; }
+.cc-export-dialog .cc-quantity { color:#8a949e; white-space:nowrap; font-size:12px; }
+.cc-export-dialog .cc-book-details { margin-left:28px; }
+.cc-export-dialog .cc-book-details>summary { justify-content:flex-start; min-height:28px; color:#7b8896; font-size:12px; }
+.cc-export-dialog .cc-entry { padding:8px 0; }
+.cc-export-dialog .cc-entry-select span { overflow-wrap:anywhere; }
+.cc-export-dialog .cc-entry-content { margin:4px 0 0 28px; font-size:12px; color:#74808d; }
+.cc-export-dialog .cc-entry-content summary { justify-content:flex-start; }
+.cc-export-dialog .cc-entry-content p { max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; padding:8px 0; font-size:14px; }
+.cc-export-dialog .cc-empty,.cc-export-dialog .cc-note { padding:12px 0; color:#7b8896; font-size:12px; }
+.cc-export-dialog .cc-more { margin-top:16px; font-size:12px; color:#78838f; }
+.cc-export-dialog .cc-more>summary { padding:8px 0; }
+.cc-export-dialog .cc-field { display:flex; align-items:center; gap:16px; padding:8px 0; margin:0; }
+.cc-export-dialog .cc-field input { width:0; flex:1; border:0; background:#f6f7f9; border-radius:12px; padding:8px 12px; color:#3e4d5e; }
+.cc-export-dialog .cc-help { padding:8px 0; }
+.cc-export-dialog .cc-help p { padding-top:8px; }
+.cc-export-dialog .cc-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:20px 24px; flex:none; }
+.cc-export-dialog .cc-count { flex:1; color:#7c8793; font-size:12px; white-space:nowrap; }
+.cc-export-dialog .cc-export-button { display:flex; align-items:center; gap:8px; padding:9px 16px; border-radius:24px; background:#e8f1fd; color:#4f7198; white-space:nowrap; }
+.cc-export-dialog .cc-cancel { padding:6px 10px; border-radius:20px; background:#f5f6f8; color:#667789; font-size:12px; }
+.cc-export-dialog .cc-message { margin:0 24px 16px; color:#6f8195; font-size:12px; overflow-wrap:anywhere; }
+.cc-export-dialog .cc-message:empty { display:none; }
+.cc-export-dialog .cc-message[role=alert] { color:#a65252; }
+.cc-export-dialog [hidden] { display:none !important; }
+.cc-export-dialog button:disabled { opacity:.5; }
+@media(max-width:350px) { .cc-export-overlay.feature-dialog { padding:8px; } .cc-export-dialog .cc-head,.cc-export-dialog .cc-foot { padding-left:20px; padding-right:20px; } .cc-export-dialog .cc-body { padding-left:20px; padding-right:20px; } }
+@media(pointer:coarse) { .cc-export-dialog .cc-book-select,.cc-export-dialog .cc-entry-select,.cc-export-dialog .cc-book-details>summary,.cc-export-dialog .cc-more>summary { min-height:44px; } .cc-export-dialog .cc-field input { font-size:16px; } }

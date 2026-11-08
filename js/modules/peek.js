@@ -504,6 +504,8 @@ function renderMomentsScreen() {
         signatureEl.textContent = char.momentsSignature || '暂时没有设置签名。';
     }
 
+    if (window.UvUMomentsUI?.render(char)) return;
+
     // 渲染动态列表
     const feedContainer = document.getElementById('moments-feed-container');
     const moments = char.moments || [];

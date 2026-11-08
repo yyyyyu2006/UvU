@@ -169,13 +169,15 @@ function importWorldBookJson(value, parentId) {
     const warnings = [];
     const books = Object.values(entries).filter(e => e && typeof e.content === 'string').map((e, index) => {
         const ext = e.extensions || {};
-        const rawPosition = ext.position ?? e.position ?? 'before';
+        const portable = ext.uvu?.version === 1 ? ext.uvu.original : null;
+        const rawPosition = portable?.position ?? ext.position ?? e.position ?? 'before';
         const positions = { 0: 'before', 1: 'after', 4: 'chat', before_char: 'before', after_char: 'after' };
         const importedPosition = Object.hasOwn(positions, rawPosition) ? positions[rawPosition] : (['before', 'after', 'limit_break', 'guidelines', 'chat'].includes(rawPosition) ? rawPosition : 'before');
         const position = importedPosition === 'chat' ? 'before' : importedPosition;
         const unsupported = !Object.hasOwn(positions, rawPosition) && !['before', 'after', 'limit_break', 'guidelines', 'chat'].includes(rawPosition);
         if (unsupported) warnings.push(`${e.comment || e.name || index + 1}：插入位置 ${rawPosition} 暂不支持，已停用`);
-        const supplied = e.rules;
+        const supplied = e.rules ?? portable?.rules;
+        if (supplied != null && (typeof supplied !== 'object' || Array.isArray(supplied))) throw new Error('世界书规则字段无效');
         const rules = supplied ? { ...supplied } : {
             enabled: !e.disable && e.enabled !== false && !unsupported, constant: e.constant ?? false,
             keys: worldBookKeys(e.key ?? e.keys), secondaryKeys: worldBookKeys(e.keysecondary ?? e.secondary_keys),
@@ -190,7 +192,7 @@ function importWorldBookJson(value, parentId) {
         // Imported trigger metadata is preserved, but stays dormant until explicitly enabled in the editor.
         rules.advancedEnabled = false;
         if (!supplied && e.type === 'entry' && typeof e.position === 'string' && e.constant == null && e.key == null && e.keys == null) rules.constant = true;
-        return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: e.depth ?? 100, rules, importSource: e };
+        return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: Number.isFinite(portable?.depth) ? portable.depth : (e.depth ?? 100), rules, importSource: e };
     });
     if (!books.length) throw new Error('没有可导入的世界书内容');
     if (books.length > 3000) throw new Error('单次最多导入 3000 条');

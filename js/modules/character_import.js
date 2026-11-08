@@ -81,87 +81,27 @@ async function handleCharacterImport(file) {
     }
 }
 
-function parseCharPng(file) {
-    return new Promise((resolve, reject) => {
+async function parseCharPng(file) {
+    if (file.size > window.UvUCardPng.maxFileBytes) throw new Error('角色 PNG 超过 32 MiB 上限');
+    const data = window.UvUCharacterCard.retain(window.UvUCardPng.read(new Uint8Array(await file.arrayBuffer())));
+    const avatar = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.readAsArrayBuffer(file);
-        reader.onload = (e) => {
-            try {
-                const buffer = e.target.result;
-                const view = new DataView(buffer);
-                const signature = [137, 80, 78, 71, 13, 10, 26, 10];
-                for (let i = 0; i < signature.length; i++) {
-                    if (view.getUint8(i) !== signature[i]) {
-                        return reject(new Error('文件不是一个有效的PNG。'));
-                    }
-                }
-
-                let offset = 8;
-                let charaData = null;
-
-                while (offset < view.byteLength) {
-                    const length = view.getUint32(offset);
-                    const type = String.fromCharCode(view.getUint8(offset + 4), view.getUint8(offset + 5), view.getUint8(offset + 6), view.getUint8(offset + 7));
-                    
-                    if (type === 'tEXt') {
-                        const textChunk = new Uint8Array(buffer, offset + 8, length);
-                        let separatorIndex = -1;
-                        for(let i = 0; i < textChunk.length; i++) {
-                            if (textChunk[i] === 0) {
-                                separatorIndex = i;
-                                break;
-                            }
-                        }
-
-                        if (separatorIndex !== -1) {
-                            const keyword = new TextDecoder('utf-8').decode(textChunk.slice(0, separatorIndex));
-                            if (keyword === 'chara') {
-                                const base64Data = new TextDecoder('utf-8').decode(textChunk.slice(separatorIndex + 1));
-                                try {
-                                    const decodedString = atob(base64Data);
-                                    const bytes = new Uint8Array(decodedString.length);
-                                    for (let i = 0; i < decodedString.length; i++) {
-                                        bytes[i] = decodedString.charCodeAt(i);
-                                    }
-                                    const utf8Decoder = new TextDecoder('utf-8');
-                                    charaData = JSON.parse(utf8Decoder.decode(bytes));
-                                    break;
-                                } catch (decodeError) {
-                                    return reject(new Error(`解析角色数据失败: ${decodeError.message}`));
-                                }
-                            }
-                        }
-                    }
-                    offset += 12 + length;
-                }
-
-                if (charaData) {
-                    const imageReader = new FileReader();
-                    imageReader.readAsDataURL(file);
-                    imageReader.onload = (imgEvent) => {
-                        resolve({ data: charaData, avatar: imgEvent.target.result });
-                    };
-                    imageReader.onerror = () => {
-                        resolve({ data: charaData, avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg' });
-                    };
-                } else {
-                    reject(new Error('在PNG中未找到有效的角色数据 (tEXt chunk not found or invalid)。'));
-                }
-            } catch (error) {
-                reject(new Error(`解析PNG失败: ${error.message}`));
-            }
-        };
-        reader.onerror = () => reject(new Error('读取PNG文件失败。'));
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('读取角色卡封面失败'));
+        reader.readAsDataURL(file);
     });
+    return { data, avatar };
 }
 
 function parseCharJson(file) {
     return new Promise((resolve, reject) => {
+        if (file.size > 8 * 1024 * 1024) return reject(new Error('角色 JSON 超过 8 MiB 上限'));
         const reader = new FileReader();
         reader.readAsText(file, 'UTF-8');
         reader.onload = (e) => {
             try {
-                const data = JSON.parse(e.target.result);
+                const parsed = JSON.parse(e.target.result);
+                const data = window.UvUCharacterCard ? window.UvUCharacterCard.retain(parsed) : parsed;
                 resolve({ data: data, avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg' });
             } catch (error) {
                 reject(new Error(`解析JSON失败: ${error.message}`));
@@ -172,6 +112,7 @@ function parseCharJson(file) {
 }
 
 async function createCharacterFromData(data, avatar) {
+    const retainedSource = window.UvUCharacterCard ? window.UvUCharacterCard.retain(data) : null;
     const charData = data.data || data;
 
     if (!charData || !charData.name) {
@@ -180,10 +121,11 @@ async function createCharacterFromData(data, avatar) {
 
     const newChar = {
         peekData: {},
-        id: `char_${Date.now()}`,
+        id: 'char_' + (globalThis.crypto?.randomUUID?.() || Date.now() + '_' + Math.random().toString(36).slice(2)),
         realName: charData.name || '未命名',
         remarkName: charData.name || '未命名',
         persona: charData.description || charData.persona || '',
+        ...(retainedSource ? { characterCardSource: retainedSource } : {}),
         avatar: avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
         myName: 'user',
         myRemarkName: '',
@@ -221,7 +163,9 @@ async function createCharacterFromData(data, avatar) {
         }
     };
 
-    const importedWorldBookIds = [];
+    const importedWorldBookIds = [], addedBooks = [];
+    const addBook = book => { db.worldBooks.push(book); addedBooks.push(book); };
+    try {
     
     if (charData.character_book && Array.isArray(charData.character_book.entries)) {
         const categoryName = data.name || charData.name;
@@ -232,20 +176,34 @@ async function createCharacterFromData(data, avatar) {
             folderId = folder.id;
         } else {
             folderId = `wb_f_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-            db.worldBooks.push({
+            addBook({
                 id: folderId,
                 parentId: null,
                 type: 'folder',
-                name: categoryName
+                name: categoryName,
+                cardImportRoot: true
             });
         }
 
         const imported = importWorldBookJson(charData.character_book, folderId);
         imported.books.forEach(book => {
-            const equivalent = db.worldBooks.find(w => w.type === 'entry' && w.name === book.name && w.content === book.content && w.position === book.position && JSON.stringify(w.rules) === JSON.stringify(book.rules));
+            const groupPath = book.importSource?.extensions?.uvu?.groupPath;
+            const portable = book.importSource?.extensions?.uvu?.version === 1 && groupPath !== undefined;
+            if (portable && (!Array.isArray(groupPath) || groupPath.length > 24 || groupPath.some(name => typeof name !== 'string' || !name.trim() || name.length > 2000))) throw new Error('世界书分组路径无效');
+            const equivalent = db.worldBooks.find(w => w.type === 'entry' && !importedWorldBookIds.includes(w.id) && w.name === book.name && w.content === book.content && w.position === book.position && (w.depth ?? 100) === (book.depth ?? 100) && JSON.stringify(w.rules) === JSON.stringify(book.rules)
+                && (!portable || JSON.stringify(w.importSource?.extensions?.uvu?.groupPath) === JSON.stringify(groupPath)));
             if (equivalent) { importedWorldBookIds.push(equivalent.id); return; }
-            if (db.worldBooks.some(w => w.name === book.name)) book.name += ' (' + categoryName + ')';
-            db.worldBooks.push(book); importedWorldBookIds.push(book.id);
+            if (portable) {
+                let parentId = folderId;
+                for (const name of groupPath) {
+                    let group = db.worldBooks.find(item => item.type === 'folder' && item.parentId === parentId && item.name === name);
+                    if (!group) { group = { id: 'wb_f_' + crypto.randomUUID(), parentId, type: 'folder', name }; addBook(group); }
+                    parentId = group.id;
+                }
+                book.parentId = parentId;
+            }
+            if (!portable && db.worldBooks.some(w => w.name === book.name)) book.name += ' (' + categoryName + ')';
+            addBook(book); importedWorldBookIds.push(book.id);
         });
         if (imported.warnings.length) showToast('部分酒馆插入位置暂不支持，对应条目已停用，请到世界书确认');
     }
@@ -263,7 +221,7 @@ async function createCharacterFromData(data, avatar) {
                     folderId = folder.id;
                 } else {
                     folderId = `wb_f_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-                    db.worldBooks.push({
+                    addBook({
                         id: folderId,
                         parentId: null,
                         type: 'folder',
@@ -309,7 +267,7 @@ async function createCharacterFromData(data, avatar) {
                                     position: 'after',
                                     category: categoryName
                                 };
-                                db.worldBooks.push(newBook);
+                                addBook(newBook);
                                 importedWorldBookIds.push(newBook.id);
                             }
                         }
@@ -322,15 +280,20 @@ async function createCharacterFromData(data, avatar) {
     
     if (importedWorldBookIds.length > 0) {
         newChar.worldBookIds = importedWorldBookIds;
-        setTimeout(() => {
-            showToast(`同时导入了 ${importedWorldBookIds.length} 条世界书设定。`);
-        }, 1600);
     }
 
     db.characters.push(newChar);
     await saveData();
+    } catch (error) {
+        const owned = new Set(addedBooks);
+        db.worldBooks = db.worldBooks.filter(book => !owned.has(book));
+        db.characters = db.characters.filter(character => character !== newChar);
+        throw error;
+    }
     renderChatList();
     showToast(`角色“${newChar.remarkName}”导入成功！`);
+    if (importedWorldBookIds.length) setTimeout(() => showToast(`同时导入了 ${importedWorldBookIds.length} 条世界书设定。`), 1600);
+    return newChar;
 }
 
 function setupImportConfirmModal() {

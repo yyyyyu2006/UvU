@@ -61,6 +61,8 @@ const chatSettingsHtml = `
                             </div>
                         </div>
 
+                        <div class="cc-export-entry"><button type="button" id="export-character-card-btn">导出角色卡</button></div>
+
                         <!-- 关联世界书 (移到我的信息前) -->
                         <div class="kkt-group" style="margin-top:15px;">
                             <div class="kkt-item" style="flex-direction: column; align-items: stretch; padding-bottom: 0;">

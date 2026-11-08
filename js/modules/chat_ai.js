@@ -738,6 +738,7 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
 }
 
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, signal, documentSources = [], musicPlan = null) {
+    const socialPostIds = new Set((chat.moments || []).map(post => post.id));
     const replyArchiveId = chat.activeArchiveId;
     let replyHistory = chat.history;
     const initialHistoryLength = chat.history.length;
@@ -855,6 +856,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             if (momentPostWithImageMatch) {
                 isMomentAction = true;
                 const author = momentPostWithImageMatch[1].trim();
+                const social = targetChatType === 'private' && window.UvUMoments?.settings(chat).enabled;
+                const authorRef = social ? window.UvUMoments.resolveName(chat, author) : null;
+                if (social && (!authorRef || authorRef.kind === 'user')) continue;
                 const imageDesc = momentPostWithImageMatch[2].trim();
                 const momentContent = momentPostWithImageMatch[3].trim();
                 
@@ -862,6 +866,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 chat.moments.unshift({
                     id: `moment_${Date.now()}`,
                     author: author,
+                    ...(social ? { authorRef } : {}),
                     content: momentContent,
                     imageDescription: imageDesc, // 保存图片描述
                     timestamp: Date.now(),
@@ -882,12 +887,16 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             else if (momentPostMatch && !momentPostWithImageMatch) { // 确保不重复匹配
                 isMomentAction = true;
                 const author = momentPostMatch[1].trim();
+                const social = targetChatType === 'private' && window.UvUMoments?.settings(chat).enabled;
+                const authorRef = social ? window.UvUMoments.resolveName(chat, author) : null;
+                if (social && (!authorRef || authorRef.kind === 'user')) continue;
                 const momentContent = momentPostMatch[2].trim();
                 
                 if (!chat.moments) chat.moments = [];
                 chat.moments.unshift({
                     id: `moment_${Date.now()}`,
                     author: author,
+                    ...(social ? { authorRef } : {}),
                     content: momentContent,
                     timestamp: Date.now(),
                     likes: [],
@@ -905,6 +914,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 addMessageBubble(notificationMsg, targetChatId, targetChatType);
             } 
             else if (momentCommentMatch) {
+                // The opt-in social engine owns comments; never execute the same interaction twice.
+                if (targetChatType === 'private' && window.UvUMoments?.settings(chat).enabled) continue;
                 isMomentAction = true;
                 const commenter = momentCommentMatch[1].trim();
                 const commentedOn = momentCommentMatch[2].trim();
@@ -1415,6 +1426,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             addMessageBubble(message, targetChatId, targetChatType);
         }
         if (!await savePendingReply()) return false;
+        if (targetChatType === 'private' && replyIsCurrent()) window.UvUMomentsAI?.afterReply(chat, socialPostIds);
         notifyNewMessages();
         renderChatList();
 

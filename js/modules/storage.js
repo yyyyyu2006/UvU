@@ -417,6 +417,7 @@ function storageContactData(chat) {
     const result = {};
     Object.keys(chat).forEach(key => { if (!excluded.has(key)) result[key] = storageClone(chat[key]); });
     if (result.musicProfile !== undefined) result.musicProfile = window.UvUMusicCharacter.validateProfile(result.musicProfile);
+    if (result.momentsSocial !== undefined) window.UvUMoments.validateData(result);
     if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
     return result;
 }
@@ -713,6 +714,10 @@ function storageValidateModules(modules) {
         if (item.musicProfile !== undefined) {
             try { window.UvUMusicCharacter.validateProfile(item.musicProfile); }
             catch (_) { fail(path + '.musicProfile', '有效的角色歌单'); }
+        }
+        if (item.momentsSocial !== undefined) {
+            try { window.UvUMoments.validateData(item); }
+            catch (_) { fail(path + '.momentsSocial', '有效的动态人物与评论关系'); }
         }
         for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
         for (const key of ['privateSessions', 'gossipSessions']) {

@@ -36,6 +36,8 @@
     <!-- CSS Split: Modules -->
     <link rel="stylesheet" href="css/modules/peek.css">
     <link rel="stylesheet" href="css/modules/moments.css">
+    <link rel="stylesheet" href="css/modules/moments_social.css?v=20261108-social">
+    <link rel="stylesheet" href="css/modules/character_card_export.css?v=20261108-card">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
     <link rel="stylesheet" href="css/modules/journal.css?v=20261106-feature-audit">
@@ -2956,7 +2958,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261104-chat-css-reset"></script>
-<script src="js/modules/worldbook_rules.js?v=20261105-audit-repairs"></script>
+<script src="js/modules/worldbook_rules.js?v=20261108-card"></script>
 <script src="js/modules/document_import.js?v=20261106-feature-audit"></script>
 <script src="js/modules/chat_documents.js?v=20261106-documents"></script>
 <script src="js/vendor/lucide/uvu-icons.js?v=20261108-calendar-moods"></script>
@@ -2968,7 +2970,10 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/worldbook_editor.js?v=20261104-worldbook-position"></script>
 <script src="js/modules/sticker_assist.js?v=20261106-feature-audit"></script>
 <link rel="stylesheet" href="css/modules/document_features.css?v=20261103-vector-viewport">
-<script src="js/modules/character_import.js?v=20261103-documents"></script>
+<script src="js/modules/character_card_png.js?v=20261108-card"></script>
+<script src="js/modules/character_card_export.js?v=20261108-card"></script>
+<script src="js/modules/character_card_export_ui.js?v=20261108-card"></script>
+<script src="js/modules/character_import.js?v=20261108-card"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261108-five-fixes"></script>
 <script src="js/modules/chat_render.js?v=20261108-calendar-life"></script>
@@ -2977,7 +2982,7 @@ node setup-server-plugin.js</code></pre>
     <script src="js/modules/chat_ai_prompt.js?v=20261105-mcp-center"></script>
     <script src="js/modules/chat_ai_call.js?v=20261105-audit-repairs"></script>
     <script src="js/modules/notifications.js?v=20261106-feature-audit"></script>
-    <script src="js/modules/chat_ai.js?v=20261108-calendar-life"></script>
+    <script src="js/modules/chat_ai.js?v=20261108-social"></script>
 <script src="js/modules/minimax_speech.js?v=20261107-refinement"></script>
 <script src="js/modules/voice_director.js?v=20261107-refinement"></script>
 <script src="js/modules/chat_image_generation.js?v=20261106-feature-audit"></script>
@@ -3004,7 +3009,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261107-music"></script> <!-- 聊天室HTML注入 -->
-<script src="js/modules/chat_settings_html.js?v=20261105-mcp-center"></script> <!-- 聊天设置HTML注入 -->
+<script src="js/modules/chat_settings_html.js?v=20261108-card"></script> <!-- 聊天设置HTML注入 -->
 <script src="js/modules/group_settings_html.js?v=20261104-worldbook-count"></script> <!-- 群聊设置HTML注入 -->
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
@@ -3019,7 +3024,11 @@ node setup-server-plugin.js</code></pre>
 <!-- [3. 独立功能模块 (Plugins)] -->
 <script src="js/modules/sticker.js?v=20261106-quote-sticker"></script>   <!-- 表情包管理系统 -->
 <script src="js/modules/worldbook.js?v=20261103-documents"></script> <!-- 世界书设定集 -->
-<script src="js/modules/peek.js"></script>      <!-- 偷看手机(相册/短信等) -->
+<script src="js/modules/peek.js?v=20261108-social"></script>      <!-- 偷看手机(相册/短信等) -->
+<script src="js/modules/moments_social.js?v=20261108-social"></script>
+<script src="js/modules/moments_social_ai.js?v=20261108-social"></script>
+<script src="js/modules/moments_social_icons.js?v=20261108-social"></script>
+<script src="js/modules/moments_social_ui.js?v=20261108-social"></script>
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
     <div class="modal-window auto-memory-dialog">
         <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
@@ -3113,7 +3122,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/story_bridge.js?v=20261106-feature-audit"></script>
 <script src="js/modules/memory_library.js?v=20261107-refinement"></script>
 <script src="js/modules/storage_html.js?v=20261108-five-fixes"></script> <!-- 存储空间HTML注入 -->
-<script src="js/modules/storage.js?v=20261108-five-fixes"></script>
+<script src="js/modules/storage.js?v=20261108-social"></script>
 <script src="js/modules/storage_features.js?v=20261108-playlist-public"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->

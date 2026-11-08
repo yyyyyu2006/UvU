@@ -1,0 +1,83 @@
+/* Scoped additions. The 1900 Moments stylesheet and user CSS are not rewritten. */
+.ms-overlay { position: absolute; inset: 0; z-index: 2500; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(0 0 0 / 22%); box-sizing: border-box; }
+.ms-overlay .ms-dialog { width: 100%; max-width: 460px; max-height: min(88dvh, 760px); margin: 0; padding: 0; border: 1px solid #edf0f3; border-radius: 24px; background: #fff; color: #202124; display: flex; flex-direction: column; box-shadow: 0 12px 36px rgb(0 0 0 / 9%); overflow: hidden; font-size: 14px; letter-spacing: 0; }
+.ms-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; flex: none; }
+.ms-dialog-head strong { font-size: 17px; font-weight: 600; }
+.ms-dialog-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+.ms-dialog-body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.ms-dialog-foot { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-top: 1px solid #f0f1f3; flex: none; }
+.ms-overlay .ms-icon, .moments-social-enabled .ms-icon { width: 32px; height: 32px; min-width: 32px; min-height: 32px; flex: 0 0 32px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: #f4f5f7; color: #5b626c; cursor: pointer; box-sizing: border-box; }
+.ms-icon svg { width: 18px; height: 18px; flex: none; }
+.ms-overlay .ms-button { width: auto; min-height: 34px; padding: 7px 16px; border: 0; border-radius: 999px; background: #f2f4f7; color: #30353b; font: inherit; cursor: pointer; box-sizing: border-box; }
+.ms-overlay .ms-primary, .moments-social-enabled .ms-send { color: #30577e; background: #e5f0fb; }
+.ms-overlay .ms-danger { color: #ad4545; }
+.ms-overlay button:disabled, .moments-social-enabled button:disabled { opacity: .45; cursor: wait; }
+.ms-overlay button:focus-visible, .moments-social-enabled button:focus-visible, .ms-overlay input:focus-visible, .ms-overlay textarea:focus-visible, .ms-overlay select:focus-visible, .ms-composer textarea:focus-visible { outline: 2px solid #8bb8e6; outline-offset: 2px; }
+.ms-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 13px; color: #555c66; }
+.ms-overlay .ms-field input, .ms-overlay .ms-field textarea, .ms-overlay .ms-field select { width: 100%; min-width: 0; max-width: 100%; margin: 0; padding: 10px 12px; border: 1px solid #e7e9ed; border-radius: 10px; background: #f8f9fb; color: #202124; font: inherit; font-size: 14px; line-height: 1.5; box-sizing: border-box; }
+.ms-field textarea { min-height: 90px; resize: vertical; }
+.ms-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.ms-pair input { max-width: 100px !important; }
+.ms-check { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 32px; font-size: 14px; color: #31373e; }
+.ms-overlay .ms-check input { appearance: auto; -webkit-appearance: checkbox; width: 16px; height: 16px; min-height: 16px; min-width: 16px; margin: 0; padding: 0; accent-color: #7ca9d8; flex: none; }
+.ms-details { border-top: 1px solid #edf0f3; padding-top: 12px; font-size: 13px; color: #66707c; }
+.ms-details summary { cursor: pointer; padding: 4px 0; }
+.ms-details > p, .ms-details > label { margin-top: 12px; }
+.ms-note, .ms-empty { font-size: 13px; color: #737a83; line-height: 1.6; }
+.ms-empty { text-align: center; padding: 24px 0; }
+.ms-section-head { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.ms-section-head strong { margin-right: auto; font-size: 14px; }
+.ms-npcs { padding-top: 8px; border-top: 1px solid #edf0f3; }
+.ms-npc-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+.ms-npc-info { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.ms-npc-info span { font-size: 12px; color: #7a8088; }
+.ms-avatar, .ms-profile-avatar { display: inline-flex; position: relative; width: 40px; height: 40px; flex: 0 0 40px; overflow: hidden; border-radius: 8px; align-items: center; justify-content: center; background: #edf2f8; color: #65809e; font-size: 16px; }
+.ms-avatar img, .ms-profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.ms-profile-avatar { width: 64px; height: 64px; flex-basis: 64px; align-self: center; }
+#moments-header .action-btn-group { display: flex; align-items: center; gap: 8px; }
+.ms-feed-tools { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid #f1f3f5; }
+.ms-link, .ms-more, .ms-name { border: 0; padding: 0; margin: 0; width: auto; background: transparent; color: #576b90; cursor: pointer; font: inherit; text-align: left; }
+.ms-feed-tools .ms-link { font-size: 13px; white-space: nowrap; }
+.ms-status { flex: 1; min-width: 0; color: #78818d; font-size: 12px; overflow-wrap: anywhere; }
+.ms-post { display: flex; gap: 12px; padding: 20px 16px; border-bottom: 1px solid #f0f1f3; }
+.ms-post-main { flex: 1; min-width: 0; }
+.ms-post-main > .ms-name { font-size: 15px; font-weight: 600; }
+.ms-post-content { font-size: 14px; line-height: 1.65; margin: 6px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: #292d33; }
+.ms-post-images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-width: 300px; }
+.ms-post-images img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer; }
+.ms-post-images img:only-child { grid-column: span 3; max-height: 260px; aspect-ratio: auto; object-fit: contain; object-position: left; }
+.ms-image-description { margin: 8px 0; font-size: 13px; color: #66717d; }
+.ms-image-description p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ms-post-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.ms-post-footer time { color: #9298a0; font-size: 12px; }
+.ms-post-actions { display: flex; gap: 8px; }
+.moments-social-enabled .ms-post-actions .ms-icon { background: transparent; }
+.ms-post-actions button[aria-pressed="true"] { color: #bd6072; }
+.ms-interaction { margin-top: 10px; padding: 10px 12px; background: #f6f7f9; border-radius: 6px; color: #2f343a; }
+.ms-likes { font-size: 13px; color: #576b90; padding-bottom: 6px; overflow-wrap: anywhere; }
+.ms-comment { position: relative; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; cursor: pointer; }
+.ms-comment + .ms-comment { margin-top: 4px; }
+.ms-comment .ms-name { display: inline; font-weight: 500; line-height: inherit; }
+.ms-comment-content { white-space: pre-wrap; }
+.ms-muted { color: #9197a0; }
+.ms-unread-dot { display: inline-block; width: 5px; height: 5px; margin-left: 6px; border-radius: 50%; background: #729fcf; vertical-align: middle; }
+.ms-more { margin-top: 8px; font-size: 12px; line-height: 1.7; }
+.ms-dialog-body > .ms-comment { padding: 8px 0; padding-right: 36px; }
+.ms-dialog-body > .ms-comment > .ms-icon { position: absolute; right: 0; top: 8px; }
+.ms-detail-post { border-bottom: 1px solid #edf0f3; padding-bottom: 16px; }
+.ms-notification { border: 0; background: none; width: 100%; text-align: left; font: inherit; color: #333b44; padding: 12px 0; overflow-wrap: anywhere; }
+.ms-notification span { display: block; margin-top: 8px; font-size: 12px; color: #848c96; }
+.ms-composer { flex: none; padding: 8px 16px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid #edf0f3; background: #fff; }
+.ms-composer-target { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #7a838e; }
+.ms-composer-target .ms-icon { width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex-basis: 24px; padding: 5px; }
+.ms-composer-row { display: flex; align-items: flex-end; gap: 12px; }
+.ms-composer textarea { flex: 1; width: 0; min-height: 38px; max-height: 120px; resize: vertical; border: 0; border-radius: 8px; background: #f4f6f8; color: #292e35; padding: 9px 12px; font: inherit; font-size: 14px; box-sizing: border-box; }
+.ms-composer .ms-send { margin-bottom: 3px; }
+.ms-picture-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.ms-picture-list > div { position: relative; width: 64px; height: 64px; }
+.ms-picture-list img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.ms-picture-list .ms-icon { position: absolute; right: -6px; top: -6px; width: 24px; height: 24px; min-width: 24px; min-height: 24px; padding: 5px; }
+.ms-full-image { display: block; max-width: 100%; max-height: 65dvh; object-fit: contain; }
+.ms-overlay [hidden], .moments-social-enabled [hidden] { display: none !important; }
+@media (max-width: 350px) { .ms-overlay { padding: 8px; } .ms-dialog-head, .ms-dialog-foot { padding-left: 16px; padding-right: 16px; } .ms-dialog-body { padding-left: 16px; padding-right: 16px; } .ms-post { padding: 16px 12px; gap: 8px; } .ms-post-actions { gap: 4px; } }
+@media (prefers-reduced-motion: no-preference) { .ms-overlay { animation: ms-appear 160ms ease-out; } .ms-icon, .ms-button { transition: background-color 150ms ease, opacity 150ms ease; } @keyframes ms-appear { from { opacity: 0; } to { opacity: 1; } } }
