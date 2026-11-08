@@ -2,6 +2,8 @@
 
 只部署音乐网关；UvU 界面继续由 GitHub Pages 提供。无需购买另一台服务器、配置 Caddy 或先绑定自定义域名。先使用 Render 分配的 HTTPS 地址。
 
+当前已内置 `https://uvu-music.onrender.com`。2026-11-08 已验证公网健康状态、UvU Pages 跨域预检、独立会话及网易云/QQ 二维码生成；测试会话已删除。玩家可直接进入「音乐 → 账号」扫码。真实账号授权、歌单与播放仍需在自己的设备验证。
+
 ## 自动配置方式
 
 1. 在 Render 注册/登录，可使用 GitHub 账号。
@@ -55,4 +57,4 @@ Render 提供 `PORT`，入口会绑定 `0.0.0.0:$PORT`，无需手动填写 `MUS
 - https://render.com/docs/free
 - https://render.com/docs/node-version
 
-本仓库只准备了部署配置；实际 Render 账号授权、创建服务和最终地址需要部署者在自己的控制台完成。
+重新部署自己的服务时，Render 账号授权、创建服务和最终地址需要部署者在自己的控制台完成。
