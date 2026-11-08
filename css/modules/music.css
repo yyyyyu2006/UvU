@@ -171,3 +171,7 @@
 @media(prefers-reduced-motion:reduce) { .um-sheet-card { animation:none; } }
 @media(prefers-reduced-motion:reduce) { .uvu-music-icon.is-loading { animation:none; } .um-lyrics-line { transition:none; } }
 @media(pointer:coarse) { .um-search input,.um-sheet-body input:not([type=range]):not([type=checkbox]),.um-sheet-body textarea { font-size:16px; } }
+
+/* App-wide presentation, outside individual screen visibility and scrolling. */
+.phone-screen > .um-together-float { position:absolute;z-index:180;left:50%;transform:translateX(-50%);width:min(320px,calc(100% - 32px));box-sizing:border-box;margin:0;box-shadow:0 4px 18px #0000000c; }
+.um-together-info strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

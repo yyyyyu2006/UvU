@@ -926,7 +926,7 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
         ];
         return new Promise((resolve, reject) => {
             let worker;
-            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261106-feature-audit'); }
+            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261108-backup-signature'); }
             catch (_) { reject(new Error('备份后台解析无法启动，请检查浏览器或网站脚本策略')); return; }
             let settled = false;
             const finish = () => { settled = true; worker.terminate(); clearTimeout(timer); signal?.removeEventListener('abort', abort); };
@@ -946,8 +946,11 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
         });
     }
     if (file.size > 8 * 1024 * 1024) throw new Error('当前浏览器不支持后台解析，请升级浏览器或导入小于 8 MB 的分类备份');
+    const signature = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+    const compressed = signature[0] === 0x1f && signature[1] === 0x8b || /\.ee$/i.test(file.name);
+    if (compressed && typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持解压 .ee 备份，请使用 .json 备份');
     let text;
-    if (/\.ee$/i.test(file.name)) {
+    if (compressed) {
         const reader = file.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
         const parts = []; let bytes = 0;
         try {
@@ -1140,6 +1143,8 @@ async function handleExport() {
             const stream = storageJsonStream(exportData);
             outputBlob = stream ? await new Response(stream).blob() : new Blob([JSON.stringify(exportData)]);
         }
+        // Android download managers may append .txt to an untyped Blob. Keep EE binary.
+        outputBlob = outputBlob.slice(0, outputBlob.size, extension === 'ee' ? 'application/octet-stream' : 'application/json');
         const url = URL.createObjectURL(outputBlob);
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.href = url;

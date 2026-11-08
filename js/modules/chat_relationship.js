@@ -219,11 +219,11 @@ function openRelationshipDialog() {
         add('p', relationshipStatusText(chat), 'relationship-status');
         add('p', '关系随当前存档保存。删除好友会保留聊天记录，可在聊天设置中重新添加；拉黑不会自动删除好友。', 'relationship-help');
         function button(text, action) { const b = add('button', text, 'relationship-action'); b.type = 'button'; b.addEventListener('click', () => run(action)); return b; }
-        add('strong', '我的操作');
+        add('strong', '我的操作').parentElement.classList.add('relationship-quick-actions');
         button(r.self.blocked ? '解除拉黑' : '拉黑对方', () => updateChatRelationship(chat, next => { next.self.blocked = !next.self.blocked; next.changedAt = Date.now(); }));
-        if (!r.self.deleted) button('删除好友（保留聊天）', () => updateChatRelationship(chat, next => { next.self.deleted = true; next.changedAt = Date.now(); }));
+        if (!r.self.deleted) button('删除好友', () => updateChatRelationship(chat, next => { next.self.deleted = true; next.changedAt = Date.now(); }));
         else button('重新添加 / 发送朋友验证', () => updateChatRelationship(chat, next => { next.outgoingRequest = { text: '请求重新添加为好友', at: Date.now() }; }));
-        add('strong', '角色状态');
+        add('strong', '角色状态').parentElement.classList.add('relationship-quick-actions');
         if (r.peer.blocked) button('手动解除角色拉黑', () => updateChatRelationship(chat, next => { next.peer.blocked = false; next.recovery.restoreAt = 0; next.changedAt = Date.now(); }));
         button(r.peer.deleted ? '对方通过朋友验证' : '对方删除我', () => updateChatRelationship(chat, next => { next.peer.deleted = !next.peer.deleted; if (!next.peer.deleted) next.outgoingRequest = null; next.changedAt = Date.now(); next.recovery.restoreAt = next.recovery.mode === 'timer' && (next.peer.blocked || next.peer.deleted) ? Date.now() + next.recovery.minutes * 60000 : 0; }));
         if (r.self.deleted) {

@@ -7,9 +7,12 @@
 需要 Node.js **22 或以上**、Git 和可访问平台的网络。以下命令从 UvU 仓库根目录执行；Windows 可以把 `node` 换成已安装的 `D:/node.exe`。
 
 ```sh
-node services/music-gateway/setup.mjs
-node services/music-gateway/start.mjs
+node services/music-gateway/launch.mjs
 ```
+
+这条命令会检查引擎，缺少时运行安装脚本；首次生成 `.env`、32字节随机加密密钥和本机 vault 路径，然后启动原网关。已有 `.env` 和部署环境变量保留，不覆盖。默认仅监听本机；新配置允许本项目 Pages 来源，并支持勾选“记住此设备”。没有域名、证书或服务器访问权限时，该命令不会自动完成线上部署。
+
+部署者执行脚本并配置 HTTPS 后，玩家只需在音乐设置填写一次服务地址 → 保存并连接 → 网易云 / QQ 的“扫码登录” → 官方 App 授权 → 歌单 → 导入到资料库。静态 Pages 不能执行 Node 脚本，也不能自动使用部署者电脑的 localhost。已有其他服务配置可继续使用原 setup/start 命令。
 
 默认监听 `http://127.0.0.1:8787/v1`，只允许 `http://localhost:3000`、`http://127.0.0.1:3000` 两个浏览器来源。小手机设置填写 `http://127.0.0.1:8787`；客户端自己请求 `/v1`。手机里的 `127.0.0.1` 指手机本身，跨设备测试需要配置电脑局域网地址、监听地址和 HTTPS。
 

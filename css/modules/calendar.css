@@ -105,3 +105,15 @@
 .calendar-chat-card p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:360px){.uvu-calendar .calendar-body{padding-left:14px;padding-right:14px}.uvu-calendar .calendar-weekdays,.uvu-calendar .calendar-month{column-gap:4px}.uvu-calendar .calendar-topbar{gap:4px}.uvu-calendar .calendar-topbar button{font-size:12px;padding:5px 8px}.uvu-calendar h2{font-size:18px}.calendar-editor .calendar-editor-body{padding-left:16px;padding-right:16px}}
 @media(prefers-reduced-motion:no-preference){.uvu-calendar .calendar-detail{animation:calendar-reveal .16s ease-out}.uvu-calendar .calendar-face svg{transition:opacity .15s ease}.uvu-calendar button:active,.calendar-editor button:active{opacity:.7}@keyframes calendar-reveal{from{opacity:.5;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}}
+
+.uvu-calendar .calendar-day.predicted-fertile .calendar-disc{background:#edf5fb;border:1px dashed #a9cbea;box-sizing:border-box}
+.uvu-calendar .calendar-day.predicted-ovulation .calendar-disc{background:#e9e3f4;border:1px dashed #b5a3d2;box-sizing:border-box}
+.uvu-calendar .calendar-period-legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:#74747c}
+.uvu-calendar .calendar-period-legend span{display:inline-flex;gap:6px;align-items:center}
+.uvu-calendar .calendar-period-legend span::before{content:'';width:10px;height:10px;border-radius:50%;background:#eac3cb}
+.uvu-calendar .calendar-period-legend [data-phase=period]::before{background:#fbf2f4;border:1px dashed #d7abb5}
+.uvu-calendar .calendar-period-legend [data-phase=fertile]::before{background:#edf5fb;border:1px dashed #a9cbea}
+.uvu-calendar .calendar-period-legend [data-phase=ovulation]::before{background:#e9e3f4;border:1px dashed #b5a3d2}
+.uvu-calendar .calendar-schedule-moods{display:grid;gap:8px;margin:8px 0}
+
+.uvu-calendar .calendar-day.has-event .calendar-face:after {content:'';position:absolute;width:5px;height:5px;background:#5f88b2;border:2px solid #fff;border-radius:50%;right:-2px;bottom:0;}

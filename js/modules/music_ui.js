@@ -383,8 +383,8 @@
         details.append(el('p', '公共源：在上方开启 GD 音乐台后，到搜索页选择“公共源”。个人学习使用，无需部署、登录或填写服务地址；当前接入网易云。搜索结果不保证可播放，遇到限流请稍后再试。'));
         details.append(el('p', '本地音乐可以直接使用。账号源的网易云和 QQ 音乐需要你自己的音乐服务；GitHub Pages 只运行界面。以下步骤仅用于账号源。'));
         details.append(el('p', '1. 在支持 Node.js 22 的电脑或服务器中，进入 UvU 仓库目录，执行：'));
-        const code = el('pre'); code.append(el('code', 'node services/music-gateway/setup.mjs\nnode services/music-gateway/start.mjs')); details.append(code);
-        details.append(el('p', '2. 复制 services/music-gateway/.env.example 为同目录的 .env，填好允许访问的 UvU 网页来源。用下面命令启动；线上使用还需要配置 HTTPS。'));
+        const code = el('pre'); code.append(el('code', 'node services/music-gateway/launch.mjs')); details.append(code);
+        details.append(el('p', '2. 上面的一条命令会检查并安装引擎、首次生成私密配置、启动网关。只需部署者执行一次；玩家配置服务地址后直接扫码。线上服务需要 HTTPS，已有 .env 不会被覆盖。修改配置后用下面命令重启。'));
         const envCode = el('pre'); envCode.append(el('code', 'node --env-file=services/music-gateway/.env services/music-gateway/start.mjs')); details.append(envCode);
         details.append(el('p', '网页和服务在同一台电脑时，可用 http://127.0.0.1:8787 测试。手机上的 127.0.0.1 指手机自身；连接电脑服务请使用配置好的 HTTPS 地址。'));
         details.append(el('p', '3. 把服务地址填入上方，保存并连接。选择网易云或 QQ 音乐，用对应官方 App 扫码确认；同一手机可保存二维码后使用官方 App 的相册识别（是否支持以平台为准）。'));
@@ -433,7 +433,7 @@
             }
             async function connect() {
                 output.textContent = '正在连接…';
-                try { await M.saveSettings({ endpoint: input.value.trim(), remember: checkbox.checked }); const health = await M.connect(controller.signal); if (!alive) return; if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请执行教程中的 setup 命令'); await refresh(); output.textContent = '已连接'; }
+                try { await M.saveSettings({ endpoint: input.value.trim(), remember: checkbox.checked }); const health = await M.connect(controller.signal); if (!alive) return; if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请由部署者执行教程中的 launch 命令'); await refresh(); output.textContent = '已连接'; }
                 catch (e) { if (alive) output.textContent = e.message; }
             }
             if (input.value) void refresh().catch(e => { if (alive) output.textContent = e.message; });

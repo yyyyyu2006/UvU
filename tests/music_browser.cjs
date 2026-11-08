@@ -120,9 +120,11 @@ const server = http.createServer((req,res) => {
         await page.locator('.um-together-float [aria-label="继续一起听"]').click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing);
         await page.locator('.um-together-float [aria-label="打开一起听播放器"]').click();await page.waitForSelector('.um-artwork');await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.evaluate(()=>{currentChatId='different-char';document.getElementById('chat-room-title').textContent='别的角色';});
-        await page.waitForFunction(()=>document.querySelector('.um-together-float')?.hidden);
+        await page.waitForSelector('.um-together-float:not([hidden])');
+        await page.evaluate(()=>switchScreen('home-screen'));await page.waitForSelector('.um-together-float:not([hidden])');
+        assert.ok(await page.locator('.um-together-float').evaluate(n=>n.parentElement.classList.contains('phone-screen')),'float survives navigation outside chat');
         await page.evaluate(()=>openChatRoom('music-char','private'));await page.waitForSelector('.um-together-float:not([hidden])');
-        await page.evaluate(()=>document.getElementById('chat-room-screen').classList.add('multi-select-active'));await page.waitForFunction(()=>document.querySelector('.um-together-float').hidden);
+        await page.evaluate(()=>document.getElementById('chat-room-screen').classList.add('multi-select-active'));await page.waitForSelector('.um-together-float:not([hidden])');
         await page.evaluate(()=>document.getElementById('chat-room-screen').classList.remove('multi-select-active'));await page.waitForSelector('.um-together-float:not([hidden])');
         await page.locator('.um-together-float [aria-label="暂停一起听"]').click();
         await page.evaluate(()=>{window.musicTestArchive=db.characters[0].activeArchiveId;db.characters[0].activeArchiveId='other-archive';document.getElementById('chat-room-title').textContent='其他存档';});

@@ -93,7 +93,8 @@ self.onmessage = async event => {
     try {
         const { file, keys } = event.data;
         let stream = file.stream();
-        if (/\.ee$/i.test(file.name)) {
+        const signature = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+        if (signature[0] === 0x1f && signature[1] === 0x8b || /\.ee$/i.test(file.name)) {
             if (typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持解压 .ee，请使用 JSON 备份');
             stream = stream.pipeThrough(new DecompressionStream('gzip'));
         }

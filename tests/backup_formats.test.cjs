@@ -62,6 +62,7 @@ test('derived memory and speech settings reject malformed nested backup values',
 test('EE export remains gzip JSON; unsupported compression falls back to JSON', async () => {
     const f = fixture(); await f.c.handleExport();
     assert.match(f.downloads[0], /[.]ee$/);
+    assert.equal(f.blobs[0].type, 'application/octet-stream');
     const json = await new Response(f.blobs[0].stream().pipeThrough(new DecompressionStream('gzip'))).json();
     assert.equal(json.modules.characters[0].persona, 'original persona');
     const legacy = fixture(); legacy.c.CompressionStream = undefined;
@@ -156,3 +157,12 @@ test('calendar records export with settings and old backups preserve existing ca
     assert.throws(()=>f.c.storageValidateModules({calendarData:{...json.modules.calendarData,events:{}}}),/结构/);
     const card={id:'c',role:'user',content:'日历分享',type:'calendar',calendar:{version:1,title:'日程',date:'2026-11-07',text:'散步'}};assert.doesNotThrow(()=>f.c.storageValidateModules({characters:[{id:'x',history:[card]}]}));card.calendar.date='2026-02-30';assert.throws(()=>f.c.storageValidateModules({characters:[{id:'x',history:[card]}]}),/日期/);
 });
+
+ test('renamed EE TXT and gzip signature imports preserve legacy backup contents', async () => {
+    const raw = new Blob([JSON.stringify({ modules: { worldBooks: [{ id: 'w', content: 'restored' }] } })]);
+    const gzip = await new Response(raw.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+    for (const name of ['backup.ee.txt', 'backup.ee (1).txt', 'renamed.txt']) {
+        const f = fixture(); await f.c.handleImport({ target: { files: [new File([gzip], name)], value: 'chosen' } });
+        assert.equal(f.imports.length, 1, name); assert.equal(f.imports[0].modules.worldBooks[0].content, 'restored');
+    }
+ });

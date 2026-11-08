@@ -100,6 +100,7 @@
         const general = node('section'); general.append(node('h3', '记录')); d.fields.append(general);
         const cycle = field(general, '通常周期（天）', 'number', s.prefs.cycleDays), length = field(general, '通常经期（天）', 'number', s.prefs.periodDays); cycle.min = 15; cycle.max = 90; length.min = 1; length.max = 30;
         const predictionEnabled = check(general, '显示经期预测', s.prefs.predictionEnabled !== false);
+        const ovulationEnabled = check(general, '显示排卵与易孕范围估计', s.prefs.ovulationEnabled !== false);
         const controls = {};
         let routine;
         if (who) {
@@ -121,7 +122,7 @@
         d.fields.append(tutorial);
         d.form.onsubmit = ev => { ev.preventDefault(); d.run(async () => {
             if (who && C().owner(who) !== key) throw new Error('角色存档已变化，请重新设置');
-            await C().mutate(s => { s.prefs = { ...s.prefs, cycleDays: Number(cycle.value), periodDays: Number(length.value), predictionEnabled: predictionEnabled.checked }; if (who) { const p = { ...profile, routine: routine.value, ...Object.fromEntries(Object.entries(controls).map(([flag, el]) => [flag, el.checked])) }; const index = s.profiles.findIndex(p => p.owner === key); if (index >= 0) s.profiles[index] = p; else s.profiles.push(p); } }, { expected: s.revision, guard: () => !who || C().resolve(key) === who });
+            await C().mutate(s => { s.prefs = { ...s.prefs, cycleDays: Number(cycle.value), periodDays: Number(length.value), predictionEnabled: predictionEnabled.checked, ovulationEnabled: ovulationEnabled.checked }; if (who) { const p = { ...profile, routine: routine.value, ...Object.fromEntries(Object.entries(controls).map(([flag, el]) => [flag, el.checked])) }; const index = s.profiles.findIndex(p => p.owner === key); if (index >= 0) s.profiles[index] = p; else s.profiles.push(p); } }, { expected: s.revision, guard: () => !who || C().resolve(key) === who });
         }); };
     }
     function exportRecords(health) { const value = C().state(); if (!health) { value.periods = []; value.profiles.forEach(p => p.shareHealth = false); } const a = node('a'), url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); a.href = url; a.download = 'uvu-calendar' + (health ? '-private' : '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -184,10 +185,12 @@
                 const day = month + '-' + String(i).padStart(2, '0'), moods = state.moods.filter(m => m.owner === key && m.date === day).sort((a, b) => b.at - a.at), m = moods[0];
                 const b = button('', () => { pick(day); }, 'calendar-day'); b.dataset.date = day;
                 b.setAttribute('aria-label', day + (m ? ' ' + C().moods[m.mood] : '')); b.setAttribute('aria-pressed', String(day >= span.start && day <= span.end));
-                const disc = mode === 'mood' ? face(m?.mood, m?.color) : node('span', undefined, 'calendar-disc'); b.append(disc, node('span', String(i), 'calendar-day-number'));
+                const disc = (mode === 'mood' || mode === 'schedule' && m) ? face(m?.mood, m?.color) : node('span', undefined, 'calendar-disc'); b.append(disc, node('span', String(i), 'calendar-day-number'));
                 b.classList.toggle('is-today', day === currentDay()); b.classList.toggle('is-selected', day === selected); b.classList.toggle('in-range', day >= span.start && day <= span.end && span.days > 1); b.classList.toggle('range-start', day === span.start); b.classList.toggle('range-end', day === span.end);
                 if (mode === 'schedule' && occurrences.some(e => e.status !== 'cancelled' && e.date <= day && e.occurrenceEnd >= day)) b.classList.add('has-event');
-                if (mode === 'period' && key === 'user') { const p = state.periods.find(p => p.start <= day && (p.end || currentDay()) >= day); b.classList.toggle('has-period', Boolean(p)); b.classList.toggle('predicted-period', !p && !!prediction && day >= prediction.expected && day <= prediction.end); }
+                if (mode === 'period' && key === 'user') { const p = state.periods.find(p => p.start <= day && (p.end || currentDay()) >= day); b.classList.toggle('has-period', Boolean(p)); b.classList.toggle('predicted-period', !p && !!prediction && day >= prediction.expected && day <= prediction.end);
+                    if (!p && prediction?.fertile && day >= prediction.fertile.start && day <= prediction.fertile.end) { b.classList.add('predicted-fertile'); b.setAttribute('aria-label', day + ' 可能易孕范围（估计）'); }
+                    if (!p && prediction?.ovulation && day >= prediction.ovulation.earliest && day <= prediction.ovulation.latest) { b.classList.add('predicted-ovulation'); b.setAttribute('aria-label', day + ' 排卵范围（估计）'); } }
                 const local = place(), holidays = holidayData?.days.filter(h => h.date === day) || [], display = environmentHolidayDisplay(holidays, local ? getEnvironmentHolidayDisplayNote(local, day) : null);
                 if (display.kind !== 'unknown') { const mark = node('small', ({ offday: '休', workday: '班', observance: '节' })[display.kind] || '注', 'calendar-holiday'); b.append(mark); b.title = display.text; }
                 grid.append(b);
@@ -203,10 +206,15 @@
             const actions = node('div', undefined, 'calendar-inline-actions'); section.append(actions);
             actions.append(button(mode === 'mood' ? '记录心情' : mode === 'period' ? '记录经期' : '添加日程', () => { if (!valid()) return; if (mode === 'mood') editMood(key, selected); else if (mode === 'period') { if (key !== 'user') { feedback.textContent = '经期记录属于我的日历'; return; } editPeriod(span); } else editEvent(key, span); }, 'calendar-primary'));
             actions.append(button('撤销', async () => { try { await C().undo(); feedback.textContent = '已撤销'; } catch (e) { feedback.textContent = e.message; } }));
+            if (mode === 'schedule') { const latestMood = C().state().moods.filter(m => m.owner === key && m.date === selected).sort((a,b) => b.at-a.at)[0]; actions.append(button('记录心情', () => { if (valid()) editMood(key, selected, latestMood); })); }
             if (chat && mode === 'schedule') actions.append(button('生成行程', () => generate(false)));
             if (mode === 'period' && key !== 'user') { section.append(node('p', '切换至“我的日历”记录经期。', 'calendar-muted')); return; }
             const s = C().state();
             if (mode === 'schedule') {
+                const moods = s.moods.filter(m => m.owner === key && m.date >= span.start && m.date <= span.end).sort((a,b) => b.at-a.at);
+                const seen = new Set(); const moodList = node('div', undefined, 'calendar-schedule-moods');
+                moods.forEach(m => { if (seen.has(m.date)) return; seen.add(m.date); const b = button('', () => editMood(key, m.date, m), 'calendar-mood-record'); b.append(face(m.mood, m.color), node('strong', C().moods[m.mood]), node('span', m.note || m.date)); moodList.append(b); });
+                if (moods.length) section.append(moodList);
                 const list = C().events(key, span.start, span.end); if (!list.length) section.append(node('p', '这天留给自由安排。', 'calendar-empty-state'));
                 const timeline = node('div', undefined, 'calendar-timeline'); section.append(timeline);
                 list.forEach(e => { const row = node('div', undefined, 'calendar-timeline-row'), clock = node('time', (e.date !== selected || span.days > 1 ? e.date.slice(5) + '\n' : '') + (e.time || '全天')), card = button('', () => editEvent(key, { start: e.date, end: e.occurrenceEnd }, e), 'calendar-event-card'); card.style.setProperty('--event-color', e.color); card.append(node('strong', e.title), node('span', [e.location, e.locked ? '已锁定' : '', e.status === 'done' ? '已完成' : e.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); if (e.note) card.append(node('p', e.note)); row.append(clock, card); timeline.append(row); });
@@ -220,8 +228,15 @@
                 });
                 if (chat) actions.append(button('分享我的心情', () => { const m = s.moods.filter(m => m.owner === 'user' && m.date === selected).at(-1); if (!m) { feedback.textContent = '请先记录我的心情'; return; } share(chat, '心情', C().moods[m.mood] + (m.note ? ' · ' + m.note : '')); }));
             } else {
-                const p = C().predict(); if (p) { const summary = node('div', undefined, 'calendar-prediction'); summary.append(node('strong', '预计 ' + p.expected), node('p', p.earliest + '—' + p.latest), node('small', p.basis + ' · ' + p.cycleDays + '天' + (p.overdue ? ' · 已超过预计日，等待实际记录' : '') + (p.ongoing ? ' · 当前记录尚未结束' : ''))); section.append(summary); }
+                const p = C().predict(); if (p) { const summary = node('div', undefined, 'calendar-prediction'); summary.append(node('strong', '预计 ' + p.expected), node('p', p.earliest + '—' + p.latest), node('small', p.basis + ' · ' + p.samples + '个周期 · ' + p.cycleDays + '天' + (p.overdue ? ' · 已超过预计日，等待实际记录' : '') + (p.ongoing ? ' · 当前记录尚未结束' : ''))); section.append(summary); }
                 else section.append(node('p', s.prefs.predictionEnabled === false ? '经期预测已关闭。' : '记录开始日期后，显示预计范围。', 'calendar-muted'));
+                if (p) {
+                    const legend = node('div', undefined, 'calendar-period-legend');
+                    for (const [cls,label] of [['actual','已记录'],['period','经期估计'],['fertile','可能易孕'],['ovulation','排卵估计']]) { if ((cls === 'fertile' || cls === 'ovulation') && !p.ovulation) continue; const item = node('span', label); item.dataset.phase = cls; legend.append(item); } section.append(legend);
+                    if (p.ovulation) section.append(node('p', '排卵估计 ' + p.ovulation.earliest + '—' + p.ovulation.latest + ' · 可能易孕 ' + p.fertile.start + '—' + p.fertile.end, 'calendar-muted'));
+                    else section.append(node('p', s.prefs.ovulationEnabled === false ? '排卵估计已关闭' : p.irregular ? '周期波动较大，暂不估计排卵范围' : p.ongoing || p.overdue ? '请更新实际记录后查看排卵估计' : '至少记录3次经期开始日期后，再估计排卵范围', 'calendar-muted'));
+                    section.append(node('p', '日期推算不能确认排卵，不用于避孕。', 'calendar-muted'));
+                }
                 s.periods.slice().sort((a, b) => b.start.localeCompare(a.start)).forEach(p => { const b = button('', () => editPeriod(span, p), 'calendar-period-record'); b.append(node('strong', p.start + '—' + (p.end || '进行中')), node('span', p.note || p.symptoms)); section.append(b); });
                 const shareTarget = node('select'); shareTarget.setAttribute('aria-label', '经期分享给角色'); shareTarget.append(new Option('选择分享角色', '')); db.characters.forEach(c => shareTarget.append(new Option(c.remarkName || c.realName, c.id))); actions.append(shareTarget, button('分享状态', () => { const c = db.characters.find(c => c.id === shareTarget.value); if (!c) { feedback.textContent = '请选择分享角色'; return; } const actual = s.periods.find(p => p.start <= selected && (!p.end || p.end >= selected)); share(c, '经期', (actual ? '已记录经期：' + actual.start + '—' + (actual.end || '进行中') : '该日未记录经期') + (p ? '\n预计下次：' + p.earliest + '—' + p.latest + '（估计）' : '')); }));
             }

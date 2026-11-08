@@ -200,7 +200,7 @@ test('chat portable normalization reuses core normalizer when present and still 
     const payload = api.portablePayload({ version: 1, track: { ...track(), cover: 'https://example.com/a?token=SECRET' } });
     assert.ok(calls > 0); assert.equal(payload.track.cover, ''); assert.equal(payload.track.signedUrl, undefined);
 });
-test('listening session reflects voice pause and disappears when playback stops or changes tracks', async () => {
+test('listening session stays until explicit end while unrelated playback is not attributed to char', async () => {
     const { api, c, chat } = fixture();
     await api.share(track(), { invite: true }); const plan = api.requestPlan(chat.history, chat);
     await api.consumeReply(command(plan.invitations[0].id), chat, plan);
@@ -209,9 +209,9 @@ test('listening session reflects voice pause and disappears when playback stops 
     c.UvUMusic.player.snapshot = () => ({ track: track(), playing: true, phase: 'playing' });
     assert.equal(api.session().localPlayback, true);
     c.UvUMusic.player.snapshot = () => ({ track: { ...track(), id: 'another' }, playing: true, phase: 'playing' });
-    assert.equal(api.session(), null);
+    assert.equal(api.session().track.id, '1'); assert.equal(api.session().localPlayback, false);
     c.UvUMusic.player.snapshot = () => ({ track: null, playing: false, phase: 'idle' });
-    assert.equal(api.session(), null);
+    assert.equal(api.session().track.id, '1'); assert.equal(api.session().localPlayback, false);
 });
 
 test('continuous listening follows only the explicitly allowed queue and never rewrites invitation facts', async () => {
@@ -219,14 +219,37 @@ test('continuous listening follows only the explicitly allowed queue and never r
     c.UvUMusic.player.snapshot=()=>state;await api.share(track(),{invite:true});const plan=api.requestPlan(chat.history,chat);await api.consumeReply(command(plan.invitations[0].id),chat,plan);
     const original=JSON.stringify(chat.history);assert.equal(api.setContinuous(true),true);
     state={...state,track:state.queue[1]};assert.equal(api.session().track.id,'2');assert.equal(api.session().continuous,true);assert.equal(JSON.stringify(chat.history),original);
-    state={...state,track:{...track(),id:'foreign'}};assert.equal(api.session(),null);
+    state={...state,track:{...track(),id:'foreign'}};assert.equal(api.session().track.id,'2');assert.equal(api.session().localPlayback,false);
 });
 
-test('continuous session is invalidated by a replaced queue or switched archive', async () => {
+test('queue replacement pauses together tracking while switched archive invalidates its binding', async () => {
     for(const change of ['queue','archive']){
         const {api,c,chat}=fixture();let state={track:track(),queue:[track()],queueVersion:1,phase:'playing',playing:true};c.UvUMusic.player.snapshot=()=>state;
         await api.share(track(),{invite:true});const p=api.requestPlan(chat.history,chat);await api.consumeReply(command(p.invitations[0].id),chat,p);api.setContinuous(true);
-        if(change==='queue')state={...state,queueVersion:2};else chat.activeArchiveId='other';assert.equal(api.session(),null,change);
+        if(change==='queue'){state={...state,queueVersion:2,track:{...track(),id:'foreign'}};assert.equal(api.session().localPlayback,false);assert.equal(api.session().track.id,'1');}else{chat.activeArchiveId='other';assert.equal(api.session(),null,change);}
         if(change==='archive'){chat.activeArchiveId='archive-a';assert.equal(api.session(),null,'switching back cannot revive a stale session');}
     }
+});
+
+test('together playback toggle resumes the bound song after unrelated playback, without changing messages',async()=>{
+ const {api,c,chat}=fixture();let state={track:track(),playing:true,phase:'playing'};
+ c.UvUMusic.player.snapshot=()=>state;c.UvUMusic.player.play=async value=>{state={track:value,playing:true,phase:'playing'};};
+ await api.share(track(),{invite:true});const p=api.requestPlan(chat.history,chat);await api.consumeReply(command(p.invitations[0].id),chat,p);const original=JSON.stringify(chat.history);
+ state={track:{...track(),id:'foreign'},playing:true,phase:'playing'};await api.togglePlayback();
+ assert.equal(state.track.id,'1');assert.equal(api.session().localPlayback,true);assert.equal(JSON.stringify(chat.history),original);
+ await api.end();assert.equal(api.session(),null);
+});
+
+test('ending together while its resume is pending cannot reopen the room',async()=>{
+ const {api,c,chat}=fixture();let state={track:track(),playing:true,phase:'playing'};c.UvUMusic.player.snapshot=()=>state;
+ await api.share(track(),{invite:true});const p=api.requestPlan(chat.history,chat);await api.consumeReply(command(p.invitations[0].id),chat,p);
+ let finish;state={track:null,playing:false,phase:'idle'};c.UvUMusic.player.play=()=>new Promise(resolve=>{finish=()=>{state={track:track(),playing:true,phase:'playing'};resolve(true);};});
+ const pending=api.togglePlayback();assert.equal(api.session().id,p.invitations[0].id,'room remains visible during resume');await api.end();finish();assert.equal(await pending,false);assert.equal(api.session(),null);
+});
+
+test('enabling continuous mode cannot adopt an unrelated song or queue',async()=>{
+ const {api,c,chat}=fixture();let state={track:track(),queue:[track()],queueVersion:1,playing:true,phase:'playing'};c.UvUMusic.player.snapshot=()=>state;
+ await api.share(track(),{invite:true});const p=api.requestPlan(chat.history,chat);await api.consumeReply(command(p.invitations[0].id),chat,p);
+ state={track:{...track(),id:'foreign'},queue:[{...track(),id:'foreign'}],queueVersion:2,playing:true,phase:'playing'};
+ assert.equal(api.setContinuous(true),false);assert.equal(api.session().track.id,'1');assert.equal(api.session().localPlayback,false);assert.equal(api.session().continuous,false);
 });

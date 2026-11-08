@@ -7,7 +7,7 @@
     const FLAGS = ['shareSchedule', 'shareUserSchedule', 'shareMood', 'shareUserMood', 'shareHealth', 'autoGenerate', 'autonomy'];
     let tail = Promise.resolve(), undoEntry = null;
     const database = () => typeof db !== 'undefined' ? db : root.db;
-    const empty = () => ({ version: 1, revision: 0, events: [], moods: [], periods: [], profiles: [], prefs: { cycleDays: 28, periodDays: 5, predictionEnabled: true } });
+    const empty = () => ({ version: 1, revision: 0, events: [], moods: [], periods: [], profiles: [], prefs: { cycleDays: 28, periodDays: 5, predictionEnabled: true, ovulationEnabled: true } });
     function date(value) {
         if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || +value.slice(0, 4) < 1900 || +value.slice(0, 4) > 2200) throw new Error('日期须在1900至2200年内');
         const time = Date.parse(value + 'T12:00:00Z');
@@ -79,6 +79,7 @@
         if (!raw.prefs || typeof raw.prefs !== 'object' || Array.isArray(raw.prefs)) throw new Error('日历偏好无效');
         integer(raw.prefs.cycleDays, '通常周期', 15, 90); integer(raw.prefs.periodDays, '通常经期', 1, 30);
         if (raw.prefs.predictionEnabled !== undefined && typeof raw.prefs.predictionEnabled !== 'boolean') throw new Error('经期预测选项无效');
+        if (raw.prefs.ovulationEnabled !== undefined && typeof raw.prefs.ovulationEnabled !== 'boolean') throw new Error('排卵估计选项无效');
         return raw;
     }
     function state() { return clone(database().calendarData === undefined ? empty() : validate(database().calendarData)); }
@@ -164,7 +165,8 @@
     function predict(now = today()) {
         date(now); const s = state(); if (s.prefs.predictionEnabled === false) return null;
         const records = s.periods.filter(p => p.start <= now).sort((a, b) => a.start.localeCompare(b.start)); if (!records.length) return null;
-        const intervals = records.slice(1).map((p, i) => distance(records[i].start, p.start)).filter(days => days >= 15 && days <= 90).slice(-6);
+        const observed = records.slice(1).map((p, i) => distance(records[i].start, p.start)).slice(-6);
+        const intervals = observed.filter(days => days >= 15 && days <= 90);
         const median = a => { const b = [...a].sort((x, y) => x - y), mid = Math.floor(b.length / 2); return b.length % 2 ? b[mid] : Math.round((b[mid - 1] + b[mid]) / 2); };
         const cycleDays = intervals.length >= 2 ? median(intervals) : s.prefs.cycleDays;
         const lengths = records.filter(p => p.end).map(p => distance(p.start, p.end) + 1).slice(-6);
@@ -172,7 +174,18 @@
         const last = records.at(-1); let expected; try { expected = addDays(last.start, cycleDays); } catch (_) { return null; }
         const bounded = delta => { try { return addDays(expected, delta); } catch (_) { return delta < 0 ? '1900-01-01' : '2200-12-31'; } };
         const spread = intervals.length >= 2 ? Math.max(2, Math.max(...intervals) - Math.min(...intervals)) : 4;
-        return { expected, earliest: bounded(-spread), latest: bounded(spread), end: bounded(periodDays - 1), cycleDays, periodDays, samples: intervals.length, overdue: expected < now, ongoing: !last.end, basis: intervals.length >= 2 ? '历史周期' : '手动周期' };
+        const irregular = observed.length !== intervals.length || (intervals.length >= 2 && Math.max(...intervals) - Math.min(...intervals) > 7) || cycleDays < 21 || cycleDays > 35;
+        // Product guardrails, not a clinical confidence interval. Dates alone cannot confirm ovulation.
+        let ovulation = null, fertile = null;
+        if (s.prefs.ovulationEnabled !== false && intervals.length >= 2 && !irregular && last.end && expected >= now) {
+            try {
+                const earliest = addDays(last.start, Math.min(...intervals) - 2 - 16);
+                const latest = addDays(last.start, Math.max(...intervals) + 2 - 10);
+                ovulation = { earliest, latest };
+                fertile = { start: addDays(earliest, -5), end: latest };
+            } catch (_) { /* Unsupported date boundary: omit rather than invent a date. */ }
+        }
+        return { expected, earliest: bounded(-spread), latest: bounded(spread), end: bounded(periodDays - 1), cycleDays, periodDays, samples: intervals.length, overdue: expected < now, ongoing: !last.end, irregular, ovulation, fertile, basis: intervals.length >= 2 ? '历史周期' : '手动周期' };
     }
     function context(chat, now) {
         const key = owner(chat), p = profile(key); if (!FLAGS.slice(0, 5).some(flag => p[flag])) return '';

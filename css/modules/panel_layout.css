@@ -329,3 +329,13 @@
 @media (prefers-reduced-motion: reduce) {
     .uvu-panel-layout,.uvu-panel-layout *, .uvu-panel-layout *::before,.uvu-panel-layout *::after,.uvu-panel-layout *::details-content,.incoming-message-toast,#auto-memory-modal.uvu-panel-layout.visible .auto-memory-dialog { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Compact derived relationship controls; retain the original chat appearance. */
+.relationship-dialog.uvu-panel-layout .relationship-dialog-body { gap: 8px; }
+.relationship-dialog.uvu-panel-layout .relationship-status { padding: 4px 0; }
+.relationship-dialog.uvu-panel-layout .relationship-section { padding: 12px 0; border-radius: 0; border-top: 1px solid #edf0f4; gap: 8px; flex: 0 0 auto; }
+.relationship-dialog.uvu-panel-layout .relationship-section > strong { margin: 0 0 4px; font-size: 14px; }
+.relationship-dialog.uvu-panel-layout .relationship-quick-actions { display: flex; flex-wrap: wrap; align-items: center; }
+.relationship-dialog.uvu-panel-layout .relationship-quick-actions > strong { flex-basis: 100%; }
+#chat-relationship-dialog .relationship-section > button.relationship-action { width: fit-content; min-height: 32px; padding: 6px 12px; font-size: 12px; }
+.relationship-dialog.uvu-panel-layout .panel-inline-help { padding: 0; margin: 0; }

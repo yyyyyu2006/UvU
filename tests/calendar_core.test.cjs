@@ -21,3 +21,17 @@ test('calendar stale mood and period editors cannot overwrite or resurrect recor
 test('calendar forecast stays safe at maximum supported year',async()=>{const c=fixture(),C=c.UvUCalendar;const s=C.state();s.periods=[{id:'p',start:'2200-12-20',end:'2200-12-24',note:'',symptoms:'',flow:''}];c.db.calendarData=s;assert.equal(C.predict('2200-12-25'),null);});
 
 test('calendar dates use locations only while environment and remote mode are enabled',()=>{const c=fixture(),C=c.UvUCalendar;const chat={environmentProfile:{remoteEnabled:true,charLocation:{timezone:'Asia/Tokyo'}}};c.getEnvironmentSettings=()=>({enabled:false,userLocation:{timezone:'America/New_York'}});assert.equal(C.timezone(chat),undefined);c.getEnvironmentSettings=()=>({enabled:true,userLocation:{timezone:'America/New_York'}});assert.equal(C.timezone(),'America/New_York');assert.equal(C.timezone(chat),'Asia/Tokyo');chat.environmentProfile.remoteEnabled=false;assert.equal(C.timezone(chat),undefined);});
+
+test('ovulation estimate needs history, uses a range and never creates actual records', async()=>{
+ const C=fixture().UvUCalendar; await C.savePeriod({start:'2026-08-01',end:'2026-08-05'}); assert.equal(C.predict('2026-08-06').ovulation,null);
+ for(const start of ['2026-08-29','2026-09-27','2026-10-25'])await C.savePeriod({start,end:C.addDays(start,4)});
+ const p=C.predict('2026-11-07'); assert.ok(p.ovulation); assert.ok(p.ovulation.earliest < p.ovulation.latest);
+ assert.ok(p.fertile.start < p.ovulation.earliest); assert.ok(p.fertile.end >= p.ovulation.latest);
+ assert.equal(C.state().periods.length,4);
+ await C.mutate(s=>{s.prefs.ovulationEnabled=false;}); assert.equal(C.predict('2026-11-07').ovulation,null);
+});
+test('irregular or ongoing cycles suppress misleading ovulation estimates',async()=>{
+ const C=fixture().UvUCalendar; for(const start of ['2026-07-01','2026-08-15','2026-09-12','2026-10-25'])await C.savePeriod({start,end:C.addDays(start,4)});
+ assert.equal(C.predict('2026-11-07').ovulation,null); assert.equal(C.predict('2026-11-07').irregular,true);
+ assert.throws(()=>C.validate({...C.state(),prefs:{...C.state().prefs,ovulationEnabled:'yes'}}));
+});

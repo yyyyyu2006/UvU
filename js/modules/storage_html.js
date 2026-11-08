@@ -88,7 +88,7 @@ function injectStorageHTML() {
                 </button>
 
                 <div id="storage-import-control" style="width: 100%;" hidden>
-                    <input type="file" id="storage-import-file" accept=".json,.ee" class="storage-hidden-input">
+                    <input type="file" id="storage-import-file" accept=".json,.ee,.txt,application/octet-stream,application/json" class="storage-hidden-input">
                     <label for="storage-import-file" class="storage-action-btn storage-import-btn" id="storage-import-label">
                         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>

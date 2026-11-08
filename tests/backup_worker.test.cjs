@@ -71,3 +71,9 @@ test('incremental backup parser agrees with JSON.parse on nested deterministic f
         assert.deepEqual(JSON.parse(JSON.stringify(parser.finish())), { worldBooks: modules.worldBooks });
     }
 });
+
+test('worker recognizes gzip signature even with Android appended TXT extension', async () => {
+ const body = await new Response(new Blob([JSON.stringify({modules:{worldBooks:[{id:'w'}]}})]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+ const result = await parse(new File([body], 'backup.ee (1).txt'), ['worldBooks']);
+ assert.equal(result.modules.worldBooks[0].id, 'w');
+});

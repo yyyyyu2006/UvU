@@ -232,30 +232,23 @@ const server = http.createServer((req, res) => {
         await permission.locator('summary').click();
         await page.evaluate(() => document.getElementById('mcp-services').dismissForward());
         await page.evaluate(() => openRelationshipDialog()); await shot('relationship', '.relationship-dialog');
+        assert.ok(await page.locator('.relationship-quick-actions .relationship-action').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height<=34&&n.getBoundingClientRect().width<220)),'relationship buttons stay compact');
+        const actionRows=await page.locator('.relationship-quick-actions').first().locator('button').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));assert.ok(Math.abs(actionRows[0]-actionRows[1])<1,'primary relationship actions share one row');
         await page.evaluate(() => document.getElementById('chat-relationship-dialog').dismissForward());
         await page.evaluate(() => openEnvironmentSettings(true)); await shot('environment', '#environment-settings .derived-settings');
         await page.evaluate(() => document.getElementById('environment-settings').dismissForward());
         await page.evaluate(() => openEnvironmentCalendar()); await shot('calendar', '.environment-calendar');
-        const sourceDetails = page.locator('.environment-calendar .environment-data-details');
+        const sourceDetails = page.locator('.uvu-calendar .calendar-data-details');
         assert.equal(await sourceDetails.count(), 1);
         assert.equal(await sourceDetails.locator('.environment-data-status').isVisible(), false);
-        await sourceDetails.locator('summary').click();
+        await sourceDetails.locator(':scope > summary').click();
         assert.equal(await sourceDetails.locator('.environment-data-status').isVisible(), true);
-        await sourceDetails.locator('summary').click();
-        const dayStyles = await page.locator('.environment-calendar .environment-day').first().evaluate(el => {
-            const result = {};
-            for (const state of ['', 'is-today', 'is-offday', 'is-workday', 'is-selected']) {
-                el.className = 'environment-day ' + state;
-                const style = getComputedStyle(el);
-                result[state || 'normal'] = { color: style.color, background: style.backgroundColor, border: style.borderTopColor, padding: style.padding, radius: style.borderTopLeftRadius };
-            }
-            return result;
-        });
-        assert.notEqual(dayStyles['is-today'].color, dayStyles.normal.color, 'Today stays visually distinct');
-        assert.notEqual(dayStyles['is-offday'].background, dayStyles.normal.background, 'Holiday stays visually distinct');
-        assert.notEqual(dayStyles['is-workday'].color, dayStyles.normal.color, 'Working day stays visually distinct');
-        assert.notEqual(dayStyles['is-selected'].border, dayStyles.normal.border, 'Selected date keeps its border');
-        assert.equal(dayStyles.normal.padding, '4px 2px'); assert.equal(dayStyles.normal.radius, '12px');
+        await sourceDetails.locator(':scope > summary').click();
+        const day = page.locator('.uvu-calendar .calendar-day').first(); await day.click();
+        assert.equal(await day.getAttribute('aria-pressed'), 'true');
+        assert.ok(await day.evaluate(el=>el.classList.contains('is-selected')),'selected date remains visually marked');
+        assert.equal(await day.locator('.calendar-disc').evaluate(el=>getComputedStyle(el).outlineStyle), 'solid');
+        assert.ok(await page.locator('.uvu-calendar .calendar-day-number').count()>=28);
         await page.evaluate(() => document.getElementById('environment-calendar').dismissForward());
         await page.evaluate(() => openStickerDescriptionSettings()); await shot('sticker', '.sticker-description-card');
         await page.locator('#sticker-description-settings [data-action=close]').click();
@@ -299,6 +292,13 @@ const server = http.createServer((req, res) => {
         await shot('notification', '#uvu-notification-preferences');
         await page.getByRole('button', { name: '保存通知偏好', exact: true }).click();
         assert.match(await page.locator('#uvu-notification-preferences').textContent(), /已保存/);
+        const recoveredBackup = await page.evaluate(async () => {
+            const raw = new Blob([JSON.stringify({modules:{worldBooks:[{id:'recover-ee',content:'完整备份内容'}]}})]);
+            const gzip = await new Response(raw.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+            const modules = await storageReadBackup(new File([gzip], 'UwU_Backup.ee (1).txt'), {worldbooks:true});
+            return modules.worldBooks[0];
+        });
+        assert.equal(recoveredBackup.content, '完整备份内容', 'real browser Worker recovers Android renamed EE backups');
         await page.evaluate(() => switchScreen('storage-analysis-screen'));
         await page.locator('#storage-backup-options .storage-setting-item').first().waitFor({ state: 'visible' });
         await shot('backup', '.storage-backup-extras:has(#storage-export-credentials)');

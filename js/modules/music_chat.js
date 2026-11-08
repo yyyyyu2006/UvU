@@ -134,19 +134,24 @@
     function session() {
         if (!sourceActive(activeSession) || activeSession.message.music.invitation.status !== 'accepted') {activeSession=null;return null;}
         const { chat, message } = activeSession;
-        const playback = root.UvUMusic.player.snapshot(), invited = message.music.track;
+        const playback = root.UvUMusic.player.snapshot(), invited = activeSession.lastTrack || message.music.track;
         const same=playback?.track&&playback.track.provider===invited.provider&&String(playback.track.id)===invited.id;
         const continuous=activeSession.continuous===true;
-        if (!playback?.track || (continuous ? playback.queueVersion!==activeSession.queueVersion||!activeSession.allowed.has(playback.track.provider+':'+playback.track.id) : !same)) {
-            activeSession = null; return null;
-        }
-        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: portableTrack(playback.track), continuous, localPlayback: playback.playing === true };
+        const follows = Boolean(playback?.track && (same || continuous && playback.queueVersion === activeSession.queueVersion && activeSession.allowed.has(playback.track.provider + ':' + playback.track.id)));
+        if (follows) activeSession.lastTrack = portableTrack(playback.track);
+        // Playback transport is independent from an accepted invitation. Preserve the room
+        // while stopped or playing unrelated music; never attribute that music to this char.
+        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: activeSession.lastTrack || portableTrack(invited), continuous, localPlayback: follows && playback.playing === true };
     }
     function setContinuous(enabled){
-        if(!session())return false;const state=root.UvUMusic.player.snapshot();
+        const current = session(); if(!current)return false;const state=root.UvUMusic.player.snapshot();
+        if (enabled === true && (!state.track || state.track.provider !== current.track.provider || String(state.track.id) !== current.track.id)) {
+            if (typeof showToast === 'function') showToast('请先继续播放这首一起听歌曲，再开启连续一起听');
+            return false;
+        }
         activeSession.continuous=enabled===true;activeSession.queueVersion=state.queueVersion;
         activeSession.allowed=new Set([...(state.queue||[]),state.track].filter(Boolean).map(t=>t.provider+':'+t.id));
-        // Turning off while a later song plays ends this runtime session, without rewriting old messages.
+        // Disabling continuous playback keeps the invitation and its last shared song.
         if(!enabled)session();notify();return true;
     }
     async function listen(track, binding) {
@@ -165,7 +170,20 @@
             activeSession = null; notify();
             throw new Error(playback?.phase === 'blocked' ? '浏览器阻止自动播放，请点击歌曲卡片的播放按钮重试' : '歌曲尚未开始播放，请点击歌曲卡片的播放按钮重试');
         }
-        activeSession = record; notify(); return true;
+        record.lastTrack = requested; activeSession = record; notify(); return true;
+    }
+    async function togglePlayback() {
+        const current = session(); if (!current) return false;
+        const state = root.UvUMusic.player.snapshot();
+        if (state?.track && state.track.provider === current.track.provider && String(state.track.id) === current.track.id) return root.UvUMusic.player.toggle();
+        const record = activeSession, intent = ++listenIntent;
+        const played = await root.UvUMusic.player.play(current.track);
+        if (intent !== listenIntent || activeSession !== record || !sourceActive(record) || record.message.music.invitation.status !== 'accepted') return false;
+        const final = root.UvUMusic.player.snapshot();
+        if (played === false || final?.phase !== 'playing' || !final.playing || final.track?.provider !== current.track.provider || String(final.track?.id) !== current.track.id) {
+            notify(); throw new Error('歌曲未开始播放，请点击重试');
+        }
+        record.lastTrack = current.track; notify(); return true;
     }
     async function consumeReply(response, chat, plan) {
         const parsed = extractActions(response, plan?.invitations || []), result = { ...parsed, changed: false };
@@ -320,5 +338,5 @@
         (chat.timestampStyle === 'avatar' ? info : card).append(time);
         row.append(info, card); wrapper.append(row); return wrapper;
     }
-    root.UvUMusicChat = { share, listen, end, session, setContinuous, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
+    root.UvUMusicChat = { share, listen, end, session, setContinuous, togglePlayback, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
 })(window);
