@@ -131,12 +131,13 @@
 .um-tutorial pre { border-radius:12px; padding:12px; background:#f3f5f3; overflow:auto; font-size:11px; }
 .um-qr { width:min(100%,240px); margin:0 auto 24px; }
 .um-qr img,.um-qr svg { display:block; width:100%; height:auto; }
-.uvu-music-card.message-bubble { width:min(320px,100%); max-width:100%; padding:16px; color:#1d1d1f; background:#f7f7f9; border:1px solid #ededf0; border-radius:24px; box-shadow:0 4px 16px #00000006; }
-.uvu-music-card-body { display:flex; gap:12px; align-items:center; }
-.uvu-music-cover { width:64px; height:64px; border-radius:14px; object-fit:cover; background:#f1f5f2; }
+.uvu-music-card.message-bubble { box-sizing:border-box; width:244px; max-width:100%; padding:12px; color:#202124; background:#fff; border:1px solid #ebecf0; border-radius:20px; box-shadow:0 3px 14px #16202b05; }
+.uvu-music-card.message-bubble::before,.uvu-music-card.message-bubble::after { display:none!important; }
+.uvu-music-card-body { display:flex; gap:10px; align-items:center; }
+.uvu-music-cover { width:40px; height:40px; flex:0 0 40px; border-radius:10px; object-fit:cover; background:#f3f3f5; }
 .uvu-music-info { min-width:0; flex:1; }
 .uvu-music-title,.uvu-music-artist { display:block; overflow:hidden; text-overflow:ellipsis; }
-.uvu-music-title { font-size:15px; font-weight:650; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+.uvu-music-title { font-size:14px; font-weight:500; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; color:#202124; }
 .uvu-music-artist { white-space:nowrap; }
 .uvu-music-artist { font-size:11px; color:#778079; margin-top:3px; }
 .uvu-music-tools { display:flex; gap:4px; margin-top:8px; }
@@ -147,16 +148,18 @@
 .uvu-music-icon:focus-visible,.uvu-music-continuous:focus-visible,.uvu-music-timing input:focus-visible { outline:2px solid #e34262; outline-offset:2px; }
 .uvu-music-icon.is-liked { background:#ffe6ec; }
 .uvu-music-icon.is-loading { animation:um-pulse 1s ease-in-out infinite alternate; }
-.uvu-music-transport { display:flex; justify-content:space-between; align-items:center; gap:4px; margin-top:8px; }
-.uvu-music-main-play { width:44px; height:44px; flex-basis:44px; background:#ececf0; }
-.uvu-music-main-play img { width:22px; height:22px; }
-.uvu-music-timing { display:flex; align-items:center; gap:8px; margin-top:16px; color:#86868b; font-size:10px; font-variant-numeric:tabular-nums; }
+.uvu-music-transport { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); place-items:center; align-items:center; margin-top:4px; min-height:40px; }
+.uvu-music-transport .uvu-music-icon { width:100%; max-width:36px; height:36px; padding:9px; }
+.uvu-music-main-play { background:#f2f3f5; }
+.uvu-music-main-play img { width:18px; height:18px; }
+.uvu-music-timing { display:flex; align-items:center; gap:8px; margin-top:10px; color:#85868b; font-size:11px; font-variant-numeric:tabular-nums; }
 .uvu-music-timing span { flex:0 0 auto; }
 .uvu-music-timing input { appearance:auto; width:0; min-width:0; flex:1; height:20px; margin:0; padding:0; accent-color:#252529; cursor:pointer; }
-.uvu-music-continuous { display:block; margin:8px auto 0; padding:6px 12px; border:0; border-radius:999px; background:#ececf0; color:#52525b; font:inherit; font-size:11px; cursor:pointer; }
+.uvu-music-continuous { display:block; flex:none; margin:0; padding:4px 8px; border:0; border-radius:999px; background:#f3f7fc; color:#5484ae; font:inherit; font-size:11px; white-space:nowrap; cursor:pointer; }
 .uvu-music-card-error { font-size:11px; color:#a34354; margin:8px 0 0; line-height:1.5; }
 .uvu-music-message .message-bubble-row { min-width:0; }
-.uvu-music-card .message-time { font-size:10px; margin-top:8px; color:#86868b; }
+#chat-room-screen .uvu-music-message .uvu-music-card>.message-time { position:static; display:none; left:auto; right:auto; margin:6px 0 0; font-size:10px; color:#86868b; }
+#chat-room-screen.show-timestamp .uvu-music-message .uvu-music-card>.message-time { display:block; }
 .um-queue-tools,.um-search-recents,.um-playlist-tools,.um-lyrics-tools { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:16px; }
 .um-queue-row { display:flex; align-items:center; gap:4px; min-width:0; padding:8px 0; border-bottom:1px solid var(--um-line); }
 .um-queue-row.current { background:#f7f7f9; border-radius:12px; }
@@ -166,7 +169,18 @@
 .um-lyrics-line.current { opacity:1; color:#1d1d1f; }
 .um-mode-choice[aria-pressed=true] { background:#fff0f3; color:#c72d4c; }
 @keyframes um-pulse { to { opacity:.35; } }
-.uvu-music-status { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:#86868b; border-top:1px solid #e9e9ed; margin-top:12px; padding-top:10px; }
+.uvu-music-status { display:flex; align-items:center; gap:6px; font-size:11px; color:#85868b; border-top:1px solid #eff0f3; margin-top:8px; padding-top:6px; }
+.uvu-music-status-label { flex:1; min-width:0; }
+.uvu-music-status .uvu-music-icon { width:24px; height:28px; flex-basis:24px; padding:5px; }
+.uvu-music-status .uvu-music-icon img { width:14px; height:14px; }
+.uvu-music-card-body>.uvu-music-icon { width:24px; flex-basis:24px; padding:4px; }
+.uvu-music-sheet .um-character-choice { display:flex; gap:12px; align-items:center; margin:4px 0 16px; }
+.uvu-music-sheet .um-character-select { flex:1; min-width:0; max-width:100%; height:40px; padding:0 12px; border:1px solid var(--um-line); border-radius:12px; background:var(--um-control,#f5f5f7); color:inherit; font:inherit; }
+.uvu-music-sheet .um-character-actions { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.uvu-music-sheet .um-character-actions>.um-button { width:auto; min-width:124px; flex:0 0 auto; padding:8px 16px; white-space:nowrap; }
+.uvu-music-sheet .um-character-autonomy { display:flex; align-items:center; gap:8px; font-size:13px; }
+.uvu-music-sheet .um-character-status { min-height:18px; font-size:12px; margin:12px 0 4px; }
+@media(pointer:coarse) { .uvu-music-transport .uvu-music-icon { height:44px; max-width:44px; } .uvu-music-sheet .um-character-select { font-size:16px; } }
 .uvu-music-target-list { display:flex; flex-direction:column; gap:8px; }
 .uvu-music-target { border:1px solid #e5ebe7; background:#fff; border-radius:16px; padding:12px; color:inherit; font:inherit; }
 @keyframes um-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }

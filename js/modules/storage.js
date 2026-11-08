@@ -416,6 +416,7 @@ function storageContactData(chat) {
     const excluded = new Set([...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery']);
     const result = {};
     Object.keys(chat).forEach(key => { if (!excluded.has(key)) result[key] = storageClone(chat[key]); });
+    if (result.musicProfile !== undefined) result.musicProfile = window.UvUMusicCharacter.validateProfile(result.musicProfile);
     if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
     return result;
 }
@@ -706,6 +707,10 @@ function storageValidateModules(modules) {
             }
         }
         derivedProfile(item, path);
+        if (item.musicProfile !== undefined) {
+            try { window.UvUMusicCharacter.validateProfile(item.musicProfile); }
+            catch (_) { fail(path + '.musicProfile', '有效的角色歌单'); }
+        }
         for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
         for (const key of ['privateSessions', 'gossipSessions']) {
             if (item[key]) Object.entries(item[key]).forEach(([id, session]) => {

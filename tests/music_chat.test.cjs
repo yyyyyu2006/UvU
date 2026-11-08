@@ -21,6 +21,40 @@ function fixture() {
 }
 const command = (id, action = 'accept') => '<uvu_music>' + JSON.stringify({ invitationId: id, action }) + '</uvu_music>';
 
+test('opt-in character invitations create a received card without autoplay and need user acceptance', async()=>{
+    const {api,c,chat,plays}=fixture();c.UvUMusicCharacter={candidates:()=>[track()]};
+    const plan=api.requestPlan([],chat);assert.equal(plan.invitations.length,1);assert.equal(plan.invitations[0].kind,'offer');
+    const response='一起听吗？'+command(plan.invitations[0].id,'invite');
+    assert.equal(api.extractActions(response,plan.invitations).text,'一起听吗？');
+    await api.consumeReply(response,chat,plan);assert.equal(chat.history.length,1);assert.equal(chat.history[0].role,'assistant');assert.equal(plays.length,0);
+    await api.consumeReply(response,chat,plan);assert.equal(chat.history.length,1);
+    const target={chat,message:chat.history[0],archiveId:chat.activeArchiveId,history:chat.history};
+    await api.respondInvitation(target,true);assert.equal(chat.history[0].music.invitation.status,'accepted');assert.equal(plays.length,1);
+});
+test('character invite plans reject stale archives and commands inside thinking',async()=>{
+    const {api,c,chat}=fixture();c.UvUMusicCharacter={candidates:()=>[track()]};
+    const plan=api.requestPlan([],chat);assert.equal(plan.invitations.length,1);const cmd=command(plan.invitations[0].id,'invite');
+    assert.equal(api.extractActions('<thinking>'+cmd+'</thinking>hello',plan.invitations).actions.length,0);
+    chat.activeArchiveId='other';await api.consumeReply(cmd,chat,plan);assert.equal(chat.history.length,0);
+});
+test('a character invitation control is recognized when its tag is uppercase',()=>{
+    const {api,c,chat}=fixture();c.UvUMusicCharacter={candidates:()=>[track()]};const p=api.requestPlan([],chat);
+    const control=command(p.invitations[0].id,'invite').replaceAll('uvu_music','UVU_MUSIC');
+    const result=api.extractActions('一起听吗？'+control,p.invitations);assert.equal(result.text,'一起听吗？');assert.equal(result.actions[0].action,'invite');
+});
+test('character invitation is rejected when disabled in-flight, relationship changes or persistence fails',async()=>{
+    const {api,c,chat,plays}=fixture();let tracks=[track()];c.UvUMusicCharacter={candidates:()=>tracks};
+    const p=api.requestPlan([],chat),cmd=command(p.invitations[0].id,'invite');tracks=[];await api.consumeReply(cmd,chat,p);assert.equal(chat.history.length,0);
+    tracks=[track()];chat.friendRelationship={revision:2};await api.consumeReply(cmd,chat,p);assert.equal(chat.history.length,0);
+    const p2=api.requestPlan([],chat);c.saveChatMutation=async state=>{state.chat.history.splice(0,state.chat.history.length,...state.before);return false;};
+    await api.consumeReply(command(p2.invitations[0].id,'invite'),chat,p2);assert.equal(chat.history.length,0);assert.equal(plays.length,0);
+});
+test('declining or expired incoming invitations never start playback',async()=>{
+    const {api,c,chat,plays}=fixture();c.UvUMusicCharacter={candidates:()=>[track()]};const p=api.requestPlan([],chat);await api.consumeReply(command(p.invitations[0].id,'invite'),chat,p);
+    const message=chat.history[0],target={chat,message,history:chat.history,archiveId:chat.activeArchiveId};await api.respondInvitation(target,false);assert.equal(message.music.invitation.status,'declined');assert.equal(plays.length,0);
+    message.music.invitation.status='pending';message.music.invitation.expiresAt=Date.now()-1;assert.equal(await api.respondInvitation(target,true),false);assert.equal(plays.length,0);
+});
+
 test('public-source cards preserve their source and safe artwork ID through portable validation', async () => {
     const {api,chat}=fixture();
     await api.share({...track(),provider:'gd-netease',artworkId:'109951166139384942',pageUrl:'https://music.163.com/song?id=1',url:'https://signed.invalid/stream'});

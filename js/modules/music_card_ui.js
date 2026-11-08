@@ -18,7 +18,7 @@
         const active=root.UvUMusicChat?.session?.(),bound=Boolean(active&&r.message.music.invitation&&active.id===r.message.music.invitation.id);
         r.continuous.hidden=!bound;r.continuous.textContent=active?.continuous?'连续一起听 ✓':'连续一起听';r.continuous.setAttribute('aria-pressed',String(!!active?.continuous));
         r.error.hidden=!current||!state.error;r.error.textContent=current?state.error:'';
-        const status=r.message.music.invitation,signature=status?[status.status,status.expiresAt>Date.now()].join(':'):'';if(r.statusFn&&signature!==r.statusSignature){r.statusSignature=signature;r.statusFn();}
+        const status=r.message.music.invitation,signature=status?[status.status,status.expiresAt>Date.now(),bound,active?.localPlayback].join(':'):'';if(r.statusFn&&signature!==r.statusSignature){r.statusSignature=signature;r.statusFn();}
         if(current&&state.track.cover&&card.querySelector('.uvu-music-cover')?.dataset.liveCover!==state.track.cover){const cover=card.querySelector('.uvu-music-cover');cover.dataset.liveCover=state.track.cover;cover.src=state.track.cover;}
     }
     let scheduled=false,pendingForce=false,last=0,lastSignature='';

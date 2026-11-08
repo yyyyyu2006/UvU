@@ -302,7 +302,7 @@ const server = http.createServer((req,res) => {
             await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-'+id+'-390.png')});
         }
         await page.locator('[data-um-tab="library"]').click();
-        assert.deepEqual(await page.locator('.um-library-link').allTextContents(),['播放列表','艺人','专辑','歌曲','本地音乐'],'category labels appear once');
+        assert.deepEqual(await page.locator('.um-library-link').allTextContents(),['播放列表','角色歌单','艺人','专辑','歌曲','本地音乐'],'category labels appear once');
         await page.getByRole('button',{name:'艺人',exact:true}).click();await page.getByRole('button',{name:'林间',exact:true}).click();
         assert.ok(await page.locator('.um-playlist-songs .um-track').count()>=2,'artist drilldown contains actual tracks');await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.locator('[data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();await page.getByRole('button',{name:'喜爱歌曲',exact:true}).click();
@@ -340,6 +340,50 @@ const server = http.createServer((req,res) => {
         await page.waitForFunction(()=>document.querySelector('.um-qr')?.nextElementSibling.textContent.includes('正在连接音乐服务'));
         await page.getByRole('button',{name:'关闭',exact:true}).click(); gatewayOffline=false;
         await page.waitForFunction(()=>!document.querySelector('.um-sheet-card'));
-        assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, unconfigured and built-in gateway, QR login fixture, gateway outage, stream and IndexedDB WAV audio, invite/card, queue/lyrics, reload.');
+        await page.evaluate(async()=>{
+            await UvUMusicChat.end();UvUMusicUI.open();
+            window.savedMusicAPI=db.apiSettings;db.apiSettings={provider:'newapi',url:'https://fixture.test',key:'fixture',model:'fixture'};
+            window.savedMusicFetch=fetchAiResponse;fetchAiResponse=async()=>JSON.stringify({songs:[{title:'秋日来信 1',artists:['林间']}]});
+            UvUMusicUI.characterPlaylist('music-char');
+        });
+        await page.getByRole('button',{name:'刷新角色歌单',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.um-character-status')?.textContent.includes('已更新'));
+        assert.equal(await page.locator('.um-character-tracks .um-track').count(),1);
+        assert.ok(await page.getByRole('button',{name:'播放全部',exact:true}).evaluate(n=>n.getBoundingClientRect().height<50),'character play-all label stays on one line');
+        assert.equal(await page.evaluate(()=>{const chat=db.characters[0];storageValidateModules({characters:[{id:chat.id,musicProfile:chat.musicProfile}]});try{storageValidateModules({characters:[{id:chat.id,musicProfile:{...chat.musicProfile,autonomous:'yes'}}]});return false;}catch(_){return true;}}),true,'backup validates nested character playlist fields');
+        await page.getByRole('button',{name:'播放全部',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().queueLabel==='林间的歌单');
+        await page.getByRole('checkbox',{name:'允许角色主动邀请一起听',exact:true}).check();
+        await page.waitForFunction(()=>db.characters[0].musicProfile?.autonomous===true);
+        for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'character playlist fits '+width);}
+        await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'character-playlist-390.png')});
+        await page.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>UvUMusicUI.characterPlaylist());assert.equal(await page.getByLabel('选择歌单角色',{exact:true}).inputValue(),'music-char');await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.evaluate(async()=>{
+            fetchAiResponse=savedMusicFetch;db.apiSettings=savedMusicAPI;const chat=db.characters[0];chat.history.length=0;
+            UvUMusic.player.stop();await openChatRoom(chat.id,'private');
+            const plan=UvUMusicChat.requestPlan(chat.history,chat),candidate=plan.invitations.find(i=>i.kind==='offer');
+            if(!candidate)throw new Error('missing character invitation candidate');
+            const response='一起听歌吧。<uvu_music>'+JSON.stringify({invitationId:candidate.id,action:'invite'})+'</uvu_music>';
+            await handleAiReplyContent(response,chat,chat.id,'private',false,undefined,[],plan);
+        });
+        await page.waitForSelector('.uvu-music-message.received [aria-label="接受一起听邀请"]');
+        assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),false,'incoming invitation never autoplays');
+        assert.equal(await page.evaluate(()=>db.characters[0].history.some(m=>m.content?.includes('offer_'))),false,'invitation protocol is removed from displayed reply');
+        const hostile=await page.addStyleTag({content:'.message-bubble { background:green!important;color:white!important;padding:30px!important;border-radius:0!important; } .message-bubble::after { content:"tail"!important;display:block!important; }'});
+        const card=page.locator('.uvu-music-message.received .uvu-music-card').last();
+        assert.equal(await card.evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)');
+        assert.equal(await card.evaluate(n=>getComputedStyle(n).padding),'12px');
+        assert.equal(await card.evaluate(n=>getComputedStyle(n,'::after').display),'none');
+        for(const width of [320,390,768]){
+            await page.setViewportSize({width,height:844});
+            const overflow=await card.evaluate(n=>[n,...n.querySelectorAll('*')].map(e=>({cls:e.className,width:e.clientWidth,scroll:e.scrollWidth,display:getComputedStyle(e).display,min:getComputedStyle(e).minWidth})).filter(e=>e.scroll>e.width+1));
+            assert.ok(await card.evaluate(n=>n.scrollWidth<=n.clientWidth+1),'compact card fits '+width+' '+JSON.stringify(overflow));
+            assert.ok(await card.evaluate(n=>{const r=n.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;}),'compact card stays within viewport '+width);
+        }
+        await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'character-invite-390.png')});
+        await page.getByRole('button',{name:'接受一起听邀请',exact:true}).click();await page.waitForFunction(()=>UvUMusicChat.session()?.chatId==='music-char');
+        assert.equal(await card.locator('.uvu-music-status .uvu-music-continuous').count(),1,'continuous control remains in the single footer after response');
+        await hostile.evaluate(n=>n.remove());
+        await card.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'character-together-390.png')});
+        assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, gateway, QR, WAV audio, invite/card, queue/lyrics, character refresh/playback/selection, opt-in incoming invitation, custom CSS isolation, reload.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

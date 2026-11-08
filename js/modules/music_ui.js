@@ -43,7 +43,7 @@
             const row = el('div', undefined, 'um-track'), play = el('button', undefined, 'um-track-main'); play.type = 'button'; play.setAttribute('aria-label', '播放 ' + track.title);
             const info = el('span', undefined, 'um-track-info'); info.append(el('strong', track.title), el('small', track.artists.join(' / ') || '未知歌手'));
             play.append(cover(track), info); play.onclick = () => { void M.player.play(track, tracks, {label:options.label || (options.playlistId?'歌单':tab==='search'?'搜索结果':'喜欢的歌')}).catch(toast); };
-            row.append(play, button('更多 · ' + track.title, () => trackMenu(track, options), 'ellipsis')); parent.append(row);
+            row.append(play, button('更多 · ' + track.title, () => trackMenu(track, options, options.target), 'ellipsis')); parent.append(row);
         });
     }
     function modal(title, render, onClose) {
@@ -246,12 +246,41 @@
         parent.append(rail);
     }
     function openCollection(name, tracks) { openPlaylist({ name, tracks, kind: 'collection' }); }
+    function characterPlaylistPanel(selectedId) {
+        const characters = typeof db !== 'undefined' ? db.characters || [] : [];
+        let saved = ''; try { saved = localStorage.getItem('uvu-music-character') || ''; } catch (_) {}
+        const chat = characters.find(c => c.id === (selectedId || saved)) || characters.find(c => c === shareTarget?.chat) || characters[0];
+        const controller = new AbortController(); let alive = true;
+        modal('角色歌单', body => {
+            body.classList.add('um-character-playlist');
+            if (!chat) { empty(body, '还没有角色'); return; }
+            try { localStorage.setItem('uvu-music-character', chat.id); } catch (_) {}
+            const select = el('select', undefined, 'um-character-select'); select.setAttribute('aria-label', '选择歌单角色');
+            for (const item of characters) { const option = el('option', item.remarkName || item.realName || item.name || '角色'); option.value = item.id; select.append(option); }
+            select.value = chat.id; select.onchange = () => characterPlaylistPanel(select.value);
+            const choice = el('div', undefined, 'um-character-choice'), songs = el('div', undefined, 'um-character-tracks'), status = el('p', '', 'um-muted um-character-status'); status.setAttribute('aria-live', 'polite');
+            const name = (chat.remarkName || chat.realName || chat.name || '角色') + '的歌单';
+            const draw = () => { songs.replaceChildren(); const value = root.UvUMusicCharacter.profile(chat); trackRows(songs, value.tracks, { label: name, target: typeof captureChatSendTarget === 'function' ? captureChatSendTarget(chat.id, 'private') : null }); play.disabled = !value.tracks.length; if (!value.tracks.length) empty(songs, '还没有歌单'); };
+            const refresh = button('刷新角色歌单', async () => {
+                check.disabled = true; status.textContent = '正在挑选歌曲…';
+                try { const result = await root.UvUMusicCharacter.refresh(chat, controller.signal); if (alive) { draw(); status.textContent = result.profile.tracks.length + ' 首' + (result.unmatched.length ? ' · ' + result.unmatched.length + ' 首未匹配' : ' · 已更新'); } }
+                catch (error) { if (alive) status.textContent = error.message; }
+                finally { if (alive) check.disabled = false; }
+            }, 'repeat');
+            choice.append(select, refresh);
+            const actions = el('div', undefined, 'um-character-actions'), play = button('播放全部', () => { const list = root.UvUMusicCharacter.profile(chat).tracks; if (list.length) return M.player.play(list[0], list, { label: name }); }, 'play');
+            play.append(el('span', '播放全部')); actions.append(play);
+            const label = el('label', undefined, 'um-check um-character-autonomy'), check = el('input'); check.type = 'checkbox'; check.checked = root.UvUMusicCharacter.profile(chat).autonomous; check.setAttribute('aria-label', '允许角色主动邀请一起听'); label.append(check, document.createTextNode('允许主动邀请一起听'));
+            check.onchange = async () => { const wanted = check.checked; check.disabled = true; try { await root.UvUMusicCharacter.setAutonomous(chat, wanted); } catch (error) { if (alive) status.textContent = error.message; } finally { if (alive) { check.checked = root.UvUMusicCharacter.profile(chat).autonomous; check.disabled = false; } } };
+            body.append(choice, actions, label, status, songs); draw();
+        }, () => { alive = false; controller.abort(); });
+    }
     function renderLibrary(lib) {
         const tracks = C.saved(lib);
         if (!libraryPage) {
             const links = el('div', undefined, 'um-library-links');
-            for (const [name, image] of [['播放列表','list-music'],['艺人','mic-vocal'],['专辑','gallery-vertical-end'],['歌曲','music-2'],['本地音乐','hard-drive-download']]) {
-                const b = button(name, () => { libraryPage = name; render(0); }, undefined, 'um-library-link'); b.replaceChildren(icon(image), el('span', name), icon('chevron-right')); links.append(b);
+            for (const [name, image] of [['播放列表','list-music'],['角色歌单','headphones'],['艺人','mic-vocal'],['专辑','gallery-vertical-end'],['歌曲','music-2'],['本地音乐','hard-drive-download']]) {
+                const b = button(name, () => { if (name === '角色歌单') return characterPlaylistPanel(); libraryPage = name; render(0); }, undefined, 'um-library-link'); b.replaceChildren(icon(image), el('span', name), icon('chevron-right')); links.append(b);
             }
             main.append(links);const added=C.recentAdded(lib); const recent = collectionSection('最近添加',added); renderCatalogGrid(recent, C.albums(added).slice(0, 12).map(x => ({ ...x, kind:'collection', subtitle:x.tracks[0]?.artists?.join(' / ') }))); main.append(recent); return;
         }
@@ -269,6 +298,7 @@
         heading.append(homeTitle); hero.append(heading, tools);
         if (libraryPage) tools.append(button('返回资料库', () => { libraryPage = ''; render(0); }, 'chevron-left'));
         if (tab === 'library' && !libraryPage) tools.append(button('新建歌单', () => createPlaylist(), 'list-plus', 'um-round-fill'));
+        tools.append(button('角色歌单', () => characterPlaylistPanel(), 'headphones'));
         tools.append(button('音乐账号与设置', accountsPanel, 'user-round', 'um-avatar')); main.append(hero);
         if (tab === 'search') { renderSearch(); main.scrollTop = previousScroll; return; }
         const lib = M.library(), tracks = C.available(lib);
@@ -415,6 +445,7 @@
         details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
         details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，匹配不明确时请手动搜索。已有歌单无需重新导入；公共源不保证每首歌可用。'));
+        details.append(el('p', '角色歌单：点击顶部耳机图标，或资料库 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。未匹配歌曲不加入，失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }
@@ -548,6 +579,6 @@
         document.addEventListener('click', event => { if (event.target.closest?.('#share-music-btn')) { event.preventDefault(); const target = typeof captureChatSendTarget === 'function' ? captureChatSendTarget() : null; open(target?.type === 'private' ? target : null); } if (event.target.closest?.('[data-target="uvu-music-screen"]')) { shareTarget = null; render(); } });
         render();
     }
-    root.UvUMusicUI = { open, nowPlaying, accounts: accountsPanel, close: closeSheet, mount, queue:queuePanel, trackMenu };
+    root.UvUMusicUI = { open, nowPlaying, accounts: accountsPanel, close: closeSheet, mount, queue:queuePanel, trackMenu, characterPlaylist:characterPlaylistPanel };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
 })(window);
