@@ -55,6 +55,28 @@ test('hybrid recall can recover an exact rare Chinese name below vector threshol
         return { ok: true, json: async () => ({ data: texts.map(t => ({ embedding: t.includes('围巾') ? [0, 1] : [1, 0] })) }) }; };
     const context = await c.getVectorMemoryContext(chat, '青岚'); assert.match(context, /蓝色围巾/);
 });
+
+test('retrieval diagnostics distinguish passed hybrid matches excluded by TopK from threshold failures', async () => {
+    const { c, chat } = fixture({ vectorHybridEnabled: true, vectorThreshold: 0.9, vectorTopK: 1 });
+    chat.memoryJournals = [{ id: 'first', title: '甲', content: '原始约定。' },
+        { id: 'second', title: '乙', content: '另一项约定。' }];
+    const text = await c.getVectorMemoryContext(chat, 'unrelated');
+    assert.match(text, /原始约定/); assert.doesNotMatch(text, /另一项约定/);
+    const excluded = c.getVectorMemoryDiagnostics(chat).excluded.find(item => item.id === 'second');
+    assert.equal(excluded.stage, 'candidate-topk');
+    assert.match(excluded.reason, /候选 TopK/);
+});
+
+test('retrieval diagnostics mark token-truncated memories while keeping the actual injected text', async () => {
+    const { c, chat } = fixture({ vectorTokenBudgetEnabled: true, vectorContextMaxTokens: 200 });
+    chat.memoryJournals = [{ id: 'long', title: '海边', content: '我们约好海边再见。'.repeat(60) }];
+    const text = await c.getVectorMemoryContext(chat, '海边');
+    const diag = c.getVectorMemoryDiagnostics(chat);
+    assert.equal(diag.selected.length, 1);
+    assert.ok(diag.selected[0].content.length < chat.memoryJournals[0].content.length);
+    assert.ok(text.includes(diag.selected[0].content));
+    assert.ok(diag.excluded.some(item => item.id === 'long' && item.stage === 'token-budget' && /截断/.test(item.reason)));
+});
 test('source dedup avoids recalling text already in the actual recent history window', async () => {
     const { c, chat } = fixture({ vectorDeduplicateSources: true, vectorStableSources: true });
     chat.history = [{ id: 'old', role: 'user', content: '旧约定' }, { id: 'now', role: 'user', content: '现在' }];

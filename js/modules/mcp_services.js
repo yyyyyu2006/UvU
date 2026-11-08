@@ -7,6 +7,7 @@
     const text = (value, max = 128) => typeof value === 'string' ? value.slice(0, max) : '';
     const count = (n, fallback, min, max) => Number.isInteger(n) ? Math.max(min, Math.min(max, n)) : fallback;
     const safeId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
+    function oauthIssuer(value){if(!value)return '';let url;try{url=new URL(value);}catch{throw new Error('OAuth issuer 地址无效');}if(url.protocol!=='https:' || url.username || url.password || url.search || url.hash)throw new Error('OAuth issuer 必须使用无账户和参数的 HTTPS 地址');return url.href.replace(/\/$/,'');}
     function normalize(raw = {}, imported = false) {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('MCP 配置必须是对象');
         if (raw.services !== undefined && (!Array.isArray(raw.services) || raw.services.length > 20)) throw new Error('MCP 最多配置 20 个服务');
@@ -26,7 +27,7 @@
                 }
             }
             return { id: value.id, name: text(value.name) || value.id, url, protocol, auth: ['bearer', 'oauth'].includes(value.auth) ? value.auth : 'none',
-                ...(value.auth === 'oauth' ? { oauth: { clientId: text(value.oauth?.clientId, 512).trim(), scope: text(value.oauth?.scope, 1000).trim() } } : {}),
+                ...(value.auth === 'oauth' ? { oauth: { clientId: text(value.oauth?.clientId, 512).trim(), scope: text(value.oauth?.scope, 1000).trim(),...(value.oauth?.issuer?{issuer:oauthIssuer(value.oauth.issuer)}:{}) } } : {}),
                 enabled: !imported && value.enabled === true, timeoutMs: count(value.timeoutMs, 20000, 1000, 60000), tools };
         });
         if (raw.policies !== undefined && (!Array.isArray(raw.policies) || raw.policies.length > 2000)) throw new Error('MCP 角色授权列表无效');
@@ -68,12 +69,36 @@
             connectionEpochs.set(s.id, (connectionEpochs.get(s.id) || 0) + 1);
             if (rotation) { runtime.delete(s.id); cache.clear(); }
             else { secretEpoch++; clearRuntime(); }
+            // Also notify other pages for session-only logout, where removing a nonexistent
+            // remembered secret would otherwise produce no storage event. No credentials travel.
+            const notice='uvu.mcp.invalidate.v1:'+encodeURIComponent(s.id);
+            try{localStorage.setItem(notice,JSON.stringify({key,rotation,nonce:Date.now()+':'+Math.random()}));localStorage.removeItem(notice);}catch{}
         },
         // Refresh-token rotation keeps the same grant/subject; a new login, manual secret or logout uses set/clear instead.
         renew(s, value, remember = false) { this.set(s, value, remember, true); },
         clear(s) { this.set(s, ''); }
     };
     function clearRuntime() { runtime.clear(); cache.clear(); for (const entry of inFlight.values()) entry.controller.abort(); inFlight.clear(); queueItems.length = 0; }
+    window.addEventListener?.('storage', event => {
+        if(event.storageArea && event.storageArea!==localStorage)return;
+        if(event.key?.startsWith('uvu.mcp.invalidate.v1:')){
+            if(!event.newValue)return;let notice;try{notice=JSON.parse(event.newValue);}catch{return;}
+            if(typeof notice.key!=='string' || !notice.key.startsWith('uvu.mcp.secret.v1:'))return;
+            // Rotation drops captured access tokens without clearing the freshly written grant.
+            try{sessionStorage.removeItem(notice.key);}catch{}
+            secretEpoch++;clearRuntime();window.MCPOAuth?.invalidateExternal?.(notice.key);return;
+        }
+        if(event.key!==null && !event.key?.startsWith('uvu.mcp.secret.v1:') && !event.key?.startsWith('uvu.mcp.oauth.v1:'))return;
+        // Events from another page invalidate captured tokens and pending results. A local session
+        // shadow must not keep using a credential which another page replaced or revoked.
+        if(event.key===null){try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith('uvu.mcp.secret.v1:') || key?.startsWith('uvu.mcp.oauth.v1:'))sessionStorage.removeItem(key);}}catch{}}
+        else {try{sessionStorage.removeItem(event.key);}catch{}}
+        secretEpoch++;clearRuntime();
+        window.MCPOAuth?.invalidateExternal?.(event.key);
+    });
+    function diagnostics(){const cfg=settings();return {format:'uvu-mcp-diagnostics',version:1,enabled:cfg.enabled,serviceCount:cfg.services.length,
+        services:cfg.services.map(s=>{const h=health(s.id);return {enabled:s.enabled,auth:s.auth,protocol:s.protocol,credentialsPresent:!!h.credentialsPresent,toolCount:Object.keys(s.tools).length};}),
+        logs:logItems.map(({at,stage,code,status,ms,cached})=>({at,stage,code,status,ms,cached}))};}
     function canonical(value) {
         if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
         if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
@@ -337,6 +362,6 @@
         return context(items);
     }
     window.MCPServices = Object.freeze({ normalize, settings, save, service, vault, discover, browse, preview, call, authorized, scope, valid, policy, stamp,
-        queue, pending, lease, take, context, health, clearRuntime, logs: () => copy(logItems), log,
+        queue, pending, lease, take, context, health, clearRuntime, diagnostics, logs: () => copy(logItems), log,
         pool, exportConfig: () => ({ kind: 'uvu-mcp-config', ...normalize(settings(), true) }) });
 }());

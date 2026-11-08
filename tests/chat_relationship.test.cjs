@@ -149,6 +149,20 @@ test('stale conditional response after archive switch cannot restore the new sto
     assert.equal(f.chat.friendRelationship.peer.deleted, true);
 });
 
+test('conditional recovery discards decisions after same-array edits, withdrawal or deletion', async () => {
+    for (const mutate of [history => { history[0].content = 'edited'; },
+        history => { history[0].isWithdrawn = true; }, history => { history.splice(0, 1); }]) {
+        const f = fixture();
+        f.chat.friendRelationship = { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
+        let finish, begin; const ready = new Promise(resolve => begin = resolve);
+        f.c.fetchAiResponse = async () => { begin(); return new Promise(resolve => finish = resolve); };
+        const pending = f.c.checkRelationshipRecovery(f.chat, true); await ready;
+        mutate(f.chat.history); finish('{"restore":true}');
+        assert.equal(await pending, false);
+        assert.equal(f.chat.friendRelationship.peer.blocked, true);
+    }
+});
+
 test('concurrent conditional checks share one request and changed settings invalidate the result', async () => {
     const f = fixture(); f.chat.friendRelationship = { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
     let finish, begin; const ready = new Promise(resolve => begin = resolve);

@@ -346,8 +346,15 @@ const server = http.createServer((req,res) => {
             window.savedMusicFetch=fetchAiResponse;fetchAiResponse=async()=>JSON.stringify({songs:[{title:'秋日来信 1',artists:['林间']}]});
             UvUMusicUI.characterPlaylist('music-char');
         });
+        const originalCharacterProfile = await page.evaluate(()=>JSON.stringify(db.characters[0].musicProfile));
         await page.getByRole('button',{name:'刷新角色歌单',exact:true}).click();
-        await page.waitForFunction(()=>document.querySelector('.um-character-status')?.textContent.includes('已更新'));
+        await page.getByRole('button',{name:'保存所选版本',exact:true}).waitFor();
+        assert.equal(await page.evaluate(()=>JSON.stringify(db.characters[0].musicProfile)),originalCharacterProfile,'preview does not replace the saved playlist');
+        await page.getByRole('button',{name:'取消刷新',exact:true}).click();
+        assert.equal(await page.evaluate(()=>JSON.stringify(db.characters[0].musicProfile)),originalCharacterProfile,'cancel keeps the original playlist');
+        await page.getByRole('button',{name:'刷新角色歌单',exact:true}).click();
+        await page.getByRole('button',{name:'保存所选版本',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.um-character-status')?.textContent.includes('已保存'));
         assert.equal(await page.locator('.um-character-tracks .um-track').count(),1);
         assert.ok(await page.getByRole('button',{name:'播放全部',exact:true}).evaluate(n=>n.getBoundingClientRect().height<50),'character play-all label stays on one line');
         assert.equal(await page.evaluate(()=>{const chat=db.characters[0];storageValidateModules({characters:[{id:chat.id,musicProfile:chat.musicProfile}]});try{storageValidateModules({characters:[{id:chat.id,musicProfile:{...chat.musicProfile,autonomous:'yes'}}]});return false;}catch(_){return true;}}),true,'backup validates nested character playlist fields');

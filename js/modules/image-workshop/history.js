@@ -1,21 +1,23 @@
 // --- 历史记录管理 ---
 async function saveToHistory(base64Image, payload) {
-    if (!dexieDB) return;
+    if (!dexieDB) throw new Error('图片缓存尚未就绪，请稍后重试');
     
     const historyItem = {
         timestamp: Date.now(),
         image: base64Image,
-        prompt: payload.input,
-        negativePrompt: payload.parameters.negative_prompt,
-        parameters: payload.parameters
+        prompt: payload.input || payload.prompt || '',
+        negativePrompt: payload.parameters?.negative_prompt || payload.negative_prompt || '',
+        parameters: payload.parameters || { model: payload.model, size: payload.size, quality: payload.quality }
     };
     
     try {
         await dexieDB.workshopHistory.add(historyItem);
         // 重新加载历史记录 UI
-        loadWorkshopHistory();
+        await loadWorkshopHistory();
+        return true;
     } catch (error) {
         console.error('Save history error:', error);
+        throw error;
     }
 }
 
@@ -57,7 +59,7 @@ async function loadWorkshopHistory() {
             
             div.addEventListener('click', () => {
                 // 点击查看大图或复用参数逻辑
-                renderPreviewImage(item.image);
+                renderPreviewImage(item.image, { input: item.prompt || '', parameters: { ...(item.parameters || {}), negative_prompt: item.negativePrompt || '' } });
                 // 可以选择是否自动填充提示词
                 // document.getElementById('workshop-positive-prompt').value = item.prompt;
                 // document.getElementById('workshop-negative-prompt').value = item.negativePrompt;

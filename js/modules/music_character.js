@@ -27,13 +27,14 @@
         } finally { saving.delete(chat); }
     }
     const setAutonomous = (chat, enabled) => save(chat, { ...profile(chat), autonomous: enabled === true });
-    async function refresh(chat, signal) {
+    const contextStamp = chat => JSON.stringify([chat.name, chat.realName, chat.remarkName, (chat.history || []).slice(-6)]);
+    async function refresh(chat, signal, { preview = false } = {}) {
         if (!present(chat) || signal?.aborted) throw abort();
         if (busy.has(chat)) throw new Error('此角色的歌单正在刷新');
-        const scope = { archive: chat.activeArchiveId, history: chat.history, persona: chat.persona, profile: JSON.stringify(chat.musicProfile), settings: JSON.stringify(M.settings()) };
+        const scope = { context: contextStamp(chat), archive: chat.activeArchiveId, history: chat.history, persona: chat.persona, profile: JSON.stringify(chat.musicProfile), settings: JSON.stringify(M.settings()) };
         const controller = new AbortController(), cancel = () => controller.abort();
         const valid = () => !controller.signal.aborted && present(chat) && chat.activeArchiveId === scope.archive && chat.history === scope.history &&
-            chat.persona === scope.persona && JSON.stringify(chat.musicProfile) === scope.profile && JSON.stringify(M.settings()) === scope.settings;
+            chat.persona === scope.persona && contextStamp(chat) === scope.context && JSON.stringify(chat.musicProfile) === scope.profile && JSON.stringify(M.settings()) === scope.settings;
         signal?.addEventListener('abort', cancel, { once: true });
         const timeout = setTimeout(cancel, 90000); busy.add(chat);
         try {
@@ -49,15 +50,28 @@
             let data; try { data = JSON.parse(String(raw).replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, '')); } catch (_) { throw new Error('歌单返回格式无效，原歌单保留'); }
             if (!Array.isArray(data?.songs) || !data.songs.length || data.songs.length > 6 || data.songs.some(s => !s || typeof s.title !== 'string' || !s.title.trim() || s.title.length > 200 || !Array.isArray(s.artists) || !s.artists.length || s.artists.length > 6 || s.artists.some(a => typeof a !== 'string' || !a.trim() || a.length > 120))) throw new Error('歌曲推荐格式无效，原歌单保留');
             const settings = M.settings(), sources = settings.publicSources.includes('gd-netease') ? ['gd-netease'] : settings.providers;
-            const resolved = [], seen = new Set(), unmatched = [];
+            const resolved = [], seen = new Set(), unmatched = [], choices = [];
             for (const item of data.songs) {
                 if (!valid()) throw abort();
                 const result = await M.search(item.title + ' ' + item.artists.join(' '), sources, 1, controller.signal);
                 if (!valid()) throw abort();
                 const matches = new Map((result.tracks || []).filter(t => canonical(t.title) === canonical(item.title) && artists(t.artists) === artists(item.artists)).map(t => [M.key(t), t]));
+                choices.push({ title: item.title, artists: item.artists, candidates: (result.tracks || []).slice(0, 30).map(t => M.normalizeTrack(t)), selected: matches.size === 1 ? [...matches.keys()][0] : '' });
                 if (matches.size !== 1) { unmatched.push(item.title); continue; }
                 const track = M.normalizeTrack([...matches.values()][0]), id = M.key(track);
                 if (!seen.has(id)) { resolved.push(track); seen.add(id); }
+            }
+            if (preview) {
+                let committed = false;
+                return { profile: profile(chat), choices, unmatched, commit: async (selected, keepOld = true) => {
+                    if (committed || !valid() || signal?.aborted) throw abort();
+                    if (!Array.isArray(selected) || selected.length !== choices.length) throw new Error('请选择每首歌的版本');
+                    const tracks = keepOld ? profile(chat).tracks.slice() : [], ids = new Set(tracks.map(M.key));
+                    selected.forEach((id, index) => { if (!id) return; const track = choices[index].candidates.find(t => M.key(t) === id); if (!track) throw new Error('歌曲版本已失效'); if (!ids.has(id)) { tracks.push(track); ids.add(id); } });
+                    if (!tracks.length) throw new Error('请至少选择一首歌曲');
+                    if (tracks.length > 12) throw new Error('歌单最多12首，请减少选择或取消保留旧歌');
+                    const result = await save(chat, { ...profile(chat), tracks, updatedAt: Date.now() }); committed = true; return result;
+                } };
             }
             if (!resolved.length) throw new Error('没有准确匹配到歌曲，原歌单保留；可检查搜索源或重试');
             if (!valid()) throw abort();

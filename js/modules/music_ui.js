@@ -263,7 +263,24 @@
             const draw = () => { songs.replaceChildren(); const value = root.UvUMusicCharacter.profile(chat); trackRows(songs, value.tracks, { label: name, target: typeof captureChatSendTarget === 'function' ? captureChatSendTarget(chat.id, 'private') : null }); play.disabled = !value.tracks.length; if (!value.tracks.length) empty(songs, '还没有歌单'); };
             const refresh = button('刷新角色歌单', async () => {
                 check.disabled = true; status.textContent = '正在挑选歌曲…';
-                try { const result = await root.UvUMusicCharacter.refresh(chat, controller.signal); if (alive) { draw(); status.textContent = result.profile.tracks.length + ' 首' + (result.unmatched.length ? ' · ' + result.unmatched.length + ' 首未匹配' : ' · 已更新'); } }
+                try {
+                    const result = await root.UvUMusicCharacter.refresh(chat, controller.signal, { preview: true });
+                    if (alive) {
+                        songs.replaceChildren(); const selects = [];
+                        const keep = el('input'); keep.type = 'checkbox'; keep.checked = true;
+                        const keepLabel = el('label', undefined, 'um-check'); keepLabel.append(keep, document.createTextNode('保留原歌单，仅补充新歌（原有' + result.profile.tracks.length + '首）')); songs.append(keepLabel);
+                        const summary = el('p', '', 'um-muted'); songs.append(summary);
+                        const update = () => { const selected = selects.map(s => s.value).filter(Boolean), old = new Set(result.profile.tracks.map(M.key)); summary.textContent = '新增 ' + new Set(selected.filter(id => !keep.checked || !old.has(id))).size + ' 首 · 保留 ' + (keep.checked ? old.size : 0) + ' 首 · 未选择 ' + (selects.length - selected.length) + ' 首'; };
+                        result.choices.forEach(item => {
+                            const label = el('label', item.title + ' · ' + item.artists.join(' / ')), select = el('select'); select.setAttribute('aria-label', '选择歌曲版本：' + item.title);
+                            const none = el('option', item.selected ? '跳过此歌' : '未准确匹配，请手选版本或跳过'); none.value = ''; select.append(none);
+                            item.candidates.forEach(track => { const option = el('option', track.title + ' · ' + track.artists.join(' / ') + ' · ' + track.provider); option.value = M.key(track); select.append(option); });
+                            select.value = item.selected; select.onchange = update; selects.push(select); label.append(select); songs.append(label);
+                        }); keep.onchange = update; update();
+                        songs.append(button('保存所选版本', async () => { try { await result.commit(selects.map(s => s.value), keep.checked); if (alive) { draw(); status.textContent = '角色歌单已保存'; } } catch (error) { if (alive) status.textContent = error.message; } }), button('取消刷新', () => { draw(); status.textContent = '已取消，原歌单保留'; }));
+                        status.textContent = '检查版本和新增/保留数量后保存；未准确匹配的歌曲不会自动替换。';
+                    }
+                }
                 catch (error) { if (alive) status.textContent = error.message; }
                 finally { if (alive) check.disabled = false; }
             }, 'repeat');
@@ -445,7 +462,7 @@
         details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
         details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，匹配不明确时请手动搜索。已有歌单无需重新导入；公共源不保证每首歌可用。'));
-        details.append(el('p', '角色歌单：点击顶部耳机图标，或资料库 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。未匹配歌曲不加入，失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
+        details.append(el('p', '角色歌单：点击顶部耳机图标，或资料库 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。先预览歌曲版本，无法唯一匹配时手选版本或跳过；默认保留旧歌单，点击“保存所选版本”后才更新。取消或失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }

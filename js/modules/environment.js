@@ -56,17 +56,19 @@ function environmentPersistentCache(key) {
     try { return JSON.parse(key)[2] !== 'mcp'; } catch (_) { return true; }
 }
 
-async function environmentCached(key, ttl, loader, signal) {
+async function environmentCached(key, ttl, loader, signal, { allowStale = false } = {}) {
     let cached = environmentCache.get(key);
     if (!cached && environmentPersistentCache(key)) {
         try {
             const item = JSON.parse(localStorage.getItem('uvu-environment-cache') || '{}')[key];
-            if (item && typeof item.at === 'number' && Date.now() - item.at < ttl) cached = item;
+            if (item && typeof item.at === 'number' && (Date.now() - item.at < ttl || allowStale)) cached = item;
         } catch (_) { /* Private browsing/storage full must not block chat. */ }
     }
     if (cached && Date.now() - cached.at < ttl) return cached.value;
     if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
-    const value = await loader();
+    let value;
+    try { value = await loader(); }
+    catch (error) { if (allowStale && cached && !signal?.aborted && error.name !== 'AbortError') return { ...cached.value, stale: true }; throw error; }
     if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
     environmentCache.set(key, { at: Date.now(), value });
     if (environmentCache.size > 24) environmentCache.delete(environmentCache.keys().next().value);
@@ -78,6 +80,14 @@ async function environmentCached(key, ttl, loader, signal) {
     return value;
 }
 
+async function environmentReadJson(response) {
+    const max = 1024 * 1024;
+    if (Number(response.headers?.get('content-length')) > max) { await response.body?.cancel(); throw new Error('环境响应过大'); }
+    if (!response.body?.getReader) { const text = typeof response.text === 'function' ? await response.text() : JSON.stringify(await response.json()); if (text.length > max || typeof TextEncoder === 'function' && new TextEncoder().encode(text).length > max) throw new Error('环境响应过大'); return JSON.parse(text); }
+    const reader = response.body.getReader(), decoder = new TextDecoder(); let text = '', total = 0;
+    try { while (true) { const { value, done } = await reader.read(); total += value?.byteLength || 0; if (total > max) throw new Error('环境响应过大'); text += decoder.decode(value, { stream: !done }); if (done) break; } return JSON.parse(text); }
+    finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 async function environmentFetch(url, init = {}, json = true) {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -87,7 +97,7 @@ async function environmentFetch(url, init = {}, json = true) {
     try {
         const response = await fetch(url, { ...init, signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
         if (!response.ok) throw new Error(`环境服务请求失败（HTTP ${response.status}）`);
-        return json ? await response.json() : response;
+        return json ? await environmentReadJson(response) : response;
     } finally { clearTimeout(timeout); init.signal?.removeEventListener('abort', abort); }
 }
 
@@ -131,7 +141,7 @@ async function environmentMcpRpc(state, method, params, signal, notification = f
             return packet.result;
         };
         if (!(response.headers.get('Content-Type') || '').includes('text/event-stream')) {
-            const result = accept(await response.json());
+            const result = accept(await environmentReadJson(response));
             if (result === undefined) throw new Error('MCP 响应 ID 不匹配');
             return result;
         }
@@ -241,7 +251,7 @@ function environmentWeatherText(code) {
     if ([71, 73, 75, 77, 85, 86].includes(code)) return '雪'; if ([95, 96, 99].includes(code)) return '雷暴'; return '未知天气';
 }
 
-async function getEnvironmentWeather(location, settings = getEnvironmentSettings(), signal) {
+async function getEnvironmentWeather(location, settings = getEnvironmentSettings(), signal, cacheOptions) {
     const key = environmentCacheKey('weather', location, settings);
     return environmentCached(key, 15 * 60000, async () => {
         const raw = settings.service === 'mcp' ? await callEnvironmentMcp('weather', location, settings, signal) :
@@ -251,7 +261,7 @@ async function getEnvironmentWeather(location, settings = getEnvironmentSettings
         if (typeof temperature !== 'number' || !Number.isFinite(temperature)) throw new Error('天气结果缺少有效温度');
         return { temperature, text: String(current.text || environmentWeatherText(current.weather_code)).slice(0, 80),
             observedAt: String(current.time || current.observedAt || '').slice(0, 80), fetchedAt: Date.now(), source: settings.service === 'mcp' ? 'MCP' : 'Open-Meteo' };
-    }, signal);
+    }, signal, cacheOptions);
 }
 
 function normalizeEnvironmentHolidays(raw, location, year) {
@@ -269,7 +279,7 @@ function normalizeEnvironmentHolidays(raw, location, year) {
         isOffDay: typeof item.isOffDay === 'boolean' ? item.isOffDay : (Array.isArray(item.types || item.holidayTypes) ? item.types || item.holidayTypes : ['Public']).includes('Public') }));
 }
 
-async function getEnvironmentHolidays(location, year, settings = getEnvironmentSettings(), signal) {
+async function getEnvironmentHolidays(location, year, settings = getEnvironmentSettings(), signal, cacheOptions) {
     year = Number(year);
     if (!Number.isInteger(year) || year < 1900 || year > 2200) throw new Error('日历年份须在1900至2200之间');
     const key = environmentCacheKey('holidays', [location.countryCode, location.subdivision, year], settings);
@@ -291,7 +301,7 @@ async function getEnvironmentHolidays(location, year, settings = getEnvironmentS
             data = await environmentFetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${location.countryCode}`, { signal }); source = 'Nager.Date';
         }
         return { days: normalizeEnvironmentHolidays(data, location, year), source, fetchedAt: Date.now(), regionalNote: location.subdivision ? '' : '未指定行政区，仅显示全国条目' };
-    }, signal);
+    }, signal, cacheOptions);
 }
 
 async function getEnvironmentContext(chat, signal) {

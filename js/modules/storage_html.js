@@ -67,6 +67,7 @@ function injectStorageHTML() {
                 </select>
             </label>
             <div class="storage-backup-extras">
+                <label>备份用途 <select id="storage-export-purpose"><option value="self">自用备份（按下方选项保存密钥）</option><option value="share">分享迁移包（自动移除密钥，仍含所选聊天）</option></select></label>
                 <label><input type="checkbox" id="storage-export-credentials" checked> 导出包含 API 密钥（分享给他人前请取消）</label>
                 <label><input type="checkbox" id="storage-export-vector-index" checked> 导出包含向量索引（取消可减小备份，记忆原文保留）</label>
                 <p>备份保留外链地址，不自动下载外部图片、字体和组件。导入前将显示更新范围供确认。</p>

@@ -2,7 +2,7 @@
 function environmentDataStatus(data = {}, options = {}) {
     const now=options.now ?? Date.now(),time=Number(data.fetchedAt),known=Number.isFinite(time) && time>0,age=known?now-time:null;
     const ttl=options.kind==='holidays'?24*3600000:15*60000;
-    const status=!known?'unknown':age < -60000?'clock-skew':age>=ttl?'stale':'fresh';
+    const status=!known?'unknown':age < -60000?'clock-skew':data.stale || age>=ttl?'stale':'fresh';
     const ageMinutes=known?Math.max(0,Math.floor(age/60000)):null;
     const freshness={unknown:'获取时间未知', 'clock-skew':'获取时间在设备未来，请核对设备时钟',stale:'缓存已过建议时效，请刷新',fresh:'数据在缓存时效内（可能来自缓存）'}[status];
     const location=options.location || {},region=[location.countryCode,location.subdivision].filter(Boolean).join(' / ') || '地区未知';

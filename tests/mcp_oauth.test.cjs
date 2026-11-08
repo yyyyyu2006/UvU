@@ -15,6 +15,11 @@ function fixture(overrides={}) {
     const file=path.join(__dirname,'../js/modules/mcp_oauth.js');assert.ok(fs.existsSync(file),'OAuth module exists');vm.runInContext(fs.readFileSync(file,'utf8'),c);
     return {api:window.MCPOAuth,c,svc,popup,requests,emit:data=>{for(const fn of listeners)fn(data)},token:()=>token};
 }
+async function waitForAuthorization(f) {
+    const deadline = Date.now() + 5000;
+    while (f.popup.location.href === 'about:blank' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+    if (f.popup.location.href === 'about:blank') { f.api.disconnect(f.svc); throw Error('OAuth authorization URL was not prepared'); }
+}
 test('OAuth discovery binds resource/issuer and refuses non-PKCE or unsafe endpoints',async()=>{
     const f=fixture();const d=await f.api.discover(f.svc);assert.equal(d.issuer,'https://auth.test/tenant');
     await assert.rejects(fixture({'https://mcp.test/meta':{resource:'https://other.test/mcp'}}).api.discover(f.svc),/资源|resource/);
@@ -23,7 +28,7 @@ test('OAuth discovery binds resource/issuer and refuses non-PKCE or unsafe endpo
 });
 test('OAuth opens on click, uses PKCE/resource/state and accepts only its matching callback',async()=>{
     const f=fixture();const pending=f.api.connect(f.svc,{remember:false});
-    for(let i=0;f.popup.location.href==='about:blank'&&i<30;i++)await new Promise(r=>setImmediate(r));
+    await waitForAuthorization(f);
     const auth=new URL(f.popup.location.href);assert.equal(auth.searchParams.get('resource'),f.svc.url);assert.equal(auth.searchParams.get('code_challenge_method'),'S256');assert.ok(auth.searchParams.get('code_challenge').length>40);assert.equal(auth.searchParams.get('redirect_uri'),'https://uvu.test/UvU/mcp-oauth-callback.html');
     f.emit({origin:'https://evil.test',source:f.popup,data:{type:'uvu-mcp-oauth',state:auth.searchParams.get('state'),code:'stolen'}});
     f.emit({origin:'https://uvu.test',source:f.popup,data:{type:'uvu-mcp-oauth',state:'bad',code:'stolen'}});
@@ -59,7 +64,7 @@ test('obsolete refresh failure does not remove a subsequent login', async () => 
 test('OAuth mismatched issuer and changed service invalidate callbacks without saving a token',async()=>{
     for(const changed of [false,true]) {
         const f=fixture(),promise=f.api.connect(f.svc);
-        for(let i=0;f.popup.location.href==='about:blank'&&i<30;i++)await new Promise(r=>setImmediate(r));
+        await waitForAuthorization(f);
         const auth=new URL(f.popup.location.href);
         if(changed)f.c.window.MCPServices.service=()=>({...f.svc,url:'https://other.test/mcp'});
         const rejected=assert.rejects(promise,/issuer|配置|失效/);

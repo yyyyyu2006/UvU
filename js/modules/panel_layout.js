@@ -66,7 +66,7 @@
         const field = name => form.elements.namedItem(name)?.closest('label');
         const switches = group([field('enabled'), field('useMemory'), field('hideSummarized')], '', 'panel-summary-switches');
         ['enabled', 'useMemory', 'hideSummarized', 'mergeEnabled', 'vectorSearchEnabled', 'vectorRerankEnabled'].forEach(name => asSwitch(form.elements.namedItem(name)));
-        const short = { enabled: '自动总结', useMemory: '使用自动记忆', hideSummarized: '隐藏已总结楼层', vectorSearchEnabled: '向量记忆', vectorRerankEnabled: '重排', mergeEnabled: '合并已有记忆' };
+        const short = { enabled: '自动总结', useMemory: '使用自动记忆', hideSummarized: '折叠并替代已总结楼层', vectorSearchEnabled: '向量记忆', vectorRerankEnabled: '重排', mergeEnabled: '合并已有记忆' };
         for (const [name, text] of Object.entries(short)) {
             const wrap = field(name); if (!wrap) continue;
             const input = form.elements.namedItem(name), old = wrap.textContent.trim();

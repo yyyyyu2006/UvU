@@ -353,41 +353,7 @@ function renderTutorialContent() {
     importDataBtn.style.display = 'block'
     importDataBtn.disabled = loadingBtn;
     importDataBtn.setAttribute('for', 'import-data-input')
-    document.querySelector('#import-data-input').addEventListener('change', async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if(confirm('此操作将覆盖当前所有聊天记录和设置。此操作不可撤销。确定要继续吗？')){
-            try {
-                showToast('正在导入数据，请稍候...');
-
-                const decompressionStream = new DecompressionStream('gzip');
-                const decompressedStream = file.stream().pipeThrough(decompressionStream);
-                const jsonString = await new Response(decompressedStream).text();
-
-                let data = JSON.parse(jsonString);
-
-                const importResult = await importBackupData(data);
-
-                if (importResult.success) {
-                    showToast(`数据导入成功！${importResult.message} 应用即将刷新。`);
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    showToast(`导入失败: ${importResult.error}`);
-                }
-            } catch (error) {
-                console.error("导入失败:", error);
-                showToast(`解压或解析文件时发生错误: ${error.message}`);
-            } finally {
-                event.target.value = null;
-            }
-        }else {
-            event.target.value = null;
-        }
-
-    })
+    document.querySelector('#import-data-input').onchange = tutorialImportFile;
 
     tutorialContentArea.appendChild(backupDataBtn);
     tutorialContentArea.appendChild(importDataBtn);
@@ -476,8 +442,8 @@ function renderTutorialContent() {
                     <input type="text" id="gh-repo-input" placeholder="username/repo" style="width:100%; border:1px solid #eee; padding:8px; border-radius:4px; font-size:0.89rem;">
                 </div>
                 <div style="margin-bottom:10px;">
-                    <div style="font-size:0.81rem; color:#666; margin-bottom:5px;">备份文件名 (可选，填则覆盖)</div>
-                    <input type="text" id="gh-filename-input" placeholder="例如: my_backup.ee" style="width:100%; border:1px solid #eee; padding:8px; border-radius:4px; font-size:0.89rem;">
+                    <div style="font-size:0.81rem; color:#666; margin-bottom:5px;">备份路径前缀 (可选，每次保存独立快照)</div>
+                    <input type="text" id="gh-filename-input" placeholder="例如: backups/my_backup" style="width:100%; border:1px solid #eee; padding:8px; border-radius:4px; font-size:0.89rem;">
                 </div>
             </div>
 
@@ -509,6 +475,11 @@ function renderTutorialContent() {
                 <div id="gh-check-btn" style="flex:1; background:#f5f5f5; color:#666; text-align:center; padding:8px; border-radius:4px; font-size:0.89rem; cursor:pointer;">检查状态</div>
             </div>
             
+            <label><input type="checkbox" id="gh-credentials-switch"> 云备份含 API 密钥（默认移除）</label><br>
+            <label><input type="checkbox" id="gh-vector-switch" checked> 云备份含向量索引</label><br>
+            <label>分支（留空使用默认分支）<input id="gh-branch-input" type="text" placeholder="main"></label>
+            <button id="gh-cancel-btn" type="button">取消备份任务</button>
+            <p>仅限私有仓库；备份含聊天隐私。压缩不是加密。请先用“检查状态”核对可见性；密钥默认移除。</p>
             <div id="gh-status-msg" style="margin-top:10px; font-size:0.74rem; color:#999;"></div>
         </div>
     `;
@@ -596,9 +567,11 @@ function renderTutorialContent() {
     document.getElementById('gh-filename-input').addEventListener('change', saveHandler);
     document.getElementById('gh-auto-switch').addEventListener('change', saveHandler);
     document.getElementById('gh-interval-select').addEventListener('change', saveHandler);
+    for (const id of ['gh-credentials-switch','gh-vector-switch','gh-branch-input']) document.getElementById(id).addEventListener('change',saveHandler);
+    document.getElementById('gh-cancel-btn').addEventListener('click',()=>window.GitHubMgr.cancel());
 
-    document.getElementById('gh-backup-btn').addEventListener('click', () => window.GitHubMgr.testUpload());
-    document.getElementById('gh-restore-btn').addEventListener('click', () => window.GitHubMgr.restoreLatest());
+    document.getElementById('gh-backup-btn').addEventListener('click', event => window.GitHubMgr.testUpload(event));
+    document.getElementById('gh-restore-btn').addEventListener('click', event => window.GitHubMgr.restoreLatest(event));
     document.getElementById('gh-check-btn').addEventListener('click', () => window.GitHubMgr.checkStatus());
 
     if(window.GitHubMgr) {
@@ -607,422 +580,258 @@ function renderTutorialContent() {
 }
 
 // 创建完整的备份数据
-async function createFullBackupData() {
-    const backupData = JSON.parse(JSON.stringify(db));
-    backupData._exportVersion = '3.0'; 
-    backupData._exportTimestamp = Date.now();
-    return backupData;
+async function createFullBackupData(options = {}) {
+    const exportOptions = { includeCredentials: options.includeCredentials !== false, includeVectorIndex: options.includeVectorIndex !== false };
+    let modules = storageClone(db);
+    delete modules.uvuStoryBridgeSettings;
+    delete modules.uvuStoryBridgeState;
+    const capturedAt = Date.now();
+    const media = storageExportMediaCache(modules), fonts = storageExportFonts();
+    const vectors = exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.portableExport(modules) : Promise.resolve();
+    [modules.mediaCache, modules.customFonts] = await Promise.all([media, fonts, vectors]);
+    modules = storageApplyExportOptions(modules, exportOptions);
+    modules._exportVersion = '3.0';
+    return { version: '3.0', timestamp: new Date(capturedAt).toISOString(), modules,
+        backupManifest: { version: 1, categories: ['chats','contacts','worldbooks','personas','wallpapers','fonts','settings','other'],
+            ...exportOptions, resources: 'external-links-preserved', capturedAt, snapshotScope: 'detached-app-data-with-portable-stores' } };
 }
 
-// 导入备份数据
-async function importBackupData(data) {
-    const startTime = Date.now();
-    try {
-        await Promise.all([
-            dexieDB.characters.clear(),
-            dexieDB.groups.clear(),
-            dexieDB.worldBooks.clear(),
-            dexieDB.myStickers.clear(),
-            dexieDB.globalSettings.clear()
-        ]);
-        showToast('正在清空旧数据...');
-
-        let convertedData = data;
-
-        if (data._exportVersion !== '3.0') {
-            showToast('检测到旧版备份文件，正在转换格式...');
-            
-            const reassembleHistory = (chat, backupData) => {
-                if (!chat.history || !Array.isArray(chat.history) || chat.history.length === 0) {
-                    return [];
-                }
-                if (typeof chat.history[0] === 'object' && chat.history[0] !== null) {
-                    return chat.history;
-                }
-                if (backupData.__chunks__ && typeof chat.history[0] === 'string') {
-                    let fullHistory = [];
-                    chat.history.forEach(key => {
-                        if (backupData.__chunks__[key]) {
-                            try {
-                                const chunk = JSON.parse(backupData.__chunks__[key]);
-                                fullHistory = fullHistory.concat(chunk);
-                            } catch (e) {
-                                console.error(`Failed to parse history chunk ${key}`, e);
-                            }
-                        }
-                    });
-                    return fullHistory;
-                }
-                return []; 
-            };
-
-            const newData = { ...data };
-
-            if (newData.characters) {
-                newData.characters = newData.characters.map(char => ({
-                    ...char,
-                    history: reassembleHistory(char, data)
-                }));
-            }
-            if (newData.groups) {
-                newData.groups = newData.groups.map(group => ({
-                    ...group,
-                    history: reassembleHistory(group, data)
-                }));
-            }
-
-            // 兼容性处理：将旧版“世界书·中”转换为“世界书·前 + 深度300”
-            if (newData.worldBooks && Array.isArray(newData.worldBooks)) {
-                newData.worldBooks = newData.worldBooks.map(item => {
-                    if (item.type === 'entry' && (item.position === 'middle' || item.position === 'center')) {
-                        return {
-                            ...item,
-                            position: 'before',
-                            depth: 300
-                        };
-                    }
-                    return item;
-                });
-            }
-            
-            convertedData = newData;
-        }
-
-        Object.keys(db).forEach(key => {
-            if (convertedData[key] !== undefined) {
-                db[key] = convertedData[key];
-            }
-        });
-        
-        if (!db.insWidgetSettings) db.insWidgetSettings = { avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', bubble1: 'love u.', avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg', bubble2: 'miss u.' };
-        if (!db.homeWidgetSettings) db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
-
-
-        showToast('正在写入新数据...');
-        await saveData(db);
-
-        const duration = Date.now() - startTime;
-        const message = `导入完成 (耗时${duration}ms)`;
-        
-        return { success: true, message: message };
-
-    } catch (error) {
-        console.error('导入数据失败:', error);
-        return {
-            success: false,
-            error: error.message,
-            duration: Date.now() - startTime
-        };
-    }
+function tutorialBackupSelection() {
+    return { chats:true,contacts:true,worldbooks:true,personas:true,wallpapers:true,fonts:true,settings:true,other:true,replaceAll:true };
 }
-
-// GitHub Manager
-const GitHubMgr = {
-    config: { token: '', repo: '', auto: false, interval: 48, lastTime: 0, fileName: '' },
-    
-    init: () => {
-        const confStr = localStorage.getItem('gh_config');
-        if(confStr) GitHubMgr.config = JSON.parse(confStr);
-        
-        const tokenInput = document.getElementById('gh-token-input');
-        const repoInput = document.getElementById('gh-repo-input');
-        const fileNameInput = document.getElementById('gh-filename-input');
-        const autoSwitch = document.getElementById('gh-auto-switch');
-        
-        if(tokenInput) tokenInput.value = GitHubMgr.config.token || '';
-        if(repoInput) repoInput.value = GitHubMgr.config.repo || '';
-        if(fileNameInput) fileNameInput.value = GitHubMgr.config.fileName || '';
-        
-        if(autoSwitch) {
-            autoSwitch.checked = GitHubMgr.config.auto || false;
-            document.getElementById('gh-interval-setting').style.display = autoSwitch.checked ? 'flex' : 'none';
-        }
-        if(document.getElementById('gh-interval-select')) {
-            document.getElementById('gh-interval-select').value = GitHubMgr.config.interval || 48;
-        }
-        
-        if(GitHubMgr.config.auto) GitHubMgr.checkAndBackup();
-        GitHubMgr.updateStatusText();
-    },
-    
-    saveConfig: () => {
-        let token = document.getElementById('gh-token-input').value.trim();
-        // 自动清理 Token：移除前缀和空格
-        token = token.replace(/^(Bearer|token)\s+/i, '').replace(/\s+/g, '');
-
-        const repo = document.getElementById('gh-repo-input').value.trim();
-        const fileName = document.getElementById('gh-filename-input').value.trim();
-        const auto = document.getElementById('gh-auto-switch').checked;
-        const interval = parseInt(document.getElementById('gh-interval-select').value);
-        
-        GitHubMgr.config.token = token;
-        GitHubMgr.config.repo = repo;
-        GitHubMgr.config.fileName = fileName;
-        GitHubMgr.config.auto = auto;
-        GitHubMgr.config.interval = interval;
-        
-        document.getElementById('gh-interval-setting').style.display = auto ? 'flex' : 'none';
-        
-        localStorage.setItem('gh_config', JSON.stringify(GitHubMgr.config));
-        GitHubMgr.updateStatusText();
-        
-        if(auto) GitHubMgr.checkAndBackup();
-    },
-    
-    updateStatusText: () => {
-        const el = document.getElementById('gh-status-msg');
-        if(!el) return;
-        if(!GitHubMgr.config.lastTime) el.innerText = '从未备份过';
-        else {
-            const date = new Date(GitHubMgr.config.lastTime);
-            const nextTime = new Date(GitHubMgr.config.lastTime + (GitHubMgr.config.interval || 48) * 3600000);
-            el.innerText = `上次: ${date.toLocaleString()} (下次约: ${nextTime.toLocaleString()})`;
-        }
-    },
-    
-    checkAndBackup: async () => {
-        if(!GitHubMgr.config.token || !GitHubMgr.config.repo || !GitHubMgr.config.auto) return;
-        const now = Date.now();
-        const interval = GitHubMgr.config.interval || 48;
-        const hours = (now - (GitHubMgr.config.lastTime || 0)) / (1000 * 60 * 60);
-        
-        if(hours >= interval) {
-            console.log(`距离上次备份已过 ${hours.toFixed(1)} 小时，触发自动备份...`);
-            
-            const toast = document.createElement('div');
-            toast.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:#fff; padding:8px 15px; border-radius:20px; font-size:12px; z-index:9999; pointer-events:none; transition:opacity 0.5s;';
-            toast.innerText = '正在后台准备自动备份...';
-            document.body.appendChild(toast);
-            
-            try {
-                await GitHubMgr.performUpload((msg) => { toast.innerText = '自动备份: ' + msg; });
-                toast.innerText = '自动备份成功！';
-                setTimeout(() => toast.remove(), 3000);
-            } catch(e) {
-                console.error('自动备份失败', e);
-                toast.innerText = '自动备份失败: ' + e.message;
-                setTimeout(() => toast.remove(), 5000);
-            }
-        }
-    },
-    
-    testUpload: async () => {
-        GitHubMgr.saveConfig(); // 强制保存当前输入框的值
-        if(!GitHubMgr.config.token || !GitHubMgr.config.repo) return alert('请先填写 Token 和 仓库路径');
-        showToast('开始备份...');
-        const btn = event.target;
-        const originalText = btn.innerText;
-        btn.innerText = '备份中...';
-        btn.style.pointerEvents = 'none';
-        
-        try {
-            await GitHubMgr.performUpload((msg) => { showToast(msg); });
-            showToast('上传成功！');
-        } catch(e) {
-            showToast('上传失败: ' + e.message);
-        } finally {
-            btn.innerText = originalText;
-            btn.style.pointerEvents = 'auto';
-        }
-    },
-    
-    performUpload: async (onProgress) => {
-        // 1. 预检权限
-        onProgress('正在检查权限...');
-        const checkUrl = `https://api.github.com/repos/${GitHubMgr.config.repo}`;
-        const checkRes = await fetch(checkUrl, {
-            headers: { 'Authorization': `token ${GitHubMgr.config.token}` }
-        });
-        
-        if (!checkRes.ok) {
-             if (checkRes.status === 401) throw new Error('Token 无效或过期 (401)');
-             if (checkRes.status === 404) throw new Error('仓库不存在或 Token 无权访问 (404)');
-             throw new Error(`权限检查失败: ${checkRes.status}`);
-        }
-        
-        const repoInfo = await checkRes.json();
-        // 检查 push 权限
-        if (repoInfo.permissions && repoInfo.permissions.push === false) {
-            throw new Error('Token 缺少写入权限 (push)，请重新生成 Token 并勾选 repo 权限');
-        }
-
-        onProgress('正在打包数据...');
-        const backupData = await createFullBackupData();
-        const jsonString = JSON.stringify(backupData);
-        
-        onProgress('正在压缩...');
-        const dataBlob = new Blob([jsonString]);
-        const compressionStream = new CompressionStream('gzip');
-        const compressedStream = dataBlob.stream().pipeThrough(compressionStream);
-        const compressedBlob = await new Response(compressedStream, { headers: { 'Content-Type': 'application/octet-stream' } }).blob();
-        
-        onProgress('正在编码...');
-        const base64Content = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const res = reader.result;
-                let base64 = res.split(',')[1]; 
-                // 移除可能存在的换行符，防止上传失败
-                base64 = base64.replace(/\s/g, '');
-                resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(compressedBlob);
-        });
-
-        onProgress('正在上传至 GitHub...');
-        let path = '';
-        let sha = null;
-        const customName = GitHubMgr.config.fileName;
-        
-        if (customName && customName.trim()) {
-            path = customName.trim();
-            if (!path.endsWith('.ee')) path += '.ee';
-            
-            try {
-                const checkUrl = `https://api.github.com/repos/${GitHubMgr.config.repo}/contents/${encodeURIComponent(path)}`;
-                const checkRes = await fetch(checkUrl, {
-                    headers: { 'Authorization': `token ${GitHubMgr.config.token}` }
-                });
-                if (checkRes.ok) {
-                    const fileData = await checkRes.json();
-                    sha = fileData.sha;
-                }
-            } catch(e) {
-                console.log('File does not exist or error checking:', e);
-            }
-        } else {
-            const dateStr = new Date().toISOString().slice(0, 10);
-            path = `AutoBackup_${dateStr}_${Date.now()}.ee`; 
-        }
-        
-        const url = `https://api.github.com/repos/${GitHubMgr.config.repo}/contents/${encodeURIComponent(path)}`;
-        
-        const body = {
-            message: `Auto backup`,
-            content: base64Content
-        };
-        if (sha) body.sha = sha; 
-
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `token ${GitHubMgr.config.token}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/vnd.github.v3+json'
-            },
-            body: JSON.stringify(body)
-        });
-
-        if(!response.ok) {
-            const errJson = await response.json();
-            throw new Error(errJson.message || 'GitHub API Error');
-        }
-
-        GitHubMgr.config.lastTime = Date.now();
-        localStorage.setItem('gh_config', JSON.stringify(GitHubMgr.config));
-        GitHubMgr.updateStatusText();
-    },
-    
-    checkStatus: async () => {
-        if(!GitHubMgr.config.token || !GitHubMgr.config.repo) return showToast('未配置');
-        const url = `https://api.github.com/repos/${GitHubMgr.config.repo}`;
-        try {
-            const res = await fetch(url, { headers: { 'Authorization': `token ${GitHubMgr.config.token}` } });
-            if(res.ok) {
-                const data = await res.json();
-                alert(`连接成功！\n仓库: ${data.full_name}\n私有: ${data.private}\n说明: 配置有效`);
-            } else {
-                alert('连接失败，请检查 Token 或 仓库路径');
-            }
-        } catch(e) { alert('网络错误: ' + e.message); }
-    },
-    
-    restoreLatest: async () => {
-        if(!GitHubMgr.config.token || !GitHubMgr.config.repo) return alert('请先在配置中填写 Token 和 仓库路径');
-        if(!confirm('⚠️ 警告：这将下载最新的自动备份并覆盖当前所有数据！\n此操作不可撤销！\n\n确定要继续吗？')) return;
-
-        showToast('正在连接 GitHub...');
-        const btn = event.target;
-        const originalText = btn.innerText;
-        btn.innerText = '恢复中...';
-        btn.style.pointerEvents = 'none';
-
-        try {
-            const customName = GitHubMgr.config.fileName;
-            let targetFile = null;
-
-            if (customName && customName.trim()) {
-                let path = customName.trim();
-                if (!path.endsWith('.ee')) path += '.ee';
-                targetFile = { name: path };
-            } else {
-                const url = `https://api.github.com/repos/${GitHubMgr.config.repo}/contents/`;
-                const res = await fetch(url, { headers: { 'Authorization': `token ${GitHubMgr.config.token}` } });
-                
-                if(!res.ok) {
-                    if(res.status === 404) throw new Error('仓库不存在或路径错误');
-                    if(res.status === 401) throw new Error('Token 无效或无权限');
-                    throw new Error('获取列表失败: ' + res.status);
-                }
-                
-                const files = await res.json();
-                
-                const backups = files.filter(f => f.name.startsWith('AutoBackup_') && f.name.endsWith('.ee'));
-                if(backups.length === 0) throw new Error('仓库中没有找到任何 .ee 备份文件');
-
-                backups.sort((a, b) => {
-                    const getTs = (name) => {
-                        const match = name.match(/_(\d+)\.ee$/);
-                        return match ? parseInt(match[1]) : 0;
-                    };
-                    return getTs(b.name) - getTs(a.name);
-                });
-
-                targetFile = backups[0];
-            }
-
-            if (!targetFile) throw new Error('未找到可恢复的备份文件');
-
-            showToast('正在下载: ' + targetFile.name);
-
-            const dlUrl = `https://api.github.com/repos/${GitHubMgr.config.repo}/contents/${encodeURIComponent(targetFile.name)}`;
-            const dlRes = await fetch(dlUrl, {
-                headers: {
-                    'Authorization': `token ${GitHubMgr.config.token}`,
-                    'Accept': 'application/vnd.github.v3.raw'
-                }
+function tutorialConvertBackup(data) {
+    const source = data?.modules ?? data;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error('备份根数据必须是对象');
+    const result = storageClone(source);
+    if (result.__chunks__) {
+        for (const key of ['characters','groups']) if (Array.isArray(result[key])) for (const chat of result[key]) {
+            if (Array.isArray(chat.history) && typeof chat.history[0] === 'string') chat.history = chat.history.flatMap(key => {
+                if (typeof result.__chunks__[key] !== 'string') throw new Error('备份缺少历史分块：' + key);
+                const chunk = JSON.parse(result.__chunks__[key]);
+                if (!Array.isArray(chunk)) throw new Error('历史分块格式无效');
+                return chunk;
             });
-
-            if(!dlRes.ok) throw new Error('下载文件失败: ' + dlRes.status);
-            
-            showToast('下载完成，正在解压...');
-            const blob = await dlRes.blob();
-            
-            const decompressionStream = new DecompressionStream('gzip');
-            const decompressedStream = blob.stream().pipeThrough(decompressionStream);
-            const jsonString = await new Response(decompressedStream).text();
-            
-            const data = JSON.parse(jsonString);
-            
-            showToast('解压完成，开始导入...');
-            const importResult = await importBackupData(data);
-
-            if (importResult.success) {
-                showToast(`恢复成功！${importResult.message} 应用即将刷新。`);
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
-            } else {
-                throw new Error(importResult.error);
-            }
-
-        } catch(e) {
-            console.error(e);
-            alert('恢复失败: ' + e.message);
-            btn.innerText = originalText;
-            btn.style.pointerEvents = 'auto';
         }
+        delete result.__chunks__;
+    }
+    if (!data?.modules && source._exportVersion !== '3.0' && Array.isArray(result.worldBooks)) result.worldBooks = result.worldBooks.map(item =>
+        item.type === 'entry' && ['middle','center'].includes(item.position) ? { ...item,position:'before',depth:300 } : item);
+    return result;
+}
+async function importBackupData(data) {
+    const start = Date.now();
+    try {
+        const modules = storageResolveImportOptions(tutorialConvertBackup(data));
+        await storageCommitImport(tutorialBackupSelection(), modules);
+        return { success:true,message:'导入完成 (耗时' + (Date.now()-start) + 'ms)' };
+    } catch (error) { return { success:false,error:error.message,duration:Date.now()-start }; }
+}
+async function tutorialImportFile(event) {
+    const input=event.target,file=input.files?.[0];
+    if (!file || loadingBtn || GitHubMgr.inFlight) return;
+    loadingBtn=true;
+    const controller=new AbortController();
+    GitHubMgr.controller=controller;
+    try {
+        const modules=await storageReadBackup(file,tutorialBackupSelection(),{signal:controller.signal});
+        if(controller.signal.aborted)throw new Error('备份导入已取消');
+        storageValidateModules(tutorialConvertBackup(modules));
+        if (!confirm('此操作将用备份替换文件中提供的聊天与设置；未提供的分类保留。写入失败会保留原数据。确定导入？')) return;
+        if(controller.signal.aborted)throw new Error('备份导入已取消');
+        const result=await importBackupData(modules);
+        if (!result.success) throw new Error(result.error);
+        showToast('数据导入成功，应用即将刷新。');
+        setTimeout(()=>window.location.reload(),1500);
+    } catch(error) { showToast('导入失败: '+error.message); }
+    finally { input.value='';loadingBtn=false;if(GitHubMgr.controller===controller)GitHubMgr.controller=null; }
+}
+async function tutorialBackupBlob(data) {
+    if (typeof CompressionStream === 'function') {
+        try { return { blob:await new Response((storageJsonStream(data)||new Blob([JSON.stringify(data)]).stream()).pipeThrough(new CompressionStream('gzip'))).blob(),extension:'ee' }; }
+        catch (_) {}
+    }
+    return { blob:await new Response(storageJsonStream(data)||new Blob([JSON.stringify(data)]).stream()).blob(),extension:'json' };
+}
+
+// GitHub requests are bounded, cancellable and never retried automatically after PUT.
+const GitHubMgr = {
+    config:{token:'',repo:'',auto:false,interval:48,lastTime:0,fileName:'',branch:'',includeCredentials:false,includeVectorIndex:true},
+    inFlight:null, timer:null, controller:null, initialized:false, lastAttempt:0,
+    normalize(raw) {
+        raw=raw && typeof raw==='object' && !Array.isArray(raw) ? raw : {};
+        const text=key=>typeof raw[key]==='string'?raw[key].trim():'';
+        return {token:text('token').replace(/^(Bearer|token)\s+/i,'').replace(/\s/g,''),repo:text('repo'),fileName:text('fileName'),branch:text('branch'),
+            auto:raw.auto===true,interval:Number.isFinite(Number(raw.interval))&&Number(raw.interval)>=1&&Number(raw.interval)<=8760?Number(raw.interval):48,
+            lastTime:Number.isFinite(raw.lastTime)&&raw.lastTime>=0?raw.lastTime:0,includeCredentials:raw.includeCredentials===true,includeVectorIndex:raw.includeVectorIndex!==false,
+            lastSnapshot:text('lastSnapshot'),lastSnapshotRepo:text('lastSnapshotRepo'),lastSnapshotBranch:text('lastSnapshotBranch')};
+    },
+    persist() {
+        try { localStorage.setItem('gh_config',JSON.stringify(GitHubMgr.config));return true; }
+        catch (_) { showToast('备份配置未保存到本机；请检查浏览器存储权限或空间。本次配置仍在当前页面有效。');return false; }
+    },
+    init() {
+        try { GitHubMgr.config=GitHubMgr.normalize(JSON.parse(localStorage.getItem('gh_config')||'{}')); }
+        catch (_) { GitHubMgr.config=GitHubMgr.normalize({});showToast('备份配置无法读取，已恢复安全默认值，请重新填写。'); }
+        for(const [id,key] of [['gh-token-input','token'],['gh-repo-input','repo'],['gh-filename-input','fileName'],['gh-branch-input','branch'],['gh-interval-select','interval']]) {
+            const element=document.getElementById(id);if(element)element.value=GitHubMgr.config[key];
+        }
+        for(const [id,key] of [['gh-auto-switch','auto'],['gh-credentials-switch','includeCredentials'],['gh-vector-switch','includeVectorIndex']]) {
+            const element=document.getElementById(id);if(element)element.checked=GitHubMgr.config[key];
+        }
+        const area=document.getElementById('gh-interval-setting');if(area)area.style.display=GitHubMgr.config.auto?'flex':'none';
+        if(!GitHubMgr.initialized) {
+            document.addEventListener('visibilitychange',()=>{if(!document.hidden)GitHubMgr.checkAndBackup();});
+            GitHubMgr.initialized=true;
+        }
+        GitHubMgr.schedule();GitHubMgr.checkAndBackup();GitHubMgr.updateStatusText();
+    },
+    saveConfig() {
+        const previous=GitHubMgr.config;
+        const read=(id,fallback)=>document.getElementById(id)?.value??fallback;
+        GitHubMgr.config=GitHubMgr.normalize({...previous,token:read('gh-token-input',previous.token),repo:read('gh-repo-input',previous.repo),fileName:read('gh-filename-input',previous.fileName),branch:read('gh-branch-input',previous.branch),
+            interval:read('gh-interval-select',previous.interval),auto:document.getElementById('gh-auto-switch')?.checked??previous.auto,
+            includeCredentials:document.getElementById('gh-credentials-switch')?.checked??previous.includeCredentials,
+            includeVectorIndex:document.getElementById('gh-vector-switch')?.checked??previous.includeVectorIndex});
+        const area=document.getElementById('gh-interval-setting');if(area)area.style.display=GitHubMgr.config.auto?'flex':'none';
+        GitHubMgr.persist();GitHubMgr.updateStatusText();GitHubMgr.schedule();
+    },
+    updateStatusText() {
+        const el=document.getElementById('gh-status-msg');if(!el)return;
+        el.innerText=(GitHubMgr.config.lastTime?'上次: '+new Date(GitHubMgr.config.lastTime).toLocaleString():'从未备份过')+'；仅网页前台运行时检查到期，关闭或挂起时不保证定时。';
+    },
+    schedule() {
+        clearTimeout(GitHubMgr.timer);
+        if(!GitHubMgr.config.auto)return;
+        GitHubMgr.timer=setTimeout(()=>{GitHubMgr.checkAndBackup();GitHubMgr.schedule();},60000);
+    },
+    async checkAndBackup() {
+        const c=GitHubMgr.config,now=Date.now();
+        if(document.hidden||!c.auto||!c.token||!c.repo||GitHubMgr.inFlight||now-c.lastTime<c.interval*3600000||now-GitHubMgr.lastAttempt<300000)return;
+        GitHubMgr.lastAttempt=now;
+        try { await GitHubMgr.performUpload(message=>showToast('自动备份: '+message));showToast('自动备份成功'); }
+        catch(error) { showToast('自动备份失败: '+error.message); }
+    },
+    cancel() { GitHubMgr.controller?.abort(); },
+    async request(url,options={},timeoutMs=30000,maxBytes=2*1024*1024) {
+        const controller=new AbortController();
+        const external=options.signal||GitHubMgr.controller?.signal;
+        let timer,reader;
+        const message=options.method==='PUT'?'上传已取消或超时，远端结果尚未确认；请先在仓库核实，勿直接重复上传。':'请求已取消或超时，请重试。';
+        let abort;
+        const deadline=new Promise((_,reject)=>{abort=()=>{controller.abort();reader?.cancel().catch(()=>{});reject(new Error(message));};timer=setTimeout(abort,timeoutMs);});
+        external?.addEventListener('abort',abort,{once:true});
+        try {
+            if(external?.aborted)abort();
+            return await Promise.race([deadline,(async()=>{
+                const response=await fetch(url,{...options,signal:controller.signal,redirect:'error',referrerPolicy:'no-referrer'});
+                const length=Number(response.headers.get('Content-Length'));
+                if(length>maxBytes)throw new Error('备份响应超过允许大小，请使用分类文件迁移');
+                if(!response.body)return response;
+                reader=response.body.getReader();const parts=[];let bytes=0;
+                while(true){const chunk=await reader.read();if(chunk.done)break;bytes+=chunk.value.byteLength;if(bytes>maxBytes){await reader.cancel();throw new Error('备份响应超过允许大小，请使用分类文件迁移');}parts.push(chunk.value);}
+                return new Response(new Blob(parts),{status:response.status,statusText:response.statusText,headers:response.headers});
+            })()]);
+        } finally { clearTimeout(timer);external?.removeEventListener('abort',abort);reader?.releaseLock(); }
+    },
+    validateConfig(config) {
+        if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repo))throw new Error('仓库路径必须为 用户名/仓库名');
+        if(config.fileName && (config.fileName.startsWith('/')||config.fileName.split('/').some(part=>!part||part==='.'||part==='..')||/[?#\\]/.test(config.fileName)))throw new Error('备份路径无效');
+    },
+    contentsUrl(config,path='') {
+        const endpoint='https://api.github.com/repos/'+config.repo+'/contents/'+path.split('/').map(encodeURIComponent).join('/');
+        return endpoint+(config.branch?'?ref='+encodeURIComponent(config.branch):'');
+    },
+    httpError(response) {
+        if(response.status===409)return new Error('仓库版本冲突 (409)，未覆盖原快照，请检查另一设备的操作');
+        if(response.status===403||response.status===429)return new Error('权限不足或达到 GitHub 速率限制 ('+response.status+')，请检查权限和稍后重试');
+        return new Error('GitHub 请求失败 ('+response.status+')，请检查 Token、仓库、分支和文件大小');
+    },
+    async testUpload(event) {
+        GitHubMgr.saveConfig();
+        if(!GitHubMgr.config.token||!GitHubMgr.config.repo)return showToast('请先填写 Token 和仓库路径');
+        const btn=event?.currentTarget||document.getElementById('gh-backup-btn'),original=btn?.innerText;
+        if(btn){btn.innerText='备份中...';btn.style.pointerEvents='none';}
+        try { await GitHubMgr.performUpload(showToast);showToast('上传成功！'); }
+        catch(error){showToast('上传失败: '+error.message);}
+        finally {if(btn){btn.innerText=original;btn.style.pointerEvents='auto';}}
+    },
+    performUpload(onProgress=()=>{}) {
+        if(GitHubMgr.inFlight)return GitHubMgr.inFlight;
+        const config={...GitHubMgr.config};
+        GitHubMgr.controller=new AbortController();
+        GitHubMgr.inFlight=GitHubMgr.uploadSnapshot(config,onProgress).finally(()=>{GitHubMgr.inFlight=null;GitHubMgr.controller=null;});
+        return GitHubMgr.inFlight;
+    },
+    async uploadSnapshot(config,onProgress) {
+        GitHubMgr.validateConfig(config);onProgress('正在检查权限...');
+        const headers={Authorization:'token '+config.token,Accept:'application/vnd.github+json'};
+        const check=await GitHubMgr.request('https://api.github.com/repos/'+config.repo,{headers});
+        if(!check.ok)throw GitHubMgr.httpError(check);
+        const repo=await check.json();
+        if(repo.private!==true)throw new Error('公开仓库禁止上传包含聊天和隐私的完整备份，请使用私有仓库。');
+        if(repo.permissions?.push===false)throw new Error('Token 缺少写入权限 (push)');
+        if(!config.branch)config.branch=repo.default_branch||'';
+        onProgress('正在打包数据...');
+        const data=await createFullBackupData({includeCredentials:config.includeCredentials===true,includeVectorIndex:config.includeVectorIndex!==false});
+        const output=await tutorialBackupBlob(data);
+        if(GitHubMgr.controller?.signal.aborted)throw new Error('备份已取消');
+        if(output.blob.size>48*1024*1024)throw new Error('云端备份超过 48 MB，请使用本地分类文件迁移');
+        const bytes=new Uint8Array(await output.blob.arrayBuffer());let binary='';
+        for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
+        const prefix=config.fileName?config.fileName.replace(/\.(ee|json)$/i,''):'AutoBackup';
+        // Immutable snapshot names keep the previous successful copy even if this upload fails.
+        const path=prefix+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,8)+'.'+output.extension;
+        const body={message:'UvU backup snapshot',content:btoa(binary),...(config.branch?{branch:config.branch}:{})};
+        onProgress('正在上传至私有仓库...');
+        const response=await GitHubMgr.request(GitHubMgr.contentsUrl({...config,branch:''},path),{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(body)},120000);
+        if(!response.ok)throw GitHubMgr.httpError(response);
+        if(GitHubMgr.config.repo===config.repo) {
+            Object.assign(GitHubMgr.config,{lastTime:Date.now(),lastSnapshot:path,lastSnapshotRepo:config.repo,lastSnapshotBranch:config.branch});
+            GitHubMgr.persist();GitHubMgr.updateStatusText();
+        }
+    },
+    async checkStatus() {
+        try {
+            const config={...GitHubMgr.config};GitHubMgr.validateConfig(config);
+            const response=await GitHubMgr.request('https://api.github.com/repos/'+config.repo,{headers:{Authorization:'token '+config.token}});
+            if(!response.ok)throw GitHubMgr.httpError(response);
+            const repo=await response.json();alert('连接成功；仓库: '+repo.full_name+'；可见性: '+(repo.private?'私有':'公开（禁止完整备份）'));
+        }catch(error){showToast(error.message);}
+    },
+    async restoreLatest(event) {
+        if(GitHubMgr.inFlight||loadingBtn)return showToast('另一个备份任务正在进行，请稍候或取消。');
+        GitHubMgr.saveConfig();const config={...GitHubMgr.config};
+        const btn=event?.currentTarget||document.getElementById('gh-restore-btn'),original=btn?.innerText;
+        if(btn){btn.innerText='恢复中...';btn.style.pointerEvents='none';}
+        GitHubMgr.controller=new AbortController();
+        const operation=GitHubMgr.restoreSnapshot(config);GitHubMgr.inFlight=operation;
+        try{await operation;}catch(error){showToast('恢复失败: '+error.message);}
+        finally{GitHubMgr.inFlight=null;GitHubMgr.controller=null;if(btn){btn.innerText=original;btn.style.pointerEvents='auto';}}
+    },
+    async restoreSnapshot(config) {
+        GitHubMgr.validateConfig(config);
+        const headers={Authorization:'token '+config.token};let path;
+        if(config.lastSnapshot&&config.lastSnapshotRepo===config.repo&&(!config.branch||config.lastSnapshotBranch===config.branch))path=config.lastSnapshot;
+        else {
+            const prefix=config.fileName?config.fileName.replace(/\.(ee|json)$/i,''):'AutoBackup';
+            const slash=prefix.lastIndexOf('/'),directory=slash>=0?prefix.slice(0,slash):'',name=prefix.slice(slash+1);
+            const listing=await GitHubMgr.request(GitHubMgr.contentsUrl(config,directory),{headers});if(!listing.ok)throw GitHubMgr.httpError(listing);
+            const files=await listing.json();if(!Array.isArray(files))throw new Error('备份目录无效');
+            const backups=files.filter(file=>file.type==='file'&&/\.(ee|json)$/i.test(file.name)&&(file.name.startsWith(name+'_')||file.name===name+'.ee'||file.name===name+'.json'));
+            backups.sort((x,y)=>{const stamp=name=>Number(name.match(/_(\d+)(?:_[a-z0-9]+)?\.(?:ee|json)$/i)?.[1]||0);return stamp(y.name)-stamp(x.name);});
+            if(!backups.length)throw new Error('未找到备份；请检查目录和分支，或下载本地分类文件恢复');
+            if(files.length>=1000)throw new Error('目录文件过多，无法可靠判断最新快照；请下载指定文件后本地导入');
+            path=backups[0].path||[directory,backups[0].name].filter(Boolean).join('/');
+        }
+        showToast('正在下载: '+path);
+        const response=await GitHubMgr.request(GitHubMgr.contentsUrl(config,path),{headers:{...headers,Accept:'application/vnd.github.raw+json'}},120000,64*1024*1024);
+        if(!response.ok)throw GitHubMgr.httpError(response);
+        const file=new File([await response.blob()],path);
+        const modules=await storageReadBackup(file,tutorialBackupSelection(),{signal:GitHubMgr.controller?.signal});
+        storageValidateModules(tutorialConvertBackup(modules));
+        if(!confirm('已校验备份 '+path+'。确认替换文件中提供的聊天与设置？取消不会写入数据。'))return;
+        const result=await importBackupData(modules);if(!result.success)throw new Error(result.error);
+        showToast('恢复成功，应用即将刷新。');setTimeout(()=>window.location.reload(),1500);
     }
 };
 window.GitHubMgr = GitHubMgr;
@@ -1036,12 +845,7 @@ async function triggerManualBackup() {
 
         const fullBackupData = await createFullBackupData();
 
-        const jsonString = JSON.stringify(fullBackupData);
-        const dataBlob = new Blob([jsonString]);
-
-        const compressionStream = new CompressionStream('gzip');
-        const compressedStream = dataBlob.stream().pipeThrough(compressionStream);
-        const compressedBlob = await new Response(compressedStream, { headers: { 'Content-Type': 'application/octet-stream' } }).blob();
+        const { blob: compressedBlob, extension } = await tutorialBackupBlob(fullBackupData);
 
         const url = URL.createObjectURL(compressedBlob);
         const a = document.createElement('a');
@@ -1049,7 +853,7 @@ async function triggerManualBackup() {
         const date = now.toISOString().slice(0, 10);
         const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
         a.href = url;
-        a.download = `章鱼喷墨_备份数据_${date}_${time}.ee`;
+        a.download = `章鱼喷墨_备份数据_${date}_${time}.${extension}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

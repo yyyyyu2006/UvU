@@ -627,50 +627,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         try {
             if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody, environmentContext, mcpContext);
         } catch (error) { console.warn('Token 分类估算失败，不影响本轮聊天:', error.message); }
-        // 格式化打印日志
-        let logText = "========== [发送给 AI 的请求内容] ==========\n";
-        if (requestBody.messages) {
-            requestBody.messages.forEach(msg => {
-                logText += `【${msg.role}】:\n`;
-                if (typeof msg.content === 'string') {
-                    logText += msg.content + "\n\n";
-                } else if (Array.isArray(msg.content)) {
-                    let textContent = "";
-                    msg.content.forEach(part => {
-                        if (part.type === 'text') {
-                            textContent += part.text;
-                        } else if (part.type === 'image_url') {
-                            textContent += "[图片：base64图片已在此简略]";
-                        }
-                    });
-                    logText += textContent + "\n\n";
-                }
-            });
-        } else if (requestBody.contents) {
-            if (requestBody.system_instruction && requestBody.system_instruction.parts) {
-                logText += `【system】:\n`;
-                requestBody.system_instruction.parts.forEach(part => {
-                    logText += (part.text || "") + "\n";
-                });
-                logText += "\n";
-            }
-            requestBody.contents.forEach(c => {
-                logText += `【${c.role}】:\n`;
-                let textContent = "";
-                if (c.parts) {
-                    c.parts.forEach(part => {
-                        if (part.text !== undefined) {
-                            textContent += part.text;
-                        } else if (part.inline_data) {
-                            textContent += "[图片：base64图片已在此简略]";
-                        }
-                    });
-                }
-                logText += textContent + "\n\n";
-            });
-        }
-        logText += "============================================";
-        console.log(mcpContext ? logText.split(mcpContext).join('[MCP 外部资料已隐藏，具体调用状态请查看 MCP 服务中心]') : logText);
+        // Log metadata only; prompts, memories and reply text stay out of routine diagnostics.
+        console.log('[聊天请求 / MCP 状态]', { provider, stream: streamEnabled,
+            messages: (requestBody.messages || requestBody.contents || []).length, MCP: Boolean(mcpContext) });
 
         const endpoint = (provider === 'gemini')
             ? `${url}/v1beta/models/${model}:${streamEnabled ? 'streamGenerateContent' : 'generateContent'}?key=${getRandomValue(key)}`
@@ -699,7 +658,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             let result;
             try {
                 result = await response.json();
-                console.log('【API完整响应数据】:', result);
+                console.log('[聊天响应]', { provider, received: true });
                 reportedUsage = result.usage || result.usageMetadata || null;
             } catch (e) {
                 throw new Error('API返回了无法解析的JSON数据，请检查API地址及响应格式。');
@@ -1033,7 +992,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             playSound(db.globalReceiveSound);
         }
         // ... 后续代码保持不变 ...
-        console.log('【AI原始返回内容】:', rawResponse);
+        console.log('[回复解析]', { characters: String(rawResponse || '').length });
         let cleanedResponse = fullResponse.replace(/^\[system:.*?\]\s*/, '').replace(/^\(时间:.*?\)\s*/, '');
         const trimmedResponse = cleanedResponse.trim();
         let messages;
@@ -1426,7 +1385,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 } else if (nameMatch || item.char) {
                     const senderName = item.char || (nameMatch[1]);
                     const sender = group.members.find(m => (m.realName === senderName || m.groupNickname === senderName));
-                    console.log(sender)
+                    console.log('[群消息归属]', { matched: Boolean(sender) });
                     if (sender) {
                         const message = {
                             id: `msg_${Date.now()}_${Math.random()}`,

@@ -342,11 +342,15 @@ function estimateChatTokens(chatId, chatType = 'private') {
 }
 
 // 计算 Token 详细占比
+// Diagnostics must never consume the next request's probability draw or regex plan.
+function getTokenPreviewWorldBookPlan(chat) {
+    return (chat.worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id))
+        .filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && book.rules?.advancedEnabled !== true)
+        .sort((a, b) => (a.depth || 100) - (b.depth || 100));
+}
 function getWorldBookTokenDetails(chat, worldBookPlan) {
     if (!chat) return [];
-    const plan = Array.isArray(worldBookPlan)
-        ? worldBookPlan
-        : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, chat.history || []) : []);
+    const plan = Array.isArray(worldBookPlan) ? worldBookPlan : [];
     return plan.filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && String(book.content || '').trim()).map(book => ({
         id: book.id,
         name: book.name || '未命名世界书',
@@ -375,8 +379,8 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
 
     const activeWorldBookPlan = Array.isArray(worldBookPlan)
         ? worldBookPlan
-        : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, chat.history || []) : undefined);
-    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, activeWorldBookPlan);
+        : getTokenPreviewWorldBookPlan(chat);
+    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, worldBookPlan);
 
     // 1. 获取完整的系统提示词
     let systemPrompt = '';
@@ -494,9 +498,10 @@ function normalizeChatTokenUsage(usage, provider = '') {
 function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', worldBookPlan, requestBody, environmentContext = '', mcpContext = '') {
     if (!chat) return null;
     const history = Array.isArray(historySlice) ? historySlice : getAutoMemoryContextHistory(chat);
-    const plan = Array.isArray(worldBookPlan) ? worldBookPlan : (typeof buildWorldBookPlan === 'function' ? buildWorldBookPlan(chat, history) : []);
+    const preview = !Array.isArray(worldBookPlan);
+    const plan = preview ? getTokenPreviewWorldBookPlan(chat) : worldBookPlan;
     const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, environment: 0, mcp: 0, history: 0,
-        worldBookDetails: getWorldBookTokenDetails(chat, plan) };
+        worldBookDetails: getWorldBookTokenDetails(chat, worldBookPlan) };
     const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
         ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
         : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, plan) : ''));
@@ -561,7 +566,9 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     breakdown.completionTokens = 0;
     breakdown.totalTokens = breakdown.total;
     breakdown.actual = false;
-    breakdown.source = '本地估算';
+    breakdown.source = preview ? '发送前估算' : '本地估算';
+    breakdown.preview = preview;
+    breakdown.worldBookPending = preview ? (chat.worldBookIds || []).filter(id => db.worldBooks.find(book => book.id === id)?.rules?.advancedEnabled === true).length : 0;
     breakdown.floorCount = history.filter(message => message && !message.isThinking && !message.isContextDisabled && message.role !== 'system').length;
     return breakdown;
 }
@@ -588,6 +595,7 @@ function recordChatTokenUsage(chat, chatType = 'private', reportedUsage = null, 
         inputOutputActual: normalized?.promptTokens != null && normalized?.completionTokens != null,
         reasoningActual: normalized?.reasoningTokens != null,
         actual: hasMainUsage,
+        preview: false,
         source: hasMainUsage ? 'API 返回用量 / 分类估算' : '本地分类估算',
         floorCount: base?.floorCount ?? 0,
         timestamp: Date.now()

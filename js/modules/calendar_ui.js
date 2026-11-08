@@ -1,3 +1,7 @@
+function calendarDayWatcher(readDay, changed) {
+    let previous = readDay();
+    return () => { const day = readDay(); if (day !== previous) { previous = day; changed(); } };
+}
 (function (root) {
     'use strict';
     const C = () => root.UvUCalendar;
@@ -166,10 +170,10 @@
             weatherController?.abort(); weatherController = new AbortController(); const signal = weatherController.signal, serial = ++paintId, loc = place(); updateClock(); holidayData = null; paintDays();
             if (!loc) { weather.textContent = ''; metadata.textContent = ''; source.textContent = ''; return; }
             weather.textContent = '正在获取天气…'; const year = +month.slice(0, 4), config = getEnvironmentSettings();
-            const result = await Promise.allSettled([getEnvironmentWeather(loc, config, signal), getEnvironmentHolidays(loc, year, config, signal)]);
+            const result = await Promise.allSettled([getEnvironmentWeather(loc, config, signal, { allowStale: true }), getEnvironmentHolidays(loc, year, config, signal, { allowStale: true })]);
             if (!valid() || serial !== paintId || signal.aborted) return;
             const [w, h] = result;
-            weather.textContent = w.status === 'fulfilled' ? w.value.text + ' · ' + w.value.temperature + '℃' : '天气暂不可用';
+            weather.textContent = w.status === 'fulfilled' ? (w.value.stale ? '上次天气（已过期）· ' : '') + w.value.text + ' · ' + w.value.temperature + '℃' : '天气暂不可用';
             metadata.textContent = w.status === 'fulfilled' ? environmentDataStatus(w.value, { kind: 'weather', location: loc }).text : '天气获取失败，可点击刷新';
             if (h.status === 'fulfilled') { holidayData = h.value; source.textContent = environmentDataStatus(h.value, { kind: 'holidays', year, location: loc }).text + ' · ' + (h.value.regionalNote || ''); }
             else source.textContent = '节假日暂未获取，不代表当天没有节日'; paintDays(); paintAnnotation();
@@ -270,7 +274,8 @@
         document.addEventListener('uvu-calendar-ai-status', ev => { if (valid() && ev.detail.owner === key) feedback.textContent = ev.detail.text; }, { signal: life.signal });
         document.addEventListener('uvu-calendar-changed', () => { if (valid()) paint(); }, { signal: life.signal });
         document.addEventListener('uvu-environment-settings-changed', () => { if (valid()) { loadWeather(); paint(); } }, { signal: life.signal });
-        clockTimer = setInterval(() => { if (valid()) updateClock(); }, 30000); body.addEventListener('scroll', saveView, { signal: life.signal, passive: true }); setOwner(false); body.scrollTop = Number(view.scroll) || 0;
+        const checkDay = calendarDayWatcher(currentDay, () => { paintDays(); void loadWeather(); });
+        clockTimer = setInterval(() => { if (valid()) { updateClock(); checkDay(); } }, 30000); body.addEventListener('scroll', saveView, { signal: life.signal, passive: true }); setOwner(false); body.scrollTop = Number(view.scroll) || 0;
     }
     root.UvUCalendarUI = { open, face, editEvent, editMood, editPeriod };
 })(window);

@@ -1,6 +1,19 @@
 // --- 生图核心逻辑 ---
 let currentGeneratedImage = null;
 let currentGeneratedPayload = null;
+function workshopImageDownload(image) {
+    const href = /^(?:https?:|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(image) ? image : `data:image/png;base64,${image}`;
+    const mime = /^data:image\/(png|jpeg|webp|gif);/i.exec(href)?.[1]?.toLowerCase();
+    return { href, extension: mime === 'jpeg' ? 'jpg' : mime || 'png' };
+}
+async function workshopReadBytes(response, max = 24 * 1024 * 1024) {
+    if (Number(response.headers?.get('content-length')) > max) { await response.body?.cancel(); throw new Error('图片响应过大'); }
+    if (!response.body?.getReader) { const buffer = await response.arrayBuffer(); if (buffer.byteLength > max) throw new Error('图片响应过大'); return buffer; }
+    const reader = response.body.getReader(), chunks = []; let total = 0;
+    try { while (true) { const { value, done } = await reader.read(); if (value) { total += value.byteLength; if (total > max) throw new Error('图片响应过大'); chunks.push(value); } if (done) break; }
+        const bytes = new Uint8Array(total); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; } return bytes.buffer;
+    } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 
 function initWorkshopGeneration() {
     const generateBtn = document.getElementById('workshop-generate-btn');
@@ -17,7 +30,8 @@ function initWorkshopGeneration() {
                 showToast('没有可保存的图片');
                 return;
             }
-            await saveToHistory(currentGeneratedImage, currentGeneratedPayload);
+            try { await saveToHistory(currentGeneratedImage, currentGeneratedPayload); }
+            catch (error) { showToast('保存失败，请重试：' + error.message); return; }
             showToast('已保存到缓存');
             // 保存后隐藏保存按钮，避免重复保存
             saveCacheBtn.style.display = 'none';
@@ -32,13 +46,13 @@ function initWorkshopGeneration() {
                 return;
             }
             const a = document.createElement('a');
-            // 判断是 URL 还是 Base64
+            const download = workshopImageDownload(currentGeneratedImage);
             if (currentGeneratedImage.startsWith('http')) {
                 a.href = currentGeneratedImage;
                 a.target = '_blank'; // URL 可能跨域，最好在新窗口打开
             } else {
-                a.href = `data:image/png;base64,${currentGeneratedImage}`;
-                a.download = `workshop_${Date.now()}.png`;
+                a.href = download.href;
+                a.download = `workshop_${Date.now()}.${download.extension}`;
             }
             document.body.appendChild(a);
             a.click();
@@ -287,66 +301,30 @@ window.parseImageResponse = async function(response, expectedFormat = 'auto') {
     
     // 处理 Server-Sent Events (SSE) 流式响应
     if (expectedFormat === 'sse' || contentType.includes('text/event-stream')) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let done = false;
-        let buffer = '';
-
-        while (!done) {
-            const { value, done: readerDone } = await reader.read();
-            done = readerDone;
-            if (value) {
-                buffer += decoder.decode(value, { stream: true });
-                // 尝试解析 SSE 格式
-                const lines = buffer.split('\n');
-                buffer = lines.pop(); // 保留最后一行可能不完整的
-
-                for (const line of lines) {
-                    if (line.startsWith('data:')) {
-                        const dataStr = line.substring(5).trim();
-                        if (dataStr) {
-                            try {
-                                const dataObj = JSON.parse(dataStr);
-                                
-                                // 如果返回了错误信息
-                                if (dataObj.event_type === 'error' || dataObj.code) {
-                                    throw new Error(`NovelAI 错误: ${dataObj.message || JSON.stringify(dataObj)}`);
-                                }
-
-                                // 忽略中间过程图
-                                if (dataObj.event_type === 'intermediate') {
-                                    continue;
-                                }
-
-                                // NovelAI stream 接口通常在 dataObj.b64 中返回图片
-                                if (dataObj.b64) {
-                                    imageData = dataObj.b64;
-                                    done = true; // 拿到图片就结束
-                                    break;
-                                } else if (dataObj.image) {
-                                    imageData = dataObj.image;
-                                    done = true;
-                                    break;
-                                } else if (dataObj.images && dataObj.images.length > 0) {
-                                    imageData = dataObj.images[0];
-                                    done = true;
-                                    break;
-                                }
-                            } catch (e) {
-                                // 如果是我们主动抛出的 NovelAI 错误，继续向上抛出
-                                if (e.message.startsWith('NovelAI 错误')) {
-                                    throw e;
-                                }
-                                // 否则忽略 JSON 解析错误
-                            }
-                        }
-                    }
-                }
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        let buffer = '', total = 0;
+        const parseLine = line => {
+            if (!line.startsWith('data:')) return;
+            let packet; try { packet = JSON.parse(line.slice(5).trim()); } catch (_) { return; }
+            if (packet.event_type === 'error' || packet.code) throw new Error('NovelAI 错误: ' + String(packet.message || packet.code).slice(0, 300));
+            if (packet.event_type === 'intermediate') return;
+            imageData = packet.b64 || packet.image || packet.images?.[0] || imageData;
+        };
+        try {
+            while (!imageData) {
+                const { value, done } = await reader.read();
+                total += value?.byteLength || 0;
+                if (total > 24 * 1024 * 1024) throw new Error('图片响应过大');
+                buffer += decoder.decode(value, { stream: !done });
+                const lines = buffer.split('\n'); buffer = lines.pop();
+                if (done && buffer.trim()) lines.push(buffer);
+                for (const line of lines) { parseLine(line); if (imageData) break; }
+                if (done) break;
             }
-        }
+        } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     } else {
         // 非流式响应：读取为 ArrayBuffer 进行智能嗅探
-        const arrayBuffer = await response.arrayBuffer();
+        const arrayBuffer = await workshopReadBytes(response);
         const bytes = new Uint8Array(arrayBuffer);
         
         if (bytes.length === 0) {
@@ -385,7 +363,7 @@ window.parseImageResponse = async function(response, expectedFormat = 'auto') {
 
                     const ds = new DecompressionStream('deflate-raw');
                     const stream = new Blob([compressedData]).stream().pipeThrough(ds);
-                    return new Uint8Array(await new Response(stream).arrayBuffer());
+                    return new Uint8Array(await workshopReadBytes(new Response(stream), 15 * 1024 * 1024));
                 };
                 const detectImageMime = (data) => {
                     if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47) return 'image/png';
@@ -727,7 +705,9 @@ function arrayBufferToB64(buffer) {
     return window.btoa(binary);
 }
 
-function renderPreviewImage(imageData) {
+function renderPreviewImage(imageData, payload) {
+    currentGeneratedImage = imageData;
+    if (payload !== undefined) currentGeneratedPayload = payload;
     const previewArea = document.getElementById('workshop-preview-area');
     if (!previewArea) return;
     
@@ -738,5 +718,7 @@ function renderPreviewImage(imageData) {
         src = `data:image/png;base64,${imageData}`;
     }
     
-    previewArea.innerHTML = `<img src="${src}" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;">`;
+    const image = document.createElement('img'); image.src = src;
+    image.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;';
+    previewArea.replaceChildren(image);
 }

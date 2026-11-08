@@ -10,7 +10,7 @@ async function readImportDocument(file, options = {}) {
 }
 function previewImportDocument(file, initial, options) {
     return new Promise((resolve, reject) => {
-        let result = initial, finished = false, revision = 0;
+        let result = initial, finished = false, revision = 0, parseController;
         const opener = document.activeElement, overlay = document.createElement('div');
         overlay.id = 'document-import-preview'; overlay.className = 'feature-dialog'; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '文档文字预览');
         overlay.innerHTML = '<div class="feature-dialog-card"><header><strong>文档文字预览</strong><button type="button" data-cancel>取消</button></header><label class="document-encoding">TXT 编码<select aria-label="TXT 编码"><option value="auto">自动识别</option><option value="utf-8">UTF-8</option><option value="gb18030">GB18030</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select></label><p aria-live="polite"></p><textarea readonly rows="12" aria-label="解析后的文档文字" style="width:100%;box-sizing:border-box"></textarea><p>确认后继续原界面的导入或草稿编辑；此处尚未写入任何资料。</p><button type="button" data-confirm>使用此解析结果</button></div>';
@@ -20,7 +20,7 @@ function previewImportDocument(file, initial, options) {
         const render = () => { overlay.querySelector('textarea').value = result.text.slice(0, 50000); overlay.querySelector('[aria-live]').textContent =
             (result.encoding ? '识别编码：' + result.encoding + '；' : '') + '共 ' + result.text.length + ' 字符' + (result.text.length > 50000 ? '（仅预览前50000字符，导入保留全部）' : '') + '。' + (result.warnings || []).join('；'); };
         const finish = accepted => {
-            if (finished) return; finished = true; options.signal?.removeEventListener('abort', cancel);
+            if (finished) return; finished = true; parseController?.abort(); options.signal?.removeEventListener('abort', cancel);
             overlay.remove(); if (opener?.isConnected) opener.focus({ preventScroll: true });
             if (accepted) resolve(result); else reject(Object.assign(new Error('文档导入已取消'), { name: 'AbortError' }));
         };
@@ -28,8 +28,9 @@ function previewImportDocument(file, initial, options) {
         overlay.querySelector('[data-cancel]').onclick = cancel; confirmButton.onclick = () => finish(true);
         select.onchange = async () => {
             const current = ++revision; confirmButton.disabled = true;
-            try { const next = await parseImportDocument(file, { ...options, encoding: select.value }); if (!finished && current === revision) { result = next; render(); } }
-            catch (error) { if (!finished) overlay.querySelector('[aria-live]').textContent = error.message; }
+            parseController?.abort(); parseController = new AbortController();
+            try { const next = await parseImportDocument(file, { ...options, signal: parseController.signal, encoding: select.value }); if (!finished && current === revision) { result = next; render(); } }
+            catch (error) { if (!finished && current === revision && error.name !== 'AbortError') overlay.querySelector('[aria-live]').textContent = error.message; }
             finally { if (!finished && current === revision) confirmButton.disabled = false; }
         };
         overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); } });

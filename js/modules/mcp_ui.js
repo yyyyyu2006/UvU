@@ -55,6 +55,8 @@
         const remember = check(d.body, '在此浏览器记住令牌；不勾选仅当前会话保存', previous && m().vault.remembered(previous));
         const oauth = node('section', undefined, 'mcp-oauth-config');
         const clientId = field(oauth, '公开客户端 ID', 'input', 'text', previous?.oauth?.clientId || ''), oauthScope = field(oauth, '授权范围（服务提供者指定）', 'input', 'text', previous?.oauth?.scope || '');
+        const issuer=field(oauth,'授权颁发者 issuer（服务声明多个时必须明确填写）','input','url',previous?.oauth?.issuer || '');
+        oauth.append(node('p','向服务提供者取得已登记的公开客户端 ID、回调地址和 issuer。多个颁发者不会自动切换；网络错误可能来自 CORS、TLS、DNS 或服务状态，需按错误阶段核对。','mcp-help'));
         const callback = node('details'); callback.append(node('summary', '登记回调地址'), node('pre', window.MCPOAuth?.callbackUrl() || 'OAuth 模块尚未加载')); oauth.append(callback); d.body.append(oauth);
         const authFields = () => { oauth.hidden = auth.value !== 'oauth'; token.parentElement.hidden = remember.parentElement.hidden = auth.value !== 'bearer'; };
         let credentialEndpoint = (previous?.url || '') + '|' + auth.value;
@@ -69,7 +71,7 @@
         d.body.append(button('保存', () => d.run(async () => {
             if (m().stamp() !== originalStamp) throw new Error('配置已在别处变化，请关闭并重新打开');
             const next = m().settings(), value = { id: previous?.id || crypto.randomUUID(), name: name.value.trim(), url: url.value.trim(), protocol: protocol.value, auth: auth.value,
-                enabled: enabled.checked, timeoutMs: Math.round(Number(timeout.value) * 1000), tools: {}, oauth: { clientId: clientId.value.trim(), scope: oauthScope.value.trim() } };
+                enabled: enabled.checked, timeoutMs: Math.round(Number(timeout.value) * 1000), tools: {}, oauth: { clientId: clientId.value.trim(), scope: oauthScope.value.trim(),issuer:issuer.value.trim() } };
             const normalized = m().normalize({ services: [value] }).services[0];
             const sameEndpoint = previous && previous.url === normalized.url && previous.auth === normalized.auth && previous.protocol === normalized.protocol && JSON.stringify(previous.oauth) === JSON.stringify(normalized.oauth);
             if (sameEndpoint) normalized.tools = previous.tools;
@@ -328,7 +330,7 @@
             d.status.textContent = '工具判断配置已保存；还需为角色主动开启自动模式';
         })));
         logsArea.append(node('summary', '最近调用与用量（仅当前页面，最多 40 条）'));
-        const logs = node('div'); logsArea.append(button('刷新记录', () => renderLogs()), logs);
+        const logs = node('div'); logsArea.append(button('刷新记录', () => renderLogs()),button('导出脱敏诊断',()=>download(m().diagnostics(),'uvu-mcp-diagnostics.json')), logs);
         function renderLogs() { logs.replaceChildren(); for (const item of m().logs()) logs.append(node('p', new Date(item.at).toLocaleTimeString() + ' · ' + (item.kind === 'planner' ? '独立工具判断' : (item.serviceId || '') + (item.toolName ? '/' + item.toolName : '')) + ' · ' + item.status + (item.stage ? ' · ' + ({ discovery: '发现', call: '调用', resource: '资源预览', prompt: '模板预览' }[item.stage] || item.stage) : '') + (item.code ? ' · 代码 ' + item.code : '') + (item.ms !== undefined ? ' · ' + item.ms + 'ms' : '') + (item.cached ? ' · 缓存' : '') + (item.usage ? '\n输入 ' + item.usage.promptTokens + ' / 输出 ' + item.usage.completionTokens + ' / 合计 ' + item.usage.totalTokens + ' Token（' + (item.usage.actual ? 'API 返回' : '本地估算') + '）' : ''), 'mcp-help')); if (!m().logs().length) logs.append(node('p', '暂无调用；这里不保存参数、结果或密钥。', 'mcp-help')); }
         const configRow = node('div', undefined, 'mcp-row'), file = node('input'); file.type = 'file'; file.accept = '.json,application/json'; file.hidden = true;
         configRow.append(button('导出配置', () => download(m().exportConfig(), 'uvu-mcp-config.json')), button('导入配置', () => file.click()), file);

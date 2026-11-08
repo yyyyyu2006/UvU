@@ -863,16 +863,24 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     assertCurrent(true);
     const afterRerank = ranked.map(item => item.journal.id);
     if (settings.vectorRerankThresholdEnabled && settings.vectorRerankEnabled && getVectorRerankMode(config) === 'native' && !warning && beforeRerank.length > 1) ranked = ranked.filter(item => Number.isFinite(item.rerankScore) && item.rerankScore >= settings.vectorRerankThreshold);
+    const candidateIds = new Set(beforeRerank), rerankedIds = new Set(afterRerank), thresholdIds = new Set(ranked.map(item => item.journal.id));
     ranked = ranked.slice(0, settings.vectorTopK);
     const selectedIds = new Set(ranked.map(item => item.journal.id));
-    const excluded = candidates.flatMap(item => selectedIds.has(item.id) ? [] : [{ id: item.id,
-        reason: !scoreByJournal.has(item.id) ? '尚无有效索引，等待续建' : scoreByJournal.get(item.id) < settings.vectorThreshold ? '相似度低于阈值' : '超过候选或最终 TopK 限额' }]);
+    const excluded = candidates.flatMap(item => {
+        if (selectedIds.has(item.id)) return [];
+        const [stage, reason] = !scoreByJournal.has(item.id) ? ['index', '尚无有效索引，等待续建'] :
+            !byJournal.has(item.id) ? ['similarity', '未通过向量或关键词阈值'] :
+            !candidateIds.has(item.id) ? ['candidate-topk', '超过候选 TopK 限额'] :
+            !rerankedIds.has(item.id) ? ['rerank', '重排未返回此候选'] :
+            !thresholdIds.has(item.id) ? ['rerank-threshold', '重排分数缺失或低于阈值'] : ['final-topk', '超过最终 TopK 限额'];
+        return [{ id: item.id, stage, reason }];
+    });
     if (settings.vectorContextBudgetEnabled) {
         let remaining = settings.vectorContextMaxChars;
         ranked = ranked.flatMap(item => {
-            if (remaining <= 0) { excluded.push({ id: item.journal.id, reason: '上下文字数预算' }); return []; }
+            if (remaining <= 0) { excluded.push({ id: item.journal.id, stage: 'character-budget', reason: '上下文字数预算' }); return []; }
             const content = tools ? tools.sentenceBudget(item.journal.content, remaining) : item.journal.content.slice(0, remaining); remaining -= content.length;
-            if (content.length < item.journal.content.length) excluded.push({ id: item.journal.id, reason: '按上下文字数预算截断' });
+            if (content.length < item.journal.content.length) excluded.push({ id: item.journal.id, stage: 'character-budget', reason: '按上下文字数预算截断' });
             return [{ ...item, journal: { ...item.journal, content } }];
         });
     }
@@ -884,7 +892,8 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
             const prefix = header + selected.join('\n\n') + (selected.length ? '\n\n' : '') + format({ ...item, journal: { ...item.journal, content: '' } }, selected.length);
             let content = tools.tokenBudget(item.journal.content, Math.max(0, settings.vectorContextMaxTokens - tools.tokens(prefix)));
             while (content && tools.tokens(prefix + content) > settings.vectorContextMaxTokens) content = tools.sentenceBudget(content, content.length - 1);
-            if (!content) { excluded.push({ id: item.journal.id, reason: 'Token 预算（含标题与说明）' }); return []; }
+            if (!content) { excluded.push({ id: item.journal.id, stage: 'token-budget', reason: 'Token 预算（含标题与说明）' }); return []; }
+            if (content.length < item.journal.content.length) excluded.push({ id: item.journal.id, stage: 'token-budget', reason: '按 Token 预算截断（含标题与说明）' });
             const result = { ...item, journal: { ...item.journal, content } }; selected.push(format(result, selected.length)); return [result];
         });
     }

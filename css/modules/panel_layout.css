@@ -1,4 +1,8 @@
 /* Approved second-edition layouts. Intentionally no legacy chat/input/status-template selectors. */
+.memory-library-cache-list { display: grid; gap: 8px; margin-top: 8px; }
+.memory-library-cache-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding-block: 8px; }
+.memory-library-cache-row > span { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.memory-library-cache-row > button { flex: 0 0 auto; min-height: 44px; }
 .uvu-panel-layout {
     --panel-space: 16px;
     --panel-card-radius: 24px;

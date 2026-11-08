@@ -33,10 +33,15 @@ globalThis.VectorIndexStore = (() => {
         return new Promise((resolve, reject) => {
             const tx = db.transaction(['manifests', 'chunks'], 'readonly');
             const meta = tx.objectStore('manifests').get(scope);
-            const rows = tx.objectStore('chunks').index('scope').getAll(scope);
+            const vectors = new Map();
+            const rows = tx.objectStore('chunks').index('scope').openCursor(scope);
+            rows.onsuccess = () => {
+                const cursor = rows.result; if (!cursor) return;
+                if (valid(cursor.value.vector)) vectors.set(cursor.value.key, cursor.value.vector);
+                cursor.continue();
+            };
             tx.onabort = tx.onerror = () => reject(tx.error || Error('独立向量索引读取失败'));
             tx.oncomplete = () => {
-                const vectors = new Map((rows.result || []).filter(x => valid(x.vector)).map(x => [x.key, x.vector]));
                 const index = Object.create(null);
                 for (const entry of meta.result?.entries || []) {
                     const chunks = entry.chunks.flatMap(chunk => vectors.has(chunk.key) ? [{ ...chunk, vector: vectors.get(chunk.key) }] : []);
@@ -60,21 +65,65 @@ globalThis.VectorIndexStore = (() => {
         const db = await open(); guard();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(['manifests', 'chunks'], 'readwrite'), chunks = tx.objectStore('chunks');
-            const request = chunks.index('scope').getAll(scope); let thrown, written = 0, removed = 0;
+            const previousMeta = tx.objectStore('manifests').get(scope);
+            const request = chunks.index('scope').openCursor(scope); let thrown, written = 0, removed = 0;
             tx.onabort = tx.onerror = () => reject(thrown || tx.error || Error('独立向量索引保存失败'));
             tx.oncomplete = () => resolve({ written, removed });
             request.onsuccess = () => {
                 try {
                     guard();
-                    const previous = new Map(request.result.map(row => [row.key, row]));
-                    for (const row of request.result) if (!wanted.has(row.key)) { chunks.delete(row.id); removed++; }
-                    for (const [key, vector] of wanted) if (!equal(previous.get(key)?.vector, vector)) {
+                    const cursor = request.result;
+                    if (cursor) {
+                        const row = cursor.value;
+                        if (!wanted.has(row.key)) { cursor.delete(); removed++; }
+                        else if (equal(wanted.get(row.key), row.vector)) wanted.delete(row.key);
+                        cursor.continue(); return;
+                    }
+                    for (const [key, vector] of wanted) {
                         chunks.put({ id: [scope, key], scope, key, vector }); written++;
                     }
-                    tx.objectStore('manifests').put({ id: scope, entries, fingerprint, updatedAt: Date.now() });
+                    tx.objectStore('manifests').put({ id: scope, entries, fingerprint, updatedAt: Math.max(Date.now(), (previousMeta.result?.updatedAt || 0) + 1) });
                 } catch (error) { thrown = error; tx.abort(); }
             };
         });
     }
-    return Object.freeze({ read, commit });
+    async function listScopes() {
+        const db = await open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('manifests', 'readonly'), rows = [];
+            const request = tx.objectStore('manifests').openCursor();
+            request.onsuccess = () => {
+                const cursor = request.result; if (!cursor) return;
+                const meta = cursor.value, entries = Array.isArray(meta.entries) ? meta.entries : [];
+                rows.push({ id: meta.id, sourceCount: entries.length,
+                    chunkCount: entries.reduce((count, entry) => count + (entry.chunks?.length || 0), 0), updatedAt: meta.updatedAt || 0 });
+                cursor.continue();
+            };
+            tx.oncomplete = () => resolve(rows);
+            tx.onabort = tx.onerror = () => reject(tx.error || Error('索引清单读取失败'));
+        });
+    }
+    async function removeScope(scope, expectedUpdatedAt) {
+        const db = await open();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['manifests', 'chunks'], 'readwrite'); let thrown;
+            const manifests = tx.objectStore('manifests'), chunks = tx.objectStore('chunks');
+            const request = manifests.get(scope);
+            request.onsuccess = () => {
+                if (request.result && request.result.updatedAt !== expectedUpdatedAt) {
+                    thrown = Error('索引已更新，请刷新清单后重试'); tx.abort(); return;
+                }
+                manifests.delete(scope);
+                // Cursor deletion avoids loading all vectors just to discard a scope.
+                const cursorRequest = chunks.index('scope').openCursor(scope);
+                cursorRequest.onsuccess = () => {
+                    const cursor = cursorRequest.result; if (!cursor) return;
+                    cursor.delete(); cursor.continue();
+                };
+            };
+            tx.oncomplete = () => resolve();
+            tx.onabort = tx.onerror = () => reject(thrown || tx.error || Error('索引清理失败'));
+        });
+    }
+    return Object.freeze({ read, commit, listScopes, removeScope });
 })();

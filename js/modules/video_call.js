@@ -3,6 +3,17 @@
 const CAMERA_ON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-camera-video" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M0 5a2 2 0 0 1 2-2h7.5a2 2 0 0 1 1.983 1.738l3.11-1.382A1 1 0 0 1 16 4.269v7.462a1 1 0 0 1-1.406.913l-3.111-1.382A2 2 0 0 1 9.5 13H2a2 2 0 0 1-2-2V5zm11.5 5.175 3.5 1.556V4.269l-3.5 1.556v4.35zM2 4a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h7.5a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H2z"/></svg>`;
 const CAMERA_OFF_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-camera-video-off" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M10.961 12.365a1.99 1.99 0 0 0 .522-1.103l3.11 1.382A1 1 0 0 0 16 11.731V4.269a1 1 0 0 0-1.406-.913l-3.111 1.382A2 2 0 0 0 9.5 3H4.272l.714 1H9.5a1 1 0 0 1 1 1v6a1 1 0 0 1-.144.518l.605.847zM1.428 4.18A.999.999 0 0 0 1 5v6a1 1 0 0 0 1 1h5.014l.714 1H2a2 2 0 0 1-2-2V5c0-.675.334-1.272.847-1.634l.58.814zM15 11.73l-3.5-1.555v-4.35L15 4.269v7.462zm-4.407 3.56-10-14 .814-.58 10 14-.814.58z"/></svg>`;
 
+async function waitCallResponse(promise, controller, timeout = 300000) {
+    let timer;
+    const aborted = new Promise((_, reject) => {
+        const fail = () => reject(Object.assign(new Error('通话请求已取消'), { name: 'AbortError' }));
+        if (controller?.signal.aborted) fail();
+        else controller?.signal.addEventListener('abort', fail, { once: true });
+        controller && (controller.callWaitCancel = () => controller.signal.removeEventListener('abort', fail));
+    });
+    try { return await Promise.race([promise, aborted, new Promise((_, reject) => { timer = setTimeout(() => { reject(new Error('通话请求超时')); controller?.abort(); }, timeout); })]); }
+    finally { clearTimeout(timer); controller?.callWaitCancel?.(); }
+}
 const VideoCallModule = {
     state: {
         isCallActive: false,
@@ -637,8 +648,7 @@ const VideoCallModule = {
         mainText.style.opacity = 1;
 
         try {
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 300000));
-            const aiResponse = await Promise.race([aiPromise, timeoutPromise]);
+            const aiResponse = await waitCallResponse(aiPromise, this.state.initialController);
             if (!this.isCallScopeCurrent(scope)) return;
             this.state.initialAiResponse = aiResponse;
         } catch (e) {
@@ -975,9 +985,9 @@ const VideoCallModule = {
         try {
             if (typeof getCallReply === 'function') {
                 let fullText = "";
-                await getCallReply(scope.chat, this.state.callType, scope.context, (chunk) => {
+                await waitCallResponse(getCallReply(scope.chat, this.state.callType, scope.context, (chunk) => {
                     if (this.isCallScopeCurrent(scope) && !controller.signal.aborted) fullText += chunk;
-                }, controller.signal);
+                }, controller.signal), controller);
                 if (!this.isCallScopeCurrent(scope) || controller.signal.aborted) return;
                 
                 if (fullText) {
@@ -1086,6 +1096,7 @@ const VideoCallModule = {
                 summary: ""
             };
 
+            const mutation = beginChatMutation(scope.chat, db.characters.includes(scope.chat) ? 'private' : 'group', [], ['callHistory']);
             if (!scope.chat.callHistory) {
                 scope.chat.callHistory = [];
             }
@@ -1100,7 +1111,10 @@ const VideoCallModule = {
             };
             scope.chat.history.push(summaryMsg);
 
-            await saveData();
+            if (!await saveChatMutation(mutation, '通话记录保存失败，可从通话记录重试')) {
+                this.state.pendingCallSave = { scope, callRecord, summaryMsg };
+                return;
+            }
             showToast('通话结束，正在生成总结...');
             
             if (typeof renderMessages === 'function' && currentChatId === scope.chat.id) {
@@ -1110,10 +1124,11 @@ const VideoCallModule = {
             if (typeof generateCallSummary === 'function') {
                 generateCallSummary(scope.chat, scope.context).then(async (summary) => {
                     if (summary && scope.chat.activeArchiveId === scope.archiveId && scope.chat.history === scope.history && scope.chat.callHistory?.includes(callRecord)) {
+                        const mutation = beginChatMutation(scope.chat, db.characters.includes(scope.chat) ? 'private' : 'group', [summaryMsg], ['callHistory']);
                         callRecord.summary = summary;
                         summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
                         
-                        await saveData();
+                        if (!await saveChatMutation(mutation, '通话总结保存失败，请稍后重试')) return;
                         
                         if (typeof renderMessages === 'function' && currentChatId === scope.chat.id) {
                             renderMessages(false, false);
@@ -1145,11 +1160,38 @@ const VideoCallModule = {
         const modal = document.getElementById('vc-history-modal');
         const listContainer = document.getElementById('vc-history-list');
         listContainer.innerHTML = '';
+        const pending = this.state.pendingCallSave;
+        const chatType = currentChatType;
+        const sameChatScope = () => currentChatId === chat.id && currentChatType === chatType &&
+            (chatType === 'private' ? db.characters : db.groups).includes(chat) &&
+            chat.activeArchiveId === pending.scope.archiveId && chat.history === pending.scope.history;
+        const hasPending = pending?.scope.chat === chat && sameChatScope();
+        if (hasPending) {
+            const retry = document.createElement('button'); retry.className = 'vc-type-btn small'; retry.textContent = '重试保存上次通话记录';
+            retry.addEventListener('click', async () => {
+                if (retry.disabled || pending.saving) return;
+                if (this.state.pendingCallSave !== pending || !sameChatScope()) {
+                    showToast('角色或存档已变化，请重新打开通话记录');
+                    return;
+                }
+                retry.disabled = true; pending.saving = true;
+                try {
+                    const mutation = beginChatMutation(chat, chatType, [], ['callHistory']);
+                    (chat.callHistory ||= []).push(pending.callRecord); chat.history.push(pending.summaryMsg);
+                    if (await saveChatMutation(mutation, '通话记录保存失败，请重试')) {
+                        if (this.state.pendingCallSave === pending) this.state.pendingCallSave = null;
+                        if (sameChatScope()) this.showHistoryModal();
+                    }
+                } finally {
+                    pending.saving = false; retry.disabled = false;
+                }
+            }); listContainer.appendChild(retry);
+        }
 
         const history = chat.callHistory || [];
 
         if (history.length === 0) {
-            listContainer.innerHTML = '<div class="vc-history-empty">暂无通话记录</div>';
+            if (!hasPending) listContainer.innerHTML = '<div class="vc-history-empty">暂无通话记录</div>';
         } else {
             const sortedHistory = [...history].sort((a, b) => b.startTime - a.startTime);
             
@@ -1235,15 +1277,17 @@ const VideoCallModule = {
                                 
                                 try {
                                     if (typeof generateCallSummary === 'function') {
-                                        const summary = await generateCallSummary(this.state.currentChat, record.context);
+                                        const chat = this.state.currentChat, archiveId = chat.activeArchiveId, history = chat.history;
+                                        const summary = await generateCallSummary(chat, record.context);
+                                        if (chat.activeArchiveId !== archiveId || chat.history !== history || !chat.callHistory?.includes(record)) throw new Error('通话所属存档已变化');
                                         
                                         if (summary) {
+                                            const summaryMsg = chat.history.find(m => m.callRecordId === record.id);
+                                            const mutation = beginChatMutation(chat, db.characters.includes(chat) ? 'private' : 'group', summaryMsg ? [summaryMsg] : [], ['callHistory']);
                                             // 1. 更新数据
                                             record.summary = summary;
                                             
                                             // 2. 更新聊天记录中的消息
-                                            const chat = this.state.currentChat;
-                                            const summaryMsg = chat.history.find(m => m.callRecordId === record.id);
                                             if (summaryMsg) {
                                                 const date = new Date(record.startTime);
                                                 const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
@@ -1251,7 +1295,7 @@ const VideoCallModule = {
                                                 summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
                                             }
                                             
-                                            await saveData();
+                                            if (!await saveChatMutation(mutation, '通话总结保存失败，请重试')) throw new Error('通话总结保存失败');
                                             
                                             // 3. 更新界面
                                             const container = document.getElementById(`vc-summary-container-${record.id}`);

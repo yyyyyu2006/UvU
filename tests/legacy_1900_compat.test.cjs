@@ -60,6 +60,39 @@ test('MCP globally enabled with no role grants still preserves the ordinary requ
     const a=fixture(current,'newapi','uwu','private'),b=fixture(current,'newapi','uwu','private');b.c.db.mcpSettings={enabled:true,services:[],policies:[]};
     await a.c.getAiReply('c','private');await b.c.getAiReply('c','private');assert.deepEqual(b.requests,a.requests);
 });
+
+test('ordinary request and response logs expose metadata without private prompt or reply text', async () => {
+    const f = fixture(current, 'newapi', 'uwu', 'private'), logs = [];
+    f.chat.persona = 'PERSONA-PRIVATE-SENTINEL'; f.chat.history[0].content = 'HISTORY-PRIVATE-SENTINEL';
+    f.c.console.log = (...args) => logs.push(args.map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' '));
+    f.c.fetch = async (_url, init) => {
+        f.requests.push(JSON.parse(init.body));
+        return { ok: true, json: async () => ({ choices: [{ message: { content: 'REPLY-PRIVATE-SENTINEL' } }] }) };
+    };
+    await f.c.getAiReply('c', 'private');
+    assert.equal(f.requests.length, 1);
+    assert.match(JSON.stringify(f.requests[0]), /PERSONA-PRIVATE-SENTINEL/);
+    assert.doesNotMatch(logs.join('\n'), /PERSONA-PRIVATE-SENTINEL|HISTORY-PRIVATE-SENTINEL|REPLY-PRIVATE-SENTINEL/);
+    assert.ok(logs.length > 0);
+});
+
+for (const provider of ['newapi', 'gemini']) for (const type of ['private', 'group']) for (const limit of [1, 3, 100]) {
+    test(`1900 richer history request equality: ${provider}/${type}/limit${limit}`, { skip: !available }, async () => {
+        const a = fixture(baseline, provider, 'uwu', type), b = fixture(current, provider, 'uwu', type);
+        for (const item of [a, b]) {
+            item.chat.maxMemory = limit;
+            item.chat.bilingualModeEnabled = true;
+            item.chat.targetLanguage = 'English';
+            item.chat.history = Array.from({ length: 8 }, (_, i) => ({ id: 'floor-' + i, role: i % 2 ? 'user' : 'assistant',
+                content: i % 2 ? `引用与多行\n消息 ${i} ' " <普通文字>` : `[晴的消息：reply ${i}]`, timestamp: 1700000000000 + i * 1000 }));
+            item.chat.memoryJournals.push({ id: 'unused', title: '未收藏', content: 'NEVER-INJECT-UNSELECTED', isFavorited: false });
+        }
+        await a.c.getAiReply('c', type); await b.c.getAiReply('c', type);
+        assert.deepEqual(a.errors, []); assert.deepEqual(b.errors, []);
+        assert.equal(a.requests.length, 1); assert.deepEqual(b.requests, a.requests);
+        assert.doesNotMatch(JSON.stringify(b.requests), /NEVER-INJECT-UNSELECTED/);
+    });
+}
 for (const provider of ['newapi','gemini']) test('shared file uses bounded text only and captures request source: '+provider,async()=>{
     const f=fixture(current,provider,'uwu','private');
     const file=f.c.makeSharedDocument('内容.txt','DOCUMENT_BODY_SENTINEL',{originalData:'data:application/octet-stream;base64,YQ=='});

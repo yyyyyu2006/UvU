@@ -11,6 +11,25 @@ function fixture() {
 }
 const index = (value = 1) => ({ source: { version: 2, chunks: [{ key: 'hash', start: 0, end: 10, vector: [value, 0] }] } });
 
+test('scope inventory contains only cache metadata and deletion is isolated and revision guarded', async () => {
+    const store = fixture().VectorIndexStore;
+    await store.commit('old', index(), 'before'); await store.commit('active', index(2), 'other');
+    const rows = await store.listScopes();
+    assert.equal(rows.length, 2);
+    const old = rows.find(row => row.id === 'old');
+    assert.equal(old.chunkCount, 1); assert.equal(old.sourceCount, 1);
+    assert.equal('entries' in old, false); assert.equal('index' in old, false);
+    await assert.rejects(store.removeScope('old', old.updatedAt - 1), /更新/);
+    assert.equal((await store.read('old')).fingerprint, 'before');
+    await store.removeScope('old', old.updatedAt);
+    assert.deepEqual(Object.keys((await store.read('old')).index), []);
+    assert.equal((await store.read('active')).index.source.chunks[0].vector[0], 2);
+    assert.deepEqual(Array.from(await store.listScopes(), row => row.id), ['active']);
+    const activeBefore = (await store.listScopes())[0];
+    await store.commit('active', index(3), 'revised');
+    await assert.rejects(store.removeScope('active', activeBefore.updatedAt), /更新/);
+});
+
 test('late index connections close after timeout or blocked opening', async () => {
     for (const blocked of [false, true]) {
         const requests = [], timers = [];

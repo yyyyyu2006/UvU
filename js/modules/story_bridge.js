@@ -35,9 +35,16 @@
     function writeReviewDraft(chat, journal, items) {
         if ((journal.bridgeReview?.channel || 'st') !== channelId() || String(journal.bridgeReview?.archiveId || 'default') !== String(chat.activeArchiveId || 'default')) throw new Error('审核草稿目标已改变，未保存。');
         const key=reviewDraftKey(chat,journal), sourceSignature=reviewSource(journal);
-        const previous=JSON.parse(localStorage.getItem(key) || 'null');
+        let previous;try{previous=JSON.parse(localStorage.getItem(key) || 'null');}catch{previous=null;}
         const versions=previous && previous.sourceSignature!==sourceSignature ? [...(previous.previousVersions || []), {sourceSignature:previous.sourceSignature,items:previous.items,updatedAt:previous.updatedAt}] : previous?.previousVersions || [];
-        localStorage.setItem(key,JSON.stringify({sourceSignature,items:structuredClone(items),updatedAt:Date.now(),previousVersions:versions}));
+        const draft={sourceSignature,items:structuredClone(items),updatedAt:Date.now(),previousVersions:versions.slice(-5)};
+        while(draft.previousVersions.length && new TextEncoder().encode(JSON.stringify(draft)).length>2*1024*1024)draft.previousVersions.shift();
+        try{localStorage.setItem(key,JSON.stringify(draft));}
+        catch(error){
+            // Retry only this draft without obsolete versions; never clear other pending material.
+            if(!draft.previousVersions.length)throw error;
+            draft.previousVersions=[];localStorage.setItem(key,JSON.stringify(draft));
+        }
     }
     function clearReviewDraft(chat,journal) {localStorage.removeItem(reviewDraftKey(chat,journal));}
     function diagnosticsSnapshot() {
@@ -157,8 +164,9 @@
         if(!panel){panel=document.createElement('details');panel.id='uvu-bridge-diagnostics';panel.className='uvu-bridge-diagnostics';
             const title=document.createElement('summary'),output=document.createElement('pre'),actions=document.createElement('div');
             title.textContent='连接分层、容量与脱敏诊断';output.id='uvu-bridge-diagnostics-output';actions.className='uvu-bridge-actions';
-            const check=document.createElement('button'),copy=document.createElement('button'),recover=document.createElement('button'),clean=document.createElement('button');
-            for(const button of [check,copy,recover,clean]){button.type='button';button.className='btn btn-secondary';}
+            const check=document.createElement('button'),copy=document.createElement('button'),recover=document.createElement('button'),restore=document.createElement('button'),clean=document.createElement('button');
+            const recoveryInput=document.createElement('input');recoveryInput.type='file';recoveryInput.accept='.json,application/json';recoveryInput.hidden=true;
+            for(const button of [check,copy,recover,restore,clean]){button.type='button';button.className='btn btn-secondary';}
             check.textContent='逐步检查连接';check.title='检查当前通道、设备授权、服务版本与所选角色存档；不生成回复。';
             check.addEventListener('click',async()=>{check.disabled=true;try{if(!isEnabled())throw new Error('互通已关闭，请开启后检查。');if(isFileMode()){status('文件模式无需网络；核对角色存档、文件校验和审核保存阶段。');return;}
                 if(!readToken())throw new Error('尚未配对，请填写该通道配对码。');const service=await request('/client/service');if(service.protocolVersion!==1){lastRequest={stage:'protocol',code:'INCOMPATIBLE_VERSION'};throw new Error('服务协议版本不兼容，请更新服务端并重启。');}
@@ -167,6 +175,11 @@
             copy.textContent='导出脱敏诊断';copy.title='只导出状态和计数，排除地址、凭据、角色标识和剧情正文。';copy.addEventListener('click',()=>downloadBridgeFile(diagnosticsSnapshot()));
             recover.textContent='导出本通道恢复副本';recover.title='包含待发正文、未完成场景和收取回执；仅保存本机恢复资料，不包含配对凭据。';
             recover.addEventListener('click',()=>{const state=settings();downloadBridgeFile({format:'uvu-bridge-recovery',version:1,channel:channelId(),createdAt:Date.now(),outbox:state.outbox,pendingScenes:state.pendingScenes,receipts:state.receipts,cursorByCharacter:state.cursorByCharacter});status('恢复副本已导出，包含剧情正文。请妥善保留；本操作不清除任何队列或场景。');});
+            restore.textContent='导入本通道恢复副本';restore.title='先预检目标与冲突，再合并待发事件、未完成分段和去重回执；保留本机游标，后续收取仍须审核。';restore.addEventListener('click',()=>recoveryInput.click());
+            recoveryInput.addEventListener('change',async()=>{restore.disabled=true;try{const file=recoveryInput.files?.[0];if(!file)return;if(file.size>globalThis.UvUBridgeFile.MAX_BYTES)throw new Error('恢复副本超过 16 MiB。');const text=await file.text(),preview=await importRecovery(text);
+                if(!confirm('恢复副本已预检：待发事件 '+preview.outbox+' 条、待恢复场景 '+preview.pendingScenes+' 场、去重回执 '+preview.receipts+' 条。合并后保留当前游标，剧情仍须审核。待发队列会按当前通道在后续同步发送，请先核对角色和服务绑定。继续？'))return;
+                await importRecovery(text,{confirmed:true});status('恢复资料已合并。请核对角色、存档与绑定，再手动收取完整剧情并审核；当前游标和已有日记保留。');renderReview(true);
+            }catch(error){status('恢复副本未导入：'+error.message,true);}finally{restore.disabled=false;recoveryInput.value='';renderDiagnostics();}});
             clean.textContent='预览并清理已完成副本';clean.title='先显示计数并导出恢复副本；只清理已存在正式日记和持久回执的完整重复分段、已失效的完成态摘要缓存。';
             clean.addEventListener('click',async()=>{clean.disabled=true;try{const preview=await cleanupCompleted();if(!preview.completedSceneCopies && !preview.completedSummaryCaches){status('没有可安全清理的已完成副本；未完成剧情、审核草稿与去重回执均保留。');return;}
                 if(!confirm('可清理完整重复场景 '+preview.completedSceneCopies+' 项、完成态旧摘要缓存 '+preview.completedSummaryCaches+' 项，约 '+preview.estimatedBytes+' 字节；保留 '+preview.protectedScenes+' 场待恢复剧情和全部去重回执。下一步先导出恢复副本，继续？'))return;
@@ -174,7 +187,7 @@
                 if(!confirm('恢复副本下载已发起。请确认文件已成功保存后继续清理；取消将保留全部数据。'))return;
                 await cleanupCompleted({dryRun:false,confirmed:true,exported:true});status('已清理完成态重复资料；正式日记、未完成剧情和去重回执保留。');renderReview(true);
             }catch(error){status('清理失败，资料已保留：'+error.message,true);}finally{clean.disabled=false;renderDiagnostics();}});
-            actions.append(check,copy,recover,clean);panel.append(title,output,actions);parent.append(panel);
+            actions.append(check,copy,recover,restore,clean,recoveryInput);panel.append(title,output,actions);parent.append(panel);
         }
         const output=document.getElementById('uvu-bridge-diagnostics-output');if(!output)return;
         const value=diagnosticsSnapshot(),chat=selectedBridgeChat();
@@ -244,6 +257,39 @@
         } catch { return 'unavailable'; }
     }
 
+    function bridgeAddress(address) {
+        let url;try{url=new URL(address);}catch{throw new Error('桥接地址无效。');}
+        const host=url.hostname, octets=host.split('.').map(Number);
+        const ipv4=octets.length===4 && octets.every(n=>Number.isInteger(n)&&n>=0&&n<=255);
+        const local=host==='localhost' || host==='[::1]' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.lan') || host.endsWith('.home.arpa') || /^[a-z][a-z0-9-]*$/i.test(host) ||
+            ipv4 && (octets[0]===127 || octets[0]===10 || octets[0]===192 && octets[1]===168 || octets[0]===172 && octets[1]>=16 && octets[1]<=31 || octets[0]===169 && octets[1]===254) || /^\[(?:f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)/i.test(host);
+        if(url.username || url.password || url.search || url.hash || !(url.protocol==='https:' || url.protocol==='http:' && local))throw new Error('桥接地址需无账户、查询参数和片段；远程地址必须使用 HTTPS，本机与局域网可用 HTTP。');
+        return url;
+    }
+    function waitBridge(promise,signal){
+        if(signal.aborted)return Promise.reject(signal.reason || new Error('桥接请求已取消'));
+        return new Promise((resolve,reject)=>{const cancel=()=>reject(signal.reason || new Error('桥接请求已取消'));signal.addEventListener('abort',cancel,{once:true});Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',cancel));});
+    }
+    function bridgeDeadline(caller,timeout){
+        if(globalThis.AbortSignal?.timeout && (!caller || globalThis.AbortSignal?.any)){const timed=AbortSignal.timeout(timeout);return {signal:caller?AbortSignal.any([caller,timed]):timed,dispose(){}};}
+        if(!globalThis.AbortController)throw new Error('浏览器不支持请求取消，请升级浏览器或使用文件交接。');
+        const controller=new AbortController(),cancel=()=>controller.abort(caller?.reason);
+        caller?.addEventListener('abort',cancel,{once:true});if(caller?.aborted)cancel();
+        const timer=setTimeout(()=>controller.abort(new Error('桥接请求超时')),timeout);
+        return {signal:controller.signal,dispose(){clearTimeout(timer);caller?.removeEventListener('abort',cancel);}};
+    }
+    async function readBridgeJson(response,signal){
+        const max=16*1024*1024;
+        // Lightweight test adapters may implement json only; browser Responses always expose headers/body.
+        if(!response.headers?.get && response.body===undefined){const value=await waitBridge(response.json(),signal);if(new TextEncoder().encode(JSON.stringify(value)).length>max)throw new Error('桥接响应过大（最多 16 MiB）');return value;}
+        const type=(response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+        if(type!=='application/json' || Number(response.headers.get('content-length'))>max){void response.body?.cancel().catch(()=>{});throw new Error(type!=='application/json'?'桥接响应必须为 JSON':'桥接响应过大（最多 16 MiB）');}
+        if(!response.body?.getReader)throw new Error('浏览器不支持安全读取桥接 JSON，请升级浏览器或使用文件交接。');
+        const reader=response.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let size=0,text='';
+        try{while(true){const {value,done}=await waitBridge(reader.read(),signal);if(done)break;size+=value.byteLength;if(size>max)throw new Error('桥接响应过大（最多 16 MiB）');text+=decoder.decode(value,{stream:true});}text+=decoder.decode();
+            let data;try{data=JSON.parse(text);}catch{throw new Error('桥接响应 JSON 无效');}if(!data || typeof data!=='object' || Array.isArray(data))throw new Error('桥接响应 JSON 必须为对象');return data;
+        }finally{void reader.cancel().catch(()=>{});try{reader.releaseLock();}catch{}}
+    }
     async function request(path, { method = 'GET', body, auth = true, signal: callerSignal, timeoutMs = 15000 } = {}) {
         if(channelSwitchBusy)throw new Error('请等待通道切换完成。');
         if(isFileMode())throw new Error('TT 文件模式无需连接或配对；请使用导出 / 导入文件。');
@@ -252,6 +298,7 @@
         const token = readToken();
         if (auth && !token) throw new Error('尚未配对酒馆桥接服务。');
         const address = baseUrl();
+        bridgeAddress(address);
         if (channelId()==='tt') {
             let url;try{url=new URL(address);}catch{throw new Error('请先设置 TT HTTPS 桥接地址，或使用文件交接。');}
             if(url.hostname === 'github.io' || url.hostname.endsWith('.github.io')) throw new Error('GitHub Pages 是静态网页，不能接收桥接请求；请使用文件交接，或填写独立 HTTPS 中继地址。');
@@ -261,16 +308,17 @@
         if (auth) headers.Authorization = `Bearer ${token}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
         let response;
-        const timeoutSignal = AbortSignal.timeout(Math.max(1, Math.min(15000, Number(timeoutMs) || 15000)));
-        const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal;
+        const deadline=bridgeDeadline(callerSignal,Math.max(1, Math.min(15000, Number(timeoutMs) || 15000))),signal=deadline.signal;
+        try {
         if (signal.aborted) throw signal.reason;
         lastRequest={stage:'request',code:'PENDING'};
         const addressSpace = targetAddressSpace();
         try {
-            response = await fetch(`${address}/v1${path}`, {
+            response = await waitBridge(fetch(`${address}/v1${path}`, {
                 signal, method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+                redirect:'error',referrerPolicy:'no-referrer',credentials:'omit',cache:'no-store',
                 ...(addressSpace ? { targetAddressSpace: addressSpace } : {})
-            });
+            }),signal);
         } catch (error) {
             if (signal.aborted) {lastRequest={stage:'request',code:callerSignal?.aborted?'CANCELLED':'TIMEOUT'};throw signal.reason || error;}
             lastRequest={stage:'browser-or-network',code:'NETWORK_UNREACHABLE'};
@@ -286,7 +334,8 @@
                             : channelId() === 'tt' ? '请检查独立 HTTPS 中继是否运行、TLS 证书和 TT / UvU 精确来源白名单；UvU 网页地址不能作为中继。也可改用文件交接。' : '请确认酒馆桥接地址和服务状态。';
             throw new Error(`浏览器未能连接酒馆（loopback-network: ${permission}）：${diagnosis}`, { cause: error });
         }
-        const data = await response.json().catch(() => ({}));
+        let data;try{data=await readBridgeJson(response,signal);}
+        catch(error){lastRequest={stage:'response',code:signal.aborted?(callerSignal?.aborted?'CANCELLED':'TIMEOUT'):/过大/.test(error.message)?'RESPONSE_TOO_LARGE':'INVALID_JSON_RESPONSE'};throw error;}
         lastRequest={stage:'response',code:'HTTP_'+(response.status || 200)};
         if(data.protocolVersion!==undefined)remoteService={version:/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][a-z0-9.-]+)?$/i.test(String(data.version))?String(data.version).slice(0,30):'unknown',protocolVersion:Number(data.protocolVersion)||0,enabled:data.enabled!==false};
         if(data.capacity && Number.isFinite(data.capacity.limit)) remoteCapacity={limit:data.capacity.limit,used:Number(data.capacity.used)||0,remaining:Number(data.capacity.remaining)||0};
@@ -297,9 +346,10 @@
                 connection.phase='revoked';connection.nextAttempt=Infinity;
                 connectionStatus('绑定凭证已失效或被解除，请重新配对；本机凭证尚未清除。');
             }
-            throw Object.assign(new Error(`HTTP ${response.status} · ${help[response.status] || '桥接请求失败'}：${data.error || '未提供详细原因'}`),{status:response.status});
+            throw Object.assign(new Error(`HTTP ${response.status} · ${help[response.status] || '桥接请求失败'}`),{status:response.status});
         }
         return data;
+        } finally {deadline.dispose();}
     }
 
     function status(message, error = false) {
@@ -1102,6 +1152,36 @@
         return syncIncoming(String(chat.id),1,false,{events:file.events});
     }
 
+    async function importRecovery(text,{confirmed=false}={}){
+        if(maintenanceBusy || reviewBusy || syncBusy || inboxBusy || sendBusy || automaticBusy || publishingCount || pairingBusy || reconnecting || channelSwitchBusy)throw new Error('请等待当前桥接操作完成后恢复。');
+        const channel=channelId(),targets=(db.characters || []).map(chat=>({id:String(chat.id),archives:[...new Set(['default',String(chat.activeArchiveId || 'default'),...(chat.archives || []).map(a=>String(a.id))])]}));
+        const file=globalThis.UvUBridgeFile.validateRecovery(text,{channel,targets});
+        const state=channel==='tt' ? db.uvuStoryBridgeSettings?.ttSettings || {} : db.uvuStoryBridgeSettings || {};
+        const staged={outbox:structuredClone(state.outbox || []),pendingScenes:structuredClone(state.pendingScenes || {}),receipts:structuredClone(state.receipts || {})};
+        for(const event of file.outbox){const old=staged.outbox.find(e=>e.eventId===event.eventId);if(old && JSON.stringify(old)!==JSON.stringify(event))throw new Error('恢复待发事件与本机同 ID 内容冲突。');if(!old)staged.outbox.push(structuredClone(event));}
+        if(staged.outbox.length>500)throw new Error('恢复后待发队列超过 500 条，请先处理现有队列。');
+        for(const [key,receipt] of Object.entries(file.receipts)){
+            const old=staged.receipts[key];if(old && Boolean(old.cancelled)!==Boolean(receipt.cancelled))throw new Error('恢复回执与本机取消状态冲突，请人工核对。');
+            if(old && old.archiveId && receipt.archiveId && old.archiveId!==receipt.archiveId)throw new Error('恢复回执存档与本机冲突。');if(!old)staged.receipts[key]=structuredClone(receipt);
+        }
+        for(const [key,scene] of Object.entries(file.pendingScenes)){
+            if(staged.receipts[key])continue;
+            const old=staged.pendingScenes[key];if(!old){staged.pendingScenes[key]=structuredClone({...scene,imported:false});continue;}
+            for(const field of ['characterKey','archiveId','partCount','sceneFormat','stCharacterKey'])if((old[field] || '')!==(scene[field] || ''))throw new Error('恢复场景身份或分段总数与本机冲突。');
+            for(const [part,value] of Object.entries(scene.parts)){if(Object.hasOwn(old.parts,part) && old.parts[part]!==value)throw new Error('恢复剧情片段与本机内容冲突。');old.parts[part]=value;
+                if(scene.floorParts?.[part]){old.floorParts ||= {};if(old.floorParts[part] && JSON.stringify(old.floorParts[part])!==JSON.stringify(scene.floorParts[part]))throw new Error('恢复楼层与本机内容冲突。');old.floorParts[part]=structuredClone(scene.floorParts[part]);}}
+        }
+        const preview={outbox:file.outbox.length,pendingScenes:Object.keys(file.pendingScenes).length,receipts:Object.keys(file.receipts).length,cursorsPreserved:true};
+        if(!confirmed)return preview;
+        const hadRoot=Object.hasOwn(db,'uvuStoryBridgeSettings'),rootBefore=db.uvuStoryBridgeSettings,hadTT=Object.hasOwn(rootBefore || {},'ttSettings');
+        const before=Object.fromEntries(Object.keys(staged).map(key=>[key,{exists:Object.hasOwn(state,key),value:state[key]}]));
+        db.uvuStoryBridgeSettings ||= {};const target=channel==='tt' ? (db.uvuStoryBridgeSettings.ttSettings ||= {}) : db.uvuStoryBridgeSettings;
+        maintenanceBusy=true;generation++;Object.assign(target,staged);
+        try{await saveData();return preview;}
+        catch(error){if(!hadRoot)delete db.uvuStoryBridgeSettings;else if(channel==='tt' && !hadTT)delete rootBefore.ttSettings;else for(const [key,old] of Object.entries(before)){if(old.exists)target[key]=old.value;else delete target[key];}throw error;}
+        finally{maintenanceBusy=false;}
+    }
+
     async function createHandoffFile() {
         const chat=selectedBridgeChat();if(!chat)throw new Error('请先选择角色。');
         updateHandoffRange();
@@ -1129,7 +1209,7 @@
 
     async function changeChannel(value) {
         if(!['st','tt'].includes(value))throw new Error('不支持的酒馆通道。');
-        if(channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
+        if(maintenanceBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
         const root=db.uvuStoryBridgeSettings ||= {}, before=root.channel;
         channelSwitchBusy=true;generation++;
         root.channel=value;
@@ -1263,6 +1343,6 @@
         });
     }
 
-    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
+    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, importRecovery, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

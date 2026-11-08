@@ -108,6 +108,14 @@ async function undoLibraryMemoryMerge(chat, merged, { isCurrent = memoryLibraryS
     }
 }
 
+function memoryLibraryCacheScopes(rows, chat, type, activeScope) {
+    return rows.flatMap(row => {
+        let scope; try { scope = JSON.parse(row.id); } catch (_) { return []; }
+        if (!Array.isArray(scope) || scope.length !== 4 || scope[0] !== type || scope[1] !== chat.id) return [];
+        return [{ ...row, archiveId: scope[2], current: row.id === activeScope }];
+    });
+}
+
 function openMemoryLibrary() {
     const type = currentChatType;
     const chat = (type === 'private' ? db.characters : db.groups).find(item => item.id === currentChatId);
@@ -169,6 +177,43 @@ function openMemoryLibrary() {
     const diagnosticText = element('pre'); diagnostics.append(diagnosticText);
     const pagination = element('div', undefined, 'memory-library-toolbar'); list.after(pagination);
     overlay.querySelector('.feature-dialog-card').append(tuning, diagnostics);
+    if (typeof VectorIndexStore !== 'undefined' && typeof VectorMemoryTools !== 'undefined') {
+        const caches = element('details', undefined, 'memory-library-cache');
+        caches.append(element('summary', '独立索引缓存'));
+        const cacheList = element('div', undefined, 'memory-library-cache-list');
+        const loadCaches = async () => {
+            cacheList.textContent = '正在读取…';
+            try {
+                assertCurrent();
+                const activeScope = VectorMemoryTools.indexScope(chat, vectorMemoryApiFingerprint(resolveVectorMemoryApi()));
+                const rows = memoryLibraryCacheScopes(await VectorIndexStore.listScopes(), chat, type === 'private' ? 'character' : 'group', activeScope);
+                assertCurrent(); cacheList.replaceChildren();
+                if (!rows.length) cacheList.append(element('p', '暂无独立索引', 'feature-help'));
+                for (const row of rows) {
+                    const archive = chat.archives?.find(item => item.id === row.archiveId);
+                    const item = element('div', undefined, 'memory-library-cache-row');
+                    const label = `${archive?.name || (row.archiveId === (chat.activeArchiveId || 'default') ? '当前存档' : '旧存档')} · ${row.sourceCount} 个来源 / ${row.chunkCount} 块`;
+                    item.append(element('span', label));
+                    const remove = button(row.current ? '使用中' : '清理', async event => {
+                        if (indexJob) return showToast('请等待建库完成后清理');
+                        if (!confirm('清理这份旧索引缓存？原聊天、日记和待审稿会保留，可重新建立索引。')) return;
+                        const target = event.currentTarget; target.disabled = true;
+                        try {
+                            assertCurrent();
+                            const latestScope = VectorMemoryTools.indexScope(chat, vectorMemoryApiFingerprint(resolveVectorMemoryApi()));
+                            if (row.id === latestScope) throw Error('当前索引正在使用，请刷新清单');
+                            await VectorIndexStore.removeScope(row.id, row.updatedAt);
+                            if (!closed) await loadCaches();
+                        } catch (error) { if (!closed) { status.textContent = error.message; target.disabled = false; } }
+                    });
+                    remove.disabled = row.current; item.append(remove); cacheList.append(item);
+                }
+            } catch (error) { if (!closed) cacheList.textContent = error.message; }
+        };
+        caches.append(button('刷新清单', loadCaches), cacheList);
+        caches.addEventListener('toggle', () => { if (caches.open) loadCaches(); });
+        overlay.querySelector('.feature-dialog-card').append(caches);
+    }
     const describe = journal => `剧情时间：${journal.timeline || '未指定'} · 创建：${new Date(journal.createdAt || 0).toLocaleString()} · 分类：${journal.category || '未分类'}`;
     const original = (journal, host) => {
         const details = element('details'), summary = element('summary', '对照原始聊天 / 合并来源'); details.append(summary);

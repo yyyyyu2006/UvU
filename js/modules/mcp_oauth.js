@@ -13,34 +13,40 @@
         return u;
     }
     function random() { return btoa(Array.from(crypto.getRandomValues(new Uint8Array(32)), n => String.fromCharCode(n)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-    async function request(url, options = {}, signal, probe = false) {
+    function waiting(promise,signal){if(signal.aborted)return Promise.reject(cancelled());return new Promise((resolve,reject)=>{const stop=()=>reject(cancelled());signal.addEventListener('abort',stop,{once:true});Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',stop));});}
+    async function request(url, options = {}, signal, probe = false, stage='token') {
         const controller = new AbortController(), cancel = () => controller.abort();
         signal?.addEventListener('abort', cancel, { once: true }); if (signal?.aborted) cancel();
         const timer = setTimeout(cancel, 20000);
         try {
-            const response = await fetch(https(url).href, { ...options, signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' });
+            let response;try{response = await waiting(fetch(https(url).href, { ...options, signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', referrerPolicy: 'no-referrer' }),controller.signal);}
+            catch(error){if(controller.signal.aborted)throw error;throw Object.assign(new Error('OAuth 网络请求失败：检查 CORS、TLS、DNS、本地网络权限和服务状态；浏览器不能单独判定原因'),{code:'OAUTH_NETWORK'});}
             if (probe) { await response.body?.cancel(); return response; }
-            if (!response.ok) { await response.body?.cancel(); const error = new Error('OAuth HTTP ' + response.status + '；请检查浏览器 CORS、客户端登记和授权状态'); error.status = response.status; throw error; }
+            if (!response.ok) { await response.body?.cancel(); const error = new Error('OAuth HTTP ' + response.status + '；'+(response.status===400?'核对公开客户端登记、回调地址、授权类型与令牌状态':response.status===401 || response.status===403?'核对授权状态、服务访问权限与客户端登记':'核对元数据端点和服务状态')); error.status = response.status;error.code='OAUTH_HTTP_'+response.status; throw error; }
             if (!(response.headers.get('content-type') || '').includes('application/json') || Number(response.headers.get('content-length')) > MAX) throw new Error('OAuth 返回的元数据格式或大小无效');
             const reader = response.body.getReader(), decoder = new TextDecoder(); let text = '', size = 0;
-            try { while (true) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > MAX) throw new Error('OAuth 元数据超过 64 KiB'); text += decoder.decode(value, { stream: true }); } text += decoder.decode(); }
-            finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+            try { while (true) { const { value, done } = await waiting(reader.read(),controller.signal); if (done) break; size += value.byteLength; if (size > MAX) throw new Error('OAuth 元数据超过 64 KiB'); text += decoder.decode(value, { stream: true }); } text += decoder.decode(); }
+            finally { void reader.cancel().catch(() => {});try{reader.releaseLock();}catch{} }
             let data; try { data = JSON.parse(text); } catch (_) { throw new Error('OAuth 返回的 JSON 无效'); }
             if (!data || Array.isArray(data) || typeof data !== 'object') throw new Error('OAuth 元数据无效'); return data;
-        } catch (error) { if (signal?.aborted) throw cancelled(); if (controller.signal.aborted) throw new Error('OAuth 请求超时，请重新连接'); throw error; }
+        } catch (error) { if (signal?.aborted) throw cancelled(); if (controller.signal.aborted)error=Object.assign(new Error('OAuth 请求超时，请重新连接'),{code:'OAUTH_TIMEOUT'});error.stage=stage;error.code ||= 'OAUTH_RESPONSE';error.message='['+error.code+' / '+stage+'] '+error.message;throw error; }
         finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     }
     async function discover(s, signal) {
-        const resource = https(s.url), probe = await request(resource.href, { headers: { Accept: 'application/json' } }, signal, true);
+        const resource = https(s.url), probe = await request(resource.href, { headers: { Accept: 'application/json' } }, signal, true,'resource-probe');
         const challenge = probe.headers.get('WWW-Authenticate') || '', advertised = /resource_metadata="([^"]+)"/i.exec(challenge)?.[1];
         const metadataUrl = advertised || resource.origin + '/.well-known/oauth-protected-resource' + resource.pathname.replace(/\/$/, '');
-        const metadata = await request(metadataUrl, {}, signal);
+        const metadata = await request(metadataUrl, {}, signal,false,'resource-metadata');
         if (typeof metadata.resource !== 'string' || new URL(metadata.resource).href !== resource.href) throw new Error('OAuth 资源 resource 与当前 MCP 服务不一致');
         if (!Array.isArray(metadata.authorization_servers) || !metadata.authorization_servers.length) throw new Error('OAuth 服务没有提供授权服务器');
-        const issuer = https(metadata.authorization_servers[0]); if (issuer.search) throw new Error('OAuth issuer 颁发地址无效');
+        const issuers=[...new Set(metadata.authorization_servers.map(value=>{const url=https(value);if(url.search)throw new Error('OAuth issuer 颁发地址无效');return url.href.replace(/\/$/,'');}))];
+        const selected=s.oauth?.issuer ? https(s.oauth.issuer).href.replace(/\/$/,'') : '';
+        if(selected && !issuers.includes(selected))throw new Error('OAuth 所选 issuer 不在服务声明列表中，请核对颁发者');
+        if(issuers.length>1 && !selected)throw Object.assign(new Error('OAuth 服务声明多个 issuer，请在授权设置中明确选择颁发者；不会自动尝试其他服务器'),{code:'OAUTH_ISSUER_SELECTION_REQUIRED'});
+        const issuer = https(selected || issuers[0]);
         const suffix = issuer.pathname.replace(/\/$/, ''); let auth;
-        try { auth = await request(issuer.origin + '/.well-known/oauth-authorization-server' + suffix, {}, signal); }
-        catch (error) { if (error.status !== 404) throw error; auth = await request(issuer.href.replace(/\/$/, '') + '/.well-known/openid-configuration', {}, signal); }
+        try { auth = await request(issuer.origin + '/.well-known/oauth-authorization-server' + suffix, {}, signal,false,'issuer-metadata'); }
+        catch (error) { if (error.status !== 404) throw error; auth = await request(issuer.href.replace(/\/$/, '') + '/.well-known/openid-configuration', {}, signal,false,'issuer-metadata'); }
         if (auth.issuer !== issuer.href.replace(/\/$/, '') && auth.issuer !== issuer.href) throw new Error('OAuth issuer 颁发者与元数据不一致');
         if (!Array.isArray(auth.code_challenge_methods_supported) || !auth.code_challenge_methods_supported.includes('S256')) throw new Error('OAuth 服务未声明 PKCE S256 支持');
         return { issuer: auth.issuer, authorization: https(auth.authorization_endpoint).href, token: https(auth.token_endpoint).href,
@@ -130,5 +136,8 @@
         });
     }
     function disconnect(s) { epochs.set(key(s), epoch(s) + 1); refreshing.delete(key(s)); remove(s); window.MCPServices.vault.clear(s); }
-    window.MCPOAuth = Object.freeze({ connect, access, disconnect, discover, callbackUrl });
+    function invalidateExternal(changedKey){
+        for(const s of window.MCPServices?.settings?.().services || []){if(changedKey===null || changedKey===key(s) || changedKey?.startsWith('uvu.mcp.secret.v1:')){epochs.set(key(s),epoch(s)+1);refreshing.delete(key(s));try{sessionStorage.removeItem(key(s));}catch{}}}
+    }
+    window.MCPOAuth = Object.freeze({ connect, access, disconnect, discover, callbackUrl, invalidateExternal });
 }());

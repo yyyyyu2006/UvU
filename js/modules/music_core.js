@@ -54,6 +54,7 @@
         if (page && ((['netease', 'gd-netease'].includes(raw.provider) && new URL(page).hostname === 'music.163.com') || (raw.provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(new URL(page).hostname)))) result.pageUrl = page;
         if (raw.provider === 'gd-netease' && /^\d{1,24}$/.test(raw.artworkId || '')) result.artworkId = String(raw.artworkId);
         if (raw.provider === 'local' && /^[a-zA-Z0-9_-]{1,160}$/.test(raw.localId || '')) result.localId = raw.localId;
+        if (Number.isFinite(raw.addedAt) && raw.addedAt > 0) result.addedAt = raw.addedAt;
         return result;
     }
     const key = track => { const value = normalizeTrack(track); return value.provider + ':' + value.id; };
@@ -106,7 +107,7 @@
         return persist('musicLibrary', current => {
             const index = current.favorites.findIndex(item => key(item) === id);
             if (index >= 0) current.favorites.splice(index, 1);
-            else { if (current.favorites.length >= 2000) throw new Error('Favorite limit reached'); current.favorites.push(value); }
+            else { if (current.favorites.length >= 2000) throw new Error('Favorite limit reached'); current.favorites.push({ ...value, addedAt: Date.now() }); }
             return current;
         });
     }
@@ -170,7 +171,7 @@
     async function importPlaylist(draft, signal) {
         aborted(signal);
         if (!draft || !PROVIDERS.includes(draft.provider) || !/^\d{1,24}$/.test(draft.id || '') || !Array.isArray(draft.tracks) || !draft.tracks.length || draft.tracks.length > 1000) throw new Error('歌单资料无效，最多导入 1000 首');
-        const songs = draft.tracks.map(normalizeTrack);
+        const songs = draft.tracks.map(track => ({ ...normalizeTrack(track), addedAt: Date.now() }));
         if (songs.some(song => song.provider !== draft.provider)) throw new Error('歌单歌曲的平台与所选来源不一致');
         const id = makeId(), name = text(draft.name, 160).trim() || '导入歌单';
         const saved = await persist('musicLibrary', current => {
@@ -185,7 +186,7 @@
         return persist('musicLibrary', current => { const item = current.playlists.find(value => value.id === id); if (!item) throw new Error('Playlist not found'); edit(item); return current; });
     }
     function addToPlaylist(id, track) {
-        const value = normalizeTrack(track);
+        const value = { ...normalizeTrack(track), addedAt: Date.now() };
         return editPlaylist(id, item => { if (!item.tracks.some(track => key(track) === key(value))) { if (item.tracks.length >= 1000) throw new Error('Playlist track limit reached'); item.tracks.push(value); } });
     }
     const removeFromPlaylist = (id, trackKey) => editPlaylist(id, item => { item.tracks = item.tracks.filter(track => key(track) !== trackKey); });
@@ -480,7 +481,7 @@
     const failedKeys=new Set();
     function resetShuffle(current=state.track){shuffleBag=state.queue.map(key).filter(id=>!current||id!==key(current));for(let i=shuffleBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffleBag[i],shuffleBag[j]]=[shuffleBag[j],shuffleBag[i]];}}
     function queueChanged(){state.index=state.track?state.queue.findIndex(t=>key(t)===key(state.track)):-1;const ids=new Set(state.queue.map(key));shuffleBag=shuffleBag.filter(id=>ids.has(id));priority=priority.filter(id=>ids.has(id));saveQueue();emit();}
-    let restored = false, restoredLibrary, playerTouched = false, audio = null, objectURL = '', intent = 0, seekRevision = 0, loadController, metadataKey = '';
+    let restored = false, restoredLibrary, playerTouched = false, audio = null, objectURL = '', intent = 0, seekRevision = 0, loadController, metadataKey = '', stallTimer;
     function restore(touch = false) {
         const raw = database().musicLibrary;
         if (!restored || (!playerTouched && raw !== restoredLibrary)) {
@@ -515,6 +516,7 @@
         }, 250); queueTimer?.unref?.();
     }
     function unload() {
+        clearTimeout(stallTimer);
         loadController?.abort(); loadController = null;
         if (audio) { const old = audio; audio = null; old.pause(); old.removeAttribute('src'); old.load(); }
         if (objectURL) { URL.revokeObjectURL(objectURL); objectURL = ''; }
@@ -523,8 +525,8 @@
         if(state.phase==='error'||state.phase==='blocked')return Promise.resolve(false);
         const wasAttempting=state.playing||state.phase==='loading';
         state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
-        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
-        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试'}[state.errorCode];emit();
+        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':error?.code==='stalled'?'stalled':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
+        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试',stalled:'音频缓冲超时，请检查网络后点击重试'}[state.errorCode];emit();
         if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable','public_match'].includes(state.errorCode)&&state.track){
             failedKeys.add(key(state.track));const next=state.queue.find((t,i)=>i>state.index&&!failedKeys.has(key(t)))||state.queue.find(t=>!failedKeys.has(key(t)));
             if(next&&failedKeys.size<Math.min(state.queue.length,5))return play(next,undefined,{keepFailures:true});
@@ -579,6 +581,9 @@
             current.preload = 'metadata'; current.src = objectURL || source.url; current.referrerPolicy = 'no-referrer';
             state.track = { ...value, availability: source.availability, ...(source.cover ? {cover:source.cover} : {}) };
             const valid = () => audio === current;
+            const stalled = () => { if (!valid()) return; clearTimeout(stallTimer); stallTimer = setTimeout(() => { if (valid() && (state.playing || state.phase === 'loading')) void fail(Object.assign(new Error('Audio stalled'), { code: 'stalled' })); }, 30000); stallTimer?.unref?.(); };
+            current.addEventListener('waiting', stalled); current.addEventListener('stalled', stalled);
+            for (const event of ['playing', 'timeupdate', 'canplay', 'pause', 'ended']) current.addEventListener(event, () => { if (valid()) clearTimeout(stallTimer); });
             current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(); } });
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
             current.addEventListener('ended', () => { if (valid() && state.playing) advance(1, true); });

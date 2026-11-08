@@ -14,7 +14,7 @@ const CHAPTER_PATTERNS = [
     {
         key: 'ENGLISH_CHAPTER',
         label: 'Chapter X',
-        regex: /^\s*Chapter\s*[0-9]+.*$/gi
+        regex: /^\s*Chapter\s*[0-9]+.*$/gim
     },
     {
         key: 'PURE_DIGIT',

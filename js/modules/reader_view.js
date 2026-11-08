@@ -1,5 +1,17 @@
 // --- 阅读器视图逻辑 (js/modules/reader_view.js) ---
 
+function readerPlainNode(tag, text, className) {
+    const node = document.createElement(tag);
+    node.textContent = String(text || '');
+    if (className) node.className = className;
+    return node;
+}
+function readerIllustrationSource(content) {
+    const raw = String(content || '').slice('[ILLUSTRATION]'.length);
+    if (raw.length > 20 * 1024 * 1024) return null;
+    if (/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(raw)) return raw;
+    return /^[A-Za-z0-9+/]+={0,2}$/.test(raw) ? 'data:image/png;base64,' + raw : null;
+}
 document.addEventListener('DOMContentLoaded', () => {
     const readerScreen = document.getElementById('reader-view-screen');
     const header = document.getElementById('reader-header');
@@ -156,18 +168,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 将文本按换行符分割成段落，保留原文的空格，只过滤掉纯空行
             const paragraphs = chapter.content.split('\n').filter(p => p !== '');
-            const htmlContent = paragraphs.map((p, pIndex) => {
+            const tempDiv = document.createElement('div');
+            paragraphs.forEach((p, pIndex) => {
                 let iconHtml = '';
                 if (commentCounts[pIndex]) {
                     // 移除换行和多余空格，确保图标紧跟在文字后面
                     iconHtml = `<span class="reader-inline-comment-icon" contenteditable="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chat-square-quote" viewBox="0 0 16 16"><path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2.5a2 2 0 0 0-1.6.8L8 14.333 6.1 11.8a2 2 0 0 0-1.6-.8H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2.5a1 1 0 0 1 .8.4l1.9 2.533a1 1 0 0 0 1.6 0l1.9-2.533a1 1 0 0 1 .8-.4H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/><path d="M7.066 4.76A1.665 1.665 0 0 0 4 5.668a1.667 1.667 0 0 0 2.561 1.406c-.131.389-.375.804-.777 1.22a.417.417 0 1 0 .6.58c1.486-1.54 1.293-3.214.682-4.112zm4 0A1.665 1.665 0 0 0 8 5.668a1.667 1.667 0 0 0 2.561 1.406c-.131.389-.375.804-.777 1.22a.417.417 0 1 0 .6.58c1.486-1.54 1.293-3.214.682-4.112z"/></svg><span class="reader-inline-comment-count">${commentCounts[pIndex]}</span></span>`;
                 }
-                return `<p data-index="${pIndex}">${p}${iconHtml}</p>`;
-            }).join('');
-            
-            // 使用 DocumentFragment 优化插入
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = htmlContent;
+                const paragraph = readerPlainNode('p', p);
+                paragraph.dataset.index = String(pIndex);
+                if (iconHtml) { const icon = document.createElement('span'); icon.innerHTML = iconHtml; paragraph.appendChild(icon.firstChild); }
+                tempDiv.appendChild(paragraph);
+            });
             
             // 为已有的图标绑定点击事件
             tempDiv.querySelectorAll('.reader-inline-comment-icon').forEach(icon => {
@@ -477,27 +489,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 按时间倒序排列
                 comments.sort((a, b) => b.timestamp - a.timestamp);
                 
-                const listHtml = comments.map(c => {
+                commentListEl.innerHTML = '';
+                comments.forEach(c => {
                     const date = new Date(c.timestamp);
                     const timeStr = `${date.getMonth()+1}-${date.getDate()} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-                    
-                    let contentHtml = '';
-                    if (c.content.startsWith('[ILLUSTRATION]')) {
-                        const base64Data = c.content.replace('[ILLUSTRATION]', '');
-                        contentHtml = `<img src="data:image/png;base64,${base64Data}" class="reader-illustration-img" onclick="window.readerView.openFullscreenImage(this.src)">`;
-                    } else {
-                        contentHtml = `<div class="reader-comment-content">${c.content}</div>`;
-                    }
-
-                    return `
-                        <div class="reader-comment-item">
-                            <div class="reader-comment-user">${c.content.startsWith('[ILLUSTRATION]') ? 'AI 插画师' : '我'}</div>
-                            ${contentHtml}
-                            <div class="reader-comment-time">${timeStr}</div>
-                        </div>
-                    `;
-                }).join('');
-                commentListEl.innerHTML = listHtml;
+                    const item = document.createElement('div'); item.className = 'reader-comment-item';
+                    const imageSource = String(c.content || '').startsWith('[ILLUSTRATION]') ? readerIllustrationSource(c.content) : null;
+                    item.appendChild(readerPlainNode('div', imageSource ? 'AI 插画师' : '我', 'reader-comment-user'));
+                    if (imageSource) {
+                        const image = document.createElement('img'); image.src = imageSource; image.className = 'reader-illustration-img';
+                        image.addEventListener('click', () => window.readerView.openFullscreenImage(image.src)); item.appendChild(image);
+                    } else item.appendChild(readerPlainNode('div', c.content, 'reader-comment-content'));
+                    item.appendChild(readerPlainNode('div', timeStr, 'reader-comment-time')); commentListEl.appendChild(item);
+                });
             }
         } catch (error) {
             console.error("加载评论失败:", error);

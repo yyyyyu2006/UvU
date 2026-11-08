@@ -3038,7 +3038,7 @@ node setup-server-plugin.js</code></pre>
                 <label>模型名称<input id="memory-api-model" type="text" list="memory-api-models" autocomplete="off" placeholder="输入模型名或拉取后选择"><datalist id="memory-api-models"></datalist></label>
                 <button type="button" class="btn btn-secondary" id="memory-api-fetch-models">拉取模型列表</button>
             </details>
-            <fieldset><legend>楼层记忆</legend><label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 聊天界面折叠已总结楼层</label><div class="auto-memory-grid">
+            <fieldset><legend>楼层记忆</legend><label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 使用自动记忆时，折叠并替代已总结楼层</label><div class="auto-memory-grid">
                 <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
                 <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
                 <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>

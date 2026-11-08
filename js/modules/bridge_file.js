@@ -83,5 +83,29 @@
         }
         return file;
     }
-    root.UvUBridgeFile={validate,hash,MAX_BYTES};
+    function validateRecovery(input,expected){
+        if(typeof input!=='string' || bytes(input)>MAX_BYTES)throw new Error('恢复副本超过 16 MiB。');
+        let file;try{file=JSON.parse(input,(key,value)=>{if(['__proto__','prototype','constructor'].includes(key))throw new Error();return value;});}catch{throw new Error('恢复副本 JSON 或字段无效。');}
+        if(!object(file) || file.format!=='uvu-bridge-recovery' || file.version!==1 || file.channel!==expected.channel || !Array.isArray(file.outbox) || file.outbox.length>500 || !object(file.pendingScenes) || !object(file.receipts) || !object(file.cursorByCharacter))throw new Error('恢复副本格式、通道或队列无效。');
+        const targets=expected.targets || [];
+        const target=(id,archive)=>{const found=targets.find(t=>t.id===id);if(!found || archive!==undefined && !found.archives.includes(archive))throw new Error('恢复副本角色或存档目标不存在，请先恢复对应角色与存档。');return found;};
+        const sceneTarget=(key,archive)=>{const found=targets.filter(t=>key.startsWith(t.id+':')).sort((a,b)=>b.id.length-a.id.length)[0];if(!found || key.length>found.id.length+161 || key.length<=found.id.length+1)throw new Error('恢复副本场景目标无效。');target(found.id,archive);return found.id;};
+        if(Object.keys(file.pendingScenes).length>2000 || Object.keys(file.receipts).length>10000 || Object.keys(file.cursorByCharacter).length>2000)throw new Error('恢复副本条目过多。');
+        const ids=new Set();
+        for(const event of file.outbox){
+            if(!object(event) || event.source!=='uvu' || !['memory_packet','phone_exchange'].includes(event.kind) || typeof event.eventId!=='string' || !event.eventId || event.eventId.length>160 || ids.has(event.eventId) || !object(event.payload) || bytes(JSON.stringify(event))>65536 || bytes(JSON.stringify(event.payload))>49152)throw new Error('恢复待发事件身份、类型或大小无效。');
+            target(event.characterKey,event.payload.archiveId);if(typeof event.payload.archiveId!=='string' || !Array.isArray(event.payload.messages) || event.payload.messages.length>500)throw new Error('恢复待发事件存档或消息无效。');ids.add(event.eventId);
+            for(const item of event.payload.messages){const id=item?.sourceMessageId || item?.id;if(!object(item) || typeof id!=='string' || !id || id.length>300 || typeof item.text!=='string')throw new Error('恢复待发消息无效。');
+                if(item.messagePart!==undefined || item.messagePartCount!==undefined)if(!Number.isInteger(item.messagePart) || !Number.isInteger(item.messagePartCount) || item.messagePartCount<2 || item.messagePartCount>500 || item.messagePart<1 || item.messagePart>item.messagePartCount)throw new Error('恢复待发消息分段无效。');}
+        }
+        for(const [key,scene] of Object.entries(file.pendingScenes)){
+            if(!object(scene) || typeof scene.archiveId!=='string' || scene.characterKey!==sceneTarget(key,scene.archiveId) || !Number.isInteger(scene.partCount) || scene.partCount<1 || scene.partCount>2000 || !object(scene.parts) || scene.sceneFormat && scene.sceneFormat!=='floors-v1')throw new Error('恢复场景身份、存档或分段无效。');
+            for(const [part,text] of Object.entries(scene.parts)){if(!/^[1-9][0-9]*$/.test(part) || Number(part)>scene.partCount || typeof text!=='string' || bytes(text)>49152)throw new Error('恢复剧情分段无效。');if(scene.sceneFormat==='floors-v1')root.UvUBridgeText.validateFloor(scene.floorParts?.[part]);}
+            if(scene.floorParts && (!object(scene.floorParts) || Object.keys(scene.floorParts).some(part=>!Object.hasOwn(scene.parts,part))))throw new Error('恢复剧情楼层与分段不一致。');
+        }
+        for(const [key,receipt] of Object.entries(file.receipts)){if(!object(receipt) || !Number.isFinite(receipt.at) || receipt.at<0 || (!receipt.cancelled && typeof receipt.archiveId!=='string'))throw new Error('恢复去重回执无效。');sceneTarget(key,receipt.archiveId);}
+        for(const [id,cursor] of Object.entries(file.cursorByCharacter)){target(id);if(!Number.isSafeInteger(cursor) || cursor<0)throw new Error('恢复游标无效。');}
+        return file;
+    }
+    root.UvUBridgeFile={validate,validateRecovery,hash,MAX_BYTES};
 })(globalThis);

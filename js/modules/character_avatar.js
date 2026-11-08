@@ -1,6 +1,14 @@
 // Optional, independent actions. Never edit main chat prompts or message parts.
 const characterAvatarJobs = new WeakMap();
 const characterAvatarAttempts = new WeakMap();
+async function avatarReadImage(response) {
+    const max = 12 * 1024 * 1024, mime = String(response.headers?.get('content-type') || '').split(';')[0].toLowerCase();
+    if ((mime && !/^image\/(?:png|jpeg|gif|webp|bmp)$/.test(mime)) || Number(response.headers?.get('content-length')) > max) { await response.body?.cancel(); throw new Error('头像图片格式或大小不支持'); }
+    if (!response.body?.getReader) { const blob = await response.blob(); if (blob.size > max || !/^image\/(?:png|jpeg|gif|webp|bmp)$/.test(blob.type)) throw new Error('头像图片格式或大小不支持'); return blob; }
+    const reader = response.body.getReader(), chunks = []; let total = 0;
+    try { while (true) { const { value, done } = await reader.read(); if (value) { total += value.byteLength; if (total > max) throw new Error('头像图片过大'); chunks.push(value); } if (done) break; } return new Blob(chunks, { type: mime }); }
+    finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 const derivedChatWrites = new WeakSet();
 
 async function saveDerivedChatFields(chat, changes) {
@@ -210,9 +218,9 @@ async function runCharacterAvatarCheck(chat, force = false) {
         if (selected && !await avatarCandidateAvailable(chat, selected)) return false;
         let nextAvatar = '';
         if (selected && !isCurrent(selected)) {
-            const response = await fetch(selected.src, { signal: controller.signal });
+            const response = await fetch(selected.src, { signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
             if (!response.ok) throw new Error('头像图片下载失败');
-            const blob = await response.blob();
+            const blob = await avatarReadImage(response);
             if (!blob.type.startsWith('image/') || blob.size > 12 * 1024 * 1024) throw new Error('头像图片格式或大小不支持');
             nextAvatar = await compressImage(blob, { quality: 0.85, maxWidth: 256, maxHeight: 256 });
             if (!avatarImageSource(nextAvatar)) throw new Error('头像图片无法读取');

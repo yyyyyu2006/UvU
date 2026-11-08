@@ -182,6 +182,7 @@
             get version() { return version; },
             get capabilities() { return capabilities ? { ...capabilities } : null; },
             async listTools(signal) {
+                if (ready && capabilities && !capabilities.tools) return [];
                 let page = ready ? await safeRpc('tools/list', {}, signal) : await firstList(signal);
                 ready = true;
                 const tools = [], cursors = new Set(); let pages = 0;

@@ -140,6 +140,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     note.className = 'status-token-note';
     note.textContent = data.actual
         ? '输入／输出总量优先使用 API usage；下方每项仍为本地文本估算。对账差额不是额外收费项目，可能来自分词器、服务端模板、图片或缓存口径；本站无法据此还原第三方账单。推理 Token 可能已包含在输出中，不再相加。'
+        : data.preview ? `尚未发送；分类为本地预估${data.worldBookPending ? `，${data.worldBookPending} 本规则世界书待发送时判定，未计入` : ''}。`
         : '当前未收到 API usage；下方数字为本地估算，仅供参考。';
 
     const list = document.createElement('div');

@@ -449,8 +449,11 @@ function storagePrepareImport(selection, modules) {
             if (!Array.isArray(modules[key])) continue;
             const ids = new Set(modules[key].map(chat => chat.id));
             // 合并只替换顶层字段及新建的存档对象；保留未修改的大历史数组，避免整份回滚副本。
-            pending[key] = db[key].map(chat => ids.has(chat.id) ? { ...chat } : chat);
-            storageMergeChats(pending[key], modules[key], selection.contacts, selection.chats);
+            if (selection.replaceAll) pending[key] = storageClone(modules[key]);
+            else {
+                pending[key] = db[key].map(chat => ids.has(chat.id) ? { ...chat } : chat);
+                storageMergeChats(pending[key], modules[key], selection.contacts, selection.chats);
+            }
         }
     }
     if (selection.worldbooks && modules.worldBooks !== undefined) pending.worldBooks = modules.worldBooks;
@@ -894,12 +897,12 @@ async function storageExportFonts() {
         dataUrl: await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(font.file); }) })));
 }
 
-async function storageExportMediaCache() {
+async function storageExportMediaCache(snapshot = db) {
     const tables = {};
     const galleries = chat => ({ id: chat.id, gallery: storageClone(chat.gallery || []),
         archives: (chat.archives || []).map(archive => ({ id: archive.id,
             gallery: storageClone((archive.id === chat.activeArchiveId ? chat : archive.data)?.gallery || []) })) });
-    const result = { version: 1, characters: db.characters.map(galleries), groups: db.groups.map(galleries), tables };
+    const result = { version: 1, characters: snapshot.characters.map(galleries), groups: snapshot.groups.map(galleries), tables };
     const names = STORAGE_CACHE_TABLES.filter(key => dexieDB?.[key]);
     // Current cache tables store JSON and data URLs; never silently drop a future Blob field.
     const assertPortable = value => {
@@ -923,7 +926,7 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
         throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
     }
     if (typeof Worker === 'function') {
-        const keys = ['_uvuBackup',
+        const keys = ['_uvuBackup', ...(selection.replaceAll ? ['_exportVersion', '__chunks__'] : []),
             ...(selection.contacts || selection.chats ? ['characters', 'groups'] : []),
             ...(selection.worldbooks ? ['worldBooks'] : []), ...(selection.wallpapers ? ['myStickers'] : []),
             ...(selection.fonts ? ['customFonts'] : []), ...(selection.other ? ['mediaCache'] : []),
@@ -946,7 +949,7 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
             worker.onerror = () => { finish(); reject(new Error('备份后台解析失败，请检查文件或按类别拆分')); };
             signal?.addEventListener('abort', abort, { once: true });
             if (signal?.aborted) { abort(); return; }
-            try { worker.postMessage({ file, keys, progress: !!onProgress }); }
+            try { worker.postMessage({ file, keys, progress: !!onProgress, fullRestore: selection.replaceAll === true }); }
             catch (_) { finish(); reject(new Error('无法将备份文件交给后台解析')); }
         });
     }
@@ -970,7 +973,9 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
     } else text = await file.text();
     if (signal?.aborted) throw cancelled();
     const imported = JSON.parse(text);
-    return imported?.modules ?? imported;
+    const modules = imported?.modules ?? imported;
+    if (selection.replaceAll && imported?.modules && typeof imported.modules === 'object') modules._exportVersion = '3.0';
+    return modules;
 }
 async function storageImportFonts(fonts) {
     if (!Array.isArray(fonts) || !fonts.length) return;
@@ -987,7 +992,7 @@ async function storagePersistImportedSelection(selection, modules, pending) {
     const hasChatData = Array.isArray(pending.characters) || Array.isArray(pending.groups);
     const hasWorldBooks = selection.worldbooks && Array.isArray(modules.worldBooks);
     const hasStickers = selection.wallpapers && Array.isArray(modules.myStickers);
-    const hasFonts = selection.fonts && Array.isArray(modules.customFonts) && modules.customFonts.length > 0;
+    const hasFonts = selection.fonts && Array.isArray(modules.customFonts) && (selection.replaceAll || modules.customFonts.length > 0);
     const selectedSettingKeys = [
         ...(selection.personas ? STORAGE_IMPORT_CATEGORY_KEYS.personas : []),
         ...(selection.wallpapers ? STORAGE_IMPORT_CATEGORY_KEYS.wallpapers : []),
@@ -1024,6 +1029,7 @@ async function storagePersistImportedSelection(selection, modules, pending) {
                     if (chat.archives) chat.archives = chat.archives.map(archive => ({ ...archive }));
                     syncChatActiveArchive(chat);
                 });
+                if (selection.replaceAll) await dexieDB[key].clear();
                 if (changed.length) await putBatches(dexieDB[key], changed, 1);
             }
         }
@@ -1035,7 +1041,10 @@ async function storagePersistImportedSelection(selection, modules, pending) {
             await dexieDB.myStickers.clear();
             await putBatches(dexieDB.myStickers, pending.myStickers);
         }
-        if (hasFonts) await storageImportFonts(modules.customFonts);
+        if (hasFonts) {
+            if (selection.replaceAll) await dexieDB.customFonts.clear();
+            await storageImportFonts(modules.customFonts);
+        }
         for (const name of cacheTables) {
             // Cache IDs and reader relationships form a snapshot; replace selected tables atomically.
             await dexieDB[name].clear();
@@ -1067,7 +1076,7 @@ async function handleExport() {
     const exportBtn = document.getElementById('storage-export-btn');
     const exportText = document.getElementById('storage-export-text');
     const format = document.getElementById('storage-export-format')?.value || 'ee';
-    const exportOptions = { includeCredentials: document.getElementById('storage-export-credentials')?.checked !== false,
+    const exportOptions = { includeCredentials: document.getElementById('storage-export-purpose')?.value !== 'share' && document.getElementById('storage-export-credentials')?.checked !== false,
         includeVectorIndex: document.getElementById('storage-export-vector-index')?.checked !== false };
     storageBackupBusy = true;
     exportBtn.disabled = true;

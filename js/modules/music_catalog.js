@@ -10,7 +10,7 @@
     const available = lib => unique([...(lib.recent || []), ...saved(lib)]);
     // Existing libraries append favorites and have no per-track addedAt field.
     // Newest favorites lead; playlist-only tracks use reverse insertion order as a fallback.
-    const recentAdded = lib => unique([...(lib.favorites || [])].reverse().concat([...(lib.playlists || [])].reverse().flatMap(item => [...(item.tracks || [])].reverse())));
+    const recentAdded = lib => unique([...(lib.favorites || [])].reverse().concat([...(lib.playlists || [])].reverse().flatMap(item => [...(item.tracks || [])].reverse())).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)));
     function groups(tracks, entries) {
         const values = new Map();
         for (const track of unique(tracks)) for (const [id, name] of entries(track)) {

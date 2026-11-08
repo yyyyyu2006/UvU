@@ -1,6 +1,6 @@
 // Keep selected values without retaining the full decompressed JSON string or
 // constructing objects for categories that were not selected.
-function createBackupParser(keys) {
+function createBackupParser(keys, fullRestore = false) {
     const selected = new Set(keys), stack = [];
     let root, rootDone = false, rootStarted = false, lex = '', token = '', escape = false, unicode = 0, retain = false;
     const syntax = () => { throw new SyntaxError('备份 JSON 格式无效'); };
@@ -26,6 +26,7 @@ function createBackupParser(keys) {
         if (kind === '}' || kind === ']') {
             if (!parent || (kind === '}' ? parent.type !== 'object' : parent.type !== 'array') || !['keyOrEnd', 'valueOrEnd', 'commaOrEnd'].includes(parent.state)) syntax();
             stack.pop();
+            if (fullRestore && parent.mode === 'root' && parent.hasModules && parent.modules && typeof parent.modules === 'object') parent.modules._exportVersion = '3.0';
             complete(parent.mode === 'root' && parent.hasModules && parent.modules != null ? parent.modules : parent.value);
             return;
         }
@@ -98,7 +99,7 @@ self.onmessage = async event => {
             if (typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持解压 .ee，请使用 JSON 备份');
             stream = stream.pipeThrough(new DecompressionStream('gzip'));
         }
-        const reader = stream.getReader(), decoder = new TextDecoder(), parser = createBackupParser(keys);
+        const reader = stream.getReader(), decoder = new TextDecoder(), parser = createBackupParser(keys, event.data.fullRestore === true);
         let bytes = 0, lastProgress = 0;
         try {
             while (true) {
