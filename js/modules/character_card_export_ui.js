@@ -73,7 +73,7 @@
         const head = el('header', 'cc-head'), title = el('h2', '', '导出角色卡'), close = button('', () => overlay.remove(), 'cc-close'); close.append(icon('x')); close.setAttribute('aria-label', '关闭角色卡导出'); close.dataset.action = 'close';
         head.append(title, el('span', 'cc-format', 'PNG'), close);
         const original = scope.data.original ? C().retain(scope.data.original).data : {}, coverFields = {};
-        const coverData = { name: scope.data.name, description: scope.data.persona, extensions: original.extensions };
+        const coverData = { name: scope.data.name, description: scope.data.persona, creator: original.creator || '', extensions: original.extensions };
         const initialCover = root.UvUCardCover.profile(coverData);
         const body = el('div', 'cc-body'), person = el('div', 'cc-person'), portrait = el('canvas', 'cc-portrait'), info = el('div', 'cc-person-info');
         portrait.setAttribute('role', 'img'); portrait.setAttribute('aria-label', '角色卡预览');
@@ -92,6 +92,8 @@
         info.append(el('h3', '', scope.data.name));
         const upload = el('input'); upload.type = 'file'; upload.accept = 'image/png,image/jpeg,image/webp'; upload.hidden = true; upload.setAttribute('aria-label', '更换角色卡封面');
         const choose = button('更换头像', () => upload.click(), 'cc-cover-button'); info.append(choose, upload); person.append(portrait, info); body.append(person);
+        const authorLabel = el('label', 'cc-field', '作者署名'), authorInput = el('input'); authorInput.type = 'text'; authorInput.maxLength = 2000; authorInput.value = coverData.creator;
+        authorInput.addEventListener('input', () => { coverData.creator = authorInput.value; repaint(); }); authorLabel.append(authorInput); body.append(authorLabel);
         const coverDetails = el('details', 'cc-cover-fields'), coverSummary = el('summary', '', '卡面资料'); coverSummary.append(icon('chevron-down')); coverDetails.append(coverSummary);
         for (const [key, text] of [['birthday', '生日'], ['identity', '身份'], ['nationality', '国籍']]) {
             const label = el('label', 'cc-field', text), input = el('input'); input.type = 'text'; input.maxLength = 80; input.value = initialCover[key]; input.placeholder = '—';
@@ -121,8 +123,8 @@
         if (scope.missingIds.length) bookSection.append(el('p', 'cc-note', scope.missingIds.length + ' 条绑定内容已不存在，未纳入导出'));
         body.append(bookSection);
         const more = el('details', 'cc-more'), moreSummary = el('summary', '', '更多设置'); moreSummary.append(icon('chevron-down')); more.append(moreSummary);
-        const fields = {};
-        for (const [key, text, value] of [['creator', '作者', original.creator || ''], ['version', '版本', original.character_version || '1.0']]) {
+        const fields = { creator: authorInput };
+        for (const [key, text, value] of [['version', '版本', original.character_version || '1.0']]) {
             const label = el('label', 'cc-field', text), input = el('input'); input.type = 'text'; input.value = value; input.maxLength = key === 'creator' ? 2000 : 200; label.append(input); fields[key] = input; more.append(label);
         }
         const help = el('details', 'cc-help'), hs = el('summary', '', '分享说明'); hs.append(icon('chevron-down')); help.append(hs, el('p', '', '仅包含角色人设、卡片资料和勾选的世界书，不包含私聊、用户人设或日记。请分享原图或文件，压缩图片可能丢失角色数据。酒馆的特殊插入规则需导入后确认。')); more.append(help); body.append(more);

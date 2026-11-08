@@ -16,7 +16,7 @@
 .cc-export-dialog .cc-icon svg { width:16px; height:16px; }
 .cc-export-dialog .cc-body { min-height:0; padding:16px 24px 0; overflow-y:auto; overscroll-behavior:contain; }
 .cc-export-dialog .cc-person { display:flex; flex-direction:column; align-items:center; gap:16px; margin-bottom:16px; }
-.cc-export-dialog .cc-portrait { display:block; flex:none; width:min(100%,240px); height:auto; aspect-ratio:3/4; border-radius:8px; background:#fff; box-shadow:0 4px 20px #182a3b0c; }
+.cc-export-dialog .cc-portrait { display:block; flex:none; width:min(100%,240px); height:auto; aspect-ratio:3/4; border-radius:8px; background:transparent; box-shadow:0 4px 20px #182a3b0c; }
 .cc-export-dialog .cc-person-info { display:flex; align-items:center; gap:16px; width:100%; min-width:0; }
 .cc-export-dialog .cc-person-info h3 { flex:1; min-width:0; font-size:16px; font-weight:600; overflow-wrap:anywhere; }
 .cc-export-dialog .cc-cover-button { display:inline-flex; align-items:center; flex:none; min-height:32px; padding:5px 12px; border-radius:20px; background:#f1f4f8; color:#5e7187; font-size:12px; }

@@ -14,10 +14,10 @@
         context.arcTo(x + width, y, x + width, y + height, radius); context.arcTo(x + width, y + height, x, y + height, radius);
         context.arcTo(x, y + height, x, y, radius); context.arcTo(x, y, x + width, y, radius); context.closePath();
     }
-    function text(context, value, x, y, width, size, family = 'sans-serif', min = size) {
+    function text(context, value, x, y, width, size, family = 'sans-serif', min = size, style = '') {
         let chars = Array.from(String(value)), actual = size;
-        context.font = actual + 'px ' + family;
-        while (actual > min && context.measureText(chars.join('')).width > width) { actual -= 2; context.font = actual + 'px ' + family; }
+        context.font = style + actual + 'px ' + family;
+        while (actual > min && context.measureText(chars.join('')).width > width) { actual -= 2; context.font = style + actual + 'px ' + family; }
         if (context.measureText(chars.join('')).width > width) {
             while (chars.length && context.measureText(chars.join('') + '…').width > width) chars.pop();
             chars.push('…');
@@ -29,8 +29,8 @@
         canvas.width = WIDTH; canvas.height = HEIGHT;
         const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('浏览器无法生成 PNG 图片');
         const serif = 'Georgia, "Times New Roman", serif', chinese = '"Songti SC", SimSun, serif';
-        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
         ctx.save(); rounded(ctx, 1, 1, WIDTH - 2, HEIGHT - 2, 30); ctx.clip();
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
         ctx.fillStyle = '#17191c'; ctx.fillRect(0, 0, WIDTH, 165); ctx.fillRect(0, 182, WIDTH, 5); ctx.fillRect(0, 1165, WIDTH, 35);
         ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         text(ctx, 'Identification Card', WIDTH / 2, 84, 720, 64, serif, 52);
@@ -61,9 +61,9 @@
             ctx.fillStyle = '#17191c'; text(ctx, value || '—', x, y + (size > 40 ? 76 : 53), fieldWidth, size, family, size > 40 ? 44 : 28);
         }
         field('NAME', name, 279, 70, chinese); field('DATE OF BIRTH', card.birthday, 421); field('IDENTITY', card.identity, 555); field('NATIONALITY', card.nationality, 689);
-        ctx.fillStyle = '#17191c'; text(ctx, name, 60, 1040, 420, 68, '"Kaiti SC", KaiTi, STKaiti, serif', 42);
+        ctx.fillStyle = '#17191c'; text(ctx, clean(data.creator, 2000), 60, 1040, 420, 68, '"Kaiti SC", KaiTi, STKaiti, cursive, serif', 42, 'italic ');
         ctx.strokeStyle = '#bac1c9'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(60, 1066); ctx.lineTo(480, 1066); ctx.stroke();
-        ctx.fillStyle = '#7b8189'; text(ctx, 'SIGNATURE', 60, 1106, 420, 23);
+        ctx.fillStyle = '#7b8189'; text(ctx, '作者署名', 60, 1106, 420, 23);
         ctx.strokeStyle = '#a3b9d2'; ctx.strokeRect(670, 1000, 170, 115); ctx.fillStyle = '#7492b3'; ctx.textAlign = 'center';
         text(ctx, 'UvU', 755, 1065, 150, 58); text(ctx, 'CHARACTER', 755, 1094, 150, 19);
         ctx.restore(); ctx.strokeStyle = '#d5d9de'; ctx.lineWidth = 2; rounded(ctx, 1, 1, WIDTH - 2, HEIGHT - 2, 30); ctx.stroke();
