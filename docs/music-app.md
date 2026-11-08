@@ -50,7 +50,7 @@ node --env-file=services/music-gateway/.env services/music-gateway/start.mjs
 ```
 
 5. 线上网页请按 [服务部署说明](../services/music-gateway/README.md) 配置 HTTPS。网页与服务在同一台电脑时可测试 `http://127.0.0.1:8787`；手机上的 `127.0.0.1` 是手机自身，不能指向电脑。
-6. 打开「音乐」右上角的账号按钮，填写服务地址并连接。
+6. 部署者可以在 `js/modules/music_config.js` 的 `endpoint` 填入验证通过的 HTTPS 服务地址并更新网页。玩家打开「音乐」右上角账号按钮即可扫码；自建服务地址放在「更换音乐服务」中。
 7. 选择网易云或 QQ 音乐「扫码登录」，用相应官方 App 授权。二维码会过期；退出登录或新建二维码会作废旧授权流程。同机操作可保存/截取二维码后使用官方 App 的相册识别，是否支持以平台为准。
 8. 登录后可以读取账号歌单；搜索可选择全部、网易云、QQ 音乐。一方出错会保留另一方结果。平台会员、地区、版权和试听限制仍然生效，没有解锁会员功能。
 
@@ -96,4 +96,6 @@ node --env-file=services/music-gateway/.env services/music-gateway/start.mjs
 
 部署者在仓库根目录运行 `node services/music-gateway/launch.mjs`，脚本自动检查并安装固定版本引擎、首次创建私密配置并启动服务。线上还需配置自己服务器的 HTTPS；Pages 页面无法运行 Node 或自动部署云服务器。已有配置不会被覆盖。
 
-玩家在音乐源设置保存一次服务地址后，点网易云/QQ音乐的“扫码登录” → 用对应官方 App 授权 → 账号“歌单” → “导入到资料库”。不需要玩家运行服务脚本。脚本细节见 `services/music-gateway/README.md`。
+部署者在 `js/modules/music_config.js` 填好公开 HTTPS 服务地址并更新网页后，玩家直接点网易云/QQ音乐的“扫码登录” → 用对应官方 App 授权 → 账号“歌单” → “导入到资料库”。不需要玩家填写地址或运行服务脚本。自定义服务可在「更换音乐服务」填写；留空并保存恢复内置地址。
+
+当前尚未部署公网音乐服务，内置地址留空；界面会显示“音乐登录服务尚未部署”，不会请求示例地址。部署完成后只需修改这一个公开配置文件，并更新 `index.html` 中它的缓存版本。文件内不放 cookie、Token、密码或 vault 密钥。内置地址不会随玩家偏好设置写入备份，保留的自定义地址始终优先。脚本细节见 `services/music-gateway/README.md`。

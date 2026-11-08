@@ -28,7 +28,18 @@
     function normalizeSettings(raw = {}) {
         return { endpoint: endpoint(raw.endpoint), providers: PROVIDERS.filter(provider => !Array.isArray(raw.providers) || raw.providers.includes(provider)), publicSources: Array.isArray(raw.publicSources) && raw.publicSources.includes('gd-netease') ? ['gd-netease'] : [], remember: raw.remember === true };
     }
-    function settings() { return normalizeSettings(database().musicSettings || {}); }
+    const defaultEndpoint = (() => {
+        try { const value = endpoint(root.UvUMusicConfig?.endpoint); return value.startsWith('https://') ? value : ''; }
+        catch (_) { return ''; }
+    })();
+    function settings() {
+        const saved = normalizeSettings(database().musicSettings || {});
+        return { ...saved, endpoint: saved.endpoint || defaultEndpoint };
+    }
+    function gateway() {
+        const customEndpoint = normalizeSettings(database().musicSettings || {}).endpoint;
+        return { endpoint: customEndpoint || defaultEndpoint, customEndpoint, defaultEndpoint, usesDefault: !customEndpoint && !!defaultEndpoint };
+    }
     function normalizeTrack(raw) {
         if (!raw || typeof raw !== 'object' || !['netease', 'qq', 'local', 'gd-netease'].includes(raw.provider)) throw new Error('Invalid music provider');
         const id = text(String(raw.id ?? ''), 160).trim();
@@ -69,7 +80,7 @@
     function persist(name, mutate) {
         const pending = saveTail.catch(() => {}).then(async () => {
             const store = database(), previous = store[name];
-            const current = name === 'musicLibrary' ? library() : settings();
+            const current = name === 'musicLibrary' ? library() : normalizeSettings(store.musicSettings || {});
             const next = mutate(current); store[name] = next;
             try {
                 await writeSetting(name, next);
@@ -80,10 +91,10 @@
     }
     function saveSettings(patch) {
         return persist('musicSettings', current => normalizeSettings({ ...current, ...patch })).then(next => {
-            const token = tokenGet(next.endpoint);
-            if (token) tokenSet(next.endpoint, token, next.remember);
+            const host = settings().endpoint, token = tokenGet(host);
+            if (token) tokenSet(host, token, next.remember);
             if (state.track?.provider === 'gd-netease' && !next.publicSources.includes('gd-netease')) stop();
-            return next;
+            return settings();
         });
     }
     function toggleFavorite(track) {
@@ -287,7 +298,7 @@
         if (typeof path !== 'string' || path.length > 3000 || !/^\/(?:health|accounts(?:\/(?:netease|qq)(?:\/qr(?:\/[a-zA-Z0-9_-]{1,200})?|\/playlists)?)?|search|track\/(?:netease|qq)\/[^/?#]+\/(?:stream|lyrics)|playlist\/(?:netease|qq)\/[^/?#]+)(?:\?[^#]*)?$/.test(path)) throw new Error('Invalid music API route');
         if (!['GET', 'POST', 'DELETE'].includes(options.method || 'GET')) throw new Error('Invalid music API method');
         return (async () => {
-            const host = settings().endpoint; if (!host) throw new Error('Configure a music gateway first');
+            const host = settings().endpoint; if (!host) throw new Error('音乐登录服务尚未配置，请由部署者配置服务地址');
             aborted(options.signal);
             let token = await session(host, options.signal);
             if (settings().endpoint !== host) throw abortError();
@@ -609,7 +620,7 @@
             try { navigator.mediaSession.setActionHandler(name, action); } catch (_) {}
         }
     }
-    const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, saveSettings, request,
+    const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, gateway, saveSettings, request,
         connect: signal => request('/health', { signal }), accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
         search, playlists, playlist, parsePlaylistReference, previewPlaylist, importPlaylist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
         rememberSearch:q=>persist('musicLibrary',current=>({...current,searches:[text(q,200).trim(),...current.searches.filter(v=>v!==text(q,200).trim())].filter(Boolean).slice(0,12)})),clearSearches:()=>persist('musicLibrary',current=>({...current,searches:[]})),

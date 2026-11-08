@@ -6,7 +6,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
 const song = id => ({ provider:'netease', id, title:'秋日来信 ' + id, artists:['林间'], album:'来信', duration:10, availability:'full' });
 const wav = Buffer.alloc(44 + 8000 * 2 * 10); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16); wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(wav.length - 44,40);
-let base, searches = 0, authorized = false, publicCalls = 0;
+let base, searches = 0, authorized = false, publicCalls = 0, shippedEndpoint = '', gatewayOffline = false;
 const server = http.createServer((req,res) => {
     const u = new URL(req.url,'http://test');
     if (u.pathname.startsWith('/v1/')) {
@@ -37,6 +37,11 @@ const server = http.createServer((req,res) => {
         await context.addInitScript(()=>{ localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true'); document.addEventListener('click',()=>{if(typeof globalRescueClickCount!=='undefined')globalRescueClickCount=0;if(typeof globalRescueLastClickTime!=='undefined')globalRescueLastClickTime=0;},true); });
         await context.route('**/*',route=>{
             const url=route.request().url(); if(libs.has(url)) return route.fulfill({path:libs.get(url),contentType:'application/javascript'});
+            if (url.startsWith(base + '/js/modules/music_config.js')) return route.fulfill({contentType:'application/javascript',body:'window.UvUMusicConfig = Object.freeze({endpoint:'+JSON.stringify(shippedEndpoint)+'});'});
+            if (url.startsWith('https://music-default.test/v1/')) {
+                if (gatewayOffline) return route.abort('connectionrefused');
+                return route.fetch({url:base + new URL(url).pathname + new URL(url).search}).then(response=>route.fulfill({response,headers:{...response.headers(),'access-control-allow-origin':'*'}}));
+            }
             if(url.startsWith('https://music-api.gdstudio.xyz/api.php')) {
                 publicCalls++; const params=new URL(url).searchParams;
                 const body=params.get('types')==='search'?[{id:'1857979755',name:'公共测试曲',artist:['林间'],album:'测试',source:'netease'}]:params.get('types')==='lyric'?{lyric:'[00:00]公共歌词\\n[00:02]第二句'}:{url:'https://m801.music.126.net/uvu-fixture.wav',br:128};
@@ -47,6 +52,11 @@ const server = http.createServer((req,res) => {
         });
         const page=await context.newPage(), errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
         await page.goto(base,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
+        await page.evaluate(()=>UvUMusicUI.accounts());
+        assert.match(await page.locator('.um-sheet-body').innerText(),/音乐登录服务尚未部署/);
+        assert.equal(await page.getByRole('button',{name:'扫码登录',exact:true}).count(),2);
+        assert.equal(await page.getByRole('button',{name:'扫码登录',exact:true}).first().isDisabled(),true);
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.evaluate(async base=>{
             db.characters=[{id:'music-char',realName:'林间',remarkName:'林间',myName:'我',myAvatar:'',avatar:'',persona:'温柔的朋友',myPersona:'我',history:[],maxMemory:20,worldBookIds:[]}]; db.groups=[];db.backupReminderSettings={enabled:false};ensureAllChatArchives();await saveData();await UvUMusic.saveSettings({endpoint:base});setupHomeScreen();
         },base);
@@ -247,6 +257,24 @@ const server = http.createServer((req,res) => {
         await page.locator('[data-um-tab="discover"]').click();await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-discover-dark-390.png')});
         for(const width of [320,390,768]){await page.setViewportSize({width,height:844});for(const id of ['discover','radio','library','search']){await page.locator('[data-um-tab="'+id+'"]').click();assert.ok(await page.locator('.um-main').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'page fits '+id+' '+width);}}
         await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.UvUMusicUI);await page.evaluate(()=>UvUMusicUI.open());assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.classList.contains('um-dark')),true,'appearance survives reload');
-        assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, QR login fixture, stream and IndexedDB WAV audio, invite/card, queue/lyrics, reload.');
+        // A shipped HTTPS gateway needs no manual address or Connect click.
+        await page.evaluate(async()=>{await UvUMusic.saveSettings({endpoint:''});localStorage.setItem('uvu-music-appearance','light');});
+        shippedEndpoint='https://music-default.test'; authorized=false;
+        await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>window.UvUMusicUI);
+        await page.evaluate(()=>UvUMusicUI.accounts());
+        assert.equal(await page.locator('.um-gateway-settings').evaluate(n=>n.open),false);
+        assert.equal(await page.getByLabel('音乐服务地址',{exact:true}).inputValue(),'');
+        for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.ok(await page.locator('.um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'account sheet fits '+width);}
+        await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'built-in-gateway-390.png')});
+        await page.getByRole('button',{name:'扫码登录',exact:true}).first().click();await page.waitForSelector('.um-qr svg');
+        await page.waitForFunction(()=>document.querySelector('.um-account small')?.textContent==='本地测试账号',{},{timeout:15000});
+        assert.equal(await page.evaluate(()=>db.musicSettings.endpoint),'','login preferences never pin the shipped endpoint in backup');
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
+        gatewayOffline=true;await page.evaluate(()=>UvUMusicUI.accounts());
+        await page.waitForFunction(()=>document.querySelector('.um-sheet-body')?.textContent.includes('音乐服务连接失败'));
+        await page.getByRole('button',{name:'扫码登录',exact:true}).last().click();
+        await page.waitForFunction(()=>document.querySelector('.um-qr')?.nextElementSibling.textContent.includes('Failed to fetch'));
+        await page.getByRole('button',{name:'关闭',exact:true}).click(); gatewayOffline=false;
+        assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, unconfigured and built-in gateway, QR login fixture, gateway outage, stream and IndexedDB WAV audio, invite/card, queue/lyrics, reload.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

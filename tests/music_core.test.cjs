@@ -84,6 +84,49 @@ test('a browser refusing programmatic volume still plays audio',async()=>{
     assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
 });
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
+test('built-in gateway supports QR login directly without saving or manually connecting', async () => {
+    const window = new EventTarget(); window.UvUMusicConfig = { endpoint: 'https://default.test/v1/' };
+    const h = harness({}, { window });
+    assert.equal(h.music.settings().endpoint, 'https://default.test');
+    assert.equal(h.calls.length, 0, 'loading the module makes no network requests');
+    h.fetch = async url => url.endsWith('/session') ? { token: 'default-token' } : { id: 'qr_default', url: 'https://music.163.com/login', expiresAt: Date.now() + 180000 };
+    const qr = await h.music.createQR('netease');
+    assert.equal(qr.id, 'qr_default');
+    assert.deepEqual(h.calls.map(c => c.url), ['https://default.test/v1/session', 'https://default.test/v1/accounts/netease/qr']);
+    assert.equal(h.writes.length, 0);
+});
+test('custom gateway overrides built-in and clearing it restores default without persisting default', async () => {
+    const window = new EventTarget(); window.UvUMusicConfig = { endpoint: 'https://default.test' };
+    const h = harness({}, { window });
+    await h.music.saveSettings({ remember: true });
+    assert.equal(h.db.musicSettings.endpoint, '');
+    assert.equal(h.music.settings().endpoint, 'https://default.test');
+    await h.music.saveSettings({ endpoint: 'https://custom.test' });
+    assert.equal(h.music.gateway().customEndpoint, 'https://custom.test');
+    assert.equal(h.music.gateway().usesDefault, false);
+    await h.music.saveSettings({ endpoint: '' });
+    assert.equal(h.music.gateway().usesDefault, true);
+    assert.equal(h.music.gateway().endpoint, 'https://default.test');
+    assert.equal(h.db.musicSettings.endpoint, '');
+});
+test('undeployed or invalid built-in gateway never contacts a placeholder', async () => {
+    for (const endpoint of ['', 'http://public.test', 'https://user:secret@public.test', 'https://public.test?token=x']) {
+        const window = new EventTarget(); window.UvUMusicConfig = { endpoint };
+        const h = harness({}, { window });
+        assert.equal(h.music.settings().endpoint, '');
+        await assert.rejects(h.music.createQR('qq'), /音乐登录服务尚未配置/);
+        assert.equal(h.calls.length, 0);
+    }
+});
+test('default and custom gateways keep login tokens isolated', async () => {
+    const window = new EventTarget(); window.UvUMusicConfig = { endpoint: 'https://default.test' };
+    const h = harness({}, { window });
+    await h.music.accounts();
+    await h.music.saveSettings({ endpoint: 'https://custom.test' }); await h.music.accounts();
+    await h.music.saveSettings({ endpoint: '' }); await h.music.accounts();
+    const calls = h.calls.filter(c => c.url.endsWith('/accounts'));
+    assert.deepEqual(calls.map(c => c.options.headers.Authorization), ['Bearer session-default.test', 'Bearer session-custom.test', 'Bearer session-default.test']);
+});
 function harness(initial = {}, extras = {}) {
     const sounds = [], calls = [], writes = [], session = new Map(), local = new Map(), urls = new Set();
     let playHook, failSave = false;
@@ -207,7 +250,7 @@ test('gateway tokens stay outside settings and are scoped to canonical endpoint'
 
 test('unconfigured gateway has clear errors and cancelled requests do not create sessions', async () => {
     const h = harness();
-    await assert.rejects(h.music.search('song'), /gateway/i);
+    await assert.rejects(h.music.search('song'), /音乐登录服务尚未配置/);
     await h.music.saveSettings({ endpoint: 'https://one.test' });
     const controller = new AbortController(); controller.abort();
     await assert.rejects(h.music.search('song', ['qq'], 1, controller.signal), { name: 'AbortError' });

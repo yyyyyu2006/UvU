@@ -381,13 +381,13 @@
     function tutorial() {
         const details = el('details', undefined, 'um-tutorial'); details.append(el('summary', '连接教程'));
         details.append(el('p', '公共源：在上方开启 GD 音乐台后，到搜索页选择“公共源”。个人学习使用，无需部署、登录或填写服务地址；当前接入网易云。搜索结果不保证可播放，遇到限流请稍后再试。'));
-        details.append(el('p', '本地音乐可以直接使用。账号源的网易云和 QQ 音乐需要你自己的音乐服务；GitHub Pages 只运行界面。以下步骤仅用于账号源。'));
+        details.append(el('p', '已内置音乐服务时，直接点网易云或 QQ 音乐的“扫码登录”，无需填写地址。未部署时账号登录暂不可用；本地音乐和公共源仍可使用。下面是部署者操作，玩家无需执行。'));
         details.append(el('p', '1. 在支持 Node.js 22 的电脑或服务器中，进入 UvU 仓库目录，执行：'));
         const code = el('pre'); code.append(el('code', 'node services/music-gateway/launch.mjs')); details.append(code);
-        details.append(el('p', '2. 上面的一条命令会检查并安装引擎、首次生成私密配置、启动网关。只需部署者执行一次；玩家配置服务地址后直接扫码。线上服务需要 HTTPS，已有 .env 不会被覆盖。修改配置后用下面命令重启。'));
+        details.append(el('p', '2. 命令会安装引擎、首次生成私密配置并启动网关。部署者配置 HTTPS 并验证后，将公开服务地址填入 js/modules/music_config.js 的 endpoint，再更新网页。该文件只放地址，不放密钥。已有 .env 不会被覆盖，修改配置后可用下方命令启动。'));
         const envCode = el('pre'); envCode.append(el('code', 'node --env-file=services/music-gateway/.env services/music-gateway/start.mjs')); details.append(envCode);
         details.append(el('p', '网页和服务在同一台电脑时，可用 http://127.0.0.1:8787 测试。手机上的 127.0.0.1 指手机自身；连接电脑服务请使用配置好的 HTTPS 地址。'));
-        details.append(el('p', '3. 把服务地址填入上方，保存并连接。选择网易云或 QQ 音乐，用对应官方 App 扫码确认；同一手机可保存二维码后使用官方 App 的相册识别（是否支持以平台为准）。'));
+        details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
         details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请在官方平台打开后复制完整链接。账号歌单中也可点“导入到资料库”。最多保存 1000 首歌曲资料，不下载音频，不改变播放权限。需要已连接音乐网关；公共源当前不支持读取歌单。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
@@ -419,24 +419,50 @@
                 } catch (error) { if (alive) { publicCheck.checked = !wanted; publicStatus.textContent = error.message; } }
                 finally { publicCheck.disabled = false; }
             };
-            const form = el('form', undefined, 'um-account-form'), label = el('label', '音乐服务地址'), input = el('input'); input.type = 'url'; input.placeholder = 'https://music.example.com'; input.value = M.settings().endpoint; label.append(input);
+            const form = el('form', undefined, 'um-account-form'), label = el('label', '音乐服务地址'), input = el('input'); input.type = 'url'; input.placeholder = M.gateway().defaultEndpoint || 'https://music.example.com'; input.value = M.gateway().customEndpoint; label.append(input);
             const remember = el('label', undefined, 'um-check'), checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = M.settings().remember; remember.append(checkbox, document.createTextNode('记住此设备'));
             const output = el('p', '', 'um-muted'); output.setAttribute('aria-live', 'polite'); const accounts = el('div', undefined, 'um-accounts');
-            form.append(el('h2','账号音乐'), label, remember, button('保存并连接', () => connect()), output); form.onsubmit = e => { e.preventDefault(); void connect(); }; body.append(form, accounts, button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
-            async function refresh() {
-                const data = await M.accounts(controller.signal); if (!alive) return; accounts.replaceChildren();
+            const accountBox = section('账号音乐'), service = el('details', undefined, 'um-gateway-settings'), serviceTitle = el('summary', M.settings().endpoint ? '更换音乐服务' : '配置音乐服务');
+            form.append(label, button('保存并连接', () => connect())); form.onsubmit = e => { e.preventDefault(); void connect(); };
+            service.append(serviceTitle, form); accountBox.append(remember, accounts, output, service);
+            body.append(accountBox, button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
+            checkbox.onchange = async () => {
+                checkbox.disabled = true;
+                try { await M.saveSettings({ remember: checkbox.checked }); }
+                catch (e) { if (alive) { checkbox.checked = M.settings().remember; output.textContent = e.message; } }
+                finally { checkbox.disabled = false; }
+            };
+            function drawAccounts(data = { accounts: [] }) {
+                accounts.replaceChildren();
                 for (const p of ['netease', 'qq']) {
                     const account = data.accounts.find(a => a.provider === p), row = el('div', undefined, 'um-account'), copy = el('div'); copy.append(el('strong', names[p]), el('small', account?.loggedIn ? account.user?.name || '已登录' : '未登录')); row.append(copy);
                     if (account?.loggedIn) row.append(button('歌单', () => cloudPlaylists(p)), button('退出', async () => { await M.logout(p); if (alive) await refresh(); }, 'log-out'));
-                    else row.append(button('扫码登录', () => qrPanel(p))); accounts.append(row);
+                    else {
+                        const login = button('扫码登录', async () => { await M.saveSettings({ remember: checkbox.checked }); if (alive) qrPanel(p); });
+                        login.disabled = !M.settings().endpoint; row.append(login);
+                    }
+                    accounts.append(row);
                 }
             }
-            async function connect() {
-                output.textContent = '正在连接…';
-                try { await M.saveSettings({ endpoint: input.value.trim(), remember: checkbox.checked }); const health = await M.connect(controller.signal); if (!alive) return; if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请由部署者执行教程中的 launch 命令'); await refresh(); output.textContent = '已连接'; }
-                catch (e) { if (alive) output.textContent = e.message; }
+            async function refresh() {
+                const data = await M.accounts(controller.signal); if (alive) drawAccounts(data);
             }
-            if (input.value) void refresh().catch(e => { if (alive) output.textContent = e.message; });
+            let connecting = false;
+            async function connect() {
+                if (connecting) return; connecting = true; output.textContent = '正在连接…';
+                try {
+                    await M.saveSettings({ endpoint: input.value.trim(), remember: checkbox.checked }); if (!alive) return;
+                    drawAccounts();
+                    const health = await M.connect(controller.signal); if (!alive) return;
+                    if (!health.ok || health.ready === false) throw new Error('服务已连接，平台引擎尚未安装，请由部署者执行教程中的 launch 命令');
+                    await refresh(); if (!alive) return; output.textContent = ''; serviceTitle.textContent = '更换音乐服务'; service.open = false;
+                }
+                catch (e) { if (alive) output.textContent = e.message; }
+                finally { connecting = false; }
+            }
+            drawAccounts();
+            if (M.settings().endpoint) void refresh().catch(e => { if (alive) output.textContent = '音乐服务连接失败：' + e.message; });
+            else output.textContent = '音乐登录服务尚未部署';
         }, () => { alive = false; controller.abort(); });
     }
     function qrPanel(p) {

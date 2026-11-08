@@ -110,6 +110,10 @@
 .um-together-control img { width:18px; height:18px; }
 .um-together-float button:focus-visible { outline:2px solid #e34262; outline-offset:2px; }
 .um-account-form>label { display:block; margin-bottom:16px; font-size:13px; }
+.um-gateway-settings { margin-top:16px; padding-top:16px; border-top:1px solid var(--um-line); }
+.um-gateway-settings>summary { cursor:pointer; font-size:13px; color:var(--um-gray); }
+.um-gateway-settings[open]>.um-account-form { margin-top:16px; }
+.um-section>.um-check { display:flex; align-items:center; gap:8px; padding:8px 0 16px; font-size:14px; }
 .um-account-form label>input:not([type=checkbox]) { display:block; margin-top:8px; }
 .um-account-form .um-check { display:flex; align-items:center; gap:8px; }
 .um-check input { width:16px; height:16px; accent-color:var(--um-green); }
