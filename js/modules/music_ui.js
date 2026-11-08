@@ -272,12 +272,13 @@
                         const summary = el('p', '', 'um-muted'); songs.append(summary);
                         const update = () => { const selected = selects.map(s => s.value).filter(Boolean), old = new Set(result.profile.tracks.map(M.key)); summary.textContent = '新增 ' + new Set(selected.filter(id => !keep.checked || !old.has(id))).size + ' 首 · 保留 ' + (keep.checked ? old.size : 0) + ' 首 · 未选择 ' + (selects.length - selected.length) + ' 首'; };
                         result.choices.forEach(item => {
-                            const label = el('label', item.title + ' · ' + item.artists.join(' / ')), select = el('select'); select.setAttribute('aria-label', '选择歌曲版本：' + item.title);
+                            const label = el('label', undefined, 'um-character-review-row'), select = el('select'); label.append(el('span', item.title + ' · ' + item.artists.join(' / '))); select.setAttribute('aria-label', '选择歌曲版本：' + item.title);
                             const none = el('option', item.selected ? '跳过此歌' : '未准确匹配，请手选版本或跳过'); none.value = ''; select.append(none);
                             item.candidates.forEach(track => { const option = el('option', track.title + ' · ' + track.artists.join(' / ') + ' · ' + track.provider); option.value = M.key(track); select.append(option); });
                             select.value = item.selected; select.onchange = update; selects.push(select); label.append(select); songs.append(label);
                         }); keep.onchange = update; update();
-                        songs.append(button('保存所选版本', async () => { try { await result.commit(selects.map(s => s.value), keep.checked); if (alive) { draw(); status.textContent = '角色歌单已保存'; } } catch (error) { if (alive) status.textContent = error.message; } }), button('取消刷新', () => { draw(); status.textContent = '已取消，原歌单保留'; }));
+                        const reviewActions = el('div', undefined, 'um-character-review-actions');
+                        reviewActions.append(button('保存所选版本', async () => { try { await result.commit(selects.map(s => s.value), keep.checked); if (alive) { draw(); status.textContent = '角色歌单已保存'; } } catch (error) { if (alive) status.textContent = error.message; } }, undefined, 'um-primary'), button('取消刷新', () => { draw(); status.textContent = '已取消，原歌单保留'; })); songs.append(reviewActions);
                         status.textContent = '检查版本和新增/保留数量后保存；未准确匹配的歌曲不会自动替换。';
                     }
                 }

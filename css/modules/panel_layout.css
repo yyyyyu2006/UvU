@@ -191,9 +191,9 @@
 #uvu-story-bridge-screen.uvu-panel-layout .panel-bridge-metadata .uvu-bridge-handoff-detail-body { font-size: 12px; line-height: 1.65; padding-bottom: 12px; }
 
 /* Voice and director remain separate, discoverable groups. */
-#minimax-tts-settings.uvu-panel-layout { border: 0; box-shadow: none; background: #f6f7f9; }
+#minimax-tts-settings.uvu-panel-layout { border: 0; box-shadow: none; background: #fff; }
 #minimax-tts-settings.uvu-panel-layout > .kkt-item { padding: 16px !important; gap: 16px !important; background: transparent; }
-#minimax-tts-settings.uvu-panel-layout :is(.minimax-settings-section,.minimax-director-settings) { border: 0; border-radius: 24px; padding: 20px; background: #fff; box-shadow: 0 2px 8px #18233404; }
+#minimax-tts-settings.uvu-panel-layout :is(.minimax-settings-section,.minimax-director-settings) { border: 0; border-radius: 24px; padding: 20px; background: #fff; box-shadow: none; }
 #minimax-tts-settings.uvu-panel-layout .panel-voice-connection .minimax-settings-section { padding: 0; background: transparent; border-radius: 0; }
 #minimax-tts-settings.uvu-panel-layout .panel-director-tags { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 0 8px; color: #586b81; font-size: 13px; }
 #minimax-tts-settings.uvu-panel-layout .panel-director-api { display: block; }

@@ -1,7 +1,7 @@
 /* Local Lucide icons for second-edition panels. Never decorate legacy chat controls. */
 (function () {
     'use strict';
-    const scope = '.shared-document-dialog,.mcp-settings,.memory-library,.derived-settings,.environment-calendar,.minimax-tts-settings,.relationship-dialog,.resource-health,.text-editor-card,#auto-memory-modal,#uvu-story-bridge-screen,#sticker-description-settings';
+    const scope = '.shared-document-dialog,.mcp-settings,.memory-library,.derived-settings,.environment-calendar,.minimax-tts-settings,.relationship-dialog,.resource-health,.text-editor-card,.document-edit-tools,#auto-memory-modal,#uvu-story-bridge-screen,#sticker-description-settings';
     const ids = new Map([
         ['minimax-tts-save', 'check'], ['uvu-bridge-pair', 'link'], ['uvu-bridge-reconnect', 'refresh-cw'],
         ['uvu-bridge-sync', 'download'], ['uvu-bridge-disconnect', 'unlink'], ['uvu-bridge-recover', 'refresh-cw'],
@@ -10,7 +10,7 @@
         ['uvu-bridge-refresh-review', 'refresh-cw'], ['vector-api-fetch-models', 'refresh-cw'], ['vector-api-test', 'play']
     ]);
     const labels = new Map([
-        ['选择文件', 'upload'], ['更换文件', 'upload'], ['导入', 'upload'], ['导出', 'download'],
+        ['选择文件', 'upload'], ['更换文件', 'upload'], ['展开', 'maximize-2'], ['导入', 'upload'], ['导出', 'download'],
         ['导出文本', 'download'], ['导出 DOCX', 'download'], ['下载原件', 'download'], ['导入配置', 'upload'], ['导出配置', 'download'],
         ['发送文件', 'send'], ['发送修改副本', 'send'], ['发送朋友验证请求', 'send'],
         ['编辑', 'pencil'], ['编辑副本', 'pencil'], ['添加', 'plus'], ['添加记忆', 'plus'],
@@ -38,7 +38,11 @@
         if (!button.closest(scope) || button.querySelector('svg,img') || button.closest('[contenteditable="true"]')) return;
         const name = button.dataset.icon || ids.get(button.id) || labels.get(button.textContent.trim());
         const icon = create(name); if (!icon) return;
-        button.prepend(icon); button.classList.add('derived-icon-button');
+        if (button.parentElement?.classList.contains('document-edit-tools')) {
+            const text = button.textContent.trim(); button.setAttribute('aria-label', text); button.title = text;
+            button.replaceChildren(icon);
+        } else button.prepend(icon);
+        button.classList.add('derived-icon-button');
     }
     function decorate(root) {
         if (root.matches?.('button')) decorateButton(root);

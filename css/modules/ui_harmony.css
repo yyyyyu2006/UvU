@@ -110,7 +110,8 @@
 .shared-document-card-header { margin-bottom: 8px; }
 .shared-document-card-footer { padding-top: 8px; }
 .document-edit-tools { gap: 8px; margin: 8px 0; }
-.document-edit-tools > button { min-height: 30px; padding: 4px 10px; }
+.document-edit-tools > button,.document-edit-tools > .document-edit-expand { box-sizing:border-box; flex:0 0 32px; width:32px; height:32px; min-width:32px; min-height:32px; padding:7px; margin:0; font-size:12px; line-height:1; border-radius:10px; }
+.document-edit-tools > button > .derived-icon { display:block; width:16px; height:16px; flex:0 0 16px; }
 .global-css-document-tools { gap: 8px; }
 
 /* Summary and vector memory share a shell, with separate modes retained. */
@@ -178,7 +179,7 @@
 .mcp-settings .mcp-actions button:first-of-type { color: #a04640; border-color: #eedfdc; background: #fff; }
 
 /* Voice connection, timbre and director are separate cards. */
-.minimax-tts-settings { background: #f6f7f9; }
+.minimax-tts-settings { background: #fff; }
 .minimax-tts-settings > .kkt-item { padding: 24px !important; gap: 16px !important; background: transparent; border: 0; }
 .minimax-tts-settings .minimax-settings-section { display: grid; gap: 16px; min-width: 0; padding: 16px; border: 1px solid #e8eaee; border-radius: 20px; background: #fff; }
 .minimax-tts-settings .minimax-settings-section > strong { font-size: 14px; }
