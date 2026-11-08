@@ -6,6 +6,19 @@ export function createEngineAdapter(Meting, provider, credential = '') {
     engine.format(true);
     if (credential) engine.cookie(credential);
 
+    // Keep the pinned engine intact; adapt only its NetEase QR login descriptors.
+    // Both endpoints must use the same type (current maintained client: 3).
+    if (provider === 'netease') {
+        for (const method of ['loginQrKey', 'loginQrCheck']) {
+            if (typeof engine.provider[method] !== 'function') continue;
+            const original = engine.provider[method].bind(engine.provider);
+            engine.provider[method] = (...args) => {
+                const api = original(...args);
+                return { ...api, body: { ...api.body, type: 3 } };
+            };
+        }
+    }
+
     async function rawApi(api) {
         const oldFormat = engine.isFormat;
         engine.format(false);

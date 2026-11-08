@@ -382,6 +382,7 @@
         const details = el('details', undefined, 'um-tutorial'); details.append(el('summary', '连接教程'));
         details.append(el('p', '公共源：在上方开启 GD 音乐台后，到搜索页选择“公共源”。个人学习使用，无需部署、登录或填写服务地址；当前接入网易云。搜索结果不保证可播放，遇到限流请稍后再试。'));
         details.append(el('p', '已内置音乐服务时，直接点网易云或 QQ 音乐的“扫码登录”，无需填写地址。未部署时账号登录暂不可用；本地音乐和公共源仍可使用。下面是部署者操作，玩家无需执行。'));
+        details.append(el('p', '扫码方式：网易云请用网易云音乐 App；QQ 音乐账号请用 QQ App 的扫一扫授权，同一手机可截图后从相册识别。若平台提示设备环境异常，请停止连续扫码并按官方页面处理。'));
         details.append(el('p', '免费 Render：部署者在 Render 控制台选 New → Blueprint，连接 UvU 仓库并使用根目录 render.yaml，确认方案为 Free。成功后将分配的 HTTPS 地址填入音乐服务配置。免费实例闲置后会休眠，连接时可能需要等待约一分钟；服务重启后需要重新扫码，“记住此设备”不能跨重启保留平台登录。无需执行下面的自建服务器命令。'));
         details.append(el('p', '1. 在支持 Node.js 22 的电脑或服务器中，进入 UvU 仓库目录，执行：'));
         const code = el('pre'); code.append(el('code', 'node services/music-gateway/launch.mjs')); details.append(code);
@@ -485,7 +486,10 @@
                     if (/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(qr.image || '') && qr.image.length < 600000) { const image = el('img'); image.src = qr.image; image.alt = names[p] + ' 登录二维码'; area.append(image); }
                     else if (qr.url && root.qrcode) { const value = new URL(qr.url); const allowed = p === 'netease' ? ['music.163.com'] : ['y.qq.com', 'ssl.ptlogin2.qq.com', 'xui.ptlogin2.qq.com']; if (value.protocol !== 'https:' || !allowed.includes(value.hostname) || qr.url.length > 2000) throw new Error('登录二维码地址无效'); const code = root.qrcode(0, 'M'); code.addData(qr.url); code.make(); area.innerHTML = code.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); }
                     else throw new Error('服务没有返回有效二维码');
-                    status.textContent = '请用' + names[p] + '官方 App 扫码确认';
+                    const scanner = p === 'qq' ? 'QQ App' : '网易云音乐 App';
+                    const scanHint = '请用' + scanner + '的扫一扫识别二维码';
+                    status.textContent = scanHint;
+                    body.append(el('p', p === 'qq' ? '此码用于 QQ 账号授权；请在 QQ 的扫一扫中选择相册识别。' : '若提示设备环境异常，请先停止扫码，按网易云页面提示处理后再试。', 'um-muted'));
                     const poll = async () => {
                         if (!alive) return;
                         if (Date.now() >= qr.expiresAt) { status.textContent = '二维码已过期，请重新获取'; body.append(button('重新获取', () => qrPanel(p))); return; }
@@ -493,7 +497,7 @@
                             const data = await M.pollQR(p, qr.id, controller.signal); if (!alive) return;
                             if (data.status === 'authorized') { toast('登录成功'); accountsPanel(); return; }
                             if (data.status === 'expired') { status.textContent = '二维码已过期'; body.append(button('重新获取', () => qrPanel(p))); return; }
-                            status.textContent = data.status === 'scanned' ? '已扫码，请在官方 App 确认' : '等待扫码确认'; timer = setTimeout(poll, 2500);
+                            status.textContent = data.status === 'scanned' ? '已扫码，请在' + scanner + '确认' : scanHint; timer = setTimeout(poll, 2500);
                         } catch (e) { if (alive) status.textContent = e.message; }
                     }; timer = setTimeout(poll, 2000);
                 } catch (e) { if (alive) status.textContent = e.message; }

@@ -14,7 +14,7 @@ const server = http.createServer((req,res) => {
         if (u.pathname === '/v1/session') return send({token:'browser-fixture'});
         if (u.pathname === '/v1/health') return send({ok:true,ready:true,providers:['netease','qq'],deployment:{provider:'render',ephemeral:true}});
         if (u.pathname === '/v1/accounts') return send({accounts:[{provider:'netease',loggedIn:authorized,user:{name:'本地测试账号'}},{provider:'qq',loggedIn:false}]});
-        if (u.pathname.endsWith('/qr')) return send({id:'fixture_qr',url:'https://music.163.com/login?codekey=fixture',image:'',expiresAt:Date.now()+180000});
+        if (u.pathname.endsWith('/qr')) return send({id:'fixture_qr',url:u.pathname.includes('/qq/')?'https://xui.ptlogin2.qq.com/cgi-bin/xlogin':'https://music.163.com/login?codekey=fixture',image:'',expiresAt:Date.now()+180000});
         if (u.pathname.endsWith('/qr/fixture_qr')) { authorized=true; return send({status:'authorized',user:{name:'本地测试账号'}}); }
         if (u.pathname === '/v1/search') { searches++; return send({tracks:u.searchParams.get('q')==='滚动'?Array.from({length:30},(_,i)=>song(String(i+1))):[song('1'),{...song('2'),provider:'qq',title:'暮色'}],hasMore:false,errors:[]}); }
         if (u.pathname.endsWith('/stream')) return send({url:base+'/fixture.wav',availability:'full'});
@@ -161,6 +161,12 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.waitForSelector('.um-account');
         await page.getByRole('button',{name:'扫码登录',exact:true}).first().click();await page.waitForSelector('.um-qr svg');await page.screenshot({path:path.join(out,'qr-390.png')});
         await page.waitForFunction(()=>document.querySelector('.um-account small')?.textContent==='本地测试账号',{},{timeout:15000});await page.getByRole('button',{name:'关闭',exact:true}).click();
+        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();
+        await page.getByRole('button',{name:'扫码登录',exact:true}).last().click();
+        await page.waitForSelector('.um-qr svg');
+        assert.match(await page.locator('.um-sheet-body').innerText(),/QQ App/,'QQ Music account QR must be scanned with QQ');
+        assert.doesNotMatch(await page.locator('.um-sheet-body').innerText(),/请用QQ 音乐官方 App/);
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
         // Paste, preview and commit a platform playlist without touching playback or chat history.
         await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();
         await page.getByRole('button',{name:'导入歌单',exact:true}).click();
