@@ -80,7 +80,7 @@ function openSharedDocumentDialog(message, chat) {
         const expanded = editor.classList.toggle('is-expanded'); expand.textContent = expanded ? '收起' : '展开';
         expand.setAttribute('aria-expanded', String(expanded)); text.style.maxHeight = expanded ? '60dvh' : ''; text.style.height = expanded ? '50dvh' : '';
     };
-    downloads.querySelector('summary').textContent = '导出'; tools.append(expand, downloads); editor.append(tools);
+    downloads.querySelector('summary').textContent = '文件选项'; downloads.classList.add('shared-document-file-options'); tools.append(expand); editor.append(tools); editor.after(downloads);
     const actions = documentNode('footer', undefined, 'shared-document-actions');
     const cancel = documentNode('button', '取消'); cancel.type = 'button'; cancel.dataset.action = 'cancel'; cancel.onclick = () => dialog.dismiss();
     const send = documentNode('button', message ? '发送修改副本' : '发送文件'); send.type = 'button'; send.dataset.icon = 'send'; send.dataset.action = 'send'; actions.append(cancel, send); dialog.panel.append(actions);
@@ -151,7 +151,8 @@ function createSharedDocumentElement(message, chat, type, isContinuous) {
     const content = documentNode('div', undefined, 'shared-document-card-content');
     const icon = documentNode('div', undefined, 'shared-document-icon'); icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 15h6M9 18h4"/></svg>';
     content.append(icon, documentNode('strong', message.document.name), documentNode('small', message.document.text.length + ' 字符 · ' + (message.document.name.split('.').pop() || 'TEXT').toUpperCase()), documentNode('span', '查看文件', 'shared-document-open'));
-    card.append(header, content, documentNode('div', message.document.parentId ? '保留原件 · 点击查看与编辑' : '文字可供角色阅读 · 点击预览', 'shared-document-card-footer'));
+    const preview = documentNode('p', message.document.text.slice(0, 240), 'shared-document-card-preview');
+    card.append(header, content, preview, documentNode('div', message.document.parentId ? '查看修改副本 ↗' : '查看文件 ↗', 'shared-document-card-footer'));
     const open = () => { if (!isInMultiSelectMode && !isDebugMode) openSharedDocumentDialog(message, chat); };
     card.onclick = open; card.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } };
     if (message.quote && typeof createQuotedMessageElement === 'function') card.prepend(createQuotedMessageElement(message.quote, chat));

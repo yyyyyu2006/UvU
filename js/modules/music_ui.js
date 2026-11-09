@@ -183,7 +183,7 @@
                 count.textContent=tracks.length+' 首歌曲';footer.classList.toggle('um-editing',editing);
                 playback.hidden = !tracks.some(t => t.provider === 'netease' || t.provider === 'qq');
                 const play=button('播放全部',()=>tracks.length&&M.player.play(tracks[0],tracks,{label:item.name}),undefined,'um-play-pill');play.replaceChildren(icon('play-solid'),el('span','播放'));
-                const shuffle=button('随机播放',()=>{if(!tracks.length)return;M.player.setMode('shuffle');return M.player.play(tracks[Math.floor(Math.random()*tracks.length)],tracks,{label:item.name});},'shuffle');play.disabled=shuffle.disabled=!tracks.length;
+                const shuffle=button('随机播放',()=>{if(!tracks.length)return;M.player.setMode('shuffle');return M.player.play(tracks[Math.floor(Math.random()*tracks.length)],tracks,{label:item.name});},'shuffle','um-shuffle-pill');shuffle.append(el('span','随机'));play.disabled=shuffle.disabled=!tracks.length;
                 tools.append(shuffle,play,button(managed?(editing?'完成':'管理'):'播放队列',()=>{if(managed){editing=!editing;draw();}else queuePanel();},managed?'list-filter':'list-music'));
                 if(managed&&editing){const manage=el('div',undefined,'um-manage-tools');manage.append(button('全选',()=>{tracks.forEach(t=>selected.add(M.key(t)));draw();}),button('移除所选',async()=>{await M.removePlaylistTracks(item.id,[...selected]);selected.clear();tracks=M.library().playlists.find(p=>p.id===item.id)?.tracks||[];draw();render();}));list.append(manage);}
                 if(managed&&editing){tracks.forEach((track,index)=>{const row=el('div',undefined,'um-queue-row'),check=el('input');check.type='checkbox';check.checked=selected.has(M.key(track));check.setAttribute('aria-label','选择 '+track.title);check.onchange=()=>check.checked?selected.add(M.key(track)):selected.delete(M.key(track));const title=el('span',track.title,'um-track-info');const up=button('上移 '+track.title,async()=>{await M.reorderPlaylist(item.id,index,index-1);tracks=M.library().playlists.find(p=>p.id===item.id)?.tracks||[];draw();},'chevron-left');up.style.transform='rotate(90deg)';up.disabled=index===0;row.append(check,title,up);list.append(row);});}
@@ -315,8 +315,6 @@
         homeTitle.type = 'button'; homeTitle.title = '返回小手机桌面'; homeTitle.onclick = () => { closeSheet(); if (typeof switchScreen === 'function') switchScreen('home-screen'); };
         heading.append(homeTitle); hero.append(heading, tools);
         if (libraryPage) tools.append(button('返回资料库', () => { libraryPage = ''; render(0); }, 'chevron-left'));
-        if (tab === 'library' && !libraryPage) tools.append(button('新建歌单', () => createPlaylist(), 'list-plus', 'um-round-fill'));
-        tools.append(button('角色歌单', () => characterPlaylistPanel(), 'headphones'));
         tools.append(button('音乐账号与设置', accountsPanel, 'user-round', 'um-avatar')); main.append(hero);
         if (tab === 'search') { renderSearch(); main.scrollTop = previousScroll; return; }
         const lib = M.library(), tracks = C.available(lib);
@@ -423,31 +421,42 @@
     function modePanel(){modal('播放模式',body=>{for(const [value,label]of Object.entries(modeNames)){const b=button(label,()=>{M.player.setMode(value);nowPlaying();},undefined,'um-wide um-mode-choice');b.setAttribute('aria-pressed',String(M.player.snapshot().mode===value));body.append(b);}const label=el('label',undefined,'um-check um-public-toggle'),check=el('input');check.type='checkbox';check.checked=M.player.snapshot().skipUnavailable;check.onchange=()=>M.player.setSkipUnavailable(check.checked);label.append(check,document.createTextNode('跳过不可播放歌曲'));body.append(label);});}
     function queuePanel() {
         let unsubscribe,last='';modal('播放队列',body=>{
+            body.closest('.uvu-music-sheet').classList.add('um-queue-sheet');
+            const heading=el('div',undefined,'um-queue-heading'),art=cover(M.player.snapshot().track),info=el('div',undefined,'um-track-info'),title=el('strong'),artist=el('small');info.append(title,artist);heading.append(art,info,button('返回播放器',nowPlaying,'chevron-down'));body.append(heading);
             const tools=el('div',undefined,'um-queue-tools'),list=el('div');tools.append(button('播放模式',modePanel,undefined),button('清空队列',()=>{M.player.clear();},undefined));body.append(tools,list);
-            unsubscribe=M.player.subscribe(state=>{const signature=JSON.stringify([state.queue.map(M.key),state.track&&M.key(state.track),state.playing]);if(signature===last)return;last=signature;list.replaceChildren();
+            unsubscribe=M.player.subscribe(state=>{const signature=JSON.stringify([state.queue.map(M.key),state.track&&M.key(state.track),state.playing]);if(signature===last)return;last=signature;list.replaceChildren();title.textContent=state.track?.title||'待播清单';artist.textContent=state.track?.artists.join(' / ')||'';art.src=state.track?.cover||'assets/music/icons/music-2.svg';
                 if(state.queueLabel)list.append(el('p',state.queueLabel,'um-muted'));
                 state.queue.forEach((track,index)=>{const row=el('div',undefined,'um-queue-row'),current=state.track&&M.key(track)===M.key(state.track);row.classList.toggle('current',!!current);
                     const play=button((current?'正在播放 · ':'')+track.title,()=>M.player.play(track),undefined,'um-queue-title');
+                    play.replaceChildren(el('strong',track.title),el('small',track.artists.join(' / ')));
                     const up=button('上移 '+track.title,()=>M.player.move(index,index-1),'chevron-left');up.style.transform='rotate(90deg)';up.disabled=index===0;
-                    row.append(play,button('下一首播放 '+track.title,()=>M.player.enqueue(track,true),'skip-forward'),up,button('移出队列 '+track.title,()=>M.player.remove(index),'x'));list.append(row);});if(!state.queue.length)empty(list,'队列为空');
+                    row.append(cover(track),play,button('下一首播放 '+track.title,()=>M.player.enqueue(track,true),'skip-forward'),up,button('移出队列 '+track.title,()=>M.player.remove(index),'x'));list.append(row);});if(!state.queue.length)empty(list,'队列为空');
             });
         },()=>unsubscribe?.());
     }
     function sleepPanel() { modal('定时关闭', body => { for (const n of [0, 15, 30, 60]) body.append(button(n ? n + ' 分钟后' : '关闭定时', () => { M.player.setSleep(n); closeSheet(); }, undefined, 'um-wide')); }); }
     function lyricsPanel() {
-        const track = M.player.snapshot().track; if (!track) return; const controller = new AbortController(); let alive = true,unsubscribe;
+        const track = M.player.snapshot().track; if (!track) return; const controller = new AbortController(); let alive = true,unsubscribe,unsubscribePlayback;
         modal('歌词', body => {
             body.classList.add('um-lyrics-body'); body.closest('.uvu-music-sheet').classList.add('um-lyrics-sheet');
             const heading = el('div', undefined, 'um-lyrics-heading'); heading.append(cover(track), el('strong', track.title), el('span', track.artists.join(' / ')));
             const tools=el('div',undefined,'um-lyrics-tools'),words = el('div', '正在读取…', 'um-lyrics'); body.append(heading,tools, words);let following=true,lines=[],current=-1;
             const follow=button('跟随播放',()=>{following=true;current=-1;paint(M.player.snapshot());});follow.hidden=true;tools.append(follow);
-            body.addEventListener('wheel',()=>{following=false;follow.hidden=false;},{passive:true});body.addEventListener('touchmove',()=>{following=false;follow.hidden=false;},{passive:true});body.addEventListener('keydown',e=>{if(['PageDown','PageUp','ArrowDown','ArrowUp','Home','End'].includes(e.key)){following=false;follow.hidden=false;}});
-            const paint=state=>{if(!alive||!state.track||M.key(state.track)!==M.key(track))return;let index=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=state.position)index=i;if(index===current)return;current=index;[...words.children].forEach((n,i)=>n.classList.toggle('current',i===index));if(following&&index>=0){const n=words.children[index];body.scrollTop=Math.max(0,body.scrollTop+n.getBoundingClientRect().top-body.getBoundingClientRect().top-body.clientHeight*.45);follow.hidden=true;}};
+            words.tabIndex=0; words.setAttribute('aria-label','歌词正文');
+            words.addEventListener('wheel',()=>{following=false;follow.hidden=false;},{passive:true});words.addEventListener('touchmove',()=>{following=false;follow.hidden=false;},{passive:true});words.addEventListener('keydown',e=>{if(['PageDown','PageUp','ArrowDown','ArrowUp','Home','End'].includes(e.key)){following=false;follow.hidden=false;}});
+            const paint=state=>{if(!alive||!state.track||M.key(state.track)!==M.key(track))return;let index=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=state.position)index=i;if(index===current)return;current=index;[...words.children].forEach((n,i)=>n.classList.toggle('current',i===index));if(following&&index>=0){const n=words.children[index];words.scrollTop=Math.max(0,words.scrollTop+n.getBoundingClientRect().top-words.getBoundingClientRect().top-words.clientHeight*.45);follow.hidden=true;}};
+            const playback=el('div',undefined,'um-lyrics-playback'),seek=el('input'),timing=el('div',undefined,'um-timing'),elapsed=el('span'),remaining=el('span'),controls=el('div',undefined,'um-player-controls');
+            seek.type='range';seek.min=0;seek.max=1;seek.step=.1;seek.setAttribute('aria-label','播放进度');seek.onchange=()=>M.player.seek(Number(seek.value));timing.append(elapsed,remaining);
+            const toggle=button('播放或暂停',()=>M.player.toggle(),'play-solid','um-primary');controls.append(button('上一首',()=>M.player.previous(),'rewind-solid'),toggle,button('下一首',()=>M.player.next(),'fast-forward-solid'));
+            const volume=el('div',undefined,'um-volume'),level=el('input');level.type='range';level.min=0;level.max=1;level.step=.01;level.setAttribute('aria-label','音量');level.oninput=()=>M.player.setVolume(Number(level.value));volume.append(icon('volume-1'),level,icon('volume-2'));
+            const bottomTools=el('div',undefined,'um-player-tools');bottomTools.append(button('返回播放器',nowPlaying,'quote'),button('一起听',async()=>{const t=M.player.snapshot().track;if(t)await share(t,true);},'headphones'),button('播放队列',queuePanel,'list-music'));
+            playback.append(seek,timing,controls,volume,bottomTools);body.append(playback);
+            unsubscribePlayback=M.player.subscribe(state=>{seek.max=state.duration||1;if(document.activeElement!==seek)seek.value=state.position;if(document.activeElement!==level)level.value=state.volume;elapsed.textContent=clock(state.position);remaining.textContent='−'+clock(Math.max(0,state.duration-state.position));toggle.firstChild.src='assets/music/icons/'+(state.playing?'pause-solid':'play-solid')+'.svg';if(state.track&&M.key(state.track)!==M.key(track))lyricsPanel();});
             void M.lyrics(track, controller.signal).then(data => { if (alive) {
                 let translation=false;const renderWords=()=>{lines=root.UvUMusicLyrics.parse(translation?data.translation:data.lyric);words.replaceChildren();for(const line of lines)words.append(el('span',line.text||'\u00a0','um-lyrics-line'));if(!lines.some(l=>l.text))words.textContent='暂无歌词';current=-1;paint(M.player.snapshot());};
                 if(data.translation)tools.append(button('原文 / 翻译',()=>{translation=!translation;renderWords();}));renderWords();unsubscribe=M.player.subscribe(paint);
             } }).catch(e => { if (alive) words.textContent = e.message; });
-        }, () => { alive = false; controller.abort();unsubscribe?.(); });
+        }, () => { alive = false; controller.abort();unsubscribe?.();unsubscribePlayback?.(); });
     }
     function tutorial() {
         const details = el('details', undefined, 'um-tutorial'); details.append(el('summary', '连接教程'));
@@ -463,7 +472,7 @@
         details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
         details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，匹配不明确时请手动搜索。已有歌单无需重新导入；公共源不保证每首歌可用。'));
-        details.append(el('p', '角色歌单：点击顶部耳机图标，或资料库 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。先预览歌曲版本，无法唯一匹配时手选版本或跳过；默认保留旧歌单，点击“保存所选版本”后才更新。取消或失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
+        details.append(el('p', '角色歌单：资料库 → 角色歌单，或音乐账号 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。先预览歌曲版本，无法唯一匹配时手选版本或跳过；默认保留旧歌单，点击“保存所选版本”后才更新。取消或失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
     }
@@ -474,8 +483,8 @@
     }
     function accountsPanel() {
         const controller = new AbortController(); let alive = true;
-        modal('音乐源', body => {
-            const appearanceBox=section('外观'),choices=el('div',undefined,'um-appearance');
+        modal('音乐账号', body => {
+            const appearanceBox=el('details',undefined,'um-appearance-settings'),choices=el('div',undefined,'um-appearance');appearanceBox.append(el('summary','外观'));
             for(const [value,label]of [['light','白色'],['dark','深色']]){const b=button(label,()=>{appearance=value;try{localStorage.setItem('uvu-music-appearance',value);}catch(_){}applyAppearance();for(const child of choices.children)child.setAttribute('aria-pressed',String(child===b));});b.setAttribute('aria-pressed',String(appearance===value));choices.append(b);}appearanceBox.append(choices);body.append(appearanceBox,button('导入音乐',()=>document.getElementById('um-local-files').click(),'plus'),button('返回小手机',returnToPhone,'house'));
             const publicBox = section('公共音乐'), publicLabel = el('label', undefined, 'um-check um-public-toggle'), publicCheck = el('input');
             publicCheck.type = 'checkbox'; publicCheck.checked = M.settings().publicSources.includes('gd-netease'); publicCheck.setAttribute('aria-label', '启用 GD 音乐台公共源');
@@ -501,7 +510,8 @@
             const accountBox = section('账号音乐'), service = el('details', undefined, 'um-gateway-settings'), serviceTitle = el('summary', M.settings().endpoint ? '更换音乐服务' : '配置音乐服务');
             form.append(label, button('保存并连接', () => connect())); form.onsubmit = e => { e.preventDefault(); void connect(); };
             service.append(serviceTitle, form); accountBox.append(remember, accounts, output, hostingNote, service);
-            body.append(accountBox, button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
+            const libraryActions=el('div',undefined,'um-account-library');libraryActions.append(button('导入歌单',()=>importPlaylistPanel(),'list-plus'),button('角色歌单',()=>characterPlaylistPanel(),'headphones'));accounts.after(libraryActions);
+            body.prepend(accountBox);body.append(button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
             checkbox.onchange = async () => {
                 checkbox.disabled = true;
                 try { await M.saveSettings({ remember: checkbox.checked }); }
@@ -585,10 +595,10 @@
     function mount() {
         if (screen) return; screen = el('div', undefined, 'screen'); screen.id = 'uvu-music-screen';
         main = el('main', undefined, 'um-main'); mini = el('div', undefined, 'um-mini'); mini.hidden = true;
-        const nav = el('nav', undefined, 'um-nav'); nav.setAttribute('aria-label', '音乐导航');
-        for (const [id, title, image] of [['home', '主页', 'house'],['discover','新发现','layout-grid'],['radio','广播','radio'], ['library', '资料库', 'library-big'], ['search', '搜索', 'search']]) { const b = button(title, () => { clearTimeout(debounce); selectTab(id); if (id === 'search' && query && !results.length && !searchLoading) void runSearch(true); }, image); b.dataset.umTab = id; b.append(el('span', title)); nav.append(b); }
+        const nav = el('nav', undefined, 'um-nav'), navWrap = el('div', undefined, 'um-nav-wrap'); nav.setAttribute('aria-label', '音乐导航'); navWrap.append(nav);
+        for (const [id, title, image] of [['home', '主页', 'house'],['discover','新发现','layout-grid'],['radio','广播','radio'], ['library', '资料库', 'library-big'], ['search', '搜索', 'search']]) { const b = button(title, () => { clearTimeout(debounce); selectTab(id); if (id === 'search' && query && !results.length && !searchLoading) void runSearch(true); }, image); b.dataset.umTab = id; b.append(el('span', title)); (id === 'search' ? navWrap : nav).append(b); }
         const file = el('input'); file.id = 'um-local-files'; file.type = 'file'; file.accept = 'audio/*'; file.multiple = true; file.hidden = true; file.onchange = async () => { const files = [...file.files]; file.value = ''; await importFiles(files); };
-        const bottom=el('div',undefined,'um-bottom');bottom.append(mini,nav);screen.append(main,bottom,file); (document.querySelector('.phone-screen') || document.body).append(screen);
+        const bottom=el('div',undefined,'um-bottom');bottom.append(mini,navWrap);screen.append(main,bottom,file); (document.querySelector('.phone-screen') || document.body).append(screen);
         M.player.subscribe(updateMini); root.addEventListener('music-state', event => {
             const state = event.detail, signature = (state?.track ? M.key(state.track) : '') + ':' + Boolean(state?.playing), changed = signature !== playbackSignature; playbackSignature = signature;
             if (screen.classList.contains('active') && tab !== 'search' && (renderedLibrary !== librarySource() || tab === 'home' && changed)) render();

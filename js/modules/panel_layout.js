@@ -145,7 +145,11 @@
         const filter = q(root, '.memory-library-filters input[type=search]')?.closest('label');
         if (filter) { filter.classList.add('panel-library-search'); toolbar.before(filter); [...filter.childNodes].filter(n => n.nodeType === 3).forEach(n => n.remove()); q(filter, 'input').setAttribute('aria-label', '搜索记忆'); q(filter, 'input').placeholder = '搜索记忆'; }
         const integrate = q(toolbar, '[data-action=integrate]'), index = q(toolbar, '.memory-library-index-actions');
-        disclose([integrate, index], '更多', 'panel-library-more');
+        const more = disclose([integrate, index], '索引与管理', 'panel-library-more');
+        const category = q(toolbar, 'label'), filters = q(root, '.memory-library-filters');
+        if (category && filters) filters.prepend(category);
+        if (more) root.append(more);
+        if (!toolbar.children.length) toolbar.hidden = true;
         const tuning = q(root, '.memory-library-tuning > summary'); if (tuning) tuning.textContent = '限额与审阅';
         const diagnostics = q(root, '.memory-library-diagnostics > summary'); if (diagnostics) diagnostics.textContent = '检索诊断';
     }

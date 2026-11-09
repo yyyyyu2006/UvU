@@ -217,7 +217,23 @@
         function renderServices() {
             serviceArea.replaceChildren(node('strong', '远程服务'));
             const picker = select(serviceArea, '当前服务', m().settings().services.length ? m().settings().services.map(s => [s.name + (s.enabled ? ' · 开启' : ' · 关闭'), s.id]) : [['暂无服务', '']], serviceId);
-            picker.onchange = () => { serviceId = picker.value; tools = []; page = 0; renderTools(); };
+            picker.parentElement.hidden = true;
+            picker.onchange = () => { serviceId = picker.value; tools = []; page = 0; renderServices(); renderTools(); };
+            const search = node('input', undefined, 'mcp-service-search'), serviceList = node('div', undefined, 'mcp-service-list');
+            search.type = 'search'; search.placeholder = '搜索服务'; search.setAttribute('aria-label', '搜索 MCP 服务');
+            for (const svc of m().settings().services) {
+                const health = m().health(svc.id), entry = button('', () => { picker.value = svc.id; picker.dispatchEvent(new Event('change', { bubbles: true })); });
+                entry.classList.add('mcp-service-item'); entry.setAttribute('aria-pressed', String(serviceId === svc.id)); entry.setAttribute('aria-label', '选择服务 ' + svc.name);
+                const copy = node('span'), state = node('span'); state.dataset.serviceState = '';
+                copy.append(node('strong', svc.name), node('small', health.tools + ' 个工具 · ' + health.host));
+                state.textContent = !svc.enabled ? '已停用' : health.checkedAt ? '曾检查' : '未检查';
+                state.title = health.checkedAt ? '上次检查 ' + new Date(health.checkedAt).toLocaleString() + '；不代表此刻在线' : '尚未测试连接';
+                entry.append(copy, state); entry.dataset.serviceSearch = svc.name.toLocaleLowerCase(); serviceList.append(entry);
+            }
+            const noMatch = node('p', '没有匹配的服务'); noMatch.hidden = true; serviceList.append(noMatch);
+            search.oninput = () => { let visible = 0; for (const entry of serviceList.querySelectorAll('.mcp-service-item')) { entry.hidden = !entry.dataset.serviceSearch.includes(search.value.trim().toLocaleLowerCase()); if (!entry.hidden) visible++; } noMatch.hidden = visible > 0; };
+            if (!m().settings().services.length) { noMatch.textContent = '暂无服务'; noMatch.hidden = false; search.hidden = true; }
+            serviceArea.append(search, serviceList);
             const row = node('div', undefined, 'mcp-row');
             row.append(button('添加', () => serviceEditor(null, id => { serviceId = id; tools = []; renderServices(); renderTools(); })), button('编辑', () => { if (serviceId) serviceEditor(serviceId, () => { tools = []; renderServices(); renderTools(); renderRoles(); }); }),
                 button('删除', () => d.run(async signal => {

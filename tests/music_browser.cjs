@@ -66,6 +66,7 @@ const server = http.createServer((req,res) => {
         assert.deepEqual(await page.locator('#uvu-music-screen [data-um-tab]').allTextContents(),['主页','新发现','广播','资料库','搜索'],'approved five-tab navigation');
         assert.equal(await page.locator('.um-hero h1').evaluate(n=>getComputedStyle(n).fontSize),'34px');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)','music has a white surface');
+        assert.equal(await page.locator('[data-um-tab=search]').evaluate(n=>n.parentElement.className),'um-nav-wrap','search has its own control beside navigation');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.parentElement.className),'phone-screen');
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
         await page.getByRole('searchbox',{name:'搜索音乐'}).fill('滚动');await page.getByRole('searchbox',{name:'搜索音乐'}).press('Enter');
@@ -93,7 +94,27 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'歌词',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('给你写'));
         assert.doesNotMatch(await page.locator('.um-lyrics').innerText(),/\[\d{1,3}:\d{2}/,'lyric timestamps stay out of the reading card');
         assert.equal(await page.locator('.um-lyrics').evaluate(n=>getComputedStyle(n).textAlign),'center');
-        await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'lyrics-white-390.png')});await page.getByRole('button',{name:'关闭',exact:true}).click();
+        for (const width of [320,390,768]) {
+            await page.setViewportSize({width,height:844});
+            assert.ok(await page.locator('.um-lyrics-line').evaluateAll(nodes=>nodes.every(n=>getComputedStyle(n).fontSize==='14px')),'all lyric lines stay 14px at '+width);
+            assert.ok(await page.locator('.um-lyrics-sheet .um-sheet-card').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'lyrics fit at '+width);
+        }
+        for (const height of [480,420,320]) {
+            await page.setViewportSize({width:390,height});
+            assert.equal(await page.locator('.um-lyrics-body').evaluate(n=>getComputedStyle(n).overflowY),'auto','short lyric sheet can scroll by touch');
+            await page.locator('.um-lyrics-sheet .um-player-tools').scrollIntoViewIfNeeded();
+            assert.ok(await page.locator('.um-lyrics-sheet .um-player-tools').evaluate(n=>n.getBoundingClientRect().bottom<=innerHeight),'lyric transport remains reachable at height '+height);
+            assert.ok(await page.locator('.um-lyrics-sheet .um-lyrics').evaluate(n=>n.clientHeight>=40),'lyrics retain an internally scrollable reading region at height '+height);
+        }
+        await page.setViewportSize({width:390,height:844});
+        await page.waitForTimeout(600);await page.screenshot({path:path.join(out,'lyrics-white-390.png')});
+        await page.locator('.um-lyrics-sheet').getByRole('button',{name:'下一首',exact:true}).click();
+        await page.waitForFunction(()=>document.querySelector('.um-lyrics-heading strong')?.textContent===UvUMusic.player.snapshot().track?.title);
+        assert.equal(await page.locator('.um-lyrics-sheet').count(),1,'switching tracks replaces the lyric sheet without duplicate subscriptions');
+        assert.equal(await page.locator('.um-lyrics-line').first().evaluate(n=>getComputedStyle(n).fontSize),'14px');
+        await page.locator('.um-lyrics-sheet').getByRole('button',{name:'上一首',exact:true}).click();
+        await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='1'&&document.querySelector('.um-lyrics-heading strong')?.textContent===UvUMusic.player.snapshot().track?.title);
+        await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'播放队列',exact:true}).click();assert.equal(await page.locator('.um-queue-title').count(),2);await page.getByRole('button',{name:'关闭',exact:true}).click();
         // Captured private-chat destination, music card and explicit invitation acceptance.
         await page.evaluate(()=>{openChatRoom('music-char','private'); document.getElementById('share-music-btn').click();});
@@ -314,7 +335,7 @@ const server = http.createServer((req,res) => {
         // Remove the intentionally disabled public-source playback fixture from station history.
         await page.evaluate(()=>UvUMusic.clearRecent());
         await page.locator('[data-um-tab="radio"]').click();await page.locator('.um-feature').first().click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().mode==='shuffle');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().queueLabel),'你的音乐电台');
-        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('button',{name:'深色',exact:true}).click();
+        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.locator('.um-appearance-settings > summary').click();await page.getByRole('button',{name:'深色',exact:true}).click();
         assert.equal(await page.locator('.uvu-music-sheet').evaluate(n=>n.classList.contains('um-dark')),true);await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.locator('[data-um-tab="discover"]').click();await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-discover-dark-390.png')});
         for(const width of [320,390,768]){await page.setViewportSize({width,height:844});for(const id of ['discover','radio','library','search']){await page.locator('[data-um-tab="'+id+'"]').click();assert.ok(await page.locator('.um-main').evaluate(n=>n.scrollWidth<=n.clientWidth+1),'page fits '+id+' '+width);}}
