@@ -1,0 +1,8 @@
+interface:
+  default_prompt: "使用 $uvu-development 完成本次 UvU 修改，遵循已确认设计和兼容要求，并验证实际结果。"
+
+  display_name: "UvU 开发规范"
+
+  short_description: "用于 UvU 二改功能开发、界面调整、1900版兼容保护和针对性验收"
+policy:
+  allow_implicit_invocation: true
