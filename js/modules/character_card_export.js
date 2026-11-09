@@ -98,12 +98,13 @@
         if (!Array.isArray(selectedIds) || selectedIds.length > 3000) throw new Error('世界书选择无效或超过上限');
         const selected = new Set(selectedIds), available = new Set(scope.data.entries.map(book => book.id));
         if ([...selected].some(id => !available.has(id))) throw new Error('选择包含未绑定或不存在的世界书');
-        const previous = scope.data.original ? retain(scope.data.original).data : {}, data = {};
+        const original = scope.data.original ? retain(scope.data.original) : null, previous = original?.data || {}, data = {};
         for (const key of strings) data[key] = previous[key] || '';
         data.name = scope.data.name; data.description = scope.data.persona;
         if (metadata.creator !== undefined) data.creator = String(metadata.creator).slice(0, 2000);
         if (metadata.version !== undefined) data.character_version = String(metadata.version).slice(0, 200);
         data.tags = previous.tags || []; data.alternate_greetings = previous.alternate_greetings || [];
+        if (previous.group_only_greetings) data.group_only_greetings = previous.group_only_greetings.slice();
         data.extensions = safe(previous.extensions || {}); delete data.extensions.uvu;
         data.extensions.uvu = { version: 1 };
         if (root.UvUCardCover && (metadata.cover || previous.extensions?.uvu?.cover)) data.extensions.uvu.cover = root.UvUCardCover.profile({ ...data, extensions: previous.extensions }, metadata.cover || {});
@@ -119,7 +120,8 @@
             const extensions = safe(originalBook.extensions || {}); delete extensions.uvu;
             data.character_book = { ...settings, name: data.name + ' · 配套世界书', extensions: { ...extensions, uvu: { version: 1 } }, entries: books.map(bookEntry) };
         }
-        return retain({ spec: 'chara_card_v2', spec_version: '2.0', data });
+        const spec = original?.spec === 'chara_card_v3' || data.group_only_greetings ? 'chara_card_v3' : 'chara_card_v2';
+        return retain({ spec, spec_version: spec === 'chara_card_v3' ? '3.0' : '2.0', data });
     }
     root.UvUCharacterCard = { capture, isCurrent, build, retain };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -144,9 +144,17 @@
             let settled = false;
             const fail = error => { if (settled) return; settled = true; clearTimeout(timer); opened = null; reject(error); };
             const timer = setTimeout(() => fail(new Error('本机音频缓存暂不可用')), 2000);
-            const request = indexedDB.open('uvu-minimax-audio-v1', 1);
+            const request = indexedDB.open('uvu-minimax-audio-v1', 2);
             request.onblocked = () => fail(new Error('本机音频缓存被其他页面占用'));
-            request.onupgradeneeded = () => request.result.createObjectStore('audio', { keyPath: 'key' });
+            request.onupgradeneeded = () => {
+                const database = request.result, transaction = request.transaction;
+                if (!database.objectStoreNames.contains('audio')) database.createObjectStore('audio', { keyPath: 'key' });
+                const metadata = database.createObjectStore('metadata', { keyPath: 'key' });
+                metadata.createIndex('at', 'at');
+                // The one-time v1 migration is the only scan that reads legacy audio records.
+                const cursor = transaction.objectStore('audio').openCursor();
+                cursor.onsuccess = () => { const item = cursor.result; if (!item) return; const row = item.value; metadata.put({ key: row.key, size: row.blob?.size || 0, at: row.at, expires: row.expires }); item.continue(); };
+            };
             request.onsuccess = () => { if (settled) { request.result.close(); return; } settled = true; clearTimeout(timer); request.result.onversionchange = () => { request.result.close(); opened = null; }; resolve(request.result); };
             request.onerror = () => fail(request.error);
         }));
@@ -156,8 +164,22 @@
                 tx.oncomplete = () => resolve(request?.result); tx.onabort = tx.onerror = () => reject(tx.error || new Error('音频缓存写入失败'));
             });
         };
-        return { list: () => run('readonly', s => s.getAll()), get: key => run('readonly', s => s.get(key)),
-            put: row => run('readwrite', s => s.put(row)), delete: key => run('readwrite', s => s.delete(key)), clear: () => run('readwrite', s => s.clear()) };
+        const mutate = async action => {
+            const database = await open(); return new Promise((resolve, reject) => {
+                const transaction = database.transaction(['audio', 'metadata'], 'readwrite');
+                action(transaction.objectStore('audio'), transaction.objectStore('metadata'));
+                transaction.oncomplete = () => resolve(); transaction.onabort = transaction.onerror = () => reject(transaction.error || new Error('音频缓存写入失败'));
+            });
+        };
+        return { metadata: async () => {
+            const database = await open(); return new Promise((resolve, reject) => {
+                const rows = [], transaction = database.transaction('metadata', 'readonly'), request = transaction.objectStore('metadata').index('at').openCursor();
+                request.onsuccess = () => { const cursor = request.result; if (!cursor) return; rows.push(cursor.value); cursor.continue(); };
+                transaction.oncomplete = () => resolve(rows); transaction.onabort = transaction.onerror = () => reject(transaction.error);
+            });
+        }, get: key => run('readonly', s => s.get(key)),
+            put: row => mutate((audio, metadata) => { audio.put(row); metadata.put({ key: row.key, size: row.blob.size, at: row.at, expires: row.expires }); }),
+            delete: key => mutate((audio, metadata) => { audio.delete(key); metadata.delete(key); }), clear: () => mutate((audio, metadata) => { audio.clear(); metadata.clear(); }) };
     }
     function createCache(store) {
         let tail = Promise.resolve(), generation = 0;
@@ -176,12 +198,12 @@
                     try {
                         const id = await hash(key), limit = options(config).cacheMiB * 1048576;
                         if (blob.size > limit || epoch !== generation) return false;
-                        const rows = (await store.list()).sort((a, b) => a.at - b.at); let bytes = rows.reduce((n, r) => n + (r.key === id ? 0 : r.blob?.size || 0), 0);
+                        const rows = (await (store.metadata ? store.metadata() : store.list())).sort((a, b) => a.at - b.at), size = row => row.size ?? row.blob?.size ?? 0; let bytes = rows.reduce((n, r) => n + (r.key === id ? 0 : size(r)), 0);
                         for (const row of rows) if (row.key === id || row.expires <= Date.now() || bytes + blob.size > limit) {
-                            await store.delete(row.key); if (row.key !== id) bytes -= row.blob?.size || 0;
+                            await store.delete(row.key); if (row.key !== id) bytes -= size(row);
                         }
                         if (epoch !== generation) return false;
-                        await store.put({ key: id, blob, detail, at: Date.now(), expires: Date.now() + options(config).cacheDays * 86400000 }); return true;
+                        await store.put({ key: id, blob, size: blob.size, detail, at: Date.now(), expires: Date.now() + options(config).cacheDays * 86400000 }); return true;
                     } catch (_) { return false; }
                 }); tail = task; return task;
             },

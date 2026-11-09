@@ -25,6 +25,28 @@ test('configured body tags extract only complete plot and strip nested excluded 
     assert.equal(c.cleanVectorStoryText(chat, '没有正文标签'), '没有正文标签');
     assert.equal(c.cleanVectorStoryText(chat, '<content>正文</content><小剧场>噪声</小剧场>'), '正文');
 });
+
+test('archive migration preview counts current and old model scopes without requests or changing the live archive', async () => {
+    const { c, chat, calls } = fixture({ vectorExternalIndex: true });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/memory_library.js'), 'utf8'), c);
+    chat.memoryJournals = [{ id: 'a-memory', content: '当前存档约定' }];
+    chat.archives = [{ id: 'a', name: '当前篇' }, { id: 'b', name: '旧篇', data: { history: [], memoryJournals: [{ id: 'b-memory', content: '旧存档约定' }] } }];
+    await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
+    const previous = c.vectorMemoryApiFingerprint(c.resolveVectorMemoryApi());
+    const oldScope = JSON.stringify(['character', 'c', 'b', previous]);
+    await vm.runInContext('VectorIndexStore', c).commit(oldScope, { old: { version: 2, chunks: [{ key: 'old', start: 0, end: 2, vector: [1, 0] }] } }, 'old');
+    await vm.runInContext('VectorIndexStore', c).commit(JSON.stringify(['character', 'other', 'a', previous]), {}, 'other');
+    c.db.vectorMemoryApiSettings.embeddingModel = 'new-model';
+    const before = JSON.stringify(chat), count = calls.length;
+    const rows = await c.memoryLibraryMigrationPreview(chat, 'character');
+    assert.deepEqual(Array.from(rows, row => row.archiveId), ['a', 'b']);
+    assert.deepEqual(Array.from(rows, row => row.oldChunks), [1, 1]);
+    assert.ok(rows.every(row => row.newChunks === 1 && row.currentChunks === 0));
+    assert.equal(calls.length, count); assert.equal(JSON.stringify(chat), before);
+    c.db.vectorMemoryApiSettings.embeddingModel = 'embed';
+    const restored = await c.memoryLibraryMigrationPreview(chat, 'character');
+    assert.equal(restored[0].currentChunks, 1); assert.equal(restored[0].newChunks, 0);
+});
 test('stable history source keys and embedding input survive unrelated earlier deletion', () => {
     const { c, chat } = fixture({ vectorStableSources: true });
     chat.history = [{ id: 'x', role: 'user', content: '过去' }, { id: 'y', role: 'assistant', content: '海边约定' }];
@@ -157,7 +179,7 @@ test('independent index survives reloading legacy mirror and exports chat-only b
     assert.equal(saves, 0); assert.ok(chat.memoryVectorIndex.j);
     delete chat.memoryVectorIndex;
     const tool = vm.runInContext('VectorMemoryTools', c);
-    const exported = { characters: [{ id: chat.id, activeArchiveId: chat.activeArchiveId, history: [], memoryJournals: chat.memoryJournals }] };
+    const exported = { characters: [{ id: chat.id, activeArchiveId: chat.activeArchiveId, history: [], memoryJournals: structuredClone(chat.memoryJournals) }] };
     await tool.portableExport(exported);
     assert.ok(exported.characters[0].memoryVectorIndex?.j, 'chat-only backup carries independent index');
     await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
@@ -165,6 +187,18 @@ test('independent index survives reloading legacy mirror and exports chat-only b
     chat.activeArchiveId = 'b'; chat.memoryVectorIndex = {};
     await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
     assert.equal(calls.length, 2, 'different archive does not reuse unrelated index');
+});
+test('real storage chat-only projection materializes vectors without adding omitted contact configuration', async () => {
+    const { c, chat } = fixture({ vectorExternalIndex: true }); c.window = {};
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/storage.js'), 'utf8'), c);
+    chat.memoryJournals = [{ id: 'j', content: '约定' }]; chat.statusPanel = { regexPattern: '<status>[\\s\\S]*?<\\/status>', currentStatusRaw: '在线' };
+    await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
+    const exported = { characters: [c.storageExportChat(chat, false, true, { includeVectorIndex: true })] };
+    delete exported.characters[0].memoryVectorIndex;
+    await vm.runInContext('VectorMemoryTools', c).portableExport(exported);
+    assert.ok(exported.characters[0].memoryVectorIndex.j);
+    assert.equal(exported.characters[0].autoMemorySettings, undefined);
+    assert.equal(exported.characters[0].statusPanel.regexPattern, undefined);
 });
 
 test('total recalled token estimate includes fixed header and entry metadata', async () => {
@@ -190,6 +224,64 @@ test('result cache refreshes edited memory timeline and provenance', async () =>
 test('body-like tags embedded inside reasoning never become vector story text', () => {
     const { c, chat } = fixture({ vectorBodyTags: 'content' });
     assert.equal(c.cleanVectorStoryText(chat, '<thinking><content>隐藏的推理</content></thinking><content>真实剧情</content>'), '真实剧情');
+});
+
+test('portable index export rejects live edits during async read and mismatched exported source snapshots', async () => {
+    for (const mutation of ['during-read', 'already-newer', 'api-change', 'settings-change']) {
+        const { c, chat } = fixture({ vectorExternalIndex: true });
+        chat.memoryJournals = [{ id: 'j', content: '旧约定' }];
+        const exported = { characters: [structuredClone(chat)] };
+        if (mutation === 'already-newer') chat.memoryJournals[0].content = '新约定';
+        const fingerprint = c.vectorSourceFingerprint(chat);
+        c.VectorIndexStore = { read: async () => {
+            if (mutation === 'during-read') chat.memoryJournals[0].content = '新约定';
+            if (mutation === 'api-change') c.db.vectorMemoryApiSettings.embeddingModel = 'new-model';
+            if (mutation === 'settings-change') chat.autoMemorySettings.vectorBodyTags = 'new-tags';
+            return { fingerprint: mutation === 'during-read' ? c.vectorSourceFingerprint(chat) : fingerprint, index: { j: { version: 2, chunks: [] } } };
+        } };
+        await vm.runInContext('VectorMemoryTools', c).portableExport(exported);
+        assert.equal(exported.characters[0].memoryVectorIndex, undefined, mutation);
+    }
+});
+test('incremental index preview counts new changed and removed chunks without embedding requests', async () => {
+    const { c, chat, calls } = fixture(); chat.memoryJournals = [{ id: 'old', content: '旧事实' }, { id: 'same', content: '保留事实' }];
+    await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
+    const before = calls.length;
+    chat.memoryJournals = [{ id: 'same', content: '保留事实' }, { id: 'new', content: '新增事实' }];
+    const preview = c.getVectorMemoryIndexPreview(chat);
+    assert.equal(preview.newChunks, 1); assert.equal(preview.reusedChunks, 1); assert.equal(preview.deletedChunks, 1); assert.equal(preview.minimumBatches, 1);
+    assert.equal(calls.length, before);
+    chat.memoryJournals[0].content = '修改后的事实';
+    assert.equal(c.getVectorMemoryIndexPreview(chat).updatedSources, 1);
+});
+test('request cleaning cache reuses identical strings while deep commit guard still rejects in-place source edits', async () => {
+    const { c, chat } = fixture(); chat.memoryJournals = [{ id: 'j', content: '<content>约定</content>' }];
+    await c.getVectorMemoryContext(chat, '约定');
+    assert.ok(c.getVectorMemoryDiagnostics(chat).cleaningCacheHits > 0);
+    const normal = c.fetch;
+    c.fetch = async (...args) => { const result = await normal(...args); chat.memoryJournals[0].content = '请求中被编辑'; return result; };
+    await assert.rejects(c.getVectorMemoryContext(chat, '新的问题'), /变化|取消/);
+    assert.equal(chat.memoryJournals[0].content, '请求中被编辑');
+});
+test('source permission revoked after retrieval is checked again before vector prompt injection', async () => {
+    const { c, chat } = fixture(); let enabled = true;
+    c.UvUStoryBridge = { allowedMemory: () => enabled };
+    chat.memoryJournals = [{ id: 'j', source: 'sillytavern', bridgeReview: { status: 'approved', archiveId: 'a' }, content: '酒馆事实' }];
+    const context = await c.getVectorMemoryContext(chat, '事实'); assert.match(context, /酒馆事实/);
+    enabled = false;
+    assert.equal(c.buildPromptWithVectorMemory(chat, () => 'BASE', context), 'BASE');
+});
+test('failed embedding model migration keeps old versioned scope usable after restoring the old model', async () => {
+    const { c, chat, calls } = fixture({ vectorExternalIndex: true }); chat.memoryJournals = [{ id: 'j', content: '约定' }];
+    await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
+    const apiBefore = structuredClone(c.db.vectorMemoryApiSettings), normal = c.fetch;
+    const scope = vm.runInContext('VectorMemoryTools', c).indexScope(chat, c.vectorMemoryApiFingerprint(apiBefore));
+    c.db.vectorMemoryApiSettings.embeddingModel = 'new-space'; c.fetch = async () => { throw new Error('fixture unavailable'); };
+    await assert.rejects(c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true }));
+    assert.ok((await c.VectorIndexStore.read(scope)).index.j, 'old scope remains committed');
+    c.db.vectorMemoryApiSettings = apiBefore; c.fetch = normal; const before = calls.length;
+    await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
+    assert.equal(calls.length, before, 'old vectors restored without repeating embedding');
 });
 test('configured character chunks do not split UTF16 pairs', () => {
     const { c, chat } = fixture({ vectorChunkSize: 200, vectorChunkOverlap: 10 }), tool = vm.runInContext('VectorMemoryTools', c);

@@ -185,7 +185,7 @@
                 fertile = { start: addDays(earliest, -5), end: latest };
             } catch (_) { /* Unsupported date boundary: omit rather than invent a date. */ }
         }
-        return { expected, earliest: bounded(-spread), latest: bounded(spread), end: bounded(periodDays - 1), cycleDays, periodDays, samples: intervals.length, overdue: expected < now, ongoing: !last.end, irregular, ovulation, fertile, basis: intervals.length >= 2 ? '历史周期' : '手动周期' };
+        return { expected, earliest: bounded(-spread), latest: bounded(spread), end: bounded(periodDays - 1), cycleDays, periodDays, samples: intervals.length, records: records.length, overdue: expected < now, ongoing: !last.end, irregular, ovulation, fertile, basis: intervals.length >= 2 ? '历史周期' : '手动周期' };
     }
     function context(chat, now) {
         const key = owner(chat), p = profile(key); if (!FLAGS.slice(0, 5).some(flag => p[flag])) return '';

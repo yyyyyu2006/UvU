@@ -148,10 +148,10 @@ test('avatar candidates only include real delivered images from the current char
         { id: 'image', role: 'user', timestamp: 1, parts: [{ type: 'image', data: 'data:image/png;base64,YQ==' }] },
         { id: 'rejected', role: 'user', relationshipDelivery: 'blocked', parts: [{ type: 'image', data: 'data:image/png;base64,Yg==' }] },
         { id: 'gen', role: 'assistant', timestamp: 2 }];
-    c.dexieDB = { characterPhotos: { where: () => ({ equals: id => { assert.equal(id, 'char'); return { reverse: () => ({ limit: () => ({ toArray: async () => [
+    c.dexieDB = { characterPhotos: { where: () => ({ equals: id => { assert.equal(id, 'char'); return { reverse: () => ({ filter: predicate => ({ limit: count => ({ toArray: async () => [
         { id: 1, archiveId: 'a', messageId: 'gen', image: 'Yw==', timestamp: 3 },
         { id: 2, archiveId: 'b', messageId: 'gen', image: 'ZA==', timestamp: 4 }
-    ] }) }) }; } }) } };
+    ].filter(predicate).slice(0,count) }) }) }) }; } }) } };
     assert.deepEqual(plain(await c.collectAvatarCandidates(chat)).map(item => item.id), ['message:image:0', 'photo:1']);
 });
 function enableAvatar(f) {
@@ -433,3 +433,6 @@ test('explicit requests remain unconsumed if avatar persistence rolls back', asy
     await assert.rejects(f.c.checkCharacterAvatar(f.chat), /保存失败/);
     assert.equal(JSON.stringify(f.chat.avatarAutonomy), before);
 });
+
+test('avatar archive filtering precedes limit and excludes unowned legacy photos',async()=>{const {c,chat}=fixture();chat.history=[{id:'gen',role:'assistant'}];const rows=[...Array.from({length:21},(_,i)=>({id:i+10,archiveId:'b',messageId:'gen',image:'ZA=='})),{id:1,archiveId:'a',messageId:'gen',image:'Yw=='}, {id:2,messageId:'gen',image:'Yg=='}];let stage=rows;c.dexieDB={characterPhotos:{where:()=>({equals:()=>({reverse:()=>({filter:predicate=>{stage=stage.filter(predicate);return {limit:n=>({toArray:async()=>stage.slice(0,n)})};}})})})}};assert.deepEqual(plain(await c.collectAvatarCandidates(chat)).map(x=>x.id),['photo:1']);});
+test('environment context discards in-place city timezone or enable edits while weather waits',async()=>{for(const edit of [f=>f.c.db.environmentSettings.userLocation.name='Changed',f=>f.chat.environmentProfile.aiEnabled=false,f=>f.chat.environmentProfile.charLocation.timezone='UTC']){const f=fixture();f.c.db.environmentSettings={enabled:true,userLocation:{...shanghai}};f.chat.environmentProfile={aiEnabled:true,remoteEnabled:true,charLocation:{...ny}};const pending=[];f.c.getEnvironmentWeather=()=>new Promise(resolve=>pending.push(resolve));f.c.getEnvironmentHolidays=async()=>({days:[]});const task=f.c.getEnvironmentContext(f.chat);edit(f);pending.forEach(resolve=>resolve({text:'fixture'}));assert.equal(await task,'');}});

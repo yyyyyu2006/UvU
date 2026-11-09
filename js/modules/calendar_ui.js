@@ -49,6 +49,11 @@ function calendarDayWatcher(readDay, changed) {
         const state = select(d.fields, '状态', [['planned', '待开始'], ['done', '已完成'], ['cancelled', '已取消']], e.status || 'planned');
         const locked = check(d.fields, '锁定，保留手动安排', e.locked || false);
         const scope = original?.repeat !== 'none' && original ? select(d.fields, '修改范围', [['one', '仅本次'], ['future', '此后所有'], ['series', '整个系列']], 'one') : null;
+        if (scope && e.except?.length) {
+            const impact = node('p', '', 'calendar-muted'); d.fields.append(impact);
+            const showImpact = () => { const count = e.except.filter(day => day >= (e.date || e.start)).length; impact.textContent = scope.value === 'future' && count ? '保留此后 ' + count + ' 个已取消或改期的例外日期；过去记录保留。' : ''; impact.hidden = !impact.textContent; };
+            scope.addEventListener('change', showImpact); showImpact();
+        }
         const valid = () => key === 'user' || C().resolve(key);
         const save = async remove => {
             if (!valid()) throw new Error('角色或存档已变化，请重新选择');
@@ -62,7 +67,7 @@ function calendarDayWatcher(readDay, changed) {
                     else if (occurrence === old.start) s.events.splice(s.events.indexOf(old), 1);
                     else old.until = C().addDays(occurrence, -1);
                     old.rev++;
-                    if (!remove) s.events.push({ ...updated, id: C().id(), rev: 1, repeat: scope.value === 'one' ? 'none' : updated.repeat, except: [], until: scope.value === 'one' ? '' : updated.until });
+                    if (!remove) s.events.push({ ...updated, id: C().id(), rev: 1, repeat: scope.value === 'one' ? 'none' : updated.repeat, except: scope.value === 'one' ? [] : old.except.filter(day => day >= occurrence), until: scope.value === 'one' ? '' : updated.until });
                 });
             } else if (remove) await C().removeEvent(e.id, e.rev);
             else {
@@ -222,7 +227,7 @@ function calendarDayWatcher(readDay, changed) {
                 const list = C().events(key, span.start, span.end); if (!list.length) section.append(node('p', '这天留给自由安排。', 'calendar-empty-state'));
                 const timeline = node('div', undefined, 'calendar-timeline'); section.append(timeline);
                 list.forEach(e => { const row = node('div', undefined, 'calendar-timeline-row'), clock = node('time', (e.date !== selected || span.days > 1 ? e.date.slice(5) + '\n' : '') + (e.time || '全天')), card = button('', () => editEvent(key, { start: e.date, end: e.occurrenceEnd }, e), 'calendar-event-card'); card.style.setProperty('--event-color', e.color); card.append(node('strong', e.title), node('span', [e.location, e.locked ? '已锁定' : '', e.status === 'done' ? '已完成' : e.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); if (e.note) card.append(node('p', e.note)); row.append(clock, card); timeline.append(row); });
-                if (chat) actions.append(button('分享当天', () => share(chat, '日程', list.map(e => (e.time || '全天') + ' ' + e.title + (e.location ? ' · ' + e.location : '')).join('\n') || '暂无安排')));
+                if (chat) actions.append(button(span.days > 1 ? '分享所选日期' : '分享当天', () => share(chat, '日程', (span.days > 1 ? span.start + '—' + span.end + '\n' : '') + (list.map(e => (span.days > 1 ? e.date + ' ' : '') + (e.time || '全天') + ' ' + e.title + (e.location ? ' · ' + e.location : '')).join('\n') || '暂无安排'))));
             } else if (mode === 'mood') {
                 const owners = key === 'user' ? ['user'] : ['user', key];
                 owners.forEach(who => { const group = node('div', undefined, 'calendar-mood-records'); group.append(node('h4', who === 'user' ? '我' : chat.remarkName || chat.realName)); section.append(group); const records = s.moods.filter(m => m.owner === who && m.date >= span.start && m.date <= span.end).sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
@@ -232,7 +237,7 @@ function calendarDayWatcher(readDay, changed) {
                 });
                 if (chat) actions.append(button('分享我的心情', () => { const m = s.moods.filter(m => m.owner === 'user' && m.date === selected).at(-1); if (!m) { feedback.textContent = '请先记录我的心情'; return; } share(chat, '心情', C().moods[m.mood] + (m.note ? ' · ' + m.note : '')); }));
             } else {
-                const p = C().predict(); if (p) { const summary = node('div', undefined, 'calendar-prediction'); summary.append(node('strong', '预计 ' + p.expected), node('p', p.earliest + '—' + p.latest), node('small', p.basis + ' · ' + p.samples + '个周期 · ' + p.cycleDays + '天' + (p.overdue ? ' · 已超过预计日，等待实际记录' : '') + (p.ongoing ? ' · 当前记录尚未结束' : ''))); section.append(summary); }
+                const p = C().predict(); if (p) { const summary = node('div', undefined, 'calendar-prediction'); summary.append(node('strong', '预计 ' + p.expected), node('p', p.earliest + '—' + p.latest), node('small', p.basis + ' · ' + p.samples + '个有效周期 / ' + p.records + '次开始记录 · ' + p.cycleDays + '天 · 已按当前记录更新' + (p.overdue ? ' · 已超过预计日，等待实际记录' : '') + (p.ongoing ? ' · 当前记录尚未结束' : ''))); section.append(summary); }
                 else section.append(node('p', s.prefs.predictionEnabled === false ? '经期预测已关闭。' : '记录开始日期后，显示预计范围。', 'calendar-muted'));
                 if (p) {
                     const legend = node('div', undefined, 'calendar-period-legend');
@@ -248,7 +253,7 @@ function calendarDayWatcher(readDay, changed) {
         async function share(target, kind, text) { try { if (!valid()) throw new Error('请重新打开日历'); if (!confirm('将' + kind + '卡片发送给“' + (target.remarkName || target.realName) + '”？')) return; const sent = await root.UvUCalendarChat.share(target, { title: kind, date: selected, text }); feedback.textContent = sent ? '已分享' : '当前关系状态下无法分享'; } catch (e) { feedback.textContent = e.message; } }
         async function generate(auto) { if (!chat || !valid() || !root.UvUCalendarAI) return; const target = chat, owner = key; feedback.textContent = '正在安排…'; try { const proposal = await root.UvUCalendarAI.generate(target, auto ? currentDay() : selected, life.signal); if (!valid() || owner !== key) return; if (auto) { await root.UvUCalendarAI.apply(target, proposal); feedback.textContent = root.UvUCalendarAI.status(owner); } else showProposal(target, proposal); } catch (e) { if (valid() && e.name !== 'AbortError') feedback.textContent = e.message; } }
         function maybeGenerate() { if (chat && C().profile(key).autoGenerate && !C().profile(key).generatedDates.includes(currentDay())) generate(true); }
-        function showProposal(target, proposal) { const dialog = editor('行程预览', 'calendar-plan-preview'); dialog.fields.append(node('p', '勾选后保存', 'calendar-muted')); const choices = proposal.events.map(e => { const b = check(dialog.fields, (e.time || '全天') + ' ' + e.title, true); return { e, b }; }); if (proposal.mood) dialog.fields.append(node('p', '心情：' + C().moods[proposal.mood.mood], 'calendar-muted')); dialog.form.onsubmit = ev => { ev.preventDefault(); dialog.run(() => root.UvUCalendarAI.apply(target, { ...proposal, events: choices.filter(x => x.b.checked).map(x => x.e) })); }; }
+        function showProposal(target, proposal) { const dialog = editor('行程预览', 'calendar-plan-preview'); dialog.fields.append(node('p', '勾选后保存', 'calendar-muted')); const choices = proposal.events.map(e => { const b = check(dialog.fields, (e.time || '全天') + ' ' + e.title, true); return { e, b }; }); const moodChoice = proposal.mood ? check(dialog.fields, '同时保存心情：' + C().moods[proposal.mood.mood], false) : null; dialog.form.onsubmit = ev => { ev.preventDefault(); dialog.run(() => root.UvUCalendarAI.apply(target, { ...proposal, includeMood: moodChoice?.checked === true, events: choices.filter(x => x.b.checked).map(x => x.e) })); }; }
         // Explicit range mode disables touch scrolling only on the grid; ordinary swipes still scroll.
         grid.addEventListener('pointerdown', ev => {
             suppressClickUntil = 0; const day = ev.target.closest('[data-date]')?.dataset.date; if (!day || ev.button > 0) return;
@@ -269,7 +274,7 @@ function calendarDayWatcher(readDay, changed) {
         grid.addEventListener('click', ev => { if (performance.now() < suppressClickUntil) { suppressClickUntil = 0; ev.stopImmediatePropagation(); ev.preventDefault(); } }, true);
         // Prevent the native pan only after a long press activated range selection.
         grid.addEventListener('touchmove', ev => { if (drag?.active && ev.cancelable) ev.preventDefault(); }, { passive: false });
-        grid.addEventListener('keydown', ev => { if (ev.key === 'Escape') { rangeMode = false; rangeAnchor = null; span = C().range(selected); paint(); } if (ev.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(ev.key)) { ev.preventDefault(); rangeMode = true; rangeAnchor ||= selected; const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key]; try { const day = C().addDays(selected, delta), next = C().range(rangeAnchor, day); if (next.days > 400) { feedback.textContent = '每次最多选择400天'; return; } selected = day; span = next; month = selected.slice(0, 7); paint(); grid.querySelector('[data-date="' + selected + '"]')?.focus(); } catch (_) {} } });
+        grid.addEventListener('keydown', ev => { if (ev.key === 'Escape' && (rangeMode || span.days > 1)) { ev.preventDefault(); ev.stopPropagation(); rangeMode = false; rangeAnchor = null; span = C().range(selected); paint(); return; } if (ev.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(ev.key)) { ev.preventDefault(); rangeMode = true; rangeAnchor ||= selected; const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key]; try { const day = C().addDays(selected, delta), next = C().range(rangeAnchor, day); if (next.days > 400) { feedback.textContent = '每次最多选择400天'; return; } selected = day; span = next; month = selected.slice(0, 7); paint(); grid.querySelector('[data-date="' + selected + '"]')?.focus(); } catch (_) {} } });
         side.onchange = () => { weatherController?.abort(); setOwner(true); };
         document.addEventListener('uvu-calendar-ai-status', ev => { if (valid() && ev.detail.owner === key) feedback.textContent = ev.detail.text; }, { signal: life.signal });
         document.addEventListener('uvu-calendar-changed', () => { if (valid()) paint(); }, { signal: life.signal });

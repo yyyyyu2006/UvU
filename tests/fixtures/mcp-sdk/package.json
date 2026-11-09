@@ -1,0 +1,6 @@
+{
+  "name": "uvu-local-mcp-sdk-fixture",
+  "private": true,
+  "description": "Isolated, pinned official SDK fixture; never loaded by the browser app",
+  "dependencies": { "@modelcontextprotocol/sdk": "1.24.3" }
+}

@@ -29,8 +29,11 @@ async function saveLibraryMemory(chat, fields, { existing = null, sources = [], 
     const journal = { ...(existing || {}), id, title, content, category: String(fields.category || '').trim(),
         timeline: String(fields.timeline || '').trim(), createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now(),
         range: existing?.range || { start: 0, end: 0 }, isFavorited: existing?.isFavorited ?? true, manualMemory: true };
-    if (sources.length) journal.manualMergeSources = sources.map(source => ({ id: source.id, title: source.title, content: source.content,
-        category: source.category || '', timeline: source.timeline || '', createdAt: source.createdAt, range: source.range }));
+    if (sources.length) journal.manualMergeSources = sources.map(source => JSON.parse(JSON.stringify({ id: source.id, title: source.title, content: source.content,
+        category: source.category || '', timeline: source.timeline || '', createdAt: source.createdAt, range: source.range,
+        source: source.source, bridgeReview: source.bridgeReview, externalSceneId: source.externalSceneId, isFavorited: source.isFavorited,
+        autoMemory: source.autoMemory, manualMergeSources: source.manualMergeSources,
+        memorySourceTarget: { chatId: chat.id, archiveId: String(archiveId || 'default') } })));
     const next = before.filter(item => item.id !== id).map(item => sources.includes(item) ? { ...item, vectorSupersededBy: id } : item);
     next.push(journal);
     const changes = new Map(next.filter(item => !before.includes(item)).map(item => [item.id,
@@ -116,6 +119,33 @@ function memoryLibraryCacheScopes(rows, chat, type, activeScope) {
     });
 }
 
+async function memoryLibraryMigrationPreview(chat, type) {
+    const api = vectorMemoryApiFingerprint(resolveVectorMemoryApi()), snapshot = JSON.stringify(chat);
+    const guard = () => { if (JSON.stringify(chat) !== snapshot || vectorMemoryApiFingerprint(resolveVectorMemoryApi()) !== api) throw Error('存档或向量配置已变化，请刷新预览'); };
+    const scopes = typeof VectorIndexStore !== 'undefined' ? memoryLibraryCacheScopes(await VectorIndexStore.listScopes(), chat, type, '') : [];
+    guard();
+    const active = chat.activeArchiveId || 'default';
+    const archives = new Map((chat.archives || []).map(archive => [archive.id, archive]));
+    if (!archives.has(active)) archives.set(active, { id: active, name: '当前存档' });
+    for (const row of scopes) if (!archives.has(row.archiveId)) archives.set(row.archiveId, { id: row.archiveId, name: '旧存档（原文不可用）', unavailable: true });
+    const result = [];
+    for (const [archiveId, archive] of archives) {
+        const target = { ...chat, ...(archiveId === active ? {} : archive.data || {}), activeArchiveId: archiveId, autoMemorySettings: chat.autoMemorySettings };
+        if (archiveId !== active) { target.history = archive.data?.history || []; target.memoryJournals = archive.data?.memoryJournals || []; target.memoryVectorIndex = archive.data?.memoryVectorIndex || {}; }
+        const scope = VectorMemoryTools.indexScope(target, api, type), matching = scopes.filter(row => row.archiveId === archiveId);
+        if (getAutoMemorySettings(chat).vectorExternalIndex && typeof VectorIndexStore !== 'undefined') {
+            const stored = await VectorIndexStore.read(scope); guard();
+            target.memoryVectorIndex = { ...target.memoryVectorIndex, ...stored.index };
+        }
+        const preview = archive.unavailable ? null : getVectorMemoryIndexPreview(target);
+        result.push({ archiveId, name: archive.name || archiveId, active: archiveId === active, unavailable: Boolean(archive.unavailable),
+            currentChunks: matching.filter(row => row.id === scope).reduce((n, row) => n + row.chunkCount, 0),
+            oldVersions: matching.filter(row => row.id !== scope).length, oldChunks: matching.filter(row => row.id !== scope).reduce((n, row) => n + row.chunkCount, 0),
+            totalSources: preview?.totalSources || 0, newChunks: preview?.newChunks || 0, reusedChunks: preview?.reusedChunks || 0 });
+    }
+    guard(); return result;
+}
+
 function openMemoryLibrary() {
     const type = currentChatType;
     const chat = (type === 'private' ? db.characters : db.groups).find(item => item.id === currentChatId);
@@ -175,8 +205,23 @@ function openMemoryLibrary() {
     }));
     const diagnostics = element('details', undefined, 'memory-library-diagnostics'); diagnostics.append(element('summary', '本轮检索诊断 / 来源索引状态'));
     const diagnosticText = element('pre'); diagnostics.append(diagnosticText);
+    const migration = element('details', undefined, 'memory-library-migration');
+    migration.append(element('summary', '模型 / 分块变更：各存档重建预览'));
+    const migrationText = element('pre');
+    let migrationSequence = 0;
+    const loadMigration = async () => {
+        const sequence = ++migrationSequence; migrationText.textContent = '正在读取索引范围…';
+        try {
+            assertCurrent();
+            const rows = await memoryLibraryMigrationPreview(chat, type === 'private' ? 'character' : 'group');
+            assertCurrent(); if (sequence !== migrationSequence) return;
+            migrationText.textContent = rows.map(row => `${row.name}${row.active ? '（当前）' : ''}：${row.totalSources} 个来源；待嵌入 ${row.newChunks} 块 / 可复用 ${row.reusedChunks} 块；当前模型索引 ${row.currentChunks} 块；其他模型版本 ${row.oldVersions} 份 / ${row.oldChunks} 块${row.unavailable ? '；仅缓存，原存档内容不可用' : ''}`).join('\n') + '\n按当前已保存的模型和分块设置估算；不发送请求。重建按钮只处理当前存档，其他模型缓存保留，失败后可恢复旧模型继续使用。';
+        } catch (error) { if (!closed && sequence === migrationSequence) migrationText.textContent = error.message; }
+    };
+    migration.append(button('刷新各存档预览', loadMigration), migrationText);
+    migration.addEventListener('toggle', () => { if (migration.open) loadMigration(); });
     const pagination = element('div', undefined, 'memory-library-toolbar'); list.after(pagination);
-    overlay.querySelector('.feature-dialog-card').append(tuning, diagnostics);
+    overlay.querySelector('.feature-dialog-card').append(tuning, diagnostics, migration);
     if (typeof VectorIndexStore !== 'undefined' && typeof VectorMemoryTools !== 'undefined') {
         const caches = element('details', undefined, 'memory-library-cache');
         caches.append(element('summary', '独立索引缓存'));
@@ -227,6 +272,10 @@ function openMemoryLibrary() {
             const start = Math.max(0, (journal.range?.start || 0) - 1), end = journal.range?.end || 0;
             const messages = ids.size ? (chat.history || []).filter(message => ids.has(message.id)) : (chat.history || []).slice(start, end);
             details.append(element('pre', messages.map(message => `${new Date(message.timestamp || 0).toLocaleString()} · ${message.role}\n${message.content || ''}`).join('\n\n') || '手动记忆，无关联聊天楼层。'));
+            const facts = element('details'); facts.append(element('summary', '人物 / 日期 / 约定 / 待办对照'));
+            const sourceFacts = journal.manualMergeSources?.length ? journal.manualMergeSources : messages;
+            facts.append(element('pre', getMemoryFactChecklist(sourceFacts).map(row => `来源 ${row.id || row.floor} · ${row.speaker}\n日期线索：${row.dates.join('、') || '未知；不使用发送时间推断剧情日期'}\n约定：${row.commitments.join(' ') || '未识别，请核对原文'}\n待办：${row.todos.join(' ') || '未识别，请核对原文'}`).join('\n\n') || '无关联来源；请对照手动输入。'));
+            details.append(facts);
         });
         host.append(details);
     };
@@ -256,7 +305,10 @@ function openMemoryLibrary() {
         pagination.replaceChildren(button('上一页', () => { page--; refresh(); }), element('span', `第 ${page + 1}/${result.pages} 页 · 匹配 ${result.total} 篇`), button('下一页', () => { page++; refresh(); }));
         pagination.firstChild.disabled = page === 0; pagination.lastChild.disabled = page + 1 >= result.pages;
         const diag = getVectorMemoryDiagnostics(chat);
+        const indexPreview = getVectorMemoryIndexPreview(chat, sourceStates);
         diagnosticText.textContent = [diag.cleaningWarning || '', diag.query ? `查询：${diag.query}` : '尚无本轮查询',
+            `续建预览：待嵌入 ${indexPreview.newChunks} 块；复用 ${indexPreview.reusedChunks} 块；更新 ${indexPreview.updatedSources} 个来源；移除 ${indexPreview.deletedChunks} 块。至少 ${indexPreview.minimumBatches} 批嵌入（Token 分批可能增加；不估算费用）。`,
+            indexPreview.batchLimit !== null ? `回复前预算 ${indexPreview.batchLimit} 批 / ${indexPreview.timeBudgetMs} ms；手动续建可暂停。` : '',
             `分块：${diag.totalChunks || 0}；待续建：${diag.pendingChunks || 0}；本次完成 ${diag.completedBatches || 0} 批`,
             `重排前：${(diag.beforeRerank || []).join(' → ') || '无'}；重排后：${(diag.afterRerank || []).join(' → ') || '无'}`,
             ...sourceStates.map(item => `${item.title}：${stateLabels[item.status]}（${item.chunks}/${item.totalChunks} 块）`),
@@ -273,6 +325,8 @@ function openMemoryLibrary() {
             heading.append(checkbox, element('strong', journal.title)); card.append(heading, element('p', describe(journal), 'feature-help'));
             if (checkbox.disabled) card.append(element('p', journal.qualityReview?.status === 'pending' ? '待质量审阅；原始聊天继续进入上下文，确认后才启用总结。' : journal.vectorSupersededBy ? '已合并，保留原文；不再单独召回' : '总结来源已变化，不参与召回', 'feature-help'));
             card.append(element('pre', journal.content)); original(journal, card);
+            const usage = getMemoryUsageExplanation(chat, journal), useDetail = element('details');
+            useDetail.append(element('summary', '引用：' + usage.status), element('p', usage.reason, 'feature-help')); card.append(useDetail);
             card.append(element('p', `索引：${stateLabels[states.get(journal.id) || 'pending']}`, 'feature-help'));
             if (journal.qualityReview?.status === 'pending') {
                 for (const warning of journal.qualityReview.warnings || []) card.append(element('p', `质量提醒：${warning}`, 'memory-library-warning'));

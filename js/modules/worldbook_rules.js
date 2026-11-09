@@ -57,36 +57,50 @@ function chatUsesAdvancedWorldBook(chat) {
     // truly legacy books without rules keep the original static prompt path.
     return (chat?.worldBookIds || []).some(id => Object.hasOwn(db.worldBooks.find(book => book.id === id)?.rules || {}, 'advancedEnabled'));
 }
+const worldBookLastPlans = new WeakMap();
+function getWorldBookPlanDiagnostics(chat) { return worldBookLastPlans.get(chat)?.activationDiagnostics || []; }
 function buildWorldBookPlan(chat, history = chat.history || [], random = Math.random, regexResults) {
-    return (chat.worldBookIds || []).map(id => db.worldBooks.find(w => w.id === id)).filter(w => {
-        if (!w || w.type === 'folder' || w.rules?.unsupportedPosition) return false;
+    const diagnostics = [];
+    const plan = (chat.worldBookIds || []).map(id => db.worldBooks.find(w => w.id === id)).filter(w => {
+        if (!w || w.type === 'folder') return false;
+        const explanation = { id: w.id, name: w.name || w.id, active: false, matchedKeys: [], scanDepth: 0,
+            position: w.position === 'chat' ? 'before' : w.position || 'before', reason: '' };
+        diagnostics.push(explanation);
+        const decide = (active, reason) => { explanation.active = active; explanation.reason = reason; return active; };
+        if (w.rules?.unsupportedPosition) return decide(false, '导入位置暂不支持');
         const r = w.rules;
-        if (!worldBookUsesAdvancedRules(w)) return true;
-        if (r.enabled === false) return false;
+        if (!worldBookUsesAdvancedRules(w)) return decide(true, '按原版绑定与顺序插入');
+        if (r.enabled === false) return decide(false, '条目已停用');
         const count = Math.floor(worldBookNumber(r.scanDepth, 20, 0, 10000));
+        explanation.scanDepth = count;
         const text = (count ? history.slice(-count) : []).map(m => m.content || '').join('\n');
         if (r.constant === false) {
             const matches = key => {
                 if (regexResults?.has(w) && regexResults.get(w).has(key)) return regexResults.get(w).get(key);
                 return worldBookMatches(key, text, r);
             };
-            if (!worldBookKeys(r.keys).some(k => matches(k) === true)) return false;
+            const primary = worldBookKeys(r.keys);
+            if (!primary.some(k => { const hit = matches(k) === true; if (hit) explanation.matchedKeys.push(k); return hit; })) return decide(false, '主要关键词未匹配');
             const secondary = worldBookKeys(r.secondaryKeys);
             if (secondary.length && r.selective !== false) {
                 const hits = secondary.map(matches);
                 // A timed-out/unsupported regex is unknown, never a negative hit.
-                if (hits.some(hit => hit == null)) return false;
+                if (hits.some(hit => hit == null)) return decide(false, '正则结果不可用');
                 const mode = Number(r.selectiveLogic || 0);
-                if (!(mode === 1 ? !hits.every(Boolean) : mode === 2 ? !hits.some(Boolean) : mode === 3 ? hits.every(Boolean) : hits.some(Boolean))) return false;
+                if (!(mode === 1 ? !hits.every(Boolean) : mode === 2 ? !hits.some(Boolean) : mode === 3 ? hits.every(Boolean) : hits.some(Boolean))) return decide(false, '筛选关键词未满足');
             }
         }
         const probability = worldBookNumber(r.probability, 100, 0, 100);
-        return probability === 100 || (probability > 0 && random() * 100 < probability);
+        return decide(probability === 100 || (probability > 0 && random() * 100 < probability), '');
     }).sort((a, b) => {
         const aOrder = worldBookUsesAdvancedRules(a) ? worldBookNumber(a.rules.order, a.depth || 100) : (a.depth || 100);
         const bOrder = worldBookUsesAdvancedRules(b) ? worldBookNumber(b.rules.order, b.depth || 100) : (b.depth || 100);
         return aOrder - bOrder;
     });
+    for (const row of diagnostics) if (!row.reason) row.reason = row.active ? '本轮已激活' : '本轮概率未命中';
+    Object.defineProperty(plan, 'activationDiagnostics', { value: diagnostics });
+    worldBookLastPlans.set(chat, plan);
+    return plan;
 }
 function worldBookRegexAbortError() {
     const error = new Error('世界书匹配已取消');
@@ -192,7 +206,11 @@ function importWorldBookJson(value, parentId) {
         // Imported trigger metadata is preserved, but stays dormant until explicitly enabled in the editor.
         rules.advancedEnabled = false;
         if (!supplied && e.type === 'entry' && typeof e.position === 'string' && e.constant == null && e.key == null && e.keys == null) rules.constant = true;
-        return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: Number.isFinite(portable?.depth) ? portable.depth : (e.depth ?? 100), rules, importSource: e };
+        const preservedOnly = ['sticky', 'cooldown', 'delay', 'delayUntilRecursion', 'excludeRecursion', 'preventRecursion', 'ignoreBudget', 'budget', 'tokenBudget', 'group', 'groupOverride', 'groupWeight']
+            .filter(key => Object.hasOwn(e, key) || Object.hasOwn(ext, key));
+        const importCompatibility = { supported: ['正文', '绑定位置与顺序', '主动开启后的关键词、扫描范围与概率'], preservedOnly };
+        if (preservedOnly.length) warnings.push(`${e.comment || e.name || index + 1}：仅保留 ${preservedOnly.join('、')}，未执行其上游生命周期、递归或预算语义`);
+        return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: Number.isFinite(portable?.depth) ? portable.depth : (e.depth ?? 100), rules, importSource: e, importCompatibility };
     });
     if (!books.length) throw new Error('没有可导入的世界书内容');
     if (books.length > 3000) throw new Error('单次最多导入 3000 条');

@@ -75,8 +75,9 @@ async function collectAvatarCandidates(chat, { includeExcluded = false } = {}) {
         });
     }
     if (typeof dexieDB !== 'undefined' && dexieDB?.characterPhotos) {
-        const photos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse().limit(20).toArray();
-        photos.filter(p => p.archiveId === chat.activeArchiveId && p.messageId && chat.history.some(m => m.id === p.messageId && !m.isWithdrawn)).forEach(photo => {
+        const photos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse()
+            .filter(p => p.archiveId === chat.activeArchiveId && p.messageId && chat.history.some(m => m.id === p.messageId && !m.isWithdrawn && !m.isContextDisabled && !m.relationshipDelivery)).limit(20).toArray();
+        photos.forEach(photo => {
             const src = avatarImageSource(photo.image) || avatarImageSource(`data:image/png;base64,${photo.image}`);
             if (src) candidates.push({ id: `photo:${photo.id}`, messageId: photo.messageId, photoId: photo.id, src, source: '此存档的实际生图', timestamp: photo.timestamp });
         });

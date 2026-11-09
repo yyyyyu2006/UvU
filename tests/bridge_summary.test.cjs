@@ -13,6 +13,9 @@ function setup(){
  return {ctx,api:ctx.UvUBridgeSummary,calls};
 }
 const items=[{id:'f1',text:'已选剧情。',selected:true,floor:{number:1,speaker:'甲',createdAt:0}},{id:'f2',text:'不应总结的剧情',selected:false}];
+test('summary fact comparison contains only selected floors with speaker and unknown plot date', () => {
+ const f=setup(),rows=f.api.factChecklist(items);assert.equal(rows.length,1);assert.equal(rows[0].speaker,'甲');assert.equal(rows[0].date,'未知');assert.equal(rows[0].floor,1);assert.match(rows[0].text,/已选剧情/);
+});
 test('external summary uses existing third-person factory without changing style/history or adding unselected stories',async()=>{
  const f=setup(),chat={id:'c',journalStyleSettings:{mode:'default'},history:[{content:'LOCAL_HISTORY'}]};const before=JSON.stringify(chat);
  const result=await f.api.generate(chat,items,{});

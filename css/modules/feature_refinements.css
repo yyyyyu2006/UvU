@@ -53,3 +53,7 @@
 :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) button { min-height: var(--derived-control-height); padding: 5px 9px; }
 :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) :is(p.feature-help,.derived-help,.mcp-help) { max-width: 62ch; }
 :is(.feature-dialog,.derived-settings,.mcp-settings,.resource-health) > header { padding-bottom: 4px; }
+.shared-document-dialog .shared-document-pages:not([hidden]) { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.shared-document-dialog .shared-document-pages input { min-width:0; width:120px; flex:1 1 100px; }
+.shared-document-dialog .shared-document-pages button { padding:6px 10px; min-height:32px; }
+.shared-document-dialog .shared-document-comparison pre { max-height:240px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; }

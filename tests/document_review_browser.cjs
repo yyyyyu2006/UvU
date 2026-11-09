@@ -1,0 +1,31 @@
+// Real UI modules with isolated in-memory documents; no model or account calls.
+const assert=require('node:assert/strict'),path=require('node:path');
+const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
+const root=path.resolve(__dirname,'..');
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+const page=await browser.newPage({viewport:{width:390,height:844}});
+await page.route('http://document.test/**',r=>r.fulfill({body:'<main><button id="open">文件</button></main>',contentType:'text/html'}));await page.goto('http://document.test/');
+await page.evaluate(()=>{window.crypto.randomUUID=()=>String(Math.random()).slice(2);window.chat={id:'c',realName:'角色',activeArchiveId:'a',history:[]};window.currentChatType='private';window.currentChatId='c';window.isInMultiSelectMode=false;window.isDebugMode=false;window.toasts=[];window.showToast=x=>toasts.push(x);window.captureChatSendTarget=()=>({chat,type:'private',chatId:'c',archiveId:'a',history:chat.history});window.isChatSendTargetValid=()=>true;window.saveData=async()=>{};});
+for(const file of ['message_forward','chat_documents','chat_documents_ui','global_css_io','feature_dialogs'])await page.addScriptTag({path:path.join(root,'js/modules/'+file+'.js')});
+await page.addStyleTag({path:path.join(root,'css/modules/document_features.css')});
+await page.evaluate(()=>{const original={id:'source',role:'user',type:'document',document:makeSharedDocument('old.txt','原约定\n周六见\n带相机')};const edited={id:'edited',role:'assistant',type:'document',document:makeSharedDocument('new.txt','原约定\n周日见\n带相机',{parentId:'source'})};chat.history.push(original,edited);openSharedDocumentDialog(edited,chat);});
+assert.equal(await page.locator('[data-document-diff]').count(),1);await page.locator('[data-document-diff] summary').click();assert.match(await page.locator('[data-document-diff] pre').textContent(),/- 周六见\n\+ 周日见/);
+await page.evaluate(()=>document.getElementById('shared-document-dialog').dismissForward());
+await page.evaluate(()=>{const file={id:'long',role:'user',type:'document',document:makeSharedDocument('long.txt','A'.repeat(12500)+'FINAL_NEEDLE')};chat.history.push(file);openSharedDocumentDialog(file,chat);});
+assert.ok((await page.getByLabel('文件正文',{exact:true}).inputValue()).length<=12000);
+await page.getByRole('button',{name:'下一段',exact:true}).click();assert.match(await page.getByLabel('文件正文',{exact:true}).inputValue(),/FINAL_NEEDLE/);
+await page.getByLabel('查找文件正文').fill('FINAL_NEEDLE');await page.getByRole('button',{name:'查找',exact:true}).click();assert.match(await page.getByLabel('文件正文',{exact:true}).inputValue(),/FINAL_NEEDLE/);
+await page.evaluate(()=>{window.exportedDocument=null;window.downloadGlobalCssDocument=async blob=>{exportedDocument=await blob.text();};});await page.getByText('文件选项',{exact:true}).click();await page.getByRole('button',{name:'导出文本',exact:true}).click();await page.waitForFunction(()=>exportedDocument!==null);assert.equal(await page.evaluate(()=>exportedDocument.length),12512);
+await page.getByRole('button',{name:'编辑副本',exact:true}).click();assert.equal((await page.getByLabel('文件正文',{exact:true}).inputValue()).length,12512);assert.equal(await page.locator('[data-document-pages]').isVisible(),false);
+await page.getByLabel('文件正文',{exact:true}).fill('未发送草稿');await page.getByRole('button',{name:'编辑副本',exact:true}).click();assert.equal(await page.getByLabel('文件正文',{exact:true}).inputValue(),'未发送草稿');
+await page.evaluate(()=>document.getElementById('shared-document-dialog').dismissForward());
+await page.evaluate(()=>{const m={id:'partial',role:'assistant',type:'document',document:makeSharedDocument('partial.pdf','可提取部分',{extractionComplete:false})};chat.history.push(m);window.sentDocument=null;window.sendSharedDocument=async(_target,file)=>{window.sentDocument=file;return true;};openSharedDocumentDialog(m,chat);});
+await page.getByRole('button',{name:'编辑副本',exact:true}).click();await page.getByLabel('文件正文',{exact:true}).fill('校订的部分');await page.getByRole('button',{name:'发送修改副本',exact:true}).click();
+assert.equal(await page.evaluate(()=>sentDocument.extractionComplete),false);
+await page.evaluate(()=>{window.decodeModes=[];window.parseSharedDocument=async(file,options)=>{decodeModes.push(options.encoding||'auto');return makeSharedDocument(file.name,options.encoding==='gb18030'?'重新解码':'自动内容',{extractionReport:['工作表 notes：B2:D4，3行×3列']});};openSharedDocumentDialog();});
+await page.getByLabel('选择分享文件',{exact:true}).setInputFiles({name:'fixture.txt',mimeType:'text/plain',buffer:Buffer.from('raw fixture')});
+await page.getByLabel('文件文字编码',{exact:true}).waitFor({state:'visible'});await page.getByLabel('文件文字编码',{exact:true}).selectOption('gb18030');
+await page.waitForFunction(()=>document.querySelector('[aria-label=文件正文]').value==='重新解码');assert.deepEqual(await page.evaluate(()=>decodeModes),['auto','gb18030']);
+await page.getByText('文件选项',{exact:true}).click();await page.locator('[data-document-extraction] summary').click();assert.match(await page.locator('[data-document-extraction]').innerText(),/B2:D4/);
+console.log('PASS returned-file source diff; long readonly preview pagination/find; edit restores complete document');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

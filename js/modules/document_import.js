@@ -73,19 +73,19 @@ async function parseImportDocument(file, { images = false, signal, onProgress, e
         return { text: text.replace(/^\uFEFF/, ''), stickers: [], encoding, warnings: text.includes('�') ? ['检测到无法解码的字符，请尝试其他编码后导入'] : [] };
     }
     if (extension !== 'docx') throw new Error('请选择 DOCX 或 TXT 文档（旧版 DOC 请另存为 DOCX）');
-    if (typeof mammoth === 'undefined') throw new Error('DOCX 解析库未加载，请检查网络后刷新');
+    if (typeof Worker !== 'function' && typeof mammoth === 'undefined') throw new Error('DOCX 解析库未加载，请检查网络后刷新');
     const arrayBuffer = await file.arrayBuffer();
     await checkpoint('正在检查 DOCX 压缩目录…');
     validateDocxArchive(arrayBuffer);
     await checkpoint('正在解析 DOCX；复杂格式将转为纯文字…');
     if (!images) {
-        const result = await mammoth.extractRawText({ arrayBuffer });
+        const result = typeof Worker === 'function' ? await readImportedDocx(arrayBuffer, false, signal) : await mammoth.extractRawText({ arrayBuffer });
         if (result.value.length > 2000000) throw new Error('文档文字过多，请拆分后导入');
         await checkpoint('DOCX 文字已解析；图片、表格样式与脚注布局不保留');
         return { text: result.value, stickers: [], warnings: ['DOCX 已转为纯文字，图片、表格样式和脚注布局不保留'] };
     }
     let imageBytes = 0, imageCount = 0;
-    const result = await mammoth.convertToHtml({ arrayBuffer }, {
+    const result = typeof Worker === 'function' ? await readImportedDocx(arrayBuffer, true, signal) : await mammoth.convertToHtml({ arrayBuffer }, {
         convertImage: mammoth.images.imgElement(async image => {
             await checkpoint('正在读取文档图片 ' + (imageCount + 1) + '…');
             if (++imageCount > 300) throw new Error('单个文档最多包含 300 张表情图片');
@@ -108,6 +108,19 @@ async function parseImportDocument(file, { images = false, signal, onProgress, e
     });
     const text = Array.from(documentTree.querySelectorAll('p')).map(p => p.textContent).join('\n');
     return { text, stickers };
+}
+function readImportedDocx(buffer, images, signal) {
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(new URL('js/modules/document_import_worker.js?v=20261109-audit-repairs', document.baseURI));
+        let done = false;
+        const finish = (error, value) => { if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener('abort', abort); worker.terminate(); error ? reject(error) : resolve(value); };
+        const abort = () => finish(Object.assign(new Error('文档导入已取消'), { name: 'AbortError' }));
+        const timer = setTimeout(() => finish(new Error('DOCX解析超时，请拆分文档后重试')), 30000);
+        worker.onerror = () => finish(new Error('DOCX解析器加载失败，请检查网络后重试'));
+        worker.onmessage = event => event.data?.error ? finish(new Error(event.data.error)) : typeof event.data?.value === 'string' ? finish(null, event.data) : finish(new Error('DOCX解析结果无效'));
+        signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) return abort();
+        worker.postMessage({ buffer, images }, [buffer]);
+    });
 }
 function validateDocxArchive(buffer) {
     const view = new DataView(buffer);

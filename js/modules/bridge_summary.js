@@ -10,6 +10,15 @@
     function signature(items) {
         return JSON.stringify(selected(items));
     }
+    function factChecklist(input) {
+        return selected(input).map(item => {
+            const sentences = item.text.split(/(?<=[。！？!?\n])/u).map(value => value.trim()).filter(Boolean);
+            return { id: item.id, floor: item.floor?.number || item.id, speaker: item.floor?.speaker || '未知',
+                date: [...new Set(item.text.match(/\d{4}[-年/]\d{1,2}[-月/]\d{1,2}日?/g) || [])].join('、') || '未知',
+                commitments: sentences.filter(value => /约定|答应|承诺|取消|改期|不再|计划/.test(value)),
+                todos: sentences.filter(value => /待办|未完成|还没|需要|记得|别忘/.test(value)), text: item.text };
+        });
+    }
     function batches(items, limit) {
         const groups = []; let group = [], size = 0;
         for (const item of items) {
@@ -106,5 +115,5 @@
         check();
         return {title, content, items, sourceSignature: signature(items), batchCount: groups.length, callCount, cachedCount: cached, createdAt: Date.now()};
     }
-    root.UvUBridgeSummary = {selected, signature, batches, estimate, generate};
+    root.UvUBridgeSummary = {selected, signature, factChecklist, batches, estimate, generate};
 })(typeof globalThis === 'undefined' ? this : globalThis);

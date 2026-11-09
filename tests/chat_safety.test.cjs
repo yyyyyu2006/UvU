@@ -207,3 +207,23 @@ test("failed reply save never publishes bridge turns or triggers avatar/blacklis
  f.c.fetch=async()=>({ok:true,json:async()=>({choices:[{message:{content:'[a的消息：reply]'}}]})});
  await f.c.getAiReply('a','private',true);assert.equal(checks,0);
 });
+
+test('bad optional file block keeps normal reply and reports file failure separately', async () => {
+ const f=fixture(),chat=f.chats[0];
+ f.c.crypto=require('node:crypto').webcrypto;vm.runInContext(source('modules/chat_documents.js'),f.c);
+ f.c.getMixedContent=text=>[{type:'text',content:text}];f.c.showIncomingMessageNotifications=()=>{};f.c.escapeMessageRegex=s=>s;
+ const message=f.c.documentMessage(f.c.makeSharedDocument('source.txt','source'),'user');chat.history.push(message);
+ const sources=f.c.prepareDocumentContext(chat.history).sources;
+ await f.c.handleAiReplyContent('[a的消息：安全回复]\n<uvu_file>{bad}</uvu_file>',chat,'a','private',true,undefined,sources);
+ assert.equal(chat.history.length,2);assert.match(chat.history.at(-1).content,/安全回复/);
+ assert.doesNotMatch(chat.history.at(-1).content,/uvu_file|bad/);
+ assert.ok(f.toasts.some(text=>/文件未生成/.test(text)));
+});
+
+test('reply with no shared file never invokes optional attachment recovery', async () => {
+ const f=fixture(),chat=f.chats[0];let calls=0;
+ f.c.extractDocumentRepliesSafe=()=>{calls++;throw Error('must not run');};
+ f.c.getMixedContent=text=>[{type:'text',content:text}];f.c.showIncomingMessageNotifications=()=>{};f.c.escapeMessageRegex=s=>s;
+ await f.c.handleAiReplyContent('[a的消息：原回复]',chat,'a','private',true);
+ assert.equal(calls,0);assert.equal(chat.history.length,1);assert.match(chat.history[0].content,/原回复/);
+});

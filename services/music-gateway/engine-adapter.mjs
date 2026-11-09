@@ -41,14 +41,17 @@ export function createEngineAdapter(Meting, provider, credential = '') {
     }
     async function tracks(raw) {
         const list = Array.isArray(raw) ? raw.slice(0, 3000) : [];
-        const result = [];
-        for (const item of list) {
-            const track = normalize(item);
-            if (provider === 'netease' && item.pic_id) {
-                try { track.cover = parse(await engine.pic(item.pic_id, 300)).url || ''; } catch { /* Missing artwork does not hide a song. */ }
+        const result = list.map(normalize); let cursor = 0, artworkTimedOut = false;
+        await Promise.all(Array.from({ length: Math.min(4, list.length) }, async () => {
+            while (cursor < list.length && !artworkTimedOut) {
+                const index = cursor++, item = list[index];
+                if (provider !== 'netease' || !item.pic_id) continue;
+                let timer;
+                try { result[index].cover = parse(await Promise.race([engine.pic(item.pic_id, 300), new Promise((_, reject) => { timer = setTimeout(() => { artworkTimedOut = true; reject(Error('Artwork timeout')); }, 1000); })])).url || ''; }
+                catch { /* Missing/slow artwork must not hide the song. */ }
+                finally { clearTimeout(timer); }
             }
-            result.push(track);
-        }
+        }));
         return result;
     }
     return {
@@ -114,7 +117,9 @@ export function createEngineAdapter(Meting, provider, credential = '') {
             const raw = parse(await engine.playlist(id));
             if (!Array.isArray(raw)) throw Error('Playlist unavailable');
             return { tracks: await tracks(raw.slice((page - 1) * 30, page * 30)), hasMore: raw.length > page * 30 };
-        }
+        },
+        async playlistSnapshot(id) { const raw = parse(await engine.playlist(id)); if (!Array.isArray(raw)) throw Error('Playlist unavailable'); return raw.slice(0, 3000); },
+        async playlistRows(rows) { return tracks(rows.slice(0, 30)); }
     };
 }
 

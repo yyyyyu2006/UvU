@@ -3,6 +3,7 @@ import https from 'node:https';
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { isIP } from 'node:net';
 import { createProviderAdapter, engineInstalled, ENGINE_REVISION } from './provider-adapter.mjs';
 
 const PROVIDERS = ['netease', 'qq'];
@@ -16,6 +17,17 @@ const boundedInt = (value, fallback, max) => {
     if (!/^\d+$/.test(String(value)) || Number(value) < 1 || Number(value) > max) throw error(400, 'invalid_parameter');
     return Number(value);
 };
+// Trust only explicitly configured socket peers and walk XFF from the nearest proxy.
+export function resolveClientIp(peer, forwarded, trusted = []) {
+    const normalize = value => String(value || '').replace(/^::ffff:/, '');
+    const socket = normalize(peer), allowed = new Set(trusted.map(normalize));
+    if (!allowed.has(socket) || typeof forwarded !== 'string' || forwarded.length > 2048) return socket;
+    const chain = forwarded.split(',').map(v => normalize(v.trim()));
+    if (!chain.length || chain.length > 20 || chain.some(v => !isIP(v))) return socket;
+    let address = socket;
+    for (let i = chain.length - 1; i >= 0 && allowed.has(address); i--) address = chain[i];
+    return address;
+}
 function providerName(value) {
     if (!PROVIDERS.includes(value)) throw error(400, 'invalid_provider');
     return value;
@@ -53,7 +65,7 @@ function trackFacts(raw, provider) {
         artists: (Array.isArray(raw.artists || raw.artist) ? (raw.artists || raw.artist) : []).slice(0, 20).map(v => text(v, 120)),
         album: text(raw.album, 300), cover: safeProviderUrl(raw.cover || '', provider, 'image'),
         duration: Math.min(86400, Math.max(0, Number(raw.duration) || 0)),
-        pageUrl: provider === 'netease' ? 'https://music.163.com/#/song?id=' + id : 'https://y.qq.com/n/ryqq/songDetail/' + id,
+        pageUrl: provider === 'netease' ? 'https://music.163.com/song?id=' + id : 'https://y.qq.com/n/ryqq/songDetail/' + id,
         availability: ['full', 'preview', 'unavailable'].includes(raw.availability) ? raw.availability : 'unknown'
     };
 }
@@ -312,7 +324,7 @@ export async function createGateway(options = {}) {
                 const [, , , providerValue, encodedId] = route.split('/');
                 const provider = providerName(providerValue), id = resourceId(decodeURIComponent(encodedId), provider), page = boundedInt(url.searchParams.get('page'), 1, 100);
                 const result = await bounded(async () => (await getAdapter(session.accounts[provider], provider)).playlist(id, page));
-                body = { tracks: (result.tracks || []).slice(0, 30).map(v => trackFacts(v, provider)).filter(Boolean), hasMore: result.hasMore === true };
+                body = { tracks: (result.tracks || []).slice(0, 30).map(v => trackFacts(v, provider)).filter(Boolean), hasMore: result.hasMore === true, ...(Number.isInteger(result.total) && result.total >= 0 && result.total <= 3000 ? { total: result.total } : {}) };
             } else throw error(404, 'not_found');
             assertOpen();
             return { status: 200, headers, body };
@@ -335,7 +347,7 @@ export async function createGateway(options = {}) {
                 try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw error(400, 'invalid_json'); }
                 if (!body || typeof body !== 'object' || Array.isArray(body)) throw error(400, 'invalid_json');
             }
-            const result = await dispatch({ method: req.method, path: req.url, headers: req.headers, body, ip: req.socket.remoteAddress });
+            const result = await dispatch({ method: req.method, path: req.url, headers: req.headers, body, ip: resolveClientIp(req.socket.remoteAddress, req.headers['x-forwarded-for'], options.trustedProxies || []) });
             res.writeHead(result.status, result.headers); res.end(result.body === null ? '' : JSON.stringify(result.body));
         } catch (e) {
             res.writeHead(e.status || 400, BASE_HEADERS); res.end(JSON.stringify({ error: { code: e.code || 'invalid_request' } }));

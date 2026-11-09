@@ -3,13 +3,14 @@ let systemNotificationsEnabled = false;
 let notificationNavigationReady = false;
 let pendingNotificationTarget = null;
 let systemNotificationSequence = 0;
+const systemChatNotificationSequences = new Map();
 try { systemNotificationsEnabled = localStorage.getItem('uvu-system-notifications') === 'true'; } catch (_) {}
 
 function getMessageNotificationPreferences() {
     let raw;try{raw=JSON.parse(localStorage.getItem('uvu-notification-preferences.v1') || '{}');}catch{}
     if(!raw || typeof raw!=='object')raw={};
     const time=value=>typeof value==='string' && /^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(value);
-    return {duplicateProtection:raw.duplicateProtection===true,privacy:['full','hide-body','private'].includes(raw.privacy)?raw.privacy:'full',
+    return {groupByChat:raw.groupByChat===true,duplicateProtection:raw.duplicateProtection===true,privacy:['full','hide-body','private'].includes(raw.privacy)?raw.privacy:'full',
         quietHours:{enabled:raw.quietHours?.enabled===true,start:time(raw.quietHours?.start)?raw.quietHours.start:'22:00',end:time(raw.quietHours?.end)?raw.quietHours.end:'08:00'},
         mutedChats:Object.fromEntries(Object.entries(raw.mutedChats || {}).filter(([key,value])=>value===true && key.length<400))};
 }
@@ -57,7 +58,8 @@ function getMessageNotificationCapabilities() {
         installed:typeof window!=='undefined' && (window.matchMedia?.('(display-mode: standalone)')?.matches===true || typeof navigator!=='undefined' && navigator.standalone===true),delivery:'page-dependent'};
 }
 function renderMessageNotificationPreferences() {
-    const status=document.getElementById('system-notification-status');if(!status?.parentElement?.append || !document.createElement || document.getElementById('uvu-notification-preferences'))return;
+    const existing=document.getElementById('uvu-notification-preferences');if(existing){existing.refreshNotificationTargets?.();return;}
+    const status=document.getElementById('system-notification-status');if(!status?.parentElement?.append || !document.createElement)return;
     const host=document.createElement('details');host.id='uvu-notification-preferences';host.className='uvu-notification-preferences';
     const heading=document.createElement('summary'),help=document.createElement('p'),capability=document.createElement('p');heading.textContent='通知免打扰、隐私与能力';
     const info=getMessageNotificationCapabilities();capability.textContent='安全上下文：'+(info.secureContext?'是':'否')+' · 系统通知API：'+(info.notificationApi?'有':'无')+' · Service Worker：'+(info.serviceWorker?'有':'无')+' · 权限：'+info.permission+' · 主屏幕应用：'+(info.installed?'是':'未检测到');
@@ -66,14 +68,32 @@ function renderMessageNotificationPreferences() {
     const row=(text,node)=>{const label=document.createElement('label');label.append(text,node);host.append(label);};
     host.append(heading,capability,help);
     const duplicates=document.createElement('input');duplicates.type='checkbox';duplicates.checked=preferences.duplicateProtection;row('防止相同消息ID重复通知（可选，仅本次页面，最多记忆10分钟；不影响未读数）',duplicates);
+    const groupByChat=document.createElement('input');groupByChat.type='checkbox';groupByChat.checked=preferences.groupByChat;row('系统通知按聊天聚合',groupByChat);
     const quiet=document.createElement('input');quiet.type='checkbox';quiet.checked=preferences.quietHours.enabled;row('启用静音时段',quiet);
     const start=document.createElement('input'),end=document.createElement('input');start.type=end.type='time';start.value=preferences.quietHours.start;end.value=preferences.quietHours.end;row('开始（设备时间）',start);row('结束（设备时间）',end);
     const privacy=document.createElement('select');for(const [value,text] of [['full','显示标题与正文（默认）'],['hide-body','隐藏正文，保留聊天名'],['private','隐藏聊天名、头像与正文']]){const option=document.createElement('option');option.value=value;option.textContent=text;privacy.append(option);}privacy.value=preferences.privacy;row('通知隐私',privacy);
     const target=document.createElement('select'),empty=document.createElement('option');empty.value='';empty.textContent='选择一个聊天设置免打扰';target.append(empty);
-    if(typeof db!=='undefined')for(const [type,list] of [['private',db.characters || []],['group',db.groups || []]])for(const chat of list){const option=document.createElement('option');option.value=JSON.stringify([type,String(chat.id)]);option.textContent=(type==='group'?'群聊 · ':'角色 · ')+(chat.remarkName || chat.realName || chat.name || chat.id);target.append(option);}row('聊天',target);
-    const mute=document.createElement('input');mute.type='checkbox';mute.disabled=true;row('此聊天免打扰（横幅与系统通知）',mute);target.addEventListener('change',()=>{mute.disabled=!target.value;mute.checked=Boolean(getMessageNotificationPreferences().mutedChats[target.value]);});
+    row('聊天',target);
+    const mute=document.createElement('input');mute.type='checkbox';mute.disabled=true;row('此聊天免打扰（横幅与系统通知）',mute);
+    const muteDrafts=new Map();
+    const refreshTargets=()=>{
+        const selected=target.value,known=new Set();
+        target.replaceChildren(empty);
+        if(typeof db!=='undefined')for(const [type,list] of [['private',db.characters || []],['group',db.groups || []]])for(const chat of list){const option=document.createElement('option');option.value=JSON.stringify([type,String(chat.id)]);known.add(option.value);option.textContent=(type==='group'?'群聊 · ':'角色 · ')+(chat.remarkName || chat.realName || chat.name || chat.id);target.append(option);}
+        for(const key of muteDrafts.keys())if(!known.has(key))muteDrafts.delete(key);
+        target.value=known.has(selected)?selected:'';mute.disabled=!target.value;mute.checked=Boolean(target.value && (muteDrafts.has(target.value)?muteDrafts.get(target.value):getMessageNotificationPreferences().mutedChats[target.value]));
+        return known;
+    };
+    host.refreshNotificationTargets=refreshTargets;
+    target.addEventListener('focus',refreshTargets);
+    host.addEventListener('toggle',()=>{if(host.open)refreshTargets();});
+    target.addEventListener('change',()=>{mute.disabled=!target.value;mute.checked=Boolean(muteDrafts.has(target.value)?muteDrafts.get(target.value):getMessageNotificationPreferences().mutedChats[target.value]);});
+    mute.addEventListener('change',()=>{if(target.value)muteDrafts.set(target.value,mute.checked);});
+    refreshTargets();
+    const settingsScreen=document.getElementById('api-settings-screen');
+    if(settingsScreen && typeof MutationObserver!=='undefined')new MutationObserver(()=>{if(settingsScreen.classList.contains('active'))refreshTargets();}).observe(settingsScreen,{attributes:true,attributeFilter:['class']});
     const save=document.createElement('button'),result=document.createElement('p');save.type='button';save.className='btn btn-secondary';save.textContent='保存通知偏好';result.setAttribute('aria-live','polite');
-    save.addEventListener('click',()=>{try{const prefs=getMessageNotificationPreferences(),mutedChats={...prefs.mutedChats};if(target.value){if(mute.checked)mutedChats[target.value]=true;else delete mutedChats[target.value];}saveMessageNotificationPreferences({duplicateProtection:duplicates.checked,quietHours:{enabled:quiet.checked,start:start.value,end:end.value},privacy:privacy.value,mutedChats});result.textContent='已保存；仅影响通知展示，聊天消息仍正常保存。';}catch(error){result.textContent='保存失败：'+error.message;}});host.append(save,result);status.parentElement.append(host);
+    save.addEventListener('click',()=>{try{if(target.value)muteDrafts.set(target.value,mute.checked);const known=refreshTargets(),prefs=getMessageNotificationPreferences(),mutedChats=Object.fromEntries(Object.entries(prefs.mutedChats).filter(([key])=>known.has(key)));for(const [key,value] of muteDrafts){if(value)mutedChats[key]=true;else delete mutedChats[key];}saveMessageNotificationPreferences({groupByChat:groupByChat.checked,duplicateProtection:duplicates.checked,quietHours:{enabled:quiet.checked,start:start.value,end:end.value},privacy:privacy.value,mutedChats});result.textContent='已保存；仅影响通知展示，聊天消息仍正常保存。';}catch(error){result.textContent='保存失败：'+error.message;}});host.append(save,result);status.parentElement.append(host);
 }
 
 function bindIncomingNotificationSwipe(card, open) {
@@ -129,15 +149,25 @@ async function getMessageNotificationRegistration() {
     return registration;
 }
 
+// Stable opaque tag: chat names and message bodies never enter system grouping metadata.
+function messageNotificationTag(chatId, chatType) {
+    const key=JSON.stringify([String(chatType),String(chatId)]);let a=2166136261,b=5381;
+    for(let i=0;i<key.length;i++){a=Math.imul(a ^ key.charCodeAt(i),16777619);b=Math.imul(b,33)^key.charCodeAt(i);}
+    return 'uvu-chat-'+(a>>>0).toString(36)+'-'+(b>>>0).toString(36);
+}
 async function showSystemMessageNotification(title, body, icon, chatId, chatType) {
     if (!systemNotificationsEnabled || document.visibilityState !== 'hidden' ||
         typeof Notification === 'undefined' || Notification.permission !== 'granted' || !shouldShowMessageNotification(chatId,chatType)) return;
-    const sequence = ++systemNotificationSequence;
+    const grouped = getMessageNotificationPreferences().groupByChat;
+    const key = JSON.stringify([String(chatType),String(chatId)]);
+    const sequence = grouped ? (systemChatNotificationSequences.get(key) || 0) + 1 : ++systemNotificationSequence;
+    if (grouped) { systemChatNotificationSequences.set(key, sequence); if (systemChatNotificationSequences.size > 1024) systemChatNotificationSequences.delete(systemChatNotificationSequences.keys().next().value); }
+    const current = () => grouped ? systemChatNotificationSequences.get(key) === sequence : sequence === systemNotificationSequence;
     try {
         const registration = await getMessageNotificationRegistration();
-        if (sequence !== systemNotificationSequence || !systemNotificationsEnabled || document.visibilityState !== 'hidden' || !shouldShowMessageNotification(chatId,chatType)) return;
+        if (!current() || !systemNotificationsEnabled || document.visibilityState !== 'hidden' || !shouldShowMessageNotification(chatId,chatType)) return;
         const display=getMessageNotificationPresentation(title,body,icon,chatId,chatType);
-        await registration.showNotification(display.title, { body:display.body, icon:display.icon, tag: 'uvu-incoming-message',
+        await registration.showNotification(display.title, { body:display.body, icon:display.icon, tag: grouped ? messageNotificationTag(chatId,chatType) : 'uvu-incoming-message',
             data: { chatId, chatType }, timestamp: Date.now() });
     } catch (_) {
         const status = document.getElementById('system-notification-status');

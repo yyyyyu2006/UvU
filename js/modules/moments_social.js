@@ -177,6 +177,10 @@
     }
     const removeNpc = (chat, npcId) => mutate(chat, next => { next.config.npcs = next.config.npcs.filter(npc => npc.id !== npcId); });
     const requirePost = (posts, postId) => { const post = posts.find(item => item.id === postId); if (!post) throw new Error('目标动态已不存在'); return post; };
+    function requireVisible(chat, post, ref = { kind: 'user', id: chat.id }) {
+        if (!post || !canSee(chat, post, ref)) throw new Error('人物不在动态可见范围');
+        return post;
+    }
     function parentOf(post, parentId) {
         if (!parentId) return null;
         const parent = post.comments.find(item => item.id === parentId && !item.deleted);
@@ -192,7 +196,7 @@
     async function addComment(chat, postId, content, parentId = null) {
         content = text(content, 2000, '评论', false);
         return mutate(chat, next => {
-            ensureEnabled(next.config); const post = requirePost(next.posts, postId), parent = parentOf(post, parentId), me = actors(chat)[0];
+            ensureEnabled(next.config); const post = requireVisible(chat, requirePost(next.posts, postId)), parent = parentOf(post, parentId), me = actors(chat)[0];
             const comment = { id: id('comment'), authorRef: me.ref, author: me.name, content, timestamp: Date.now(), replyToCommentId: parent?.id || null, replyTo: parent?.author || null, read: true };
             const event = userEvent(chat, post, parent ? `回复了${actor(chat, parent.authorRef)?.name || parent.author}：${content}` : `评论了：${content}`, comment.id);
             comment.sourceMessageId = event.id; post.comments.push(comment); next.history.push(event); return comment;
@@ -233,7 +237,7 @@
     async function editComment(chat, postId, commentId, content) {
         content = text(content, 2000, '评论', false);
         return mutate(chat, next => {
-            const comment = parentOf(requirePost(next.posts, postId), commentId);
+            const comment = parentOf(requireVisible(chat, requirePost(next.posts, postId)), commentId);
             if (!same(comment.authorRef, { kind: 'user', id: chat.id })) throw new Error('只能编辑自己的评论');
             comment.content = content; comment.editedAt = Date.now();
             next.messageEdits.push(...chat.history.filter(message => message.momentSource?.postId === postId && message.momentSource?.commentId === commentId));
@@ -241,9 +245,9 @@
             comment.sourceMessageId = event.id; next.history.push(event);
         });
     }
-    const removeComment = (chat, postId, commentId) => mutate(chat, next => { const comment = parentOf(requirePost(next.posts, postId), commentId); comment.deleted = true; comment.content = ''; next.messageEdits.push(...chat.history.filter(message => message.momentSource?.postId === postId && message.momentSource?.commentId === commentId)); });
+    const removeComment = (chat, postId, commentId) => mutate(chat, next => { const comment = parentOf(requireVisible(chat, requirePost(next.posts, postId)), commentId); comment.deleted = true; comment.content = ''; next.messageEdits.push(...chat.history.filter(message => message.momentSource?.postId === postId && message.momentSource?.commentId === commentId)); });
     const toggleLike = (chat, postId) => mutate(chat, next => {
-        const post = requirePost(next.posts, postId), ref = { kind: 'user', id: chat.id }, index = post.likeActors.findIndex(item => same(item.ref, ref));
+        const post = requireVisible(chat, requirePost(next.posts, postId)), ref = { kind: 'user', id: chat.id }, index = post.likeActors.findIndex(item => same(item.ref, ref));
         if (index >= 0) post.likeActors.splice(index, 1); else post.likeActors.push({ ref, name: chat.myName || '我' });
         const event = userEvent(chat, post, index >= 0 ? '取消点赞了' : '点赞了'); event.isContextDisabled = index >= 0; next.history.push(event);
     });
@@ -282,16 +286,16 @@
             return added;
         });
     }
-    const markRead = (chat, postId) => mutate(chat, next => { requirePost(next.posts, postId).comments.forEach(comment => { comment.read = true; }); });
+    const markRead = (chat, postId) => mutate(chat, next => { requireVisible(chat, requirePost(next.posts, postId)).comments.forEach(comment => { comment.read = true; }); });
     async function approveMemory(chat, postId, content) {
         content = text(content, 12000, '记忆', false);
         return mutate(chat, next => {
-            const post = requirePost(next.posts, postId), journals = clone(chat.memoryJournals || []);
+            const post = requireVisible(chat, requirePost(next.posts, postId)), journals = clone(chat.memoryJournals || []);
             let journal = journals.find(item => item.source === 'moments' && item.momentId === postId && item.momentArchiveId === (chat.activeArchiveId || ''));
             if (!journal) { journal = { id: id('journal'), source: 'moments', momentId: postId, momentArchiveId: chat.activeArchiveId || '', createdAt: Date.now(), chatId: chat.id, chatType: 'private', title: '动态 · ' + post.content.slice(0, 24), range: { start: 0, end: 0 } }; journals.push(journal); }
             journal.content = content; journal.isFavorited = true; next.journals = journals; return journal;
         }, ['memoryJournals']);
     }
     root.UvUMoments = { id, settings, validateConfig, validateData, actors, actor, refKey, same, resolveName, view, capture, isCurrent, mutate, configure, saveNpc, removeNpc,
-        addComment, publish, updatePost, removePost, editComment, removeComment, toggleLike, canSee, canInteract, applyActions, markRead, approveMemory };
+        addComment, publish, updatePost, removePost, editComment, removeComment, toggleLike, canSee, requireVisible, canInteract, applyActions, markRead, approveMemory };
 })(typeof window !== 'undefined' ? window : globalThis);

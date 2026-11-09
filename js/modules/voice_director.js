@@ -280,5 +280,5 @@ const VoiceDirector = (() => {
         field('enabled').addEventListener('change', toggle);
     }
 
-    return { settings, bind, voiceIdFor, roleFor, identity, capture, isCurrent, prepare, invalidate, fromForm, setupSettings };
+    return { settings, bind, voiceIdFor, roleFor, identity, capture, isCurrent, prepare, invalidate, fromForm, setupSettings, cleanText };
 })();

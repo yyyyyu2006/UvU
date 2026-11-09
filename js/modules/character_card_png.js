@@ -75,7 +75,7 @@
         const parts = [new Uint8Array(signature)];
         for (const chunk of chunks) {
             if (['chara', 'ccv3'].includes(keyword(chunk))) continue;
-            if (chunk.type === 'IEND') parts.push(textChunk('chara', btoa(binary)));
+            if (chunk.type === 'IEND') parts.push(textChunk(card.spec === 'chara_card_v3' ? 'ccv3' : 'chara', btoa(binary)));
             parts.push(chunk.raw);
         }
         const length = parts.reduce((sum, part) => sum + part.length, 0);

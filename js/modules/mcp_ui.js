@@ -259,7 +259,14 @@
                 extras.append(button('资源', () => previewBrowser(serviceId, 'resources')), button('提示模板', () => previewBrowser(serviceId, 'prompts')),
                     button('日历与天气', () => { if (typeof openEnvironmentSettings === 'function') openEnvironmentSettings(false); else d.status.textContent = '请打开日历与环境设置 → 高级 → MCP，选择本服务并填写工具映射'; }));
                 serviceArea.append(node('p', `${health.enabled ? '已开启' : '已关闭'} · ${health.credentialsPresent ? '凭据就绪' : '未授权'} · ${health.tools} 个工具`, 'mcp-help'), extras);
-                const detail = node('details'); detail.append(node('summary', '连接详情'), node('p', health.host + '\n协议 ' + health.protocol + '\n' + (health.checkedAt ? '上次检查 ' + new Date(health.checkedAt).toLocaleString() : '尚未检查') + '\n已授权对象 ' + health.roles + '\n列表为上次检查结果，不代表此刻在线。', 'mcp-help')); serviceArea.append(detail);
+                const detail = node('details'); detail.append(node('summary', '连接详情 / 能力与数据范围'), node('p', health.host + '\n协议 ' + health.protocol + '\n' + (health.checkedAt ? '上次检查 ' + new Date(health.checkedAt).toLocaleString() : '尚未检查') + '\n已授权对象 ' + health.roles + '\n列表为上次检查结果，不代表此刻在线。', 'mcp-help'));
+                const capabilityTable = node('table'); capabilityTable.setAttribute('aria-label', 'MCP 支持能力');
+                const header = node('tr'); for (const value of ['能力', '服务声明', '当前行为']) header.append(node('th', value)); capabilityTable.append(header);
+                for (const [key, label, action] of [['tools', '工具', '逐项授权；写入确认'], ['resources', '资源', '手动预览文字'], ['prompts', '提示模板', '填参后预览文字']]) {
+                    const row = node('tr'); for (const value of [label, health.capabilities ? (health.capabilities[key] ? '支持' : '未声明') : '列表时确认', action]) row.append(node('td', value)); capabilityTable.append(row);
+                }
+                const unsupported = node('tr'); for (const value of ['服务端交互', '未启用', '不执行远程反向请求']) unsupported.append(node('td', value)); capabilityTable.append(unsupported);
+                detail.append(capabilityTable, node('p', '外传范围：工具收到本次参数与认证信息；手动资源读取发送所选 URI；模板发送所填参数。启用独立判断时，判断 API 收到设置范围内的近期清洗消息与已授权工具定义；不附加人设与日记。只读自动批准仍须角色授权，定义变化后重新确认。', 'mcp-help')); serviceArea.append(detail);
             }
             renderPermissions();
         }

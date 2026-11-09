@@ -24,6 +24,7 @@ const vectorMemoryQueues = new WeakMap();
 const vectorMemoryStatus = new WeakMap();
 const vectorChunkPlans = new WeakMap();
 const vectorMemoryDiagnostics = new WeakMap();
+const vectorCleaningSessions = new WeakMap();
 
 function resolveVectorMemoryApi() {
     const legacy = db.memoryApiSettings || {}, vector = db.vectorMemoryApiSettings || {};
@@ -51,15 +52,19 @@ function buildPromptWithVectorMemory(chat, build, context) {
     if (!context) return build();
     const result = vectorMemoryResults.get(chat);
     const hasResult = result?.context === context;
+    let effectiveEntries = hasResult ? result.entries.filter(item => {
+        const live = (chat.memoryJournals || []).find(journal => journal.id === item.journal.id);
+        return item.journal.derivedHistory || live && !live.vectorSupersededBy && memoryJournalSourcesAllowed(chat, live);
+    }) : [];
     if (result?.context === context) {
-        const fixed = new Set((chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && !journal.vectorSupersededBy && (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal))).map(journal => journal.id));
-        const entries = result.entries.filter(item => !fixed.has(item.journal.id));
+        const fixed = new Set((chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && !journal.vectorSupersededBy && memoryJournalSourcesAllowed(chat, journal)).map(journal => journal.id));
+        const entries = effectiveEntries.filter(item => !fixed.has(item.journal.id));
         context = entries.length ? result.header + entries.map(result.format).join('\n\n') : '';
         result.injectedContext = context;
         updateVectorMemoryDiagnostics(chat, { injectedContext: context, injectedIds: entries.map(item => item.journal.id),
             favoriteDeduplication: result.entries.filter(item => fixed.has(item.journal.id)).map(item => ({ id: item.journal.id, reason: '已收藏来源沿用原收藏注入，向量片段不重复注入' })) });
     }
-    vectorMemoryPromptChats.set(chat, new Set(hasResult ? result.entries.map(item => item.journal.id) : []));
+    vectorMemoryPromptChats.set(chat, new Set(effectiveEntries.map(item => item.journal.id)));
     try { return build() + context; }
     finally { vectorMemoryPromptChats.delete(chat); }
 }
@@ -181,16 +186,83 @@ function getAutoMemoryState(chat) {
     return { active, covered, validIds: new Set(validJournals.map(journal => journal.id)), consumed };
 }
 
+// A merge keeps every source permission. Live originals can revoke permission;
+// immutable snapshots keep the boundary when an original is later deleted.
+function memoryJournalSourcesAllowed(chat, journal, path = new Set()) {
+    if (!journal || path.has(journal.id) || path.size > 64) return false;
+    const target = journal.memorySourceTarget;
+    if (target && (target.chatId !== chat.id || target.archiveId !== String(chat.activeArchiveId || 'default'))) return false;
+    if (journal.source === 'sillytavern' &&
+        (journal.bridgeReview?.archiveId != null && String(journal.bridgeReview.archiveId) !== String(chat.activeArchiveId || 'default') ||
+        !globalThis.UvUStoryBridge?.allowedMemory(chat, journal))) return false;
+    const next = new Set(path).add(journal.id);
+    if (journal.manualMergeSources != null && !Array.isArray(journal.manualMergeSources)) return false;
+    return (journal.manualMergeSources || []).every(snapshot => {
+        if (!memoryJournalSourcesAllowed(chat, snapshot, next)) return false;
+        const live = (chat.memoryJournals || []).find(item => item.id === snapshot.id);
+        return !live || memoryJournalSourcesAllowed(chat, live, next);
+    });
+}
+function getMemoryFactChecklist(sources) {
+    return sources.map((source, index) => {
+        const content = String(source.content || source.text || ''), sentences = content.split(/(?<=[。！？!?\n])/u).map(value => value.trim()).filter(Boolean);
+        return { id: source.id, floor: source.floor?.number || source.floor || index + 1, speaker: source.floor?.speaker || source.speaker || source.senderId || source.role || '人物归属请对照原文',
+            dates: [...new Set(content.match(/\d{4}[-年/]\d{1,2}[-月/]\d{1,2}日?/g) || [])],
+            relativeDates: [...new Set(content.match(/(?:本|下|上)?周[一二三四五六日天末]|今天|明天|昨天/g) || [])],
+            commitments: sentences.filter(value => /约定|答应|承诺|取消|改期|不再|计划/.test(value)),
+            todos: sentences.filter(value => /待办|未完成|还没|需要|记得|别忘/.test(value)), content };
+    });
+}
+function getMemoryUsageExplanation(chat, journal) {
+    if (!memoryJournalSourcesAllowed(chat, journal)) {
+        const issues = [], seen = new Set();
+        const trace = item => {
+            if (!item || seen.has(item) || seen.size > 128) return;
+            seen.add(item);
+            if (item.source === 'sillytavern' && !memoryJournalSourcesAllowed(chat, item)) issues.push(`${item.title || item.id} · ${(item.bridgeReview?.channel || 'st').toUpperCase()} · 存档 ${item.bridgeReview?.archiveId || 'default'}`);
+            for (const source of Array.isArray(item.manualMergeSources) ? item.manualMergeSources : []) {
+                trace(source); const live = (chat.memoryJournals || []).find(entry => entry.id === source.id); if (live) trace(live);
+            }
+        };
+        trace(journal);
+        return { status: '来源停用', reason: (issues.length ? '请核对来源：' + [...new Set(issues)].join('；') + '。' : '') + '来源通道、角色、存档或审核资格不满足；合并不会解除来源权限。' };
+    }
+    if (journal.vectorSupersededBy) return { status: '已由合并结果替代', reason: '替代记忆：' + journal.vectorSupersededBy + '；停用或删除替代结果后，相关聊天原文恢复。' };
+    if (journal.qualityReview?.status === 'pending') return { status: '待审核', reason: '原始聊天继续保留，确认后才替代。' };
+    if (getContextMemoryJournals(chat).some(item => item.id === journal.id)) return { status: journal.autoMemory ? '摘要替代' : '收藏引用', reason: '按当前权限直接进入上下文。' };
+    const diagnostics = getVectorMemoryDiagnostics(chat);
+    if (diagnostics.injectedIds?.includes(journal.id)) return { status: '上轮向量引用', reason: '最近一次实际注入的向量片段；下轮须重新检索判断。' };
+    return { status: getAutoMemorySettings(chat).vectorSearchEnabled ? '向量候选' : '未启用引用', reason: '候选不等于实际命中；此预览不会请求 API。' };
+}
+function getEffectiveAutoMemoryCoverage(chat, state = getAutoMemoryState(chat)) {
+    const byId = new Map((chat.memoryJournals || []).map(journal => [journal.id, journal]));
+    const selected = vectorMemoryPromptChats.get(chat) || new Set();
+    const covered = new Set();
+    const visit = journal => {
+        for (const source of journal.autoMemory?.sources || []) covered.add(source.id);
+        for (const child of journal.autoMemory?.children || []) if (byId.has(child.id)) visit(byId.get(child.id));
+    };
+    for (const summary of state.active) {
+        let replacement = summary;
+        const seen = new Set();
+        while (replacement?.vectorSupersededBy && !seen.has(replacement.id) && seen.size <= 64) {
+            seen.add(replacement.id); replacement = byId.get(replacement.vectorSupersededBy);
+        }
+        if (!replacement || replacement.vectorSupersededBy || !memoryJournalSourcesAllowed(chat, replacement)) continue;
+        if (replacement === summary || replacement.isFavorited || selected.has(replacement.id)) visit(summary);
+    }
+    return covered;
+}
 function getContextMemoryJournals(chat) {
     const settings = getAutoMemorySettings(chat);
     const replaced = vectorMemoryPromptChats.get(chat) || new Set();
-    const active = settings.useMemory ? getAutoMemoryState(chat).active.filter(journal => !replaced.has(journal.id)) : [];
+    const active = settings.useMemory ? getAutoMemoryState(chat).active.filter(journal => !replaced.has(journal.id) && memoryJournalSourcesAllowed(chat, journal)) : [];
     // 自动记忆的下层摘要即使被收藏也不重复注入；暂停记忆时恢复全部原楼层。
-    return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal))), ...active].filter(journal => !journal.vectorSupersededBy);
+    return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && memoryJournalSourcesAllowed(chat, journal)), ...active].filter(journal => !journal.vectorSupersededBy);
 }
 function getAutoMemoryContextHistory(chat, limit = chat.maxMemory) {
     const settings = getAutoMemorySettings(chat);
-    const covered = settings.useMemory && settings.hideSummarized ? getAutoMemoryState(chat).covered : new Set();
+    const covered = settings.useMemory && settings.hideSummarized ? getEffectiveAutoMemoryCoverage(chat) : new Set();
     const history = (chat.history || []).filter(message => !covered.has(message.id));
     // 先排除已压缩原文，再应用原有上下文条数上限。
     return Number(limit) === 0 ? [] : history.slice(-limit);
@@ -480,6 +552,10 @@ function stripVectorBinary(value) {
         .replace(/\b[A-Za-z0-9+/]{256,}={0,2}(?![A-Za-z0-9+/])/g, '').slice(0, 120000);
 }
 function cleanVectorStoryText(chat, value) {
+    const session = vectorCleaningSessions.get(chat), original = String(value || '');
+    const cleaningKey = JSON.stringify([chat.autoMemorySettings?.vectorBodyTags, chat.autoMemorySettings?.vectorExcludeTags, chat.statusPanel?.regexPattern]);
+    if (session && session.key !== cleaningKey) { session.key = cleaningKey; session.entries.clear(); session.chars = 0; }
+    if (session?.entries.has(original)) { session.hits++; return session.entries.get(original); }
     let text = stripVectorBinary(value);
     let explicitBody = false;
     if (typeof VectorMemoryTools !== 'undefined') {
@@ -501,7 +577,11 @@ function cleanVectorStoryText(chat, value) {
         if (tag) text = text.replace(new RegExp('<' + tag[1] + '>[\\s\\S]*?<\\/' + tag[1] + '>', 'gi'), '')
             .replace(new RegExp('<' + tag[1] + '>[\\s\\S]*$', 'gi'), '');
     }
-    return text.replace(/<[^>]+>/g, '').trim();
+    const result = text.replace(/<[^>]+>/g, '').trim();
+    if (session && session.entries.size < 4096 && session.chars + original.length + result.length <= 4 * 1024 * 1024) {
+        session.entries.set(original, result); session.chars += original.length + result.length;
+    }
+    return result;
 }
 function getVectorMemoryMessageText(chat, message) {
     if (!message || !['user', 'assistant'].includes(message.role) || message.isThinking || message.isHidden || message.isWithdrawn ||
@@ -533,28 +613,44 @@ function getVectorMemorySourceStates(chat) {
     const rows = candidates.map(journal => {
         const sizing = typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.chunkSettings(chat) : { size: 1200, overlap: 180 };
         const cached = index[journal.id], chunks = typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.chunks(chat, journal) : splitMemoryIntoChunks(journal.content, sizing.size, sizing.overlap);
+        const hashes = new Set(chunks.map(item => autoMemoryFingerprint([apiFingerprint, journal.title || '', item.text])));
+        const reusable = new Set((cached?.version === 2 ? cached.chunks || [] : []).filter(chunk => validMemoryVector(chunk.vector) && (!dimension || chunk.vector.length === dimension) && hashes.has(chunk.key)).map(chunk => chunk.key));
         let status = !cached ? 'pending' : cached.version !== 2 ? 'changed' : 'valid';
         if (cached?.version === 2) {
             if (cached.chunks.some(chunk => !validMemoryVector(chunk.vector) || dimension && chunk.vector.length !== dimension)) status = 'dimension';
-            else if (cached.chunks.some(chunk => !chunks.some(item => autoMemoryFingerprint([apiFingerprint, journal.title || '', item.text]) === chunk.key))) status = 'changed';
+            else if (cached.chunks.some(chunk => !hashes.has(chunk.key))) status = 'changed';
             else if (cached.chunks.length !== chunks.length) status = 'pending';
         }
-        return { id: journal.id, title: journal.title, status, chunks: cached?.chunks?.length || 0, totalChunks: chunks.length };
+        return { id: journal.id, title: journal.title, status, chunks: cached?.chunks?.length || 0, totalChunks: chunks.length,
+            reusableChunks: reusable.size, newChunks: hashes.size - reusable.size,
+            removedChunks: (cached?.chunks || []).filter(chunk => !reusable.has(chunk.key)).length };
     });
     const ids = new Set(candidates.map(item => item.id));
     for (const id of Object.keys(index)) if (!ids.has(id)) rows.push({ id, title: id, status: 'missing', chunks: index[id]?.chunks?.length || 0, totalChunks: 0 });
     return rows;
 }
+function getVectorMemoryIndexPreview(chat, rows = getVectorMemorySourceStates(chat)) {
+    const newChunks = rows.reduce((sum, row) => sum + (row.newChunks || 0), 0);
+    const batchSize = Math.max(1, Math.min(16, Math.floor(Number(resolveVectorMemoryApi().batchSize) || 1)));
+    const settings = getAutoMemorySettings(chat);
+    return { totalSources: rows.filter(row => row.status !== 'missing').length,
+        newChunks, reusedChunks: rows.reduce((sum, row) => sum + (row.reusableChunks || 0), 0),
+        updatedSources: rows.filter(row => row.status === 'changed' || row.status === 'dimension').length,
+        deletedChunks: rows.reduce((sum, row) => sum + (row.status === 'missing' ? row.chunks : row.removedChunks || 0), 0),
+        minimumBatches: Math.ceil(newChunks / batchSize),
+        batchLimit: settings.vectorIndexBudgetEnabled ? settings.vectorIndexMaxBatches : null,
+        timeBudgetMs: settings.vectorIndexBudgetEnabled ? settings.vectorIndexTimeBudgetMs : null };
+}
 
 function getVectorMemoryCandidates(chat) {
     const state = getAutoMemoryState(chat);
     const settings = getAutoMemorySettings(chat);
-    const covered = settings.useMemory && settings.hideSummarized ? state.covered : new Set();
+    const covered = settings.useMemory && settings.hideSummarized ? getEffectiveAutoMemoryCoverage(chat, state) : new Set();
     const tools = typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools : null;
     let current = settings.vectorDeduplicateSources ? getAutoMemoryContextHistory(chat) : [];
     if (current.length && typeof filterHistoryForAI === 'function') current = filterHistoryForAI(chat, current);
     const currentIds = new Set(current.filter(item => !item.isThinking && !item.isContextDisabled).map(item => item.id));
-    const journals = (chat.memoryJournals || []).filter(journal => (journal.source !== 'sillytavern' || globalThis.UvUStoryBridge?.allowedMemory(chat, journal)) && !journal.vectorSupersededBy &&
+    const journals = (chat.memoryJournals || []).filter(journal => memoryJournalSourcesAllowed(chat, journal) && !journal.vectorSupersededBy &&
         (!journal.autoMemory || state.active.some(active => active.id === journal.id)))
         .filter(journal => { const ids = tools?.sourceIds(journal, chat) || []; return !ids.length || !ids.every(id => currentIds.has(id)); })
         .map(journal => ({ ...journal, content: cleanVectorStoryText(chat, journal.content) }));
@@ -593,11 +689,13 @@ function getVectorMemoryContext(chat, queryText, signal, options = {}) {
     const previous = vectorMemoryQueues.get(chat) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
         if (chat.activeArchiveId !== archive || chat.history !== history) { const error = new Error('存档已切换'); error.name = 'AbortError'; throw error; }
+        const cleaning = { key: '', entries: new Map(), chars: 0, hits: 0 }; vectorCleaningSessions.set(chat, cleaning);
         try { return await retrieveVectorMemoryContext(chat, queryText, signal, options); }
         catch (error) {
             if (error.name !== 'AbortError' && chat.activeArchiveId === archive && chat.history === history) recordVectorMemoryStatus(chat, error.message, true);
             throw error;
         }
+        finally { vectorCleaningSessions.delete(chat); if (chat.activeArchiveId === archive) updateVectorMemoryDiagnostics(chat, { cleaningCacheHits: cleaning.hits }); }
     });
     vectorMemoryQueues.set(chat, next);
     return next.finally(() => { if (vectorMemoryQueues.get(chat) === next) vectorMemoryQueues.delete(chat); });
@@ -607,6 +705,7 @@ function vectorSourceFingerprint(chat) {
     // Only readable vector-relevant data are serialized; large media bytes stay out of temporary JSON.
     return autoMemoryFingerprint([(chat.history || []).map(item => [item.id, item.role, item.timestamp, getVectorMemoryMessageText(chat, item)]),
         (chat.memoryJournals || []).map(item => [item.id, item.title, cleanVectorStoryText(chat, item.content), item.autoMemory, item.vectorSupersededBy, item.source, item.bridgeImport,
+            item.bridgeReview, item.manualMergeSources, memoryJournalSourcesAllowed(chat, item),
             item.sourceMessageIds, item.timeline, item.category, item.isFavorited]),
         chat.autoMemorySettings, chat.statusPanel?.regexPattern]);
 }
@@ -1207,6 +1306,7 @@ function renderAutoMemoryStatus() {
         vectorElement.classList.toggle('memory-error', Boolean(currentStatus?.error));
     }
     const stats = getAutoMemoryCoverageStats(chat, plan.state);
+    element.uvuMemoryStats = { total: stats.total, covered: stats.covered, uncovered: stats.uncovered.length };
     element.textContent = `${settings.enabled ? '自动整理已开启' : '自动整理已关闭'} · 原始记录 ${stats.rawTotal} 条 · 有效楼层 ${stats.total} 条（过滤 ${stats.excluded} 条） · 已覆盖 ${stats.covered} 条 · 未覆盖 ${stats.uncovered.length} 条` +
         `\n保留最近 ${stats.retained} 条 · 可整理旧楼层 ${stats.available} 条 · 生效记忆 ${plan.state.active.length} 篇` +
         `\n${stats.next ? `下一条未覆盖：聊天记录第 ${stats.next.floor} 楼` : '当前没有未覆盖的有效楼层'}` +

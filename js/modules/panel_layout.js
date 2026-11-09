@@ -81,8 +81,8 @@
         const details = disclose([status], '楼层详情', 'panel-coverage-details'); coverage.append(details);
         const feedback = make('p', 'panel-operation-status'); feedback.setAttribute('aria-live', 'polite'); coverage.append(feedback);
         const refresh = () => {
-            const text = status.textContent, patterns = [/有效楼层\s+(\d+)/, /已覆盖\s+(\d+)/, /未覆盖\s+(\d+)/];
-            [...stats.children].forEach((item, i) => { const value = text.match(patterns[i])?.[1] || '—'; if (item.firstElementChild.textContent !== value) item.firstElementChild.textContent = value; });
+            const text = status.textContent, data = status.uvuMemoryStats;
+            [...stats.children].forEach((item, i) => { const number = data?.[['total', 'covered', 'uncovered'][i]], value = Number.isFinite(number) ? String(number) : '—'; if (item.firstElementChild.textContent !== value) item.firstElementChild.textContent = value; });
             const lines = text.split('\n'), last = lines.at(-1) || '';
             const value = /^(排除原因|下一条未覆盖|当前没有未覆盖|保留最近|自动整理)/.test(last) ? '' : last;
             if (feedback.textContent !== value) feedback.textContent = value;

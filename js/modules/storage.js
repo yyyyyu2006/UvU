@@ -1101,7 +1101,6 @@ async function handleExport() {
 
             exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
             exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
-            if (exportSelection.chats && exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined') await VectorMemoryTools.portableExport(exportData.modules);
         }
 
         // 2. Worldbooks
@@ -1132,7 +1131,6 @@ async function handleExport() {
         if (exportSelection.fonts) {
             exportData.modules.fontUrl = db.fontUrl;
             exportData.modules.fontPresets = db.fontPresets;
-            exportData.modules.customFonts = await storageExportFonts();
         }
 
         // 6. Settings
@@ -1142,7 +1140,16 @@ async function handleExport() {
             });
         }
 
-        if (exportSelection.other) exportData.modules.mediaCache = await storageExportMediaCache();
+        // Freeze selected ordinary data before any asynchronous cache/font reads.
+        // Chats are already projected and cloned; avoid duplicating their large histories.
+        for (const key of Object.keys(exportData.modules)) {
+            if (key !== 'characters' && key !== 'groups') exportData.modules[key] = storageClone(exportData.modules[key]);
+        }
+        await Promise.all([
+            exportSelection.chats && exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.portableExport(exportData.modules) : undefined,
+            exportSelection.fonts ? storageExportFonts().then(fonts => { exportData.modules.customFonts = fonts; }) : undefined,
+            exportSelection.other ? storageExportMediaCache().then(cache => { exportData.modules.mediaCache = cache; }) : undefined
+        ]);
         if (typeof storageApplyExportOptions === 'function') exportData.modules = storageApplyExportOptions(exportData.modules, exportOptions);
         exportData.backupManifest = { version: 1, categories: Object.keys(exportSelection).filter(key => exportSelection[key]),
             ...exportOptions, resources: 'external-links-preserved' };

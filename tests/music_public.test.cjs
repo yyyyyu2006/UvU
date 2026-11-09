@@ -14,6 +14,15 @@ function fixture() {
 }
 const row = {id:'1857979755',name:'LOFi',artist:['WhoYouth'],album:'LOFi',pic_id:'109951166139384942',source:'netease'};
 
+test('explicit public version selection keeps the original identity and can be revoked', async()=>{
+    const h=fixture(),track={provider:'qq',id:'qq-original',title:'LOFi',artists:['WhoYouth'],album:''};
+    h.body=[row,{...row,id:'456',album:'Compilation'}];
+    const choices=await h.api.candidates(track);assert.equal(choices.length,2);
+    assert.throws(()=>h.api.chooseMatch(track,{...choices[0],id:'999'}),/候选|过期/);
+    h.api.chooseMatch(track,choices[1]);assert.equal((await h.api.match(track)).id,'456');assert.equal(track.id,'qq-original');
+    h.api.clearMatch(track);await assert.rejects(h.api.match(track),/版本|匹配/);
+});
+
 test('platform matching keeps NetEase identity and QQ requires title and artist agreement', async () => {
     const h=fixture(), original={provider:'netease',id:'123',title:'Track',artists:['Singer'],album:'Record',cover:'https://p3.music.126.net/cover.jpg'};
     const direct=await h.api.match(original);

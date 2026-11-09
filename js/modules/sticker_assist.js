@@ -194,6 +194,28 @@ function setupStickerAssist() {
 
     new MutationObserver(() => { if (currentChatId !== selectedChat || currentChatType !== selectedType || isInMultiSelectMode || !document.getElementById('chat-room-screen').classList.contains('active')) { clear(); selectedChat = currentChatId; selectedType = currentChatType; } }).observe(document.getElementById('chat-room-screen'), { attributes: true, childList: true, subtree: false });
 }
+async function readStickerImageBlob(response, signal) {
+    const limit = 10 * 1024 * 1024, type = (response.headers?.get('content-type') || '').split(';')[0].trim();
+    if (!/^image\/(png|jpe?g|gif|webp|bmp)$/i.test(type) || Number(response.headers?.get('content-length')) > limit) {
+        await response.body?.cancel?.().catch(() => {}); throw new Error('图片格式或大小不支持（最多10MB）');
+    }
+    if (!response.body?.getReader) throw new Error('图片下载需要流式读取支持，请更新浏览器');
+    const reader = response.body.getReader(), chunks = []; let bytes = 0, complete = false;
+    const abort = () => { Promise.resolve(reader.cancel()).catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    try {
+        for (;;) {
+            if (signal?.aborted) throw Object.assign(new Error('识图已取消'), { name: 'AbortError' });
+            const part = await reader.read();
+            if (signal?.aborted) throw Object.assign(new Error('识图已取消'), { name: 'AbortError' });
+            if (part.done) { complete = true; break; }
+            bytes += part.value.byteLength; if (bytes > limit) throw new Error('图片大小超过10MB');
+            chunks.push(part.value);
+        }
+        if (!bytes) throw new Error('图片内容为空');
+        return new Blob(chunks, { type });
+    } finally { signal?.removeEventListener('abort', abort); if (!complete) await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
 async function recognizeStickerImage(image, signal, purpose = 'sticker') {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -210,10 +232,14 @@ async function recognizeStickerImage(image, signal, purpose = 'sticker') {
         try {
             const response = await fetch(image, { signal: controller.signal });
             if (!response.ok) throw new Error('图片下载失败');
-            const blob = await response.blob();
-            if (!blob.type.startsWith('image/') || blob.size > 10 * 1024 * 1024) throw new Error('图片格式或大小不支持');
+            const blob = await readStickerImageBlob(response, controller.signal);
             data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(blob); });
-        } catch (error) { if (controller.signal.aborted) throw error; if (config.provider === 'gemini') throw new Error('图片地址不允许跨域读取，请上传本地图片后识别'); }
+        } catch (error) {
+            if (controller.signal.aborted) throw error;
+            // URL forwarding is explicit opt-in, restricted to a fetch/CORS failure. Validation failures never fall through.
+            if (!(error instanceof TypeError && config.provider !== 'gemini' && config.allowRemoteImageUrl === true)) throw error;
+            const url = new URL(image); if (url.protocol !== 'https:' || url.username || url.password) throw new Error('图片地址无效');
+        }
     }
     const request = buildChatApiRequest(config, [{ role: 'user', content: prompt }]);
     if (config.provider === 'gemini') {

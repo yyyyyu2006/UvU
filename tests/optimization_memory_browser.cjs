@@ -10,10 +10,12 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
         await page.evaluate(() => {
             window.currentChatId = 'c'; window.currentChatType = 'private'; window.renderJournalList = () => {}; window.saveData = async () => {}; window.showToast = () => {};
             window.db = { characters: [{ id: 'c', activeArchiveId: 'a', history: [{ id: 'source', role: 'user', content: '去海边看日落', timestamp: 1700000000000 }],
-                memoryJournals: Array.from({ length: 45 }, (_, i) => ({ id: `j${i}`, title: `manual${i}`, content: `事实${i}`, createdAt: 1700000000000 + i })), autoMemorySettings: { summaryQualityReviewEnabled: true } }], groups: [] };
+                memoryJournals: Array.from({ length: 45 }, (_, i) => ({ id: `j${i}`, title: `manual${i}`, content: `事实${i}`, createdAt: 1700000000000 + i })), autoMemorySettings: { summaryQualityReviewEnabled: true, useMemory: true, contextInjectionOptIn: true } }], groups: [] };
         });
-        for (const file of ['auto_memory.js', 'memory_library.js']) await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../js/modules', file), 'utf8') });
+        for (const file of ['vector_memory_tools.js', 'auto_memory.js', 'memory_library.js']) await page.addScriptTag({ content: fs.readFileSync(path.join(__dirname, '../js/modules', file), 'utf8') });
         await page.evaluate(() => {
+            window.VectorIndexStore = { async listScopes() { return [{ id: JSON.stringify(['character','c','b','old-model']),sourceCount:2,chunkCount:3 }]; }, async read(){return {index:{}};} };
+            db.characters[0].archives = [{id:'a',name:'当前篇'},{id:'b',name:'旧篇',data:{history:[],memoryJournals:[{id:'old',content:'以前的约定'}]}}];
             const chat = db.characters[0]; chat.memoryJournals.push({ id: 'draft', title: '待审约定', content: '过短草稿', createdAt: 1700000001000, range: { start: 1, end: 1 },
                 autoMemory: { version: 1, kind: 'summary', committed: false, sources: [{ id: 'source', hash: autoMemoryMessageHash(chat.history[0]) }] },
                 qualityReview: { status: 'pending', archiveId: 'a', warnings: ['核对时间线'] } });
@@ -26,9 +28,17 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
         assert.equal(await page.locator('.memory-library-list > .memory-library-card').count(), 20);
         await page.getByRole('button', { name: '编辑并确认总结', exact: true }).click();
         const editor = page.locator('.memory-library').last();
+        await editor.getByText('对照原始聊天 / 合并来源', { exact: true }).click();
+        await editor.getByText('人物 / 日期 / 约定 / 待办对照', { exact: true }).click();
+        assert.match(await editor.locator('pre').last().textContent(), /日期线索：未知/);
         await editor.locator('textarea').fill('核对后的去海边看日落约定。');
         await editor.getByRole('button', { name: '确认并启用总结', exact: true }).click();
         assert.equal(await page.evaluate(() => getAutoMemoryState(db.characters[0]).covered.size), 1);
+        assert.ok(await page.getByText('引用：摘要替代', { exact: true }).count());
+        await page.locator('.memory-library-migration > summary').click();
+        await page.waitForFunction(()=>document.querySelector('.memory-library-migration pre').textContent.includes('旧篇'));
+        assert.match(await page.locator('.memory-library-migration pre').textContent(),/其他模型版本 1 份 \/ 3 块/);
+        assert.match(await page.locator('.memory-library-migration pre').textContent(),/重建按钮只处理当前存档/);
         await filters.locator('summary').click();
         await page.locator('.memory-library-filters input[type="search"]').fill('manual44'); await page.waitForTimeout(220);
         assert.equal(await page.locator('.memory-library-list > .memory-library-card').count(), 1);
@@ -37,6 +47,6 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
             const card = await page.locator('.memory-library > .feature-dialog-card').first().boundingBox();
             assert.ok(card.x >= 0 && card.x + card.width <= width + 1, JSON.stringify(card));
         }
-        assert.deepEqual(errors, []); console.log('PASS memory 20-item pagination/search, pending draft edit+approve, 320/390/768 dialog containment.');
+        assert.deepEqual(errors, []); console.log('PASS memory 20-item pagination/search, pending draft edit+approve, all-archive model rebuild preview, 320/390/768 dialog containment.');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

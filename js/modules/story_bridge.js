@@ -3,6 +3,7 @@
     const STORAGE_KEY = 'uvu-story-bridge.v1';
     const DEFAULT_URL = 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge';
     const PREVIOUS_DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
+    const FRONTEND_BUILD = '20261109-audit-repairs';
     let syncBusy = false;
     let pollTimer = null;
     let sendBusy = false;
@@ -50,6 +51,7 @@
     function diagnosticsSnapshot() {
         const state=settings(), scenes=Object.values(state.pendingScenes), receipts=Object.values(state.receipts);
         return {format:'uvu-bridge-diagnostics',version:1,channel:channelId(),transport:isFileMode()?'file':'relay',enabled:isEnabled(),paired:Boolean(readToken()),
+            frontend:{appVersion:typeof appVersion==='string' && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(appVersion)?appVersion:'unknown',build:FRONTEND_BUILD,protocolVersion:1},
             connection:{phase:connection.phase,failures:connection.failures},request:{...lastRequest},
             target:{selected:Boolean(selectedBridgeChat()),archiveAssigned:Boolean(selectedBridgeChat()?.activeArchiveId)},
             local:{pendingSend:state.outbox.length,sendCapacity:500,remainingSend:Math.max(0,500-state.outbox.length),pendingScenes:scenes.length,
@@ -191,7 +193,7 @@
         }
         const output=document.getElementById('uvu-bridge-diagnostics-output');if(!output)return;
         const value=diagnosticsSnapshot(),chat=selectedBridgeChat();
-        output.textContent='UvU 开关：'+(value.enabled?'启用':'停用')+' · 通道：'+value.channel+' / '+value.transport+'\n设备授权：'+(value.paired?'已保存（不代表服务可达）':'未配对')+' · 连接阶段：'+value.connection.phase+'\n服务：'+(value.service?value.service.version+' / 协议 '+value.service.protocolVersion+' / '+(value.service.enabled?'启用':'停用'):'未查询')+'\n目标：'+(chat?'已选择角色':'未选角色')+' · 存档：'+(chat?'已指定':'未指定')+' · 已审核记忆注入：'+(chat && settings().injectionByCharacter[String(chat.id)]!==false && value.enabled?'允许符合审核条件的条目':'关闭或未选择')+'\n本机待发 '+value.local.pendingSend+' / '+value.local.sendCapacity+'，剩余 '+value.local.remainingSend+'；待收场景 '+value.local.pendingScenes+'，已收分段 '+value.local.receivedParts+' / '+value.local.expectedParts+'；缺口警告 '+value.local.recoveryWarnings+'\n服务队列：'+(value.remote?value.remote.used+' / '+value.remote.limit+'，剩余 '+value.remote.remaining:'旧服务或文件模式未提供容量')+'\n最近检查：'+value.request.stage+' / '+value.request.code+'\n网络不可达只能确定请求失败，不能仅凭浏览器错误区分 CORS、TLS、服务关闭或网络拦截。\n'+value.cleanupPolicy;
+        output.textContent='前端：'+value.frontend.appVersion+' / '+value.frontend.build+' / 协议 '+value.frontend.protocolVersion+'\nUvU 开关：'+(value.enabled?'启用':'停用')+' · 通道：'+value.channel+' / '+value.transport+'\n设备授权：'+(value.paired?'已保存（不代表服务可达）':'未配对')+' · 连接阶段：'+value.connection.phase+'\n服务：'+(value.service?value.service.version+' / 协议 '+value.service.protocolVersion+' / '+(value.service.enabled?'启用':'停用'):'未查询')+'\n目标：'+(chat?'已选择角色':'未选角色')+' · 存档：'+(chat?'已指定':'未指定')+' · 已审核记忆注入：'+(chat && settings().injectionByCharacter[String(chat.id)]!==false && value.enabled?'允许符合审核条件的条目':'关闭或未选择')+'\n本机待发 '+value.local.pendingSend+' / '+value.local.sendCapacity+'，剩余 '+value.local.remainingSend+'；待收场景 '+value.local.pendingScenes+'，已收分段 '+value.local.receivedParts+' / '+value.local.expectedParts+'；缺口警告 '+value.local.recoveryWarnings+'\n服务队列：'+(value.remote?value.remote.used+' / '+value.remote.limit+'，剩余 '+value.remote.remaining:'旧服务或文件模式未提供容量')+'\n最近检查：'+value.request.stage+' / '+value.request.code+'\n网络不可达只能确定请求失败，不能仅凭浏览器错误区分 CORS、TLS、服务关闭或网络拦截。\n'+value.cleanupPolicy;
     }
     async function changeTTMode(value) {
         if (!['file', 'https'].includes(value)) throw new Error('不支持的 TT 交接方式。');
@@ -389,8 +391,14 @@
     function allowedMemory(chat, journal) {
         const state=settings(journal.bridgeReview?.channel || 'st');
         return journal.source !== 'sillytavern' || (state.bridgeEnabled !== false && journal.isFavorited === true &&
+            String(journal.bridgeReview?.archiveId || 'default') === String(chat.activeArchiveId || 'default') &&
             journal.bridgeReview?.status === 'approved' && journal.bridgeReview.items?.some(item => item.selected && item.text) &&
             state.injectionByCharacter[String(chat.id)] !== false);
+    }
+    function memoryState(chat, journal) {
+        if (journal.bridgeReview?.status !== 'approved') return '已收到 · 待审核';
+        if (!journal.isFavorited) return '已批准 · 未收藏';
+        return allowedMemory(chat, journal) ? '已批准 · 可注入' : '已批准 · 来源停用';
     }
 
     function turnStart(chat) {
@@ -944,7 +952,7 @@
         for (const { chat, journal, archived } of matching.slice(reviewView.page*10,(reviewView.page+1)*10)) {
             const detail = document.createElement('details'), title = document.createElement('summary');
             const archiveName = chat.archives?.find(item => item.id === journal.bridgeReview?.archiveId)?.name || journal.bridgeReview?.archiveId || '默认存档';
-            title.textContent = `${chat.realName || chat.name || chat.id} · ${archiveName} · ${journal.title} · ` + (journal.isFavorited && journal.bridgeReview?.status === 'approved' ? '已应用' : '待审核 / 已停用');
+            title.textContent = `${chat.realName || chat.name || chat.id} · ${archiveName} · ${journal.title} · ` + memoryState(chat, journal);
             const source = document.createElement('details'), sourceTitle = document.createElement('summary'), pre = document.createElement('pre');
             sourceTitle.textContent = '查看过滤后的完整原文（酒馆保留原始消息）'; source.addEventListener('toggle',()=>{if(source.open)pre.textContent=journal.bridgeReview?.sourceText || journal.content;});
             source.append(sourceTitle, pre); detail.append(title, source);
@@ -1044,7 +1052,10 @@
             confirmSummaryButton.type='button';confirmSummaryButton.className='btn btn-secondary';confirmSummaryButton.textContent='确认摘要并加入记忆';
             const showPreview=()=>{const value=draft.summary || journal.bridgeReview?.summaryDraft;preview.hidden=!value;if(value){summaryTitle.value=value.title;summaryText.value=value.content;preview.open=true;}};
             summaryTitle.addEventListener('input',()=>{if(draft.summary)draft.summary.title=summaryTitle.value;});summaryText.addEventListener('input',()=>{if(draft.summary)draft.summary.content=summaryText.value;});
-            preview.append(previewTitle,summaryTitle,summaryText,confirmSummaryButton);showPreview();
+            const factComparison=document.createElement('details'),factTitle=document.createElement('summary'),factText=document.createElement('pre');
+            factTitle.textContent='对照已选楼层的人物 / 日期 / 约定 / 待办';factComparison.append(factTitle,factText);
+            factComparison.addEventListener('toggle',()=>{if(factComparison.open)factText.textContent=globalThis.UvUBridgeSummary.factChecklist(items).map(row=>'第 '+row.floor+' 层 · '+row.speaker+'\n剧情日期：'+row.date+'\n约定：'+(row.commitments.join(' ') || '未识别，请核对原文')+'\n待办：'+(row.todos.join(' ') || '未识别，请核对原文')+'\n'+row.text).join('\n\n') || '尚未选择来源楼层。';});
+            preview.append(previewTitle,summaryTitle,summaryText,factComparison,confirmSummaryButton);showPreview();
             let summaryController;
             generate.addEventListener('click',async()=>{
                 if(reviewBusy)return;reviewBusy=true;generate.disabled=true;cancel.hidden=false;summaryController=new AbortController();
@@ -1343,6 +1354,6 @@
         });
     }
 
-    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, importRecovery, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
+    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, importRecovery, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, memoryState, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

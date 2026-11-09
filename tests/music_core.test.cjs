@@ -31,6 +31,7 @@ test('playlist preview deduplicates pages without saving; confirmation writes on
     const saved=await h.music.importPlaylist({...draft,name:'我的歌单'});assert.equal(saved.name,'我的歌单');assert.equal(saved.tracks.length,3);assert.equal(h.writes.length,1);
     assert.deepEqual(Object.keys(saved).sort(),['id','name','tracks']);assert.ok(!JSON.stringify(h.db.musicLibrary).includes('https://one.test'));
 });
+test('playlist preview retains successful pages for explicit resume after one failed page',async()=>{const h=harness({musicSettings:{endpoint:'https://one.test'}}),pages=[];let fail=true,partial;h.fetch=async url=>{if(url.endsWith('/session'))return{token:'ok'};const page=Number(new URL(url).searchParams.get('page'));pages.push(page);if(page===2&&fail)throw Error('temporary');return{tracks:[track(String(page))],hasMore:page===1,total:2}};try{await h.music.previewPlaylist('123','netease')}catch(error){partial=error.preview}assert.ok(partial);assert.equal(partial.tracks.length,1);assert.equal(partial.nextPage,2);assert.equal(h.writes.length,0);fail=false;const result=await h.music.previewPlaylist('123','netease',undefined,undefined,partial);assert.deepEqual(pages,[1,2,2]);assert.deepEqual(plain(result.tracks.map(t=>t.id)),['1','2']);assert.equal(result.total,2);assert.equal(result.partial,false);assert.equal(h.writes.length,0);});
 test('playlist preview failure, repeated pages, malformed data or changing gateway never create partial playlists',async()=>{
     const h=harness({musicSettings:{endpoint:'https://one.test'}});
     h.fetch=async url=>{if(url.endsWith('/session'))return{token:'ok'};if(new URL(url).searchParams.get('page')==='2')throw Error('page failed');return{tracks:[track('1')],hasMore:true};};
@@ -84,6 +85,7 @@ test('a browser refusing programmatic volume still plays audio',async()=>{
     assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
 });
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
+test('position notifications reuse immutable queue metadata and never persist per tick',async()=>{const h=harness(),songs=Array.from({length:500},(_,i)=>h.music.importURL('https://media.test/'+i,{id:String(i)})),events=[];await h.music.player.play(songs[0],songs);const unsub=h.music.player.subscribe(state=>events.push(state)),audio=h.sounds.at(-1);for(let i=1;i<5;i++){audio.currentTime=i;audio.emit('timeupdate');}assert.equal(events.at(-1).position,4);assert.equal(events[1].queue,events[2].queue);assert.equal(events[1].track,events[2].track);assert.equal(Object.isFrozen(events[1].queue),true);unsub();h.music.player.stop();});
 test('health wakeup uses no session or credentials and waits longer than normal provider requests', async () => {
     const timers = [], h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {setTimeout(fn, ms){timers.push(ms);return setTimeout(fn,ms);}});
     h.fetch = async () => ({ok:true,ready:true,deployment:{provider:'render',ephemeral:true}});
@@ -448,6 +450,7 @@ test('failed library save deletes the newly imported local blob', async () => {
     const count = await new Promise((resolve, reject) => { const transaction = connection.transaction('audio'), request = transaction.objectStore('audio').count(); request.onsuccess = () => resolve(request.result); request.onerror = reject; });
     assert.equal(count, 0); assert.equal(h.music.library().favorites.length, 0); connection.close();
 });
+test('cancelling a local import during metadata discards bytes before database write',async()=>{const controller=new AbortController(),pending=deferred(),indexedDB=new IDBFactory(),h=harness({}, {indexedDB,window:Object.assign(new EventTarget(),{UvUMusicMetadata:{read:()=>pending.promise}})}),file=Object.assign(new Blob(['audio'],{type:'audio/mpeg'}),{name:'track.mp3'}),task=h.music.importLocal(file,{signal:controller.signal});controller.abort();pending.resolve({title:'late'});await assert.rejects(task,{name:'AbortError'});assert.equal(h.music.library().favorites.length,0);assert.equal(h.writes.length,0);});
 
 test('sleep and repeat modes act on the player without per-second database writes', async () => {
     const h = harness(), song = h.music.importURL('https://media.test/song.mp3');
@@ -654,6 +657,15 @@ test('switching playback source cancels pending public resolution and normal lyr
     await h.music.saveSettings({playbackSource:'public'});await h.music.saveSettings({publicSources:[]});
     assert.notEqual(h.music.settings().playbackSource,'public','disabling public source also resets public routing');
 });
+test('explicit source reload replaces currently loaded audio while keeping original identity and queue', async () => {
+    const h=harness({musicSettings:{publicSources:['gd-netease'],playbackSource:'public'}});let selected='first';
+    h.context.window.UvUPublicMusic={match:async value=>({...value,provider:'gd-netease',id:selected}),stream:async value=>({url:'https://m801.music.126.net/'+value.id+'.mp3'})};
+    const original=track('QQMID',{provider:'qq'});await h.music.player.play(original,[original,track('next')]);
+    selected='second';await h.music.player.play(original,undefined,{reloadSource:true});
+    assert.equal(h.sounds.length,2);assert.match(h.sounds[1].src,/second\.mp3$/);
+    assert.equal(h.music.player.snapshot().track.id,'QQMID');assert.equal(h.music.player.snapshot().queue.length,2);h.music.player.stop();
+});
+
 test('public matching failure offers manual search instead of a misleading network error', async () => {
     const h=harness({musicSettings:{publicSources:['gd-netease'],playbackSource:'public'}});
     h.context.window.UvUPublicMusic={match:async()=>{throw Object.assign(new Error('公共源存在多个同名版本，请在公共源中手动选择'),{code:'public_match'});}};

@@ -81,6 +81,22 @@ test('modern MCP headers encode non-ASCII names and mirror approved primitive pa
     await client.call('天气',{location:{city:'北京'},count:2},undefined,[{name:'City',path:['location','city'],type:'string'},{name:'Count',path:['count'],type:'integer'}]);
     const headers=requests.at(-1).init.headers;assert.match(headers['Mcp-Name'],/^=\?base64\?/);assert.equal(headers['Mcp-Param-Count'],'2');assert.match(headers['Mcp-Param-City'],/^=\?base64\?/);
 });
+
+test('modern resource reads mirror URI into Mcp-Name and legacy reads never emit modern headers', async () => {
+    for (const protocol of ['2026-07-28', '2025-06-18']) {
+        const f = fixture((body, init) => {
+            if (body.method === 'initialize') return reply(body, { protocolVersion: protocol, capabilities: { resources: {} } });
+            if (!body.id) return new Response(null, { status: 202 });
+            if (protocol === '2026-07-28') assert.ok(init.headers['Mcp-Name'], 'strict modern resource routing requires a URI name');
+            else assert.equal(init.headers['Mcp-Name'], undefined);
+            return reply(body, { contents: [{ uri: body.params.uri, text: 'ok' }] });
+        });
+        const uri = 'memo://人物/约定';
+        const result = await f.api.create({ url: 'https://tools.test/mcp', protocol }).readResource(uri);
+        assert.equal(result.contents[0].text, 'ok');
+        if (protocol === '2026-07-28') assert.match(f.requests.at(-1).init.headers['Mcp-Name'], /^=\?base64\?/);
+    }
+});
 test('expired legacy sessions recover once only for explicitly safe reads', async () => {
     let sessions = 0, calls = 0;
     const f = fixture(body => {

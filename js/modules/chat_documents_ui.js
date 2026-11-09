@@ -35,7 +35,8 @@ function openSharedDocumentDialog(message, chat) {
     const contextAvatar = documentNode('img'); contextAvatar.src = target.chat.avatar || ''; contextAvatar.alt = '';
     context.append(contextAvatar, documentNode('strong', target.chat.remarkName || target.chat.realName || '当前角色'), documentNode('small', '当前对话'));
     body.append(context);
-    let file = message?.document, reading = false;
+    let file = message?.document, reading = false, previewPage = 0, findOffset = 0, pickedFile = null;
+    const previewSize = 12000;
     const input = documentNode('input'); input.type = 'file'; input.accept = '.txt,.md,.markdown,.docx,.pdf,.csv,.tsv,.xlsx,.xls'; input.setAttribute('aria-label', '选择分享文件'); input.hidden = true;
     const upload = documentNode('button', undefined, 'shared-document-upload'); upload.type = 'button'; upload.dataset.icon = 'upload'; upload.hidden = Boolean(message);
     const uploadText = documentNode('span', undefined, 'shared-document-upload-label');
@@ -55,13 +56,58 @@ function openSharedDocumentDialog(message, chat) {
     const fileMeta = documentNode('small', '', 'shared-document-file-meta');
     fileIdentity.append(name, fileMeta); fileHeader.append(fileIcon, fileIdentity);
     editor.append(fileHeader, previewHeading, text);
+    const pages = documentNode('div', undefined, 'shared-document-pages'); pages.dataset.documentPages = '';
+    const previousPage = documentNode('button', '上一段'), nextPage = documentNode('button', '下一段'), pageLabel = documentNode('span');
+    const search = documentNode('input'); search.type = 'search'; search.placeholder = '查找正文'; search.setAttribute('aria-label', '查找文件正文');
+    const find = documentNode('button', '查找'), copy = documentNode('button', '复制全文');
+    for (const button of [previousPage, nextPage, find, copy]) button.type = 'button';
+    pages.append(previousPage, pageLabel, nextPage, search, find, copy); editor.append(pages);
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(file.text); status.textContent = '已复制全文'; } catch (_) { status.textContent = '复制不可用，请从文件选项导出完整文本'; } };
+    const encoding = documentNode('select'); encoding.setAttribute('aria-label', '文件文字编码'); encoding.hidden = true;
+    for (const [value, label] of [['', '自动编码'], ['utf-8', 'UTF-8'], ['gb18030', 'GB18030'], ['utf-16le', 'UTF-16 LE'], ['utf-16be', 'UTF-16 BE']]) {
+        const option = documentNode('option', label); option.value = value; encoding.append(option);
+    }
+    editor.append(encoding);
+    const completeText = () => text.readOnly ? file?.text || '' : text.value;
+    function paintPage() {
+        const count = Math.max(1, Math.ceil((file?.text.length || 0) / previewSize));
+        previewPage = Math.max(0, Math.min(previewPage, count - 1));
+        pages.hidden = !text.readOnly || count <= 1;
+        if (text.readOnly) text.value = (file?.text || '').slice(previewPage * previewSize, (previewPage + 1) * previewSize);
+        pageLabel.textContent = (previewPage + 1) + ' / ' + count;
+        previousPage.disabled = previewPage === 0; nextPage.disabled = previewPage >= count - 1;
+    }
+    previousPage.onclick = () => { previewPage--; paintPage(); }; nextPage.onclick = () => { previewPage++; paintPage(); };
+    search.oninput = () => { findOffset = 0; };
+    find.onclick = () => {
+        const query = search.value; if (!query || !file) return;
+        let index = file.text.indexOf(query, findOffset); if (index < 0) index = file.text.indexOf(query);
+        if (index < 0) { status.textContent = '未找到'; return; }
+        findOffset = index + query.length; previewPage = Math.floor(index / previewSize); paintPage();
+        const local = index - previewPage * previewSize; text.focus(); text.setSelectionRange(local, Math.min(text.value.length, local + query.length));
+    };
+    const sourceMessage = file?.parentId && target.history.find(item => item.id === file.parentId && item.type === 'document');
+    if (sourceMessage?.document && typeof globalCssLineDiff === 'function') {
+        const comparison = documentNode('details', undefined, 'shared-document-comparison'); comparison.dataset.documentDiff = '';
+        const diff = globalCssLineDiff(sourceMessage.document.text, file.text), details = documentNode('pre');
+        comparison.append(documentNode('summary', '查看修改 · +' + diff.added + ' / −' + diff.removed));
+        details.textContent = diff.lines.map(line => (line.type === 'add' ? '+ ' : line.type === 'remove' ? '- ' : '  ') + line.text).join('\n') || '正文相同';
+        comparison.append(details);
+        if (diff.grouped || diff.truncated) comparison.append(documentNode('small', (diff.grouped ? '大段替换，未逐行匹配。' : '') + (diff.truncated ? '仅预览前 300 行；原件与副本均保留。' : '')));
+        editor.append(comparison);
+    }
     const status = documentNode('p', '', 'shared-document-help shared-document-status'); status.setAttribute('aria-live', 'polite');
     const downloads = documentNode('details', undefined, 'shared-document-downloads'); downloads.append(documentNode('summary', '下载与导出'));
+    const extraction = documentNode('details', undefined, 'shared-document-extraction');
+    extraction.dataset.documentExtraction = '';
+    extraction.append(documentNode('summary', '提取范围'));
+    downloads.append(extraction);
     const exportActions = documentNode('div', undefined, 'shared-document-export-actions');
     const original = documentNode('button', '下载原件'), txt = documentNode('button', '导出文本'), docx = documentNode('button', '导出 DOCX');
     for (const button of [original, txt, docx]) { button.type = 'button'; button.dataset.icon = 'download'; exportActions.append(button); } downloads.append(exportActions);
     const tutorial = documentNode('details', undefined, 'shared-document-tutorial'); tutorial.append(documentNode('summary', '使用说明'));
     tutorial.append(documentNode('p', '选择文件，核对正文后发送。在聊天中告诉角色需要阅读或修改的内容，修改版会作为新文件返回。', 'shared-document-help'),
+        documentNode('p', '长正文分段预览，查找可定位全文；编辑副本会恢复全文。文字乱码可切换编码重新预览。“文件选项 → 提取范围”列出表格范围；空白或图片页会提示部分提取。导出原件保留原字节，导出文本保存完整正文。', 'shared-document-help'),
         documentNode('p', '支持 TXT、Markdown、DOCX、PDF、CSV、TSV、XLSX 和 XLS，每份最多 5 MB、100000 字符。文件在本机解析，发送后才随聊天请求交给模型。PDF 需包含可提取文字；图片、复杂排版、公式和宏不参与编辑。每轮最多提供最近 8 份文件、共 32000 字符，超长会标明截取。原件始终保留。', 'shared-document-help'));
     body.append(input, upload, editor, status, downloads, tutorial);
     tutorial.hidden = true; tutorial.id = 'shared-document-instructions';
@@ -85,7 +131,7 @@ function openSharedDocumentDialog(message, chat) {
     const cancel = documentNode('button', '取消'); cancel.type = 'button'; cancel.dataset.action = 'cancel'; cancel.onclick = () => dialog.dismiss();
     const send = documentNode('button', message ? '发送修改副本' : '发送文件'); send.type = 'button'; send.dataset.icon = 'send'; send.dataset.action = 'send'; actions.append(cancel, send); dialog.panel.append(actions);
     function refresh(resetContent = true) {
-        if (resetContent) { name.value = file?.name || ''; text.value = file?.text || ''; }
+        if (resetContent) { name.value = file?.name || ''; text.value = file?.text || ''; previewPage = findOffset = 0; paintPage(); }
         editor.hidden = downloads.hidden = actions.hidden = !file;
         choose.textContent = file ? '更换' : '选择文件';
         upload.setAttribute('aria-label', file ? '更换文件' : '选择文件');
@@ -95,30 +141,38 @@ function openSharedDocumentDialog(message, chat) {
         upload.classList.toggle('is-loaded', Boolean(file));
         if (file && upload.parentElement === body) fileHeader.append(upload);
         else if (!file && upload.parentElement !== body) body.insertBefore(upload, editor);
-        status.textContent = file ? `${text.value.length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
+        status.textContent = file ? `${completeText().length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
         original.hidden = !file?.originalData;
+        extraction.hidden = !file?.extractionReport?.length;
+        extraction.querySelectorAll('p').forEach(node => node.remove());
+        for (const line of file?.extractionReport || []) extraction.append(documentNode('p', line, 'shared-document-help'));
         [original, txt, docx, send].forEach(button => button.disabled = !file || reading);
-        upload.disabled = input.disabled = reading;
+        upload.disabled = input.disabled = encoding.disabled = reading;
     }
-    edit.onclick = () => { text.readOnly = false; text.focus({ preventScroll: true }); status.textContent = '正在编辑副本'; };
+    edit.onclick = () => { if (text.readOnly) text.value = file.text; text.readOnly = false; pages.hidden = true; text.focus({ preventScroll: true }); status.textContent = '正在编辑副本'; };
     text.addEventListener('input', () => { if (!reading) refresh(false); });
-    input.onchange = async () => {
-        const picked = input.files?.[0]; if (!picked || reading) return;
+    const readPickedFile = async picked => {
+        if (!picked || reading) return;
         reading = true; refresh(false); status.textContent = '正在读取…';
         try {
-            const parsed = await parseSharedDocument(picked, { signal: controller.signal });
+            const parsed = await parseSharedDocument(picked, { signal: controller.signal, ...(encoding.value ? { encoding: encoding.value } : {}) });
             const originalData = await sharedDocumentOriginal(picked, controller.signal);
             if (controller.signal.aborted) return;
             if (!isChatSendTargetValid(target)) throw new Error('角色或存档已变化，请重新打开');
             file = validateSharedDocument({ ...parsed, originalData, originalName: parsed.name });
+            encoding.hidden = !/\.(txt|md|markdown|csv|tsv)$/i.test(picked.name);
             text.scrollKey = editorKey(crypto.randomUUID());
             refresh();
         } catch (error) { if (!controller.signal.aborted) { file = null; refresh(); status.textContent = error.message; } }
-        finally { reading = false; if (!controller.signal.aborted) { upload.disabled = input.disabled = false; [original, txt, docx, send].forEach(button => button.disabled = !file); } }
+        finally { reading = false; if (!controller.signal.aborted) { upload.disabled = input.disabled = encoding.disabled = false; [original, txt, docx, send].forEach(button => button.disabled = !file); } }
     };
+    input.onchange = () => { if (reading) return; pickedFile = input.files?.[0]; encoding.value = ''; return readPickedFile(pickedFile); };
+    encoding.onchange = () => readPickedFile(pickedFile);
     const draft = () => {
-        const changed = text.value !== file.text || sharedDocumentName(name.value) !== file.name;
-        return makeSharedDocument(name.value, text.value, message ? { parentId: message.id } : changed ? { originalData: file.originalData, originalName: file.originalName || file.name, bytes: file.bytes, hasEdits: true, warnings: ['文字已编辑；仍保留可下载原件，角色阅读当前文字'] } : file);
+        const content = completeText();
+        const changed = content !== file.text || sharedDocumentName(name.value) !== file.name;
+        const metadata = message ? { parentId: message.id } : changed ? { originalData: file.originalData, originalName: file.originalName || file.name, bytes: file.bytes, hasEdits: true, warnings: [...(file.warnings || []), '文字已编辑；仍保留可下载原件，角色阅读当前文字'] } : file;
+        return makeSharedDocument(name.value, content, { ...metadata, ...(file.extractionComplete === false ? { extractionComplete: false, warnings: metadata.warnings || file.warnings || ['原文件包含未提取内容'] } : {}) });
     };
     const action = callback => { try { callback(); } catch (error) { status.textContent = error.message; } };
     original.onclick = () => action(() => downloadSharedDocument(file, 'original'));

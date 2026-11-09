@@ -46,6 +46,25 @@ test('chat export materializes independent vector cache only when chat and index
     await f.c.handleExport(); assert.equal(calls, 1);
 });
 
+test('backup snapshots selected data before awaiting external vector materialization', async () => {
+    const f = fixture(); f.element('storage-export-format').value = 'json';
+    f.c.db.worldBooks = [{ id: 'w', content: 'before' }]; f.c.db.apiSettings = { model: 'before' };
+    f.c.db.myPersonaPresets = [{ id: 'p', content: 'before' }];
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = ["chats", "settings", "worldbooks", "personas"].includes(key));', f.c);
+    let resume; const paused = new Promise(resolve => { resume = resolve; });
+    f.c.VectorMemoryTools = { portableExport: async () => paused };
+    const exporting = f.c.handleExport();
+    f.c.db.characters[0].history[0].content = 'after';
+    f.c.db.worldBooks[0].content = 'after'; f.c.db.apiSettings.model = 'after';
+    f.c.db.myPersonaPresets[0].content = 'after';
+    resume(); await exporting;
+    const data = JSON.parse(await f.blobs[0].text());
+    assert.equal(data.modules.characters[0].history[0].content, 'private history');
+    assert.equal(data.modules.worldBooks[0].content, 'before');
+    assert.equal(data.modules.apiSettings.model, 'before');
+    assert.equal(data.modules.myPersonaPresets[0].content, 'before');
+});
+
 test('derived memory and speech settings reject malformed nested backup values', () => {
     const f = fixture();
     for (const value of [

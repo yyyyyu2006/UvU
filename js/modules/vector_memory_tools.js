@@ -159,18 +159,34 @@ const VectorMemoryTools = (() => {
             const original = db[key]?.find(item => item.id === chat.id);
             if (!original || !Object.hasOwn(chat, 'history') || !getAutoMemorySettings(original).vectorExternalIndex) continue;
             const api = vectorMemoryApiFingerprint(resolveVectorMemoryApi());
-            const hydrate = async (target, destination) => {
+            const apiStamp = autoMemoryFingerprint(resolveVectorMemoryApi());
+            const hydrate = async (currentTarget, destination, exportedTarget) => {
+                const target = currentTarget();
+                if (!destination || !exportedTarget || String(target.activeArchiveId || 'default') !== String(exportedTarget.activeArchiveId || 'default')) return false;
+                const archiveId = target.activeArchiveId;
+                // Chat-only backups deliberately omit contact settings. Capture those
+                // settings solely for validation; never add them to the selected export.
+                const projection = { ...exportedTarget };
+                for (const field of ['autoMemorySettings']) if (!Object.hasOwn(projection, field) && target[field] !== undefined)
+                    projection[field] = JSON.parse(JSON.stringify(target[field]));
+                if (!Object.hasOwn(projection.statusPanel || {}, 'regexPattern') && target.statusPanel?.regexPattern !== undefined)
+                    projection.statusPanel = { ...projection.statusPanel, regexPattern: target.statusPanel.regexPattern };
+                const fingerprint = vectorSourceFingerprint(projection);
+                if (fingerprint !== vectorSourceFingerprint(target)) return false;
                 const saved = await VectorIndexStore.read(indexScope(target, api, type));
                 // Cache is reused only for exactly the exported sources/settings. Imported snapshots cannot pick up unrelated local vectors.
-                if (saved.fingerprint !== vectorSourceFingerprint(target)) return false;
+                const latest = currentTarget();
+                if (db[key]?.find(item => item.id === chat.id) !== original || latest.activeArchiveId !== archiveId ||
+                    apiStamp !== autoMemoryFingerprint(resolveVectorMemoryApi()) || saved.fingerprint !== fingerprint ||
+                    vectorSourceFingerprint(latest) !== fingerprint || vectorSourceFingerprint(projection) !== fingerprint) return false;
                 destination.memoryVectorIndex = saved.index; return true;
             };
-            await hydrate(original, chat);
+            await hydrate(() => original, chat, chat);
             for (const archive of chat.archives || []) {
                 const source = original.archives?.find(item => item.id === archive.id);
                 if (!source) continue;
-                const target = archive.id === original.activeArchiveId ? original : { ...original, ...source.data, activeArchiveId: archive.id };
-                await hydrate(target, archive.data);
+                const target = () => archive.id === original.activeArchiveId ? original : { ...original, ...source.data, activeArchiveId: archive.id };
+                await hydrate(target, archive.data, { ...chat, ...archive.data, activeArchiveId: archive.id });
             }
         }
     }

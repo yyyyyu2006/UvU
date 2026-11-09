@@ -208,7 +208,10 @@ function openExpandedEditor(target, importedText) {
         saveExpandedEditorScroll(scrollTarget, draft);
         remember(keepDraft || applied ? draft.value : original, applied ? draft.value : original);
         overlay.remove();
-        if (target.isConnected && target.getClientRects().length) target.focus({ preventScroll: true });
+        // Modal isolation is restored by a MutationObserver after removal.
+        queueMicrotask(() => {
+            if (target.isConnected && target.getClientRects().length && !target.closest('[inert]')) target.focus({ preventScroll: true });
+        });
     };
     find.addEventListener('input', scheduleSearch); caseBox.addEventListener('change', update); draft.addEventListener('input', scheduleSearch); draft.addEventListener('scroll', persistScroll, { passive: true });
     overlay.addEventListener('click', async e => {
@@ -220,6 +223,12 @@ function openExpandedEditor(target, importedText) {
         if (action === 'apply') {
             if (!target.isConnected) return showToast('原编辑界面已关闭，请先复制草稿');
             if (getExpandedEditorScrollKey(target) !== scrollTarget.scrollKey) return showToast('角色或存档已变化，请暂存或复制草稿后重新打开');
+            if (target.value !== original && target.value !== draft.value) {
+                notice.hidden = false;
+                notice.textContent = '原文已变化，未覆盖。请暂存草稿后重新打开，比较两份内容。';
+                remember(draft.value);
+                return;
+            }
             target.value = draft.value; target.dispatchEvent(new Event('input', { bubbles: true })); target.dispatchEvent(new Event('change', { bubbles: true })); close(false, true);
         }
         if (action === 'next') select(active + 1);

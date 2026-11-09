@@ -39,6 +39,15 @@ function harness(fetchImpl, permissionState = 'granted') {
     vm.runInContext(source.replace('window.setupUvUStoryBridge =', 'window.__bridgeTest = {automaticSync, disconnect, pair}; window.setupUvUStoryBridge ='), context);
     return { bridge: context.window.UvUStoryBridge, db, chat, output, context };
 }
+test('review stages distinguish received, approved and injectable for the bound archive', () => {
+ const f=harness(async()=>({ok:true}));f.chat.activeArchiveId='a';
+ const journal={source:'sillytavern',isFavorited:false,bridgeReview:{channel:'st',archiveId:'a',status:'pending',items:[{selected:true,text:'正文'}]}};
+ assert.equal(f.bridge.memoryState(f.chat,journal),'已收到 · 待审核');
+ journal.bridgeReview.status='approved';assert.equal(f.bridge.memoryState(f.chat,journal),'已批准 · 未收藏');
+ journal.isFavorited=true;assert.equal(f.bridge.memoryState(f.chat,journal),'已批准 · 可注入');
+ f.db.uvuStoryBridgeSettings.bridgeEnabled=false;assert.equal(f.bridge.memoryState(f.chat,journal),'已批准 · 来源停用');
+ f.db.uvuStoryBridgeSettings.bridgeEnabled=true;f.chat.activeArchiveId='b';assert.equal(f.bridge.allowedMemory(f.chat,journal),false);
+});
 
 test('saved handoff character survives reentry and refresh never follows a different open chat', async () => {
  const f=harness(async()=>({ok:true,json:async()=>({})}));
@@ -544,6 +553,7 @@ test('mode lookup propagates caller abort without network diagnostic wrapping',a
 test('safe capacity diagnostics contain counts but no tokens source text addresses or role identifiers',()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));f.db.uvuStoryBridgeSettings.outbox=[{payload:{text:'SECRET STORY'}}];
  const snapshot=f.bridge.diagnosticsSnapshot();assert.equal(snapshot.local.pendingSend,1);assert.equal(snapshot.local.remainingSend,499);
+ assert.equal(snapshot.frontend.build,'20261109-audit-repair');assert.equal(snapshot.frontend.protocolVersion,1);
  assert.doesNotMatch(JSON.stringify(snapshot),/paired-token|SECRET STORY|127\.0\.0\.1|char-1/);
 });
 

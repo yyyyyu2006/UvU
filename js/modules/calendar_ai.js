@@ -4,7 +4,7 @@
     const tickets = new Map(), busy = new Set(), attempted = new Map(), statuses = new Map();
     const C = () => root.UvUCalendar;
     const abort = () => new DOMException('角色、存档或记录已变化，请重新生成', 'AbortError');
-    const clean = text => typeof VoiceDirector !== 'undefined' ? VoiceDirector.cleanText(text) : String(text || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').replace(/<[^>]*>/g, '').slice(0, 2000);
+    const clean = text => typeof VoiceDirector !== 'undefined' && typeof VoiceDirector.cleanText === 'function' ? VoiceDirector.cleanText(text) : String(text || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').replace(/<[^>]*>/g, '').slice(0, 2000);
     function capture(chat) {
         const owner = C().owner(chat), data = db.calendarData;
         return { chat, owner, data, revision: C().state().revision, persona: chat.persona, history: chat.history, stamp: JSON.stringify(chat.history?.slice(-6).map(m => [m.id, m.content])) };
@@ -73,7 +73,7 @@
                 if (old) data.events[data.events.indexOf(old)] = e; else data.events.push(e); saved++;
             }
             const mood = ticket.proposal.mood;
-            if (mood && !data.moods.some(m => m.owner === s.owner && m.date === proposal.date && m.source === 'manual')) {
+            if (proposal.includeMood !== false && mood && !data.moods.some(m => m.owner === s.owner && m.date === proposal.date && m.source === 'manual')) {
                 data.moods = data.moods.filter(m => !(m.owner === s.owner && m.date === proposal.date && m.source === 'ai'));
                 data.moods.push({ id: C().id(), owner: s.owner, date: proposal.date, mood: mood.mood, note: mood.note, color: C().moodColor, source: 'ai', at: Date.now() });
             }

@@ -103,3 +103,22 @@ test('cancelled CSS preview leaves active styles and the unsaved editor draft un
     assert.equal(f.textarea.value, '.draft {}');
     assert.equal(f.applied.length, 0);
 });
+
+test('CSS line diff retains unchanged lines and separates edits across hunks', () => {
+    const { context: c } = fixture();
+    const result = c.window.GlobalCssIO.lineDiff('a\nb\nc\nd\ne', 'a\nB\nc\nd\nE');
+    assert.equal(result.added, 2); assert.equal(result.removed, 2);
+    assert.equal(result.grouped, false);
+    assert.ok(result.lines.some(line => line.type === 'same' && line.text === 'c'));
+    assert.ok(result.lines.some(line => line.type === 'add' && line.text === 'B'));
+    assert.ok(result.lines.some(line => line.type === 'remove' && line.text === 'e'));
+});
+
+test('CSS diff bounds work and output on a large unrelated replacement', () => {
+    const { context: c } = fixture();
+    const result = c.window.GlobalCssIO.lineDiff(Array.from({length: 3000}, (_, i) => 'a' + i).join('\n'), Array.from({length: 3000}, (_, i) => 'b' + i).join('\n'));
+    assert.equal(result.grouped, true); assert.equal(result.truncated, true);
+    assert.equal(result.added, 3000); assert.equal(result.removed, 3000);
+    assert.ok(result.lines.length <= 300);
+    assert.equal(c.window.GlobalCssIO.lineDiff('', '').lines.length, 0);
+});

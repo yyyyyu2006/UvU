@@ -87,7 +87,8 @@
             if (session && version !== MODERN) headers['Mcp-Session-Id'] = session;
             if (version === MODERN) {
                 headers['Mcp-Method'] = method;
-                if (params.name) headers['Mcp-Name'] = headerValue(params.name);
+                const nameField = { 'tools/call': 'name', 'prompts/get': 'name', 'resources/read': 'uri' }[method];
+                if (nameField && params[nameField] !== undefined) headers['Mcp-Name'] = headerValue(params[nameField]);
                 for (const header of paramHeaders) {
                     let value = params.arguments;
                     for (const key of header.path) value = value && Object.hasOwn(value, key) ? value[key] : undefined;

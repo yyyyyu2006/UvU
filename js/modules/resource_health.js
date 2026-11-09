@@ -25,6 +25,9 @@
         for (const link of document.querySelectorAll('link[rel=stylesheet]')) add('样式／字体入口', link.href,
             link.sheet ? '样式入口已加载，内部字体仍受外链和浏览器限制' : '尚未取得样式表；请核对网络');
         if (document.fonts) rows.push({ type: '字体', resource: '浏览器字体集合', state: document.fonts.status === 'loading' ? '仍有字体加载中' : '当前加载任务结束；缺字可能仍使用回退字体' });
+        const nodes = root ? root.querySelectorAll('*').length + 1 : 0;
+        if (nodes > 500 || rows.length >= 300) rows.push({ type: '扫描范围', resource: '当前主页', state:
+            `CSS 背景检查 ${Math.min(nodes, 500)} / ${nodes} 个节点；资源结果最多300项。${nodes > 500 || rows.length >= 300 ? '结果已截断，不代表全量检查。' : ''}` });
         return rows;
     }
     function open() {

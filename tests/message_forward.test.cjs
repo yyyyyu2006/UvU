@@ -78,3 +78,4 @@ test('forwarding a record card again includes its contents rather than only a me
     const snapshot = f.c.buildMessageForwardSnapshot(f.source, 'private', new Set(['nested']));
     assert.match(snapshot.records[0].content, /原文[\s\S]*回复/);
 });
+test('forward preflight measures records and images and rejects oversized snapshots without writing',async()=>{const f=fixture(),snapshot=f.snapshot();assert.equal(typeof f.c.getMessageForwardSummary,'function');const report=f.c.getMessageForwardSummary(snapshot);assert.equal(report.records,4);assert.equal(report.images,1);assert.ok(report.estimatedBytes>0);snapshot.records[0].content='长'.repeat(9*1024*1024);await assert.rejects(f.c.sendMessageForward(snapshot,'target','private','a'),/过大|16MB|缩小/);assert.equal(f.target.history.length,0);});

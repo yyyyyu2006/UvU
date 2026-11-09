@@ -143,15 +143,20 @@
         if (!/^\d{1,24}$/.test(id || '')) throw new Error('歌单 ID 无效');
         return { provider: source, id };
     }
-    async function previewPlaylist(input, selected = '', signal, progress) {
+    async function previewPlaylist(input, selected = '', signal, progress, resume) {
         aborted(signal);
         const reference = parsePlaylistReference(input, selected), host = settings().endpoint;
         if (!host) throw new Error('请先在音乐账号与设置中连接音乐网关，再读取平台歌单');
-        const songs = [], seen = new Set();
-        for (let page = 1; page <= 100; page++) {
+        const same = resume && resume.provider === reference.provider && resume.id === reference.id && resume.sourceEndpoint === host && resume.partial === true && Number.isInteger(resume.nextPage) && resume.nextPage >= 1 && resume.nextPage <= 100;
+        const songs = same ? tracks(resume.tracks, 1000) : [], seen = new Set(songs.map(key)); let total = same ? resume.total : undefined;
+        const draft = (nextPage, partial, reason = '') => ({ ...reference, sourceEndpoint: host, name: (reference.provider === 'qq' ? 'QQ 音乐' : '网易云') + '歌单 ' + reference.id, tracks: songs.slice(0, 1000), partial, nextPage, ...(Number.isInteger(total) ? { total } : {}), truncated: partial || !!reason, reason });
+        for (let page = same ? resume.nextPage : 1; page <= 100; page++) {
             aborted(signal); if (settings().endpoint !== host) throw abortError();
-            const data = await playlist(reference.provider, reference.id, page, signal);
+            let data;
+            try { data = await playlist(reference.provider, reference.id, page, signal); }
+            catch (error) { aborted(signal); if (settings().endpoint !== host) throw abortError(); if (songs.length && error.name !== 'AbortError') error.preview = draft(page, true, '第' + page + '页读取失败，保留已读取歌曲，可续读或仅保存当前部分'); throw error; }
             aborted(signal); if (settings().endpoint !== host) throw abortError();
+            if (Number.isInteger(data.total)) total = data.total;
             const before = songs.length;
             for (const song of data.tracks) {
                 if (song.provider !== reference.provider) throw new Error('歌单歌曲的平台与所选来源不一致');
@@ -162,7 +167,7 @@
             aborted(signal);
             if (!data.hasMore || songs.length >= 1000) {
                 if (!songs.length) throw new Error('歌单为空、未公开或当前账号无法读取');
-                return { ...reference, sourceEndpoint: host, name: (reference.provider === 'qq' ? 'QQ 音乐' : '网易云') + '歌单 ' + reference.id, tracks: songs.slice(0, 1000), truncated: songs.length > 1000 || data.hasMore };
+                return draft(page + 1, false, songs.length > 1000 || data.hasMore ? '最多预览1000首，仅保存已读取范围' : '');
             }
             if (songs.length === before) throw new Error('歌单分页重复或不完整，请稍后重试');
         }
@@ -401,7 +406,7 @@
         const raw = await request('/playlist/' + provider(value) + '/' + part(id) + '?page=' + Math.max(1, Math.min(100, Math.floor(Number(page) || 1))), { signal });
         if (!Array.isArray(raw.tracks) || raw.tracks.length > 200 || raw.tracks.some(song => !song || song.provider !== value)) throw new Error('音乐服务返回的歌单格式无效');
         raw.tracks.forEach(normalizeTrack);
-        return resultTracks(raw);
+        return { ...resultTracks(raw), ...(Number.isInteger(raw.total) && raw.total >= 0 && raw.total <= 100000 ? { total: raw.total } : {}) };
     }
     async function lyrics(track, signal) {
         aborted(signal);const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
@@ -418,10 +423,14 @@
     function localDB() {
         if (!blobDatabase) blobDatabase = new Promise((resolve, reject) => {
             if (typeof indexedDB === 'undefined') { reject(new Error('Local audio storage is unavailable')); return; }
+            let settled = false;
+            const fail = error => { if (settled) return; settled = true; clearTimeout(timer); reject(error); };
+            const timer = setTimeout(() => fail(new Error('本地音频存储连接超时，请关闭其他页面后重试')), 3000);
             const pending = indexedDB.open('uvu-music-local', 1);
             pending.onupgradeneeded = () => pending.result.createObjectStore('audio', { keyPath: 'id' });
-            pending.onerror = () => reject(new Error('Local audio storage is unavailable'));
-            pending.onsuccess = () => resolve(pending.result);
+            pending.onblocked = () => fail(new Error('本地音频存储被其他页面占用，请关闭后重试'));
+            pending.onerror = () => fail(new Error('Local audio storage is unavailable'));
+            pending.onsuccess = () => { if (settled) { pending.result.close(); return; } settled = true; clearTimeout(timer); pending.result.onversionchange = () => { pending.result.close(); blobDatabase = undefined; }; resolve(pending.result); };
         }).catch(error => { blobDatabase = undefined; throw error; });
         return blobDatabase;
     }
@@ -433,11 +442,18 @@
             transaction.onerror = transaction.onabort = () => reject(new Error('Local audio storage failed'));
         });
     }
-    async function importLocal(file) {
-        if (!file || typeof file.size !== 'number' || file.size <= 0 || file.size > 30 * 1024 * 1024 || !/^audio\/(mpeg|mp3|mp4|aac|x-m4a|ogg|wav|x-wav|webm|flac|x-flac)$/i.test(file.type || '')) throw new Error('Choose an audio file up to 30 MB');
+    async function importLocal(file, { signal } = {}) {
+        aborted(signal);
+        if (!file || typeof file.size !== 'number' || file.size <= 0 || file.size > 30 * 1024 * 1024) throw new Error('Choose an audio file up to 30 MB');
+        if (!/^audio\/(mpeg|mp3|mp4|aac|x-m4a|ogg|wav|x-wav|webm|flac|x-flac)$/i.test(file.type || '')) {
+            if (file.type && file.type !== 'application/octet-stream') throw new Error('Choose an audio file up to 30 MB');
+            const ext = String(file.name || '').split('.').pop().toLowerCase(), b = new Uint8Array(await file.slice(0, 16).arrayBuffer()), ascii = (offset, value) => [...value].every((char, i) => b[offset + i] === char.charCodeAt(0));
+            const valid = ext === 'mp3' ? ascii(0, 'ID3') || b[0] === 255 && (b[1] & 0xe0) === 0xe0 : ext === 'wav' ? ascii(0, 'RIFF') && ascii(8, 'WAVE') : ['m4a', 'mp4'].includes(ext) ? ascii(4, 'ftyp') : ext === 'ogg' ? ascii(0, 'OggS') : ext === 'flac' ? ascii(0, 'fLaC') : ext === 'aac' ? b[0] === 255 && (b[1] & 0xf6) === 0xf0 : ext === 'webm' && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
+            if (!valid) throw new Error('音频格式无法确认，请选择有效音频文件');
+        }
         const meta=await root.UvUMusicMetadata?.read(file)||{},id = makeId(), value = normalizeTrack({ provider: 'local', id, localId: id, title: text(file.name, 300).replace(/\.[^.]+$/, ''), artists: [],...meta, availability: 'full' });
-        await localRecord('readwrite', store => store.put({ id, blob: file }));
-        try { await toggleFavorite(value); } catch (error) { try { await localRecord('readwrite', store => store.delete(id)); } catch (_) {} throw error; }
+        aborted(signal); await localRecord('readwrite', store => store.put({ id, blob: file }));
+        try { aborted(signal); await persist('musicLibrary', current => { aborted(signal); if (current.favorites.length >= 2000) throw new Error('Favorite limit reached'); current.favorites.push({ ...value, addedAt: Date.now() }); return current; }); } catch (error) { try { await localRecord('readwrite', store => store.delete(id)); } catch (_) {} throw error; }
         return value;
     }
     function importURL(url, meta = {}) {
@@ -503,8 +519,11 @@
             if (media.setPositionState && state.duration > 0 && Number.isFinite(state.duration)) media.setPositionState({ duration: state.duration, playbackRate: 1, position: Math.min(state.duration, state.position) });
         } catch (_) {}
     }
-    function emit() {
-        const current = snapshot();
+    let lastNotification;
+    const freezeMetadata = value => { if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const item of Object.values(value)) freezeMetadata(item); } return value; };
+    function emit(positionOnly = false) {
+        const current = positionOnly && lastNotification ? Object.freeze({ ...lastNotification, position: state.position, duration: state.duration }) : freezeMetadata(snapshot());
+        lastNotification = current;
         for (const listener of listeners) { try { listener(current); } catch (_) {} }
         try { root.dispatchEvent?.(new CustomEvent('music-state', { detail: current })); } catch (_) {}
         mediaState();
@@ -569,7 +588,7 @@
         state.index = index;
         if(!options.historyMove&&visits[visitIndex]!==key(value)){visits=visits.slice(0,visitIndex+1);visits.push(key(value));if(visits.length>1000)visits.shift();visitIndex=visits.length-1;}
         if(queue!==undefined)resetShuffle(value);shuffleBag=shuffleBag.filter(id=>id!==key(value));saveQueue();
-        if (audio && state.track && key(state.track) === key(value) && state.phase!=='error') return playAudio(audio, generation);
+        if (!options.reloadSource && audio && state.track && key(state.track) === key(value) && state.phase!=='error') return playAudio(audio, generation);
         unload(); state.track = value; state.position = 0; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = '';state.errorCode=''; emit();
         const controller = new AbortController(); loadController = controller;
         return resolveSource(value, controller.signal).then(async source => {
@@ -584,7 +603,7 @@
             const stalled = () => { if (!valid()) return; clearTimeout(stallTimer); stallTimer = setTimeout(() => { if (valid() && (state.playing || state.phase === 'loading')) void fail(Object.assign(new Error('Audio stalled'), { code: 'stalled' })); }, 30000); stallTimer?.unref?.(); };
             current.addEventListener('waiting', stalled); current.addEventListener('stalled', stalled);
             for (const event of ['playing', 'timeupdate', 'canplay', 'pause', 'ended']) current.addEventListener(event, () => { if (valid()) clearTimeout(stallTimer); });
-            current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(); } });
+            current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(true); } });
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
             current.addEventListener('ended', () => { if (valid() && state.playing) advance(1, true); });
             current.addEventListener('error', () => { if (valid()) void fail(new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error')); });

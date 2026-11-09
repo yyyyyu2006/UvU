@@ -752,7 +752,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         showIncomingMessageNotifications(chat, added, targetChatId, targetChatType);
     };
     if (!replyIsCurrent()) return;
-    const documentReply = documentSources.length && typeof extractDocumentReplies === 'function' ? extractDocumentReplies(fullResponse, documentSources) : { files: [] };
+    const documentReply = documentSources.length && typeof extractDocumentReplies === 'function' ?
+        (typeof extractDocumentRepliesSafe === 'function' ? extractDocumentRepliesSafe(fullResponse, documentSources) : extractDocumentReplies(fullResponse, documentSources)) : { files: [] };
+    if (documentReply.errors?.length) showToast('文件未生成：' + documentReply.errors[0]);
     // File bodies are opaque data. Only parse music controls outside returned files.
     const musicResponse = documentSources.length ? documentReply.text : fullResponse;
     if (musicPlan?.invitations?.length && window.UvUMusicChat) fullResponse = window.UvUMusicChat.extractActions(musicResponse, musicPlan.invitations).text;

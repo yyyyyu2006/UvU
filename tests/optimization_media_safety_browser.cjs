@@ -7,7 +7,7 @@ const root=path.join(__dirname,'..');
  await page.evaluate(()=>{window.db={globalCss:'.old {color:red}'};window.toasts=[];window.showToast=x=>toasts.push(x);window.saveData=async()=>{if(window.failSave)throw Error('disk full');};window.applyGlobalCss=x=>window.activeCss=x;window.readImportDocument=async()=>({text:'.incoming {color:blue}'});});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'js/modules/global_css_io.js'),'utf8')});await page.evaluate(()=>GlobalCssIO.setup());
  const load=()=>page.locator('#global-css-document-input').setInputFiles({name:'style.txt',mimeType:'text/plain',buffer:Buffer.from('test')});
- await load();assert.equal(await page.locator('#global-css-import-preview').count(),1,'import first opens a reviewable CSS preview');assert.equal(await page.evaluate(()=>db.globalCss),'.old {color:red}');
+ await load();assert.equal(await page.locator('#global-css-import-preview').count(),1,'import first opens a reviewable CSS preview');assert.equal(await page.evaluate(()=>db.globalCss),'.old {color:red}');assert.match(await page.locator('[data-diff-summary]').textContent(),/新增 1 行.*删除 1 行/);assert.match(await page.locator('[data-diff]').textContent(),/\+ \.incoming/);
  await page.locator('#global-css-import-preview [data-cancel]').click();assert.equal(await page.locator('#global-beautification-css').inputValue(),'.draft {color:purple}');
  await load();await page.locator('#global-css-import-preview [data-confirm]').click();await page.waitForFunction(()=>db.globalCss==='.incoming {color:blue}');
  await page.locator('#global-css-import-undo').click();await page.waitForFunction(()=>db.globalCss==='.old {color:red}');assert.equal(await page.locator('#global-beautification-css').inputValue(),'.draft {color:purple}');

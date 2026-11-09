@@ -8,6 +8,8 @@ function setupWorldBookDocumentTools() {
     form.querySelector('[type=submit]').before(advanced);
     document.querySelector('label[for="world-book-depth"]').textContent = '插入顺序（数值越小越靠前）';
     const order = document.getElementById('world-book-depth'); order.min = '0'; order.max = '9999';
+    const explanation = document.createElement('details'), explanationTitle = document.createElement('summary'), explanationText = document.createElement('pre');
+    explanationTitle.textContent = '导入兼容 / 上次请求激活说明'; explanation.append(explanationTitle, explanationText); advanced.append(explanation);
     function fill(book) {
         const r = book?.rules || {};
         document.getElementById('wb-advanced-enabled').checked = r.advancedEnabled === true;
@@ -25,6 +27,12 @@ function setupWorldBookDocumentTools() {
             const position = form.querySelector(`input[name="world-book-position"][value="${book.position === 'chat' ? 'before' : book.position}"]`);
             if (position) position.checked = true;
         }
+        const chat = typeof currentChatId !== 'undefined' ? [...(db.characters || []), ...(db.groups || [])].find(item => item.id === currentChatId) : null;
+        const last = chat && getWorldBookPlanDiagnostics(chat).find(item => item.id === book?.id);
+        const compatibility = book?.importCompatibility;
+        explanation.hidden = !compatibility && !last;
+        explanationText.textContent = [compatibility ? '支持：' + compatibility.supported.join('、') + '\n仅保留 / 未执行：' + (compatibility.preservedOnly.join('、') || '无已识别的兼容差异') + '\n高级规则需主动开启；未知上游字段保留在导入来源中。' : '',
+            last ? '上次请求：' + last.reason + '\n命中关键词：' + (last.matchedKeys.join('、') || '无需关键词或未命中') + '\n扫描最近 ' + last.scanDepth + ' 条；实际位置 ' + last.position : '尚无此聊天的请求记录；打开面板不会重新激活或抽取概率。'].filter(Boolean).join('\n\n');
     }
     document.getElementById('world-book-list-container').addEventListener('click', e => {
         const book = db.worldBooks.find(w => w.id === e.target.closest('.wb-item-card')?.dataset.id);
@@ -54,5 +62,5 @@ async function importWorldBookDocument(file) {
     const previous = db.worldBooks.slice();
     db.worldBooks.push({ id: folderId, parentId: wbPathStack[wbPathStack.length - 1].id, type: 'folder', name: file.name.replace(/\.[^.]+$/, '') }, ...result.books);
     try { await saveData(); } catch (error) { db.worldBooks = previous; throw error; }
-    renderWorldBookList(); showToast('已导入 ' + result.books.length + ' 条世界书' + (result.warnings.length ? '；不支持的位置已停用，请编辑确认' : ''));
+    renderWorldBookList(); showToast('已导入 ' + result.books.length + ' 条世界书' + (result.warnings.length ? '；兼容差异已保留，请展开条目说明核对' : ''));
 }

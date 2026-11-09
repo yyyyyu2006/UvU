@@ -119,7 +119,7 @@
         const screen = document.getElementById('moments-screen'); screen.querySelector('.ms-composer')?.remove();
         const state = draft(chat); if (!state.postId) return;
         const t = target(chat), post = M().view(chat).find(item => item.id === state.postId), parent = post?.comments.find(item => item.id === state.parentId && !item.deleted);
-        if (!post || state.parentId && !parent) { state.postId = state.parentId = null; return; }
+        if (!post || !M().canSee(chat, post, { kind: 'user', id: chat.id }) || state.parentId && !parent) { state.postId = state.parentId = null; return; }
         const box = node('div', 'ms-composer'), head = node('div', 'ms-composer-target');
         head.append(node('span', '', parent ? '回复 ' + (M().actor(chat, parent.authorRef)?.name || parent.author) : '评论'), button('x', '取消回复', () => { state.postId = state.parentId = null; saveDraft(chat); renderComposer(chat); }));
         const row = node('div', 'ms-composer-row'), input = node('textarea'); input.rows = 1; input.maxLength = 2000; input.placeholder = '评论'; input.value = state.text;
@@ -181,18 +181,32 @@
         d.body.append(command('编辑动态', () => { d.close(); publishDialog(chat, post); }));
         d.body.append(command('删除动态', e => work(e.currentTarget, async () => { guard(d.t); if (!confirm('删除这条动态及其评论？')) return; await M().removePost(chat, post.id); d.close(); }), 'ms-button ms-danger'));
     }
-    function detail(chat, post) {
+    function detail(chat, post, focusCommentId = null) {
+        post = M().view(chat).find(item => item.id === post.id);
+        if (!post || !M().canSee(chat, post, { kind: 'user', id: chat.id })) { toast('动态已不存在或不在可见范围'); return; }
         const d = dialog('评论', chat); d.body.append(node('p', 'ms-detail-post', post.content));
-        for (const comment of post.comments) d.body.append(commentRow(chat, post, comment, true, d.close));
+        const comments = node('div', 'ms-thread-page'), more = command('加载更多评论', () => appendPage(), 'ms-more'); d.body.append(comments, more);
+        let shown = 0;
+        function appendPage() {
+            const end = Math.min(post.comments.length, shown + 50);
+            for (; shown < end; shown++) comments.append(commentRow(chat, post, post.comments[shown], true, d.close));
+            more.hidden = shown >= post.comments.length; more.textContent = '加载更多评论（' + shown + '/' + post.comments.length + '）';
+        }
+        appendPage();
+        if (focusCommentId) {
+            const index = post.comments.findIndex(item => item.id === focusCommentId);
+            while (shown <= index) appendPage();
+            [...comments.children].find(row => row.dataset.commentId === focusCommentId)?.scrollIntoView({ block: 'nearest' });
+        }
         d.foot.append(command('评论', () => { d.close(); composer(chat, post.id); }));
         if (post.comments.some(comment => comment.read === false)) M().markRead(chat, post.id).catch(error => toast(error.message));
     }
     function notifications(chat) {
         const d = dialog('新互动', chat); let count = 0;
-        for (const post of M().view(chat)) {
+        for (const post of M().view(chat).filter(post => M().canSee(chat, post, { kind: 'user', id: chat.id }))) {
             const unread = post.comments.filter(comment => comment.read === false && !comment.deleted); if (!unread.length) continue;
             count += unread.length;
-            const row = command((M().actor(chat, unread[0].authorRef)?.name || unread[0].author) + '：' + unread[0].content, () => { d.close(); detail(chat, post); }, 'ms-notification');
+            const row = command((M().actor(chat, unread[0].authorRef)?.name || unread[0].author) + '：' + unread[0].content, () => { d.close(); detail(chat, post, unread[0].id); }, 'ms-notification');
             row.append(node('span', '', post.content.slice(0, 50) + (unread.length > 1 ? ' · ' + unread.length + ' 条' : ''))); d.body.append(row);
         }
         if (!count) d.body.append(node('p', 'ms-empty', '暂无新互动'));
@@ -231,7 +245,7 @@
         if (positions.size > 64) positions.delete(positions.keys().next().value);
         document.getElementById('moments-comment-input-area').style.display = 'none';
         feed.replaceChildren();
-        const tools = node('div', 'ms-feed-tools'), unread = M().view(chat).reduce((total, post) => total + post.comments.filter(comment => comment.read === false && !comment.deleted).length, 0);
+        const tools = node('div', 'ms-feed-tools'), unread = M().view(chat).filter(post => M().canSee(chat, post, { kind: 'user', id: chat.id })).reduce((total, post) => total + post.comments.filter(comment => comment.read === false && !comment.deleted).length, 0);
         tools.append(button('plus', '发动态', () => publishDialog(chat)), command(unread ? '新互动 ' + unread : '新互动', () => notifications(chat), 'ms-link'));
         const message = node('span', 'ms-status'); message.setAttribute('aria-live', 'polite'); tools.append(message);
         tools.append(button('square', '停止互动', () => AI().cancel(chat))); tools.lastChild.hidden = !AI().isBusy(chat); feed.append(tools);

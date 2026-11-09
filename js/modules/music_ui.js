@@ -93,12 +93,31 @@
                 button('分享给角色', async () => { closeSheet(); await share(track); }, undefined, 'um-wide'),
                 button('邀请一起听', async () => { closeSheet(); await share(track, true); }, undefined, 'um-wide'));
             if (options.playlistId) body.append(button('从歌单移除', async () => { await M.removeFromPlaylist(options.playlistId, M.key(track)); closeSheet(); render(); }, undefined, 'um-wide'));
+            if (track.provider === 'qq' && M.settings().playbackSource === 'public' && root.UvUPublicMusic?.candidates)
+                body.append(button('选择公共音源', () => publicCandidatePanel(track), undefined, 'um-wide'));
             if (track.provider === 'local') body.append(button('编辑歌曲资料',()=>editLocal(track),undefined,'um-wide'),button('删除本地音乐', async () => {
                 const confirmed = typeof showConfirm === 'function' ? await showConfirm('删除本地音乐', '同时移出本机资料库、歌单和队列。聊天中已分享的歌曲卡片仍会保留。') : root.confirm('删除这首本地音乐？');
                 if (!confirmed) return; await M.deleteLocal(track); closeSheet(); render();
             }, undefined, 'um-wide'));
             if (track.pageUrl) { const a = el('a', '在来源平台查看', 'um-link'); a.href = track.pageUrl; a.target = '_blank'; a.rel = 'noopener noreferrer'; body.append(a); }
         });
+    }
+    function publicCandidatePanel(track) {
+        const controller = new AbortController(); let alive = true;
+        modal('选择公共音源', body => {
+            const status = el('p', '正在读取…', 'um-muted'), list = el('div');
+            body.append(el('strong', track.title), el('small', track.artists.join(' / ') + (track.album ? ' · ' + track.album : '')), status, list);
+            body.append(button('撤销音源选择', () => { root.UvUPublicMusic.clearMatch(track); status.textContent = '已撤销，下次播放重新匹配'; }));
+            void root.UvUPublicMusic.candidates(track, controller.signal).then(songs => {
+                if (!alive) return; status.textContent = songs.length ? '' : '没有相同歌名与歌手的候选';
+                for (const song of songs) {
+                    const choice = button(song.title + ' · ' + (song.album || '未知专辑'), async () => {
+                        root.UvUPublicMusic.chooseMatch(track, song); closeSheet(); await M.player.play(track, undefined, { reloadSource: true });
+                    }, undefined, 'um-wide');
+                    choice.replaceChildren(el('strong', song.title), el('small', song.artists.join(' / ') + ' · ' + (song.album || '未知专辑'))); list.append(choice);
+                }
+            }).catch(error => { if (alive) status.textContent = error.message; });
+        }, () => { alive = false; controller.abort(); });
     }
     function editLocal(track){
         modal('歌曲资料',body=>{const fields={};for(const [name,label,value]of [['title','歌名',track.title],['artists','歌手',track.artists.join(' / ')],['album','专辑',track.album],['cover','封面链接',track.cover]]){const field=el('label',label,'um-muted'),input=el('input');input.value=value||'';input.setAttribute('aria-label',label);field.append(input);body.append(field);fields[name]=input;}
@@ -147,14 +166,14 @@
             const reset = () => { draft = undefined; save.disabled = true; name.hidden = true; preview.replaceChildren(); status.textContent = ''; };
             input.oninput = source.onchange = reset;
             const read = async () => {
-                if (reading) return; reset(); reading = true; input.disabled = source.disabled = true; status.textContent = '正在读取歌单…';
+                if (reading) return; const resume = draft?.partial ? draft : undefined; if (!resume) reset(); reading = true; save.disabled = true; input.disabled = source.disabled = true; status.textContent = '正在读取歌单…';
                 try {
-                    const result = await M.previewPlaylist(input.value, source.value, controller.signal, count => { if (alive) status.textContent = '已读取 ' + count + ' 首…'; });
+                    const result = await M.previewPlaylist(input.value, source.value, controller.signal, count => { if (alive) status.textContent = '已读取 ' + count + ' 首…'; }, resume);
                     if (!alive) return; draft = result; visible = 50; source.value = result.provider;
                     name.value = reference?.name || draft.name; name.hidden = false; save.disabled = false;
-                    status.textContent = draft.tracks.length + ' 首' + (draft.truncated ? ' · 仅导入前 1000 首' : ''); draw();
-                } catch (error) { if (alive) status.textContent = error.message; }
-                finally { reading = false; input.disabled = source.disabled = false; }
+                    status.textContent = '已读取 ' + draft.tracks.length + ' 首' + (Number.isInteger(draft.total) ? ' / 服务返回 ' + draft.total + ' 首' : ' · 平台总数未知') + (draft.reason ? ' · ' + draft.reason : ''); save.textContent = '保存歌单'; save.setAttribute('aria-label', save.textContent); draw();
+                } catch (error) { if (alive) { if (error.preview) { draft = error.preview; name.value ||= reference?.name || draft.name; name.hidden = false; save.disabled = false; save.textContent = '仅保存已读取歌曲'; save.setAttribute('aria-label', save.textContent); draw(); } status.textContent = error.preview ? '已读取 ' + draft.tracks.length + ' 首 · ' + draft.reason : error.message; } }
+                finally { reading = false; if (alive) { input.disabled = source.disabled = false; readButton.textContent = draft?.partial ? '继续读取失败页' : '重新预览歌单'; readButton.setAttribute('aria-label', readButton.textContent); } }
             };
             const readButton = button('预览歌单', read); form.append(fields, readButton); form.onsubmit = event => { event.preventDefault(); void read(); };
             const actions = el('div', undefined, 'um-actions'); actions.append(save);
@@ -164,7 +183,7 @@
         }, () => { alive = false; controller.abort(); });
     }
     function openPlaylist(item, cloudProvider) {
-        let page = 1, tracks = [], pending = false, alive = true, editing=false, unsubscribe;
+        let page = 0, tracks = [], pending = false, alive = true, editing=false, unsubscribe;
         const selected=new Set(), controller = new AbortController(), managed=!cloudProvider&&!item.kind;
         modal(item.name, (body, overlay) => {
             overlay.classList.add('um-collection-sheet');
@@ -192,19 +211,28 @@
             const load = async () => {
                 if (pending) return; pending = true;
                 try {
-                    const data = cloudProvider ? await M.playlist(cloudProvider, item.id, page, controller.signal) : { tracks: item.kind?item.tracks||[]:M.library().playlists.find(p=>p.id===item.id)?.tracks || [], hasMore: false };
-                    if (!alive) return;const keys=new Set(tracks.map(M.key));tracks.push(...data.tracks.filter(t=>!keys.has(M.key(t))));draw();footer.replaceChildren();
-                    if (data.hasMore) footer.append(button('加载更多', async () => { page++; await load(); }));
+                    const nextPage = page + 1;
+                    const data = cloudProvider ? await M.playlist(cloudProvider, item.id, nextPage, controller.signal) : { tracks: item.kind?item.tracks||[]:M.library().playlists.find(p=>p.id===item.id)?.tracks || [], hasMore: false };
+                    if (!alive || controller.signal.aborted) return;page = nextPage;const keys=new Set(tracks.map(M.key));for(const t of data.tracks){const id=M.key(t);if(!keys.has(id)){keys.add(id);tracks.push(t);}}draw();footer.replaceChildren();
+                    if (data.hasMore) footer.append(button('加载更多', load));
                     if (cloudProvider) footer.append(button('导入到资料库', () => importPlaylistPanel({ provider: cloudProvider, id: item.id, name: item.name })));
                     if (managed) footer.append(button('重命名',()=>modal('歌单名称',box=>{const input=el('input');input.value=item.name;input.maxLength=160;input.setAttribute('aria-label','歌单名称');box.append(input,button('保存',async()=>{await M.renamePlaylist(item.id,input.value);closeSheet();render();}));})),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); closeSheet(); render(); }));
-                } catch (e) { if (alive) toast(e); } finally { pending = false; }
+                } catch (e) { if (alive) { toast(e); if (!page) { footer.replaceChildren(); footer.append(button('重试读取', load)); } } } finally { pending = false; }
             }; void load();
         }, () => { alive = false; controller.abort();unsubscribe?.(); });
     }
     async function importFiles(files) {
-        let count = 0;
-        for (const file of files) { try { await M.importLocal(file); count++; } catch (e) { toast(file.name + '：' + e.message); } }
-        if (count) toast('已导入 ' + count + ' 首'); render();
+        const controller = new AbortController(), failures = []; let alive = true, count = 0, processed = 0, status, stop;
+        modal('导入音乐', body => { status = el('p', '正在导入…', 'um-muted'); status.setAttribute('role', 'status'); stop = button('停止导入', () => { controller.abort(); stop.disabled = true; status.textContent = '正在停止；已保存的歌曲会保留'; }); body.append(status, stop); }, () => { alive = false; controller.abort(); });
+        for (const file of files) {
+            if (controller.signal.aborted) break;
+            try { await M.importLocal(file, { signal: controller.signal }); count++; }
+            catch (error) { if (error.name !== 'AbortError') failures.push({ name: file.name, reason: error.message }); }
+            processed++;
+            if (alive) status.textContent = `已处理 ${processed}/${files.length} · 已保存 ${count} · 失败 ${failures.length}`;
+        }
+        if (alive) { status.textContent = `${controller.signal.aborted ? '已停止' : '导入完成'} · 已保存 ${count} 首 · 失败 ${failures.length}`; stop.hidden = true; if (failures.length) { const details = el('details'), list = el('ul'); details.append(el('summary', '查看失败文件')); for (const failure of failures) list.append(el('li', failure.name + '：' + failure.reason)); details.append(list); status.after(details); } }
+        render(); return { count, failures, cancelled: controller.signal.aborted };
     }
     function importButton() { return button('导入音乐', () => document.getElementById('um-local-files').click(), 'plus'); }
     function artworkShelf(parent, tracks) {
@@ -471,7 +499,8 @@
         details.append(el('p', '网页和服务在同一台电脑时，可用 http://127.0.0.1:8787 测试。手机上的 127.0.0.1 指手机自身；连接电脑服务请使用配置好的 HTTPS 地址。'));
         details.append(el('p', '3. 玩家选择网易云或 QQ 音乐“扫码登录”，用对应官方 App 确认。同一手机可保存二维码后在官方 App 相册识别（以平台支持为准）。需要自建服务时展开“更换音乐服务”；留空并保存可恢复内置服务。'));
         details.append(el('p', '4. 在搜索中选择来源，或打开账号歌单。一次搜索最多显示 500 首，可细化关键词。歌曲菜单可收藏、分享、邀请一起听；分享前可读取和删改歌词片段。char 根据歌名、歌手与所附歌词回应。'));
-        details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，匹配不明确时请手动搜索。已有歌单无需重新导入；公共源不保证每首歌可用。'));
+        details.append(el('p', '导入歌单：资料库 → 播放列表 → 导入歌单。粘贴网易云或 QQ 音乐的完整歌单链接，先预览，再修改名称并保存。只有数字 ID 时先选择平台；短链接请复制完整链接。预览显示已读数量、服务返回总数及停止原因；中途失败可继续读取失败页，也可明确选择仅保存已读取歌曲，取消不保存。读取歌单需要音乐网关，私密歌单可能需要登录。保存后可在歌单中开启“公共源播放”，不用扫码即可尝试播放。此设置用于全部平台歌曲；网易云按原 ID 读取，QQ 按歌名与歌手匹配，可在歌曲菜单“选择公共音源”对照候选并撤销。已有歌单无需重新导入；公共源不保证每首歌可用。'));
+        details.append(el('p', '本地音乐：资料库中点击导入，可一次选择多个音频。文件依次读取，进度显示成功与失败数量；停止或关闭面板会取消后续文件，已经保存的歌曲仍保留。完成后展开失败清单查看文件名和原因，再选择这些文件重试。'));
         details.append(el('p', '角色歌单：资料库 → 角色歌单，或音乐账号 → 角色歌单。选定角色后点击刷新，使用聊天 API 按人设与最近对话推荐歌曲，再到已启用的音乐源匹配真实歌曲；刷新会消耗一次模型请求。先预览歌曲版本，无法唯一匹配时手选版本或跳过；默认保留旧歌单，点击“保存所选版本”后才更新。取消或失败保留旧歌单。可播放全部或单曲播放；歌曲菜单仍可分享、邀请一起听。开启“允许主动邀请一起听”后，该角色可在正常聊天回复时选择歌单歌曲邀请你，点击邀请卡片的播放图标接受，叉号婉拒；接受前不会自动播放。已有有效邀请时不重复邀请，主动邀请至少间隔 30 分钟。关闭开关后不会在普通聊天中加入角色歌单提示。'));
         details.append(el('p', '登录状态保留在音乐服务中。默认会话有效期 24 小时，重启服务后需重新登录。“记住此设备”需要服务配置加密存储，新会话可保留 7 天；已有会话改选项只影响浏览器保存，服务有效期不延长。平台会员、地区、试听与版权限制仍然适用。备份包含歌单资料，不包含账号凭据或本地音频。一起听是与 char 的聊天互动，不代表另一台设备同步播放；后台播放与锁屏控制取决于系统和浏览器。'));
         return details;
@@ -573,6 +602,7 @@
                     const scanHint = '请用' + scanner + '的扫一扫识别二维码';
                     status.textContent = scanHint;
                     body.append(el('p', p === 'qq' ? '此码用于 QQ 账号授权；请在 QQ 的扫一扫中选择相册识别。' : '若提示设备环境异常，请先停止扫码，按网易云页面提示处理后再试。', 'um-muted'));
+                    let failures = 0;
                     const poll = async () => {
                         if (!alive) return;
                         if (Date.now() >= qr.expiresAt) { status.textContent = '二维码已过期，请重新获取'; body.append(button('重新获取', () => qrPanel(p))); return; }
@@ -580,8 +610,14 @@
                             const data = await M.pollQR(p, qr.id, controller.signal); if (!alive) return;
                             if (data.status === 'authorized') { toast('登录成功'); accountsPanel(); return; }
                             if (data.status === 'expired') { status.textContent = '二维码已过期'; body.append(button('重新获取', () => qrPanel(p))); return; }
-                            status.textContent = data.status === 'scanned' ? '已扫码，请在' + scanner + '确认' : scanHint; timer = setTimeout(poll, 2500);
-                        } catch (e) { if (alive) status.textContent = e.message; }
+                            failures = 0; status.textContent = data.status === 'scanned' ? '已扫码，请在' + scanner + '确认' : scanHint; timer = setTimeout(poll, 2500);
+                        } catch (e) {
+                            if (!alive || controller.signal.aborted) return;
+                            if (['unauthorized', 'qr_expired', 'invalid_qr'].includes(e.code) || [400, 401, 403, 404, 409].includes(e.status)) { status.textContent = e.message; body.append(button('重新获取', () => qrPanel(p))); return; }
+                            status.textContent = '查询暂时失败：' + e.message;
+                            if (++failures <= 4 && Date.now() < qr.expiresAt) { status.textContent += '，正在重试…'; timer = setTimeout(poll, Math.min(10000, 1500 * 2 ** failures)); }
+                            else body.append(button('继续查询', event => { event?.currentTarget?.remove(); failures = 0; void poll(); }));
+                        }
                     }; timer = setTimeout(poll, 2000);
                 } catch (e) { if (alive) status.textContent = e.message; }
             })();

@@ -215,7 +215,12 @@
         return { templates, mapping };
     }
 
-    let undoState = null;
+    let undoState = null, presetQueue = Promise.resolve();
+    // Share the existing backup/save queue; old programmatic callers remain trusted.
+    function persistPreset(task) {
+        if (typeof runDataPersistence === 'function') return runDataPersistence(task);
+        const pending = presetQueue.then(task); presetQueue = pending.catch(() => {}); return pending;
+    }
     function inspectResources(raw) {
         const preset = validate(raw), resources = new Set();
         const visit = value => {
@@ -228,9 +233,17 @@
         };
         visit(preset.settings);
         return { resources: Array.from(resources), hasCss: Boolean(preset.settings.appearance?.globalCss || preset.settings.widgetTemplates.some(item => item.css)),
+            requiresTrust: preset.settings.widgetTemplates.some(item => item.html.trim() || item.js.trim()),
             hasScripts: preset.settings.widgetTemplates.some(item => item.js.trim() || /<script|\bon\w+\s*=|javascript:/i.test(item.html)) };
     }
-    async function undoPreset() {
+    function undoPreset() {
+        const source = db, entry = undoState;
+        return persistPreset(() => {
+            if (db !== source || undoState !== entry) fail('主页或恢复任务已变化，请重新检查后撤销');
+            return undoPresetNow();
+        });
+    }
+    async function undoPresetNow() {
         if (!undoState) fail('没有可撤销的主页预设导入');
         const current = Object.fromEntries(undoState.keys.map(key => [key, db[key]]));
         if (JSON.stringify(current) !== undoState.applied) fail('主页已有后续修改，请先导出当前主页后再恢复');
@@ -263,8 +276,16 @@
         });
     }
 
-    async function applyPreset(raw) {
-        const preset = validate(raw);
+    async function applyPreset(raw, options = {}) {
+        const preset = validate(raw), source = db;
+        const homeStamp = JSON.stringify([...HOME_KEYS, 'widgetTemplates', 'addedWidgets', 'fontUrl', 'fontSizeScale', 'globalCss'].map(key => db[key]));
+        if (options.requireTrust && inspectResources(preset).requiresTrust && options.trusted !== true) return Promise.reject(new Error('请明确确认信任此预设的小组件代码'));
+        return persistPreset(() => {
+            if (db !== source || homeStamp !== JSON.stringify([...HOME_KEYS, 'widgetTemplates', 'addedWidgets', 'fontUrl', 'fontSizeScale', 'globalCss'].map(key => db[key]))) fail('主页或恢复数据已变化，请重新导入主页预设');
+            return applyPresetNow(preset);
+        });
+    }
+    async function applyPresetNow(preset) {
         const settings = clone(preset.settings);
         const { templates, mapping } = mergeTemplates(settings.widgetTemplates);
         settings.widgetTemplates = templates;
@@ -352,17 +373,15 @@
                 catch (error) { fail('文件不是有效的 JSON 主页预设'); }
                 const preset = validate(raw);
                 const settings = preset.settings;
-                const includesCode = settings.widgetTemplates.some(item => item.js.trim() || /<script|\bon\w+\s*=|javascript:/i.test(item.html) ||
-                    Object.values(item.defaultVars).some(value => typeof value === 'string' && /<script|\bon\w+\s*=|javascript:/i.test(value))) ||
-                    settings.addedWidgets.some(item => Object.values(item.vars).some(value => typeof value === 'string' && /<script|\bon\w+\s*=|javascript:/i.test(value)));
+                const includesCode = inspectResources(preset).requiresTrust;
                 const summary = [`导入主页预设「${preset.name}」？`,
                     `${settings.homeLayoutPages.length} 页布局 · ${Object.keys(settings.customIcons).length} 个自定义图标 · ${settings.addedWidgets.length} 个小组件`,
                     '将替换当前主页布局、壁纸、图标和桌面小组件。原有组件库会保留。',
                     settings.appearance ? '同时应用字体、字号和全局 CSS（会影响应用内其他页面）。' : '保留当前字体、字号和全局 CSS。',
                     '聊天记录、角色卡和 API 设置保持不变。建议先导出自己的主页留作备份。'];
-                if (includesCode) summary.push('此预设包含可执行的小组件代码，请仅导入信任来源的文件。');
+                if (includesCode) summary.push('此预设包含原始 HTML 小组件，导入后可能执行代码，请仅导入信任来源的文件。');
                 if (!await previewPreset(preset, summary, includesCode)) { report('已取消导入'); return; }
-                await applyPreset(preset);
+                await applyPreset(preset, { requireTrust: true, trusted: true });
                 if (undoButton) undoButton.hidden = false;
                 document.getElementById('home-preset-name').value = preset.name;
                 report(`已应用主页预设「${preset.name}」，返回主页即可查看`);

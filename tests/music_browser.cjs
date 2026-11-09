@@ -265,6 +265,8 @@ const server = http.createServer((req,res) => {
         await page.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>UvUMusicUI.open());
         // Actual IndexedDB local import + HTMLAudio decode/play, not an Audio stub.
         await page.locator('#um-local-files').setInputFiles({name:'本地测试.wav',mimeType:'audio/wav',buffer:wav});await page.waitForFunction(()=>UvUMusic.library().favorites.length===1);
+        await page.getByRole('dialog',{name:'导入音乐',exact:true}).getByRole('status').filter({hasText:'导入完成'}).waitFor();
+        await page.getByRole('dialog',{name:'导入音乐',exact:true}).getByRole('button',{name:'关闭',exact:true}).click();
         await page.evaluate(()=>UvUMusic.player.stop());await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await page.getByRole('button',{name:'歌曲',exact:true}).click();await page.getByRole('button',{name:'播放 本地测试',exact:true}).click();await page.waitForFunction(()=>UvUMusic.player.snapshot().playing&&UvUMusic.player.snapshot().track.provider==='local');
         await page.evaluate(async()=>{const list=await UvUMusic.addPlaylist('晚风与来信');await UvUMusic.addToPlaylist(list.id,UvUMusic.library().favorites[0]);UvUMusicUI.open();});
         await page.getByRole('button',{name:'更多 · 本地测试',exact:true}).click();await page.getByRole('button',{name:'编辑歌曲资料',exact:true}).click();
@@ -415,6 +417,19 @@ const server = http.createServer((req,res) => {
         assert.equal(await card.locator('.uvu-music-status .uvu-music-continuous').count(),1,'continuous control remains in the single footer after response');
         await hostile.evaluate(n=>n.remove());
         await card.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'character-together-390.png')});
+        await page.evaluate(() => {
+            window.candidateOriginal = {provider:'qq',id:'original_qq',title:'候选测试',artists:['林间'],album:'旧版'};
+            window.savedCandidateAPI = UvUPublicMusic; window.savedCandidatePlay = UvUMusic.player.play;
+            window.candidatePicked = null; window.candidatePlayed = null;
+            UvUPublicMusic = {candidates:async()=>[{provider:'netease',id:'candidate_1',title:'候选测试',artists:['林间'],album:'新版'}],chooseMatch:(original,choice)=>{candidatePicked={original,choice};},clearMatch:()=>{}};
+            UvUMusic.player.play=async track=>{candidatePlayed=track;};
+            db.musicSettings.playbackSource='public'; db.musicSettings.publicSources=['gd-netease']; UvUMusicUI.trackMenu(candidateOriginal);
+        });
+        await page.getByRole('button',{name:'选择公共音源',exact:true}).click();
+        await page.getByRole('button',{name:'候选测试 · 新版',exact:true}).click();
+        assert.equal(await page.evaluate(()=>candidatePicked.choice.id),'candidate_1');
+        assert.equal(await page.evaluate(()=>candidatePlayed.id),'original_qq','candidate mapping keeps original platform identity');
+        await page.evaluate(()=>{UvUPublicMusic=savedCandidateAPI;UvUMusic.player.play=savedCandidatePlay;});
         assert.deepEqual(errors,[]);console.log('Music browser checks passed: full app, 320/390/768, search, gateway, QR, WAV audio, invite/card, queue/lyrics, character refresh/playback/selection, opt-in incoming invitation, custom CSS isolation, reload.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

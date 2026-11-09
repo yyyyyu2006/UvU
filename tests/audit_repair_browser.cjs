@@ -64,7 +64,7 @@ const server = http.createServer((req, res) => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.locator('#char-status-btn').click();
         try { await page.waitForFunction(() => document.activeElement?.id === 'close-status-panel-btn', null, { timeout: 3000 }); }
-        catch (error) { console.error(await page.evaluate(() => ({ active: document.activeElement?.id })), errors); throw error; }
+        catch (error) { console.error(await page.evaluate(() => ({ active: document.activeElement?.outerHTML?.slice(0,120), overlays:[...document.querySelectorAll('.feature-dialog,.message-forward-overlay,#char-status-overlay')].map(el=>({id:el.id,cls:el.className,inert:el.inert,anc:el.closest('[inert]')?.id,visible:getComputedStyle(el).visibility,display:getComputedStyle(el).display})),close:document.getElementById('close-status-panel-btn')?.outerHTML })), errors); throw error; }
         await page.keyboard.press('Tab');
         assert.equal(await page.evaluate(() => document.getElementById('char-status-overlay').contains(document.activeElement)), true);
         await page.locator('.status-token-toggle[data-token-flip]').click();

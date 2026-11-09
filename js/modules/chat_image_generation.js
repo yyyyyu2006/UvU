@@ -130,6 +130,59 @@ const ChatImageGeneration = (() => {
         }
     }
 
+    async function validateDecodedImage(blob, mime, signal) {
+        const bytes = new Uint8Array(await blob.arrayBuffer()), view = new DataView(bytes.buffer);
+        const broken = () => new Error('生成图片损坏或不完整，请保留本次结果并重试下载');
+        let width = 0, height = 0;
+        if (mime === 'image/png') {
+            if (bytes.length < 45 || view.getUint32(8) !== 13 || view.getUint32(12) !== 0x49484452) throw broken();
+            width = view.getUint32(16); height = view.getUint32(20);
+            let cursor = 8, ended = false, data = false;
+            while (cursor + 12 <= bytes.length) {
+                const size = view.getUint32(cursor), type = view.getUint32(cursor + 4);
+                if (size > bytes.length - cursor - 12) throw broken();
+                data ||= type === 0x49444154;
+                cursor += size + 12;
+                if (type === 0x49454e44) { ended = size === 0; break; }
+            }
+            if (!ended || !data || cursor !== bytes.length) throw broken();
+        } else if (mime === 'image/jpeg') {
+            if (bytes.length < 4 || bytes[bytes.length - 2] !== 255 || bytes[bytes.length - 1] !== 217) throw broken();
+            for (let i = 2; i + 8 < bytes.length;) {
+                if (bytes[i++] !== 255) break;
+                while (bytes[i] === 255) i++;
+                const marker = bytes[i++]; if (marker === 0xda || marker === 0xd9) break;
+                if (marker === 0x01 || marker >= 0xd0 && marker <= 0xd7) continue;
+                const size = view.getUint16(i); if (size < 2 || size > bytes.length - i) throw broken();
+                if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) { height = view.getUint16(i + 3); width = view.getUint16(i + 5); break; }
+                i += size;
+            }
+            if (!width || !height) throw broken();
+        } else if (mime === 'image/webp') {
+            if (bytes.length < 30 || view.getUint32(4, true) + 8 !== bytes.length) throw broken();
+            const tag = String.fromCharCode(...bytes.slice(12, 16));
+            if (tag === 'VP8X') { width = 1 + bytes[24] + (bytes[25] << 8) + (bytes[26] << 16); height = 1 + bytes[27] + (bytes[28] << 8) + (bytes[29] << 16); }
+            else if (tag === 'VP8 ' && bytes[23] === 0x9d && bytes[24] === 1 && bytes[25] === 0x2a) { width = view.getUint16(26, true) & 0x3fff; height = view.getUint16(28, true) & 0x3fff; }
+            else if (tag === 'VP8L' && bytes[20] === 0x2f) { const value = view.getUint32(21, true); width = (value & 0x3fff) + 1; height = ((value >>> 14) & 0x3fff) + 1; }
+            if (!width || !height) throw broken();
+        }
+        if (!width || !height || width > 8192 || height > 8192 || width * height > 24000000) throw new Error('生成图片尺寸或像素过大（最多2400万像素、单边8192），请降低工坊尺寸');
+        if (signal.aborted) throw cancelled();
+        // Browser decode validates compressed content after dimensions pass. Node fixtures validate container structure.
+        if (typeof createImageBitmap === 'function') {
+            let bitmap;
+            const decoding = createImageBitmap(new Blob([blob], { type: mime }));
+            decoding.then(result => { if (signal.aborted) result.close(); }, () => {});
+            try { bitmap = await cancellable(decoding, signal); if (bitmap.width !== width || bitmap.height !== height) throw broken(); }
+            catch (error) { if (signal.aborted) throw cancelled(); throw broken(); }
+            finally { bitmap?.close(); }
+        } else if (typeof Image === 'function' && typeof URL.createObjectURL === 'function') {
+            const url = URL.createObjectURL(new Blob([blob], { type: mime })), image = new Image();
+            try { image.src = url; await cancellable(image.decode(), signal); if (image.naturalWidth !== width || image.naturalHeight !== height) throw broken(); }
+            catch (error) { if (signal.aborted) throw cancelled(); throw broken(); }
+            finally { image.src = ''; URL.revokeObjectURL(url); }
+        }
+    }
     async function imageData(value, signal) {
         if (typeof value !== 'string' || !value.trim()) throw new Error('生图接口没有返回有效图片');
         value = value.trim();
@@ -161,6 +214,7 @@ const ChatImageGeneration = (() => {
             : bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
                 bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50 ? 'image/webp' : '';
         if (!mime) throw new Error('生图接口没有返回有效的 PNG、JPEG 或 WebP 图片');
+        await validateDecodedImage(blob, mime, signal);
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result);

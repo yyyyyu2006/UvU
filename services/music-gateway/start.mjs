@@ -15,7 +15,8 @@ try {
         if (!env.MUSIC_TLS_CERT || !env.MUSIC_TLS_KEY) throw Error('Both MUSIC_TLS_CERT and MUSIC_TLS_KEY are required');
         tls = { cert: await readFile(env.MUSIC_TLS_CERT), key: await readFile(env.MUSIC_TLS_KEY), minVersion: 'TLSv1.2' };
     }
-    const gateway = await createGateway({ origins, persistPath, encryptionKey, tls, ephemeralDeployment: env.MUSIC_DEPLOYMENT === 'render-free' });
+    const trustedProxies = (env.MUSIC_TRUSTED_PROXIES || '').split(',').map(value => value.trim()).filter(Boolean);
+    const gateway = await createGateway({ origins, persistPath, encryptionKey, tls, trustedProxies, ephemeralDeployment: env.MUSIC_DEPLOYMENT === 'render-free' });
     await new Promise((resolve, reject) => { gateway.server.once('error', reject); gateway.server.listen(port, host, resolve); });
     console.log('UvU music gateway listening on ' + (tls ? 'https://' : 'http://') + host + ':' + port + '/v1');
     let stopping = false;
