@@ -27,7 +27,7 @@ const scripts = ['modules/message_forward.js', 'vendor/lucide/uvu-icons.js', 'mo
 const server = http.createServer(async (req, res) => {
     if (req.url === '/') {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        return res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/css/chat.css"><link rel="stylesheet" href="/css/modules/mcp.css"><link rel="stylesheet" href="/css/modules/ui_harmony.css"><link rel="stylesheet" href="/css/modules/panel_layout.css"><style>body{margin:0;background:#eee}*{box-sizing:border-box}</style><script>window.db={characters:[{id:"a",realName:"测试角色",activeArchiveId:"a1",history:[{role:"user",content:"上海天气怎么样"}]}],groups:[]};window.currentChatId="a";window.currentChatType="private";window.saveData=async()=>{};window.buildChatApiRequest=(cfg,messages)=>({endpoint:cfg.url+"/v1/chat/completions",headers:{"Content-Type":"application/json"},requestBody:{messages}});</script>' + scripts.map(s => '<script src="/js/' + s.replace('../vendor', 'vendor') + '"></script>').join('') + '<button onclick="openMcpSettings()">打开 MCP</button>');
+        return res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/css/chat.css"><link rel="stylesheet" href="/css/modules/mcp.css"><link rel="stylesheet" href="/css/modules/ui_harmony.css"><link rel="stylesheet" href="/css/modules/panel_layout.css"><link rel="stylesheet" href="/css/modules/monochrome_panels.css"><style>body{margin:0;background:#eee}*{box-sizing:border-box}</style><script>window.db={characters:[{id:"a",realName:"测试角色",activeArchiveId:"a1",history:[{role:"user",content:"上海天气怎么样"}]}],groups:[]};window.currentChatId="a";window.currentChatType="private";window.saveData=async()=>{};window.buildChatApiRequest=(cfg,messages)=>({endpoint:cfg.url+"/v1/chat/completions",headers:{"Content-Type":"application/json"},requestBody:{messages}});</script>' + scripts.map(s => '<script src="/js/' + s.replace('../vendor', 'vendor') + '"></script>').join('') + '<button onclick="openMcpSettings()">打开 MCP</button>');
     }
     if (req.url === '/v1/chat/completions') {
         let raw='';for await(const chunk of req)raw+=chunk;const sent=JSON.parse(raw);assert.ok(!JSON.stringify(sent).includes('SECRET PERSONA'));
@@ -44,7 +44,11 @@ const server = http.createServer(async (req, res) => {
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });const errors = [];page.on('pageerror',e=>errors.push(e.message));
         await page.goto(origin);await page.getByRole('button',{name:'打开 MCP',exact:true}).click();const panel=page.locator('#mcp-services');
+        const back=async()=>{if(await panel.locator('.mcp-settings').getAttribute('data-mono-view')!=='main')await panel.locator('.mono-nav-back').click();};
+        const route=async(name)=>{await back();await panel.getByRole('button',{name,exact:false}).click();};
+        await route('角色可用服务');
         const recipient=panel.getByLabel('接收角色／群聊（使用该对象当前活动存档）');await recipient.focus();await recipient.press('ArrowUp');assert.equal(await recipient.evaluate(el=>document.activeElement===el),true);await recipient.press('ArrowDown');assert.equal(await recipient.evaluate(el=>document.activeElement===el),true);
+        await back();
         assert.equal(calls,0);await panel.getByLabel('启用 MCP 服务（默认关闭）',{exact:true}).check();
         await panel.getByRole('button',{name:'添加',exact:true}).click();const editor=page.locator('#mcp-service-editor');
         await editor.getByLabel('名称',{exact:true}).fill('测试服务');await editor.getByLabel('服务接口地址',{exact:true}).fill(toolUrl);
@@ -53,15 +57,18 @@ const server = http.createServer(async (req, res) => {
         // A stable fixture ID lets the independent API choose a real authorized tool.
         await page.evaluate(async()=>{const next=MCPServices.settings();const old=next.services[0],token=MCPServices.vault.get(old);old.id='fixture';await MCPServices.save(next);MCPServices.vault.set(old,token);});
         await page.evaluate(()=>{document.getElementById('mcp-services').dismissForward();openMcpSettings();});
+        await panel.locator('.mono-service-management > summary').click();
         await panel.getByRole('button',{name:'编辑',exact:true}).click();await editor.getByLabel('服务接口地址',{exact:true}).fill(toolUrl.replace('/mcp','/other'));
         assert.equal(await editor.getByLabel('令牌（独立存储，不进入 MCP 导出或整机备份）',{exact:true}).inputValue(),'','endpoint edits do not carry previous secret');
         await editor.getByRole('button',{name:'取消',exact:true}).click();
-        await panel.getByRole('button',{name:'测试 / 刷新工具',exact:true}).click();await panel.locator('.mcp-tool').first().waitFor();
+        await panel.getByRole('button',{name:'测试 / 刷新工具',exact:true}).click();await route('工具与权限');await panel.locator('.mcp-tool').first().waitFor();
         assert.equal(await panel.locator('.mcp-tool').count(),6);await panel.getByRole('button',{name:'下一页',exact:true}).click();assert.equal(await panel.locator('.mcp-tool').count(),2);await panel.getByRole('button',{name:'上一页',exact:true}).click();
         const weather=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^weather$/})});
         await weather.getByRole('checkbox',{name:'启用工具',exact:true}).check();await weather.getByRole('checkbox',{name:'我已核实为只读，允许自动调用／环境映射',exact:true}).check();await weather.getByRole('button',{name:'保存授权',exact:true}).click();
+        await route('角色可用服务');
         await panel.getByRole('checkbox',{name:'允许此角色使用 MCP 外部资料',exact:true}).check();await panel.getByRole('checkbox',{name:'测试服务 / weather · 只读',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
-        const roleArea=panel.locator('.mcp-body > section').filter({has:page.locator('.mcp-role-content')}),scopeSummary=await roleArea.locator('.mcp-role-content > p.mcp-help').textContent();assert.match(scopeSummary,/测试角色 · 待用 0/);assert.doesNotMatch(scopeSummary,/archive_/);assert.equal(await roleArea.locator('.mcp-scope-details').getAttribute('open'),null);assert.match(await roleArea.locator('.mcp-scope-details').textContent(),/当前存档 · ID a1/);
+        const roleArea=panel.locator('.mcp-roles-area'),scopeSummary=await roleArea.locator('.mcp-role-content > p.mcp-help').textContent();assert.match(scopeSummary,/测试角色 · 待用 0/);assert.doesNotMatch(scopeSummary,/archive_/);assert.equal(await roleArea.locator('.mcp-scope-details').getAttribute('open'),null);assert.match(await roleArea.locator('.mcp-scope-details').textContent(),/当前存档 · ID a1/);
+        await route('工具与权限');
         await weather.getByRole('button',{name:'参数 / 调用',exact:true}).click();const caller=page.locator('#mcp-tool-call');
         await caller.getByLabel('city *',{exact:true}).fill('上海');await caller.getByRole('button',{name:'调用',exact:true}).click();await caller.getByRole('button',{name:'供下轮参考',exact:true}).waitFor();
         assert.equal(await caller.getByRole('button',{name:'导出结果',exact:true}).count(),1,'tool result export must not be renamed as a service test');
@@ -69,17 +76,23 @@ const server = http.createServer(async (req, res) => {
         assert.ok(await caller.locator('.mcp-result').evaluate(el=>el.getBoundingClientRect().height)>=60,'tool result remains readable inside scroll body');
         for(const width of [320,390]) {await page.setViewportSize({width,height:844});assert.equal(await caller.locator('.mcp-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);await page.screenshot({path:path.join(out,'mcp-call-'+width+'.png')});}
         await caller.getByRole('button',{name:'取消',exact:true}).click();
+        await back();await panel.locator('.mono-service-management').evaluate(el=>el.open=true);
         await panel.getByRole('button',{name:'资源',exact:true}).click();const preview=page.locator('#mcp-preview');await preview.getByRole('button',{name:'预览',exact:true}).click();await preview.locator('.mcp-result').filter({hasText:'preview only'}).waitFor();assert.equal(await preview.locator('script').count(),0);await preview.getByRole('button',{name:'取消',exact:true}).click();
         await panel.getByRole('button',{name:'提示模板',exact:true}).click();await preview.getByLabel('topic *',{exact:true}).fill('example');await preview.getByRole('button',{name:'预览',exact:true}).click();await preview.locator('.mcp-result').filter({hasText:'UNTRUSTED TEMPLATE example'}).waitFor();await preview.getByRole('button',{name:'取消',exact:true}).click();
+        await route('工具与权限');
         const nested=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^t2$/})});await nested.getByRole('button',{name:'参数 / 调用',exact:true}).click();await caller.getByLabel('location.latitude *',{exact:true}).fill('200');assert.match(await caller.locator('[role=status]').textContent(),/location.latitude.*90/);await caller.getByLabel('location.latitude *',{exact:true}).fill('31');await caller.getByLabel('tags（可选）',{exact:true}).fill('["a"]');assert.deepEqual(JSON.parse(await caller.getByLabel('最终 JSON 参数（可直接编辑；以此处为准）').inputValue()),{location:{latitude:31},tags:['a']});await caller.getByRole('button',{name:'取消',exact:true}).click();
+        await route('使用记录与设置');
         const downloadEvent=page.waitForEvent('download');await panel.getByRole('button',{name:'导出配置',exact:true}).click();const dl=await downloadEvent;const exported=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));assert.equal(exported.enabled,false);assert.ok(!JSON.stringify(exported).includes('fixture-only'));assert.equal(exported.policies.length,0);
+        await route('角色可用服务');
         await panel.getByRole('checkbox',{name:'允许独立 API 自动判断（会增加模型调用）',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
         const context=await page.evaluate(async origin=>{db.apiSettings={provider:'newapi',url:origin,model:'fixture'};db.characters[0].persona='SECRET PERSONA';return prepareMcpChatContext(db.characters[0],'private');},origin);assert.match(context,/temperature/);assert.equal(await page.evaluate(()=>MCPServices.logs().find(x=>x.kind==='planner').usage.totalTokens),143);
         // Unknown/write tools have a separate concrete confirmation, never execute on opening.
+        await route('工具与权限');
         const write=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^write_note$/})});await write.getByRole('checkbox',{name:'启用工具',exact:true}).check();await write.getByRole('button',{name:'保存授权',exact:true}).click();await write.getByRole('button',{name:'参数 / 调用',exact:true}).click();
         await caller.getByLabel('city *',{exact:true}).fill('上海');await caller.getByRole('button',{name:'调用',exact:true}).click();await page.locator('#mcp-confirm').waitFor();assert.equal(writes,0);await page.locator('#mcp-confirm').getByRole('button',{name:'取消',exact:true}).click();assert.equal(writes,0);
         await caller.getByRole('button',{name:'取消',exact:true}).click();
         await page.evaluate(()=>{window.saveData=()=>new Promise(resolve=>window.releaseImportSave=resolve);});
+        await route('使用记录与设置');
         await panel.locator('input[type=file]').setInputFiles({name:'mcp.json',mimeType:'application/json',buffer:Buffer.from('{}')});
         await page.locator('#mcp-confirm').getByRole('button',{name:'确认执行',exact:true}).click();
         await page.waitForFunction(()=>typeof window.releaseImportSave==='function');await panel.getByRole('button',{name:'取消',exact:true}).click();

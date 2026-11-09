@@ -210,7 +210,7 @@
         const targetLabel = target.parentElement; targetLabel.firstChild.textContent = '角色 / 群聊'; targetLabel.remove();
         const selectedTarget = () => target.value === '' ? null : targets[Number(target.value)];
         const permissionArea = node('details'); permissionArea.append(node('summary', '当前权限总览与撤销'));
-        const serviceArea = node('section'), toolsArea = node('section'), roleArea = node('section'), plannerArea = node('details'), logsArea = node('details');
+        const serviceArea = node('section', undefined, 'mcp-services-area'), toolsArea = node('section', undefined, 'mcp-tools-area'), roleArea = node('section', undefined, 'mcp-roles-area'), plannerArea = node('details'), logsArea = node('details');
         const roleContent = node('div', undefined, 'mcp-role-content'); roleArea.append(node('strong', '角色授权'), targetLabel, roleContent);
         d.body.append(serviceArea, toolsArea, roleArea, permissionArea, plannerArea, logsArea);
         let serviceId = m().settings().services[0]?.id || '', tools = [], page = 0;
@@ -234,7 +234,7 @@
             search.oninput = () => { let visible = 0; for (const entry of serviceList.querySelectorAll('.mcp-service-item')) { entry.hidden = !entry.dataset.serviceSearch.includes(search.value.trim().toLocaleLowerCase()); if (!entry.hidden) visible++; } noMatch.hidden = visible > 0; };
             if (!m().settings().services.length) { noMatch.textContent = '暂无服务'; noMatch.hidden = false; search.hidden = true; }
             serviceArea.append(search, serviceList);
-            const row = node('div', undefined, 'mcp-row');
+            const row = node('div', undefined, 'mcp-row mcp-service-actions');
             row.append(button('添加', () => serviceEditor(null, id => { serviceId = id; tools = []; renderServices(); renderTools(); })), button('编辑', () => { if (serviceId) serviceEditor(serviceId, () => { tools = []; renderServices(); renderTools(); renderRoles(); }); }),
                 button('删除', () => d.run(async signal => {
                     if (!serviceId) return; const svc = m().service(serviceId);

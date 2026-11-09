@@ -48,7 +48,8 @@ const server = http.createServer((req, res) => {
                 if (width === 390) { await panel.evaluate(e => { e.scrollTop = 0; e.querySelectorAll('.ms-dialog-body,.cc-body').forEach(n => n.scrollTop = 0); }); await page.screenshot({ path: path.join(out, name + '.png'), animations: 'disabled' }); }
             }
             await page.setViewportSize({ width: 390, height: 420 });
-            assert.ok((await panel.boundingBox()).height <= 420 * .95 + 2, name + ' fits short screens');
+            const fullPage = await panel.evaluate(el => el.classList.contains('mono-page'));
+            assert.ok((await panel.boundingBox()).height <= 420 * (fullPage ? 1 : .95) + 2, name + ' fits short screens');
             const footer = panel.locator(':scope > footer');
             if (await footer.count()) { await footer.scrollIntoViewIfNeeded(); const r = await footer.boundingBox(); assert.ok(r.y + r.height <= 421 && r.y >= 0, name + ' footer remains reachable'); }
             await page.setViewportSize({ width: 390, height: 844 });

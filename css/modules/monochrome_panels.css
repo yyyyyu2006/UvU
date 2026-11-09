@@ -212,3 +212,218 @@
     #shared-document-dialog .uvu-mono-panel .shared-document-file-identity .shared-document-name { font-size: 16px; }
 }
 @media (prefers-reduced-motion:reduce) { .uvu-mono-panel,.uvu-mono-panel *,.uvu-mono-panel *::before,.uvu-mono-panel *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Reference fidelity: a page shell, not the legacy floating-dialog geometry.
+   Every rule requires a derivative-only marker; original and music stay out. */
+.mono-page-overlay:has(> .mono-page) { padding: 0; align-items: center; justify-content: center; overflow: hidden; }
+.uvu-mono-panel.mono-page, #auto-memory-modal.uvu-mono-panel > .mono-page {
+    display: flex; flex-direction: column; gap: 0; width: min(100%,430px); max-width: 430px;
+    height: min(100dvh,900px); max-height: 100dvh; min-height: 0; margin: 0; padding: 0;
+    border: 0; border-radius: 0; background: #fff; overflow: hidden; box-shadow: none;
+}
+.uvu-mono-panel.mono-page > .mono-page-nav, #auto-memory-modal.uvu-mono-panel .mono-page-nav {
+    position: static; display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center;
+    flex: 0 0 64px; gap: 0; margin: 0; padding: 10px 12px; min-height: 64px; border: 0; background: #fff;
+}
+.uvu-mono-panel .mono-page-nav > button, #auto-memory-modal.uvu-mono-panel .mono-page-nav > button {
+    display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; margin: 0; padding: 12px;
+    color: #111; border: 0; border-radius: 50%; background: transparent; box-shadow: none; outline: none;
+}
+.uvu-mono-panel .mono-page-nav > button:focus-visible { outline: 2px solid #111; outline-offset: -4px; }
+.uvu-mono-panel .mono-page-nav svg { width: 20px; height: 20px; }
+.uvu-mono-panel .mono-nav-brand { text-align: center; font-size: 14px; font-weight: 650; color: #111; }
+.uvu-mono-panel .mono-page-nav > .mono-nav-back { grid-column: 1; grid-row: 1; }
+.uvu-mono-panel .mono-page-nav > .mono-nav-brand { grid-column: 2; grid-row: 1; }
+.uvu-mono-panel .mono-page-nav > .mono-nav-close { grid-column: 3; grid-row: 1; }
+.uvu-mono-panel .mono-page-nav:has(.mono-nav-help) { grid-template-columns: 44px minmax(0,1fr) 44px 44px; }
+.uvu-mono-panel .mono-page-nav:has(.mono-nav-help) > .mono-nav-help { grid-column: 3; grid-row: 1; }
+.uvu-mono-panel .mono-page-nav:has(.mono-nav-help) > .mono-nav-close { grid-column: 4; }
+.uvu-mono-panel .mono-page-heading { padding: 16px 24px 24px; flex: none; background: #fff; }
+.uvu-mono-panel .mono-page-heading > .mono-page-title, #auto-memory-modal.uvu-mono-panel .mono-page-heading > .mono-page-title {
+    display: block; font-size: 30px; line-height: 1.3; font-weight: 700; letter-spacing: -.04em; margin: 0; color: #111;
+}
+.uvu-mono-panel.mono-page > :is(.shared-document-body,.mcp-body,.derived-body,.ms-dialog-body,.cc-body) {
+    flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 24px; padding: 0 24px 24px; overflow-y: auto;
+}
+.uvu-mono-panel.mono-page > :is(.shared-document-actions,.mcp-actions,.ms-dialog-foot,.cc-foot) {
+    display: flex; flex: 0 0 auto; gap: 12px; padding: 16px 24px max(20px,env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid #eee;
+}
+.uvu-mono-panel.mono-page > :is(.ms-dialog-foot,.cc-foot) > button:not(.cc-cancel),
+.uvu-mono-panel.mono-page > .shared-document-actions > [data-action=send] { flex: 1; min-height: 44px; }
+.uvu-mono-panel.mono-page > .cc-foot > .cc-count { display: none; }
+.uvu-mono-panel .mono-page-heading .shared-document-context { min-height: 0; padding: 8px 0 0; gap: 0; color: #666; }
+.uvu-mono-panel .mono-page-heading .shared-document-context img { display: none; }
+.uvu-mono-panel .mono-page-heading .shared-document-context small { display: none; }
+.uvu-mono-panel .mono-page-heading .shared-document-context strong { font-size: 12px; font-weight: 400; }
+.uvu-mono-panel .mono-page-heading .shared-document-context strong::before { content: '发送给'; }
+.uvu-mono-panel .mono-export-settings { background: #f5f5f5; padding: 20px; border-radius: 24px; }
+.uvu-mono-panel .mono-export-settings > .cc-field { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.uvu-mono-panel .mono-export-settings > .cc-field input { background: #fff; border: 0; min-height: 48px; }
+.uvu-mono-panel .mono-export-settings > details { margin: 0; padding: 8px 0; border: 0; background: transparent; }
+.uvu-mono-panel .mono-export-settings > details > summary { min-height: 44px; }
+.cc-export-dialog.uvu-mono-panel .cc-books { background: #fff; padding: 0; border-radius: 0; }
+.cc-export-dialog.uvu-mono-panel .cc-book { border-bottom: 1px solid #eee; padding: 12px 0; }
+.cc-export-dialog.uvu-mono-panel .mono-cover-preview { margin: 0; padding: 0; }
+.cc-export-dialog.uvu-mono-panel .cc-person-info { min-height: 48px; margin: 0; }
+.cc-export-dialog.uvu-mono-panel .cc-person-info h3 { font-size: 16px; }
+.cc-export-dialog.uvu-mono-panel .cc-more { margin: 0; padding: 0; }
+.cc-export-dialog.uvu-mono-panel .cc-more > summary { min-height: 44px; }
+.cc-export-dialog.uvu-mono-panel .cc-message:empty { display: none; }
+.ms-dialog.uvu-mono-panel .mono-social-switches { padding: 16px 20px; background: #f5f5f5; border-radius: 24px; gap: 0; }
+.ms-dialog.uvu-mono-panel .mono-social-switches > label { min-height: 56px; }
+.ms-dialog.uvu-mono-panel .ms-npcs { padding: 0; background: #fff; }
+.ms-dialog.uvu-mono-panel .ms-npcs .ms-section-head { margin-bottom: 16px; }
+.ms-dialog.uvu-mono-panel .mono-social-options { background: #f5f5f5; padding: 20px; border-radius: 24px; }
+.ms-dialog.uvu-mono-panel .mono-social-options > label { margin-bottom: 16px; }
+.ms-dialog.uvu-mono-panel .ms-pair { gap: 16px; grid-template-columns: 1fr 1fr; }
+#auto-memory-modal.uvu-mono-panel > .mono-page { padding: 0; }
+#auto-memory-modal.uvu-mono-panel .mono-page > .auto-memory-help { margin: 0; padding: 0 24px 16px; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form { flex: 1; min-height: 0; overflow-y: auto; padding: 0 24px 0; gap: 24px; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form > .auto-memory-actions { bottom: 0; margin-top: auto; padding: 16px 0 20px; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form > .auto-memory-actions button[type=submit] { flex: 1; min-height: 44px; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset { margin: 0; padding: 0 !important; border: 0; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset > legend { display: none; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset > .panel-card { margin-bottom: 24px; }
+#auto-memory-modal.uvu-mono-panel .panel-vector-enable { background: #f5f5f5; padding: 16px 20px; }
+.uvu-mono-panel.mono-page .panel-disclosure > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; }
+.uvu-mono-panel.mono-page .panel-disclosure > summary::-webkit-details-marker { display: none; }
+.uvu-mono-panel.mono-page .panel-disclosure > summary::after { content: ''; width: 7px; height: 7px; border-right: 1.5px solid #888; border-top: 1.5px solid #888; transform: rotate(45deg); margin: 0 4px 0 12px; flex: none; }
+.uvu-mono-panel.mono-page .panel-disclosure[open] > summary::after { transform: rotate(135deg); }
+@media (min-width:600px) { .mono-page-overlay:has(> .mono-page) { background: #eaeaea; } .uvu-mono-panel.mono-page, #auto-memory-modal.uvu-mono-panel > .mono-page { border-radius: 24px; } }
+@media (max-width:599px) { .mono-page-overlay:has(> .mono-page) { position: fixed; inset: 0; width: 100%; height: 100dvh; } .uvu-mono-panel.mono-page, #auto-memory-modal.uvu-mono-panel > .mono-page { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; } }
+/* Override the older ID-specific modal size and entrance transforms as well. */
+#auto-memory-modal.uvu-mono-panel.mono-page-overlay { padding: 0; }
+#auto-memory-modal.uvu-mono-panel.mono-page-overlay > .auto-memory-dialog.mono-page { width: 100%; max-width: 430px; height: 100dvh; max-height: 100dvh; margin: 0; padding: 0; }
+.mono-page-overlay > .mono-page, #shared-document-dialog .shared-document-dialog.mono-page { border: 0; box-shadow: none; animation: none; transform: none; }
+.uvu-mono-panel.mono-page .mono-page-nav > button { background: transparent; border: 0; box-shadow: none; }
+.uvu-mono-panel.mono-page .mono-page-nav > button:focus:not(:focus-visible) { outline: none; }
+.cc-export-dialog.uvu-mono-panel .mono-export-settings .cc-field input { width: 100%; flex: none; }
+.ms-dialog.uvu-mono-panel.mono-page .ms-npcs { background: #fff; padding: 0; border-radius: 0; }
+.ms-dialog.uvu-mono-panel.mono-page .ms-empty { text-align: left; padding: 12px 0; }
+#shared-document-dialog .mono-file-compose .shared-document-editor { padding: 20px; border-radius: 24px; background: #f5f5f5; }
+#shared-document-dialog .mono-file-compose .shared-document-file-header { padding: 0 0 16px; border-bottom: 1px solid #e5e5e5; border-radius: 0; }
+#shared-document-dialog .mono-file-compose .mono-file-excerpt { white-space: pre-line; margin: 16px 0; font-size: 14px; line-height: 1.8; color: #333; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+#shared-document-dialog .mono-file-compose .mono-file-shortcuts { display: flex; gap: 12px; }
+#shared-document-dialog .mono-file-compose .mono-file-shortcuts button { padding: 8px 16px; border-radius: 999px; border: 0; background: #eaeaea; min-height: 44px; }
+#shared-document-dialog .mono-file-compose:not(.mono-file-open) .shared-document-editor > :is(textarea,.shared-document-preview-heading,.shared-document-tools) { display: none; }
+#shared-document-dialog .mono-file-compose.mono-file-open .mono-file-excerpt { display: none; }
+#shared-document-dialog .mono-file-compose.mono-file-open .shared-document-editor textarea { background: transparent; margin-top: 16px; }
+#shared-document-dialog .mono-file-compose .shared-document-file-options { border-top: 1px solid #eee; }
+#shared-document-dialog .mono-file-compose .shared-document-file-options > select { margin-top: 16px; background: #f5f5f5; }
+#shared-document-dialog .mono-file-compose .shared-document-status { font-size: 12px; }
+@media (max-width:599px) { #auto-memory-modal.uvu-mono-panel.mono-page-overlay > .auto-memory-dialog.mono-page { max-width: none; border-radius: 0; } }
+/* Draft navigation and service overview: real controls, isolated from host themes. */
+.uvu-mono-panel .mono-subview { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.uvu-mono-panel .mono-route-list { display: flex; flex-direction: column; gap: 0; }
+.uvu-mono-panel button.mono-route { display: flex; align-items: center; gap: 12px; min-height: 56px; width: 100%; padding: 12px 0; border: 0; border-radius: 0; background: transparent; color: #111; text-align: left; font-size: 14px; font-weight: 500; }
+.uvu-mono-panel .mono-route-arrow { margin-left: auto; color: #888; font-size: 22px; font-weight: 400; }
+.uvu-mono-panel .mono-review-badge { color: #666; font-size: 12px; margin-left: auto; }
+.uvu-mono-panel .mono-review-badge + .mono-route-arrow { margin-left: 0; }
+.uvu-mono-panel .mono-service-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.uvu-mono-panel .mono-service-heading > strong { font-size: 18px; font-weight: 650; }
+.uvu-mono-panel .mcp-services-area { padding: 0; border: 0; background: #fff; display: flex; flex-direction: column; gap: 20px; }
+.uvu-mono-panel .mcp-service-list { display: flex; flex-direction: column; gap: 16px; }
+#mcp-services .uvu-mono-panel button.mcp-service-item { border: 0; padding: 20px; min-height: 108px; border-radius: 24px; background: #f5f5f5; text-align: left; }
+#mcp-services .uvu-mono-panel button.mcp-service-item[aria-pressed=true] { background: #f5f5f5; box-shadow: inset 0 0 0 1px #ddd; border-radius: 24px; padding: 20px; }
+#mcp-services .uvu-mono-panel .mcp-service-item strong { font-size: 16px; }
+#mcp-services .uvu-mono-panel .mcp-service-item small { font-size: 12px; color: #666; }
+.uvu-mono-panel .mono-service-management > summary { min-height: 44px; }
+.uvu-mono-panel .mono-service-management > :not(summary) { margin-top: 16px; }
+.uvu-mono-panel .mono-service-management .mcp-service-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.uvu-mono-panel .panel-mcp-global { padding: 0; background: transparent; }
+.uvu-mono-panel .panel-mcp-global .mcp-check { font-size: 14px; min-height: 44px; }
+.cc-export-dialog.uvu-mono-panel.mono-page .cc-head .cc-close { outline: none; background: transparent; border: 0; }
+.cc-export-dialog.uvu-mono-panel.mono-page .cc-head .cc-close:focus-visible { outline: 2px solid #111; outline-offset: -4px; }
+.cc-export-dialog.uvu-mono-panel.mono-page .mono-export-settings .cc-field input { background: #fff; border: 0; }
+.uvu-mono-panel.mono-page details > summary { list-style: none; }
+.uvu-mono-panel.mono-page details > summary::-webkit-details-marker { display: none; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset > .panel-vector-embedding { padding: 0 20px; }
+#auto-memory-modal.uvu-mono-panel .panel-vector-embedding > details { padding: 0; margin: 0; }
+#auto-memory-modal.uvu-mono-panel .panel-vector-embedding > details > summary { min-height: 56px; display: flex; align-items: center; font-size: 14px; }
+#auto-memory-modal.uvu-mono-panel .panel-vector-embedding > details[open] { padding-bottom: 20px; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page { background: #fff; overflow: hidden; flex-direction: column; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page > .mono-page-nav { flex: 0 0 64px; display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; height: 64px; padding: 10px 12px; background: #fff; border: 0; box-shadow: none; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .uvu-bridge-page { flex: 1; min-height: 0; width: 100%; padding: 0 24px 24px; overflow-y: auto; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-subview > .kkt-settings-container { margin: 0; padding: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel #uvu-story-bridge-settings { margin: 0; padding: 20px; }
+#uvu-story-bridge-screen.uvu-mono-panel #uvu-story-bridge-settings > .kkt-item { padding: 0 !important; gap: 16px !important; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-subview > :is(.uvu-bridge-handoff,.uvu-bridge-review,.uvu-bridge-guide) { margin: 0; padding: 0; background: #fff; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-identity { display: flex; flex-direction: column; gap: 8px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-identity h3 { margin: 0 0 8px; font-size: 18px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-identity small { color: #666; font-size: 12px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-binding-settings { background: #f5f5f5; padding: 20px; border-radius: 24px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-footer { flex: none; display: flex; gap: 12px; padding: 16px 24px max(20px,env(safe-area-inset-bottom)); border-top: 1px solid #eee; background: #fff; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-footer > button { flex: 1; min-height: 44px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-route-hidden { display: none !important; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-page-nav > button { width: 44px; height: 44px; padding: 12px; background: transparent; color: #111; font-size: 20px; }
+#uvu-story-bridge-screen.uvu-mono-panel .panel-bridge-role { display: block; }
+#uvu-story-bridge-screen.uvu-mono-panel .panel-bridge-role label { display: flex; flex-direction: column; gap: 8px; }
+.mcp-settings.uvu-mono-panel.mono-page .mcp-body > .mono-subview { padding: 0; border: 0; border-radius: 0; background: #fff; }
+.mcp-settings.uvu-mono-panel.mono-page .mono-subview > .panel-mcp-global { padding: 0; background: transparent; }
+.mcp-settings.uvu-mono-panel.mono-page .mono-route-list > button.mono-route { padding: 12px 0; border-radius: 0; background: transparent; min-height: 56px; font-size: 14px; }
+.mcp-settings.uvu-mono-panel.mono-page .mcp-services-area { padding: 0; border: 0; background: #fff; }
+.uvu-mono-panel.mono-page { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif; }
+#auto-memory-modal.uvu-mono-panel .panel-vector-embedding > details > summary { height: auto; min-height: 56px; padding: 12px 0; }
+.uvu-calendar.uvu-mono-panel.mono-page.message-forward-dialog { width: 100% !important; max-width: 430px !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; box-shadow: none !important; }
+.uvu-calendar.uvu-mono-panel.mono-page .mono-page-heading .calendar-home { font-size: 30px !important; font-weight: 700 !important; padding: 0 !important; line-height: 1.3; }
+.uvu-calendar.uvu-mono-panel.mono-page > .calendar-body { flex: 1; min-height: 0; padding: 0 24px 24px; }
+.calendar-editor.uvu-mono-panel.mono-page > .calendar-editor-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 24px; }
+.calendar-editor.uvu-mono-panel.mono-page .calendar-editor-actions { margin: 24px -24px 0; padding: 16px 24px max(20px,env(safe-area-inset-bottom)); }
+.memory-library > .uvu-mono-panel.mono-page > .mono-memory-body { flex: 1; min-height: 0; padding: 0 24px 24px; overflow-y: auto; }
+.memory-library > .uvu-mono-panel.mono-page .mono-page-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.memory-library > .uvu-mono-panel.mono-page .memory-library-list { overflow: visible; max-height: none; }
+@media (max-width:599px) { .uvu-calendar.uvu-mono-panel.mono-page.message-forward-dialog { max-width: none !important; } }
+#shared-document-dialog .mono-file-compose.mono-file-preview-open .mono-file-excerpt { display: block; max-height: 40dvh; overflow-y: auto; }
+#mcp-services .mcp-settings.uvu-mono-panel.mono-page .mono-route-list > button.mono-route { padding: 12px 0; border-radius: 0; background: transparent; min-height: 56px; width: 100%; font-size: 14px; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .mono-page-heading > .mono-page-title { font: 700 30px/1.3 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif; letter-spacing: -.04em; margin: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .mono-subview > .uvu-bridge-review { background: #fff; padding: 0; border-radius: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .mono-route-list > button.mono-route { width: 100%; background: transparent; border-radius: 0; padding: 12px 0; font-size: 14px; }
+#auto-memory-modal.uvu-mono-panel > .mono-page { position: relative; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form { position: static; padding-bottom: 112px; scroll-padding-block: 16px 112px; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form > * { flex-shrink: 0; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form > .auto-memory-actions { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 24px max(20px,env(safe-area-inset-bottom)); margin: 0; background: #fff; }
+#mcp-services .uvu-mono-panel .mcp-actions:has(.mcp-status:empty):has(button:disabled) { display: none; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form .auto-memory-range .auto-memory-actions { position: static; z-index: auto; padding: 0; margin: 16px 0 0; border: 0; }
+#auto-memory-modal.uvu-mono-panel #auto-memory-form > .auto-memory-actions { z-index: 20; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-status { flex: none; padding: 8px 24px; font-size: 12px; white-space: pre-wrap; max-height: 112px; overflow-y: auto; background: #fff; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-bridge-status:empty { display: none; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-subview > .panel-segment { align-self: flex-start; width: auto; min-width: 248px; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .kkt-item-content { min-height: 44px; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .kkt-item-content > label { width: 100%; justify-content: space-between; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page #uvu-story-bridge-settings .uvu-bridge-field > input { background: #fff; border: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page #uvu-bridge-online-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-month { row-gap: 4px; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day { min-height: 40px !important; justify-content: center; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day .calendar-disc { position: absolute; top: 0; width: 40px; height: 40px; background: transparent; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day .calendar-day-number { font-size: 14px; line-height: 40px; color: #111; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day.is-selected .calendar-disc { background: #111; outline: none; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day.is-selected:has(.calendar-disc) .calendar-day-number { color: #fff; }
+.uvu-calendar.uvu-mono-panel:has(.calendar-tabs [data-mode=schedule][aria-selected=true]) .calendar-day.has-event .calendar-disc:after { top: auto; bottom: 3px; background: #888; width: 3px; height: 3px; }
+.uvu-calendar.uvu-mono-panel .calendar-weekdays { margin-bottom: 8px; }
+/* Keep the draft's rhythm after legacy dialog and card rules are applied. */
+#auto-memory-modal.uvu-mono-panel.vector-settings-mode #auto-memory-form > .vector-memory-fieldset { display: flex; flex-direction: column; gap: 16px; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset > .panel-card { margin: 0; }
+#auto-memory-modal.uvu-mono-panel .vector-memory-fieldset > .panel-vector-embedding > details > summary { min-height: 56px; padding: 12px 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .mono-subview > .uvu-bridge-review { background: #fff !important; padding: 0 !important; border-radius: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page .uvu-bridge-review-floor { padding: 20px; border-radius: 24px; background: #f5f5f5; }
+.uvu-mono-panel.mono-page > .mono-page-nav > button.mono-nav-back { background: transparent; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page #uvu-bridge-review-list .uvu-bridge-review-row { background: #f5f5f5; border-radius: 24px; padding: 20px; gap: 12px; margin: 16px 0; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page #uvu-bridge-review-list .uvu-bridge-review-floor { background: transparent; padding: 0; border: 0; border-radius: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel #uvu-bridge-review-list .uvu-bridge-review-floor > summary { color: #666; font-size: 12px; min-height: 24px; list-style: none; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-floor > summary::-webkit-details-marker { display: none; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-floor > summary::after { content: '✎'; float: right; color: #111; font-size: 16px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-story-excerpt { font-size: 14px; line-height: 1.8; margin: 12px 0 0; color: #333; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-floor:not([open]) > .uvu-bridge-review-help.mono-known-tag { display: none; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-row > .mono-story-excerpt { grid-column: 2; margin: 0; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-floor[open] + .mono-story-excerpt { display: none; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-review-toolbar input[type=search] { min-height: 44px; width: 100%; flex: 1 0 100%; padding: 10px 12px; font-size: 14px; }
+#uvu-story-bridge-screen.uvu-mono-panel .uvu-bridge-summary-options { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin: 24px 0; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-story-summary-settings { width: 100%; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-story-summary-settings > label { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 16px; }
+#uvu-story-bridge-screen.uvu-mono-panel .mono-story-summary-settings :is(input,select) { width: 100%; min-height: 44px; }
+@media (max-width:599px) {
+    #shared-document-dialog .shared-document-dialog.uvu-mono-panel.mono-page,
+    #mcp-services .mcp-settings.uvu-mono-panel.mono-page,
+    .cc-export-dialog.uvu-mono-panel.mono-page,
+    .ms-dialog.uvu-mono-panel.mono-page { border-radius: 0; }
+}

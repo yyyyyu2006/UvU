@@ -73,31 +73,26 @@ const server = http.createServer((req, res) => {
                     const field = document.querySelector('.vector-memory-fieldset');
                     check([...field.querySelectorAll(':scope > section')].map(el => el.dataset.vectorSection).join(',') === 'enable,embedding,retrieval,rerank', 'Vector sections follow enable → embedding → retrieval → rerank');
                     const save = document.querySelector('#auto-memory-form > .auto-memory-actions button[type=submit]');
-                    check(rect(save).width < 110 && rect(save).height >= 40 && rect(save).height <= 44, 'Vector save follows v4 compact touch sizing');
+                    check(rect(save).width >= 240 && rect(save).height >= 44, 'Vector primary action spans the draft footer');
                     const guide = field.querySelector('.panel-vector-retrieval .auto-memory-guide');
                     check(guide && parseFloat(getComputedStyle(guide).paddingTop) === 0 && parseFloat(getComputedStyle(guide).borderTopWidth) === 0, 'Retrieval help has no extra nested card');
                 }
                 if (name === 'mcp') {
                     const settings = document.querySelector('.panel-mcp-options'), rows = [...settings.querySelectorAll(':scope > details')];
                     check(rows.length === 4, 'MCP permission, API, logs and guide remain available');
-                    for (let i = 1; i < 3; i++) check(rect(rows[i]).top - rect(rows[i - 1]).bottom <= 2, 'MCP lower settings stay adjacent');
-                    check(rows.every(el => el.open || rect(el).height <= 46), 'MCP closed settings do not reserve empty space');
-                    const row = document.querySelector('.mcp-settings .panel-mcp-service-actions');
+                    check(!document.querySelector('.mcp-services-area').closest('[hidden]'), 'MCP opens on the service overview');
+                    const row = document.querySelector('.mcp-service-actions');
                     const buttons = [...(row?.querySelectorAll(':scope > button') || [])];
-                    check(buttons.length === 4, 'All four service actions stay available');
-                    check(buttons.every(el => rect(el).height >= 40 && rect(el).height <= 44), 'MCP actions retain usable touch sizing');
-                    check(new Set(buttons.map(el => Math.round(rect(el).y))).size === 2, 'MCP actions form two balanced rows');
+                    check(buttons.length === 3 && Boolean(document.querySelector('.mono-service-heading button')), 'Heading retains add; management retains edit, delete and test');
                 }
                 if (name === 'tavern') {
-                    const pair = document.getElementById('uvu-bridge-pair'), reconnect = document.getElementById('uvu-bridge-reconnect'), disconnect = document.getElementById('uvu-bridge-disconnect'), recover = document.getElementById('uvu-bridge-recover');
-                    check(Math.abs(rect(pair).y - rect(reconnect).y) < 1 && Math.abs(rect(disconnect).y - rect(recover).y) < 1, 'Connection actions align in two rows');
-                    check(rect(disconnect).y - rect(pair).bottom >= 11, 'Connection action rows have breathing room');
-                    check(rect(reconnect).left - rect(pair).right <= 32, 'Tavern connection columns stay close together');
+                    check(document.getElementById('uvu-story-bridge-screen').dataset.monoView === 'main', 'Tavern opens on the connection dashboard');
+                    check([...document.querySelectorAll('.mono-bridge-page .mono-route')].some(el => el.textContent.includes('剧情审核') && el.getClientRects().length), 'Review has a visible dashboard entry');
                     const rows = [...document.querySelectorAll('.panel-bridge-metadata > details')];
                     check(rows.length === 3, 'Tavern receipt, archive and range share one group');
                     for (let i = 1; i < rows.length; i++) check(rect(rows[i]).top - rect(rows[i - 1]).bottom <= 2, 'Tavern handoff metadata stays adjacent');
                     check(rows.every(el => el.open || rect(el).height <= 46), 'Tavern closed metadata does not retain padding');
-                    const title = document.querySelector('#uvu-story-bridge-settings .kkt-item-title'), toggle = document.getElementById('uvu-bridge-enabled');
+                    const toggle = document.getElementById('uvu-bridge-enabled'), title = toggle.closest('label');
                     check(Math.abs((rect(title).y + rect(title).height / 2) - (rect(toggle).y + rect(toggle).height / 2)) < 2, 'Connection title and switch share one row');
                 }
                 return failures;
@@ -123,7 +118,8 @@ const server = http.createServer((req, res) => {
             }
             if (!['voice', 'tavern', 'notification', 'backup'].includes(name)) {
                 await page.setViewportSize({ width: 390, height: 420 });
-                assert.ok((await panel.boundingBox()).height <= 420 * .95 + 2, `${name}: fits shortened mobile viewport`);
+                const fullPage = await panel.evaluate(el => el.classList.contains('mono-page'));
+                assert.ok((await panel.boundingBox()).height <= 420 * (fullPage ? 1 : .95) + 2, `${name}: fits shortened mobile viewport`);
                 assert.ok(await panel.evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${name}: no horizontal overflow with keyboard`);
             }
             await page.setViewportSize({ width: 390, height: 844 });
@@ -139,6 +135,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('.shared-document-tutorial').isVisible(), true);
         await page.getByRole('button', { name: '使用说明', exact: true }).click();
         assert.equal(await page.locator('.shared-document-tutorial').isVisible(), false);
+        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '编辑', exact:true }).click();
         await page.locator('.shared-document-tools > button').click();
         await page.locator('.editor-draft').fill('暂存的文件草稿\n'.repeat(80));
         await page.locator('.editor-draft').evaluate(el => { el.scrollTop = el.scrollHeight / 2; });
@@ -178,7 +175,7 @@ const server = http.createServer((req, res) => {
         await page.waitForFunction(() => db.characters[0].autoMemorySettings?.keepRecent === 10 && !document.getElementById('auto-memory-modal').classList.contains('visible'));
         await page.evaluate(() => document.getElementById('vector-memory-settings-btn').click());
         assert.equal(await summaryHelp.isVisible(), false); assert.equal(await page.locator('.auto-memory-range').isVisible(), false);
-        await page.locator('#vector-api-panel > summary').click();
+        assert.equal(await page.locator('#vector-api-panel').evaluate(el => el.open), false);
         const closedVector = await page.locator('#vector-api-panel').evaluate(el => ({ height: el.getBoundingClientRect().height, summaryHeight: el.firstElementChild.getBoundingClientRect().height }));
         assert.equal(closedVector.height, closedVector.summaryHeight, 'Closing embedding settings immediately hides inner content');
         await shot('vector', '#auto-memory-modal .auto-memory-dialog');
@@ -235,10 +232,12 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('.mcp-service-item:visible').count(), 1);
         await page.getByRole('button', { name:'选择服务 日历', exact:true }).click();
         assert.equal(await page.getByRole('button', { name:'选择服务 日历', exact:true }).getAttribute('aria-pressed'), 'true');
+        await page.locator('.mono-service-management > summary').click();
         await page.getByRole('button', { name:'编辑', exact:true }).click();
         assert.equal(await page.locator('#mcp-service-editor').getByLabel('名称', { exact:true }).inputValue(), '日历');
         await page.keyboard.press('Escape');
         await shot('mcp', '#mcp-services .mcp-settings');
+        await page.getByRole('button', { name:'使用记录与设置', exact:true }).click();
         await page.locator('.panel-mcp-options').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(out, 'mcp-options-390.png'), animations: 'disabled' });
         const permission = page.locator('.panel-mcp-options > details').first();
@@ -262,7 +261,7 @@ const server = http.createServer((req, res) => {
         const day = page.locator('.uvu-calendar .calendar-day').first(); await day.click();
         assert.equal(await day.getAttribute('aria-pressed'), 'true');
         assert.ok(await day.evaluate(el=>el.classList.contains('is-selected')),'selected date remains visually marked');
-        assert.equal(await day.locator('.calendar-disc').evaluate(el=>getComputedStyle(el).outlineStyle), 'solid');
+        assert.equal(await day.locator('.calendar-disc').evaluate(el=>getComputedStyle(el).backgroundColor), 'rgb(17, 17, 17)', 'Schedule selection uses the draft black date disc');
         assert.ok(await page.locator('.uvu-calendar .calendar-day-number').count()>=28);
         await page.evaluate(() => document.getElementById('environment-calendar').dismissForward());
         await page.evaluate(() => openStickerDescriptionSettings()); await shot('sticker', '.sticker-description-card');
@@ -294,7 +293,7 @@ const server = http.createServer((req, res) => {
         await page.locator('.model-picker-list [role=option]').click();
         assert.equal(await page.locator('#api-model').inputValue(), 'b');
         await page.locator('#minimax-tts-settings').scrollIntoViewIfNeeded();
-        assert.deepEqual(await page.locator('.minimax-settings-section > strong').allTextContents(), ['音色与播放', '语音接口']);
+        assert.deepEqual(await page.locator('.minimax-settings-section > strong').allTextContents(), ['语音接口', '音色与播放']);
         await page.locator('#minimax-director-enabled').check(); assert.equal(await page.locator('#minimax-director-fields').isVisible(), true);
         await shot('voice', '#minimax-tts-settings'); await page.locator('#minimax-director-fields').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(out, 'voice-director-390.png'), animations: 'disabled' });
@@ -320,33 +319,40 @@ const server = http.createServer((req, res) => {
         await page.locator('[data-backup-mode=import]').click();
         assert.equal(await page.locator('[data-backup-mode=import]').getAttribute('aria-pressed'), 'true');
         await page.evaluate(() => switchScreen('uvu-story-bridge-screen'));
-        assert.equal(await page.locator('.uvu-bridge-review').isVisible(), true);
+        assert.equal(await page.locator('#uvu-story-bridge-screen .mono-route').filter({ hasText:'剧情审核' }).isVisible(), true);
         assert.equal(await page.locator('#uvu-bridge-st-guide').getAttribute('open'), null);
         await shot('tavern', '#uvu-story-bridge-screen .uvu-bridge-page');
         await page.locator('.panel-segment [data-value=tt]').click();
         assert.equal(await page.locator('#uvu-bridge-channel').inputValue(), 'tt');
+        await page.locator('#uvu-bridge-url').waitFor({ state: 'hidden' });
+        assert.equal(await page.locator('#uvu-bridge-url').isVisible(), false, 'TT file mode does not show a server address after layout reparenting');
         await page.locator('#uvu-bridge-sync').waitFor({ state: 'hidden' });
         assert.equal(await page.locator('#uvu-bridge-sync').isVisible(), false, 'TT file mode hides online-only collection after reparenting');
-        assert.equal(await page.locator('.uvu-bridge-review').isVisible(), true);
+        assert.equal(await page.locator('#uvu-story-bridge-screen .mono-route').filter({ hasText:'剧情审核' }).isVisible(), true);
         await page.locator('.panel-segment [data-value=st]').click();
         assert.equal(await page.locator('#uvu-bridge-channel').inputValue(), 'st');
-        await page.locator('#uvu-bridge-sync').waitFor({ state: 'visible' });
+        assert.equal(await page.locator('#uvu-bridge-sync').evaluate(el => el.hidden), false);
         await page.evaluate(() => { window.layoutOriginalTransaction = dexieDB.transaction; dexieDB.transaction = async () => { throw Error('测试存储失败'); }; });
         await page.locator('.panel-segment [data-value=tt]').click();
         await page.waitForFunction(() => document.querySelector('#uvu-bridge-status').textContent.includes('测试存储失败'));
         assert.equal(await page.locator('#uvu-bridge-channel').inputValue(), 'st');
         assert.equal(await page.locator('.panel-segment [data-value=st]').getAttribute('aria-pressed'), 'true', 'Async save rollback restores visible channel selection');
-        assert.equal(await page.locator('.panel-bridge-config').evaluate(el => el.open), true);
+        assert.equal(await page.locator('.panel-bridge-config').evaluate(el => el.open), true, 'Returning to ST after rollback reveals its pairing controls');
         await page.evaluate(() => { dexieDB.transaction = window.layoutOriginalTransaction; delete window.layoutOriginalTransaction; });
         await page.emulateMedia({ reducedMotion: 'reduce' });
         assert.equal(await page.locator('.panel-segment').evaluate(el => getComputedStyle(el, '::before').transitionDuration), '0s');
         await page.emulateMedia({ reducedMotion: 'no-preference' });
+        await page.locator('#uvu-story-bridge-screen .mono-route').filter({ hasText:'剧情审核' }).click();
         await page.locator('.uvu-bridge-review').scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(out, 'tavern-review-390.png'), animations: 'disabled' });
+        await page.locator('#uvu-story-bridge-screen .mono-nav-back').click();
+        await page.locator('#uvu-story-bridge-screen .mono-bridge-footer > button').first().click();
         await page.locator('.panel-bridge-metadata').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(out, 'tavern-metadata-390.png'), animations: 'disabled' });
         await page.locator('#uvu-bridge-handoff-source > summary').click();
         assert.equal(await page.locator('#uvu-bridge-handoff-source .uvu-bridge-handoff-detail-body').isVisible(), true);
         await page.locator('#uvu-bridge-handoff-source > summary').click();
+        await page.locator('#uvu-story-bridge-screen .mono-nav-back').click();
+        await page.locator('#uvu-story-bridge-screen .mono-route').filter({ hasText:'使用教程' }).click();
         await page.locator('#uvu-bridge-st-guide > summary').click(); assert.equal(await page.locator('#uvu-bridge-st-guide ol').isVisible(), true);
         await page.evaluate(() => openChatRoom('layout-char', 'private'));
         const after = await page.evaluate(() => { const b = document.getElementById('send-message-btn') || document.querySelector('#chat-room-screen .chat-input-area'); return b ? { html: b.outerHTML, width: getComputedStyle(b).width } : null; });

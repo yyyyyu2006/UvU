@@ -136,7 +136,13 @@
             label(fetchModels, '获取模型'); label(testApi, '测试接口');
             const rerankVisible = () => { if (rerank) rerank.hidden = !form.elements.namedItem('vectorRerankEnabled').checked; };
             form.elements.namedItem('vectorRerankEnabled').addEventListener('change', rerankVisible);
-            const sync = () => { apiVisible(); rerankVisible(); };
+            let wasVisible = false;
+            const sync = () => {
+                apiVisible(); rerankVisible();
+                const visible = root.classList.contains('visible');
+                if (visible && !wasVisible) vectorApi.open = false;
+                wasVisible = visible;
+            };
             new MutationObserver(sync).observe(root, { attributes: true, attributeFilter: ['class'] }); sync();
         }
     }
@@ -205,12 +211,13 @@
         label(q(root, '#uvu-bridge-export-file'), '导出线上文件'); label(q(root, '#uvu-bridge-import-file'), '导入剧情文件');
         const note = q(handoff, ':scope > p.uvu-bridge-note'); disclose([note], '交接说明', 'panel-handoff-help');
         const options = q(root, '#uvu-bridge-inject-scenes').closest('label'); review.prepend(options);
+        tavernPage(root);
     }
     function voice(root) {
         const connection = q(root, '.minimax-settings-section'), playback = q(root, '.minimax-settings-section:nth-of-type(2)');
         const director = q(root, '.minimax-director-settings'); if (!connection || !playback || !director) return;
         const connectionDetails = disclose([connection], '语音连接', 'panel-voice-connection');
-        director.after(connectionDetails); connectionDetails.open = !q(root, '#minimax-tts-key').value;
+        playback.before(connectionDetails); connectionDetails.open = !q(root, '#minimax-tts-key').value;
         const sync = () => { if (!q(root, '#minimax-tts-key').value.trim()) connectionDetails.open = true; };
         q(root, '#minimax-tts-preview').addEventListener('click', sync);
         asSwitch(q(root, '#minimax-director-enabled'));
@@ -274,7 +281,7 @@
     function mcp(root) {
         const body = q(root, '.mcp-body'); if (!body) return;
         const global = q(body, ':scope > label.mcp-check input'); asSwitch(global);
-        if (global) group([global.closest('label')], '', 'panel-mcp-global');
+        if (global) { global.setAttribute('aria-label', global.closest('label').textContent.trim()); group([global.closest('label')], '', 'panel-mcp-global'); }
         const planner = [...body.querySelectorAll(':scope > details')].find(el => /独立工具判断/.test(el.firstElementChild?.textContent));
         if (planner) q(planner, 'summary').textContent = '自动调用配置';
         const logs = [...body.querySelectorAll(':scope > details')].find(el => /最近调用与用量/.test(el.firstElementChild?.textContent));
@@ -284,6 +291,19 @@
         // Keep the existing disclosure nodes and callbacks together, including live permissions.
         const settings = group([...options.filter(el => !el.classList.contains('mcp-tutorial')), transfers, q(body, ':scope > .mcp-tutorial')], '', 'panel-mcp-options');
         settings?.querySelectorAll(':scope > details').forEach(el => el.classList.add('panel-disclosure'));
+        if (root.closest('#mcp-services')) {
+            const services = q(body, '.mcp-services-area'), tools = q(body, '.mcp-tools-area'), roles = q(body, '.mcp-roles-area');
+            if (services && tools && roles) {
+                const routes = make('div', 'mono-route-list'); services.after(routes);
+                root.monoNavigate = subviews(root, body, [
+                    { id: 'main', title: 'MCP 服务', nodes: [q(body, '.panel-mcp-global'), services, routes] },
+                    { id: 'tools', title: '工具授权', nodes: [tools] },
+                    { id: 'roles', title: '角色可用服务', nodes: [roles] },
+                    { id: 'options', title: '服务设置', nodes: [settings] }
+                ]);
+                for (const [id, title] of [['tools', '工具与权限'], ['roles', '角色可用服务'], ['options', '使用记录与设置']]) routes.append(routeButton(title, () => root.monoNavigate(id)));
+            }
+        }
     }
     function actions(root) {
         // Compact task actions only; keep original headers, circular controls and lists intact.
@@ -349,7 +369,7 @@
             }
             if (root.classList.contains('mcp-settings')) {
                 const toggle = q(root, '.panel-mcp-global label');
-                if (toggle) label(toggle, '启用 MCP');
+                if (toggle) { const caption = q(toggle, 'span'); if (caption) caption.textContent = '启用 MCP'; }
             }
             root.addEventListener('invalid', event => {
                 let parent = event.target.parentElement;
@@ -357,6 +377,123 @@
             }, true);
         }
         libraryRows(root); extra(root); actions(root);
+        pageLayout(root);
+        mcpServiceRows(root);
+        if (root.id === 'uvu-story-bridge-screen') reviewLayout(root);
+    }
+    function reviewLayout(root) {
+        root.querySelectorAll('.uvu-bridge-review-floor').forEach(floor => {
+            if (floor.dataset.monoReview) return; floor.dataset.monoReview = 'true';
+            const title = q(floor, ':scope > summary'); if (!title) return;
+            const original = title.textContent, match = original.match(/^(第 \d+ 层|原文记录)(?: · ([^·]+))? · ([\s\S]*)$/);
+            if (match) {
+                title.textContent = match[1] + (match[2] ? ' · ' + match[2].trim() : '');
+                title.setAttribute('aria-label', original);
+                const excerpt = make('p', 'mono-story-excerpt', match[3]); floor.after(excerpt);
+                floor.addEventListener('input', event => { if (event.target.matches('textarea')) excerpt.textContent = event.target.value; });
+                const note = q(floor, ':scope > .uvu-bridge-review-help');
+                if (note?.textContent.startsWith('正文标签：') && !/未知标签：[^无]/.test(note.textContent)) note.classList.add('mono-known-tag');
+            }
+        });
+        root.querySelectorAll('.uvu-bridge-summary-options').forEach(options => {
+            if (options.dataset.monoSummary) return; options.dataset.monoSummary = 'true';
+            const fields = [...options.children].filter(el => el.tagName === 'LABEL');
+            disclose(fields, '总结设置', 'mono-story-summary-settings');
+            const primary = q(options, '.uvu-bridge-actions > button'); if (primary) primary.classList.add('panel-primary');
+        });
+    }
+    function routeButton(text, action) {
+        const button = make('button', 'mono-route', text); button.type = 'button';
+        const arrow = make('span', 'mono-route-arrow', '›'); arrow.setAttribute('aria-hidden', 'true'); button.append(arrow);
+        button.addEventListener('click', action); return button;
+    }
+    function subviews(root, body, views) {
+        const pages = views.map(view => {
+            const page = make('section', 'mono-subview'); page.dataset.monoView = view.id;
+            body.append(page); page.append(...view.nodes.filter(Boolean)); return { ...view, page };
+        });
+        const navigate = (id, focus = true) => {
+            const selected = pages.find(view => view.id === id) || pages[0];
+            for (const view of pages) view.page.hidden = view !== selected;
+            root.dataset.monoView = selected.id;
+            const title = q(root, '.mono-page-title');
+            if (title) { title.textContent = selected.title; if (focus) { title.tabIndex = -1; title.focus({ preventScroll: true }); } }
+            body.scrollTop = 0;
+            root.dispatchEvent(new CustomEvent('mono-view-change', { detail: selected.id }));
+        };
+        root.addEventListener('click', event => {
+            if (event.target.closest('.mono-nav-back') && root.dataset.monoView !== views[0].id) {
+                event.preventDefault(); event.stopImmediatePropagation(); navigate(views[0].id);
+            }
+        }, true);
+        navigate(views[0].id, false); return navigate;
+    }
+    function mcpServiceRows(root) {
+        if (!root.closest('#mcp-services')) return;
+        const services = q(root, '.mcp-services-area'); if (!services) return;
+        const row = q(services, ':scope > .mcp-service-actions');
+        if (!row || row.dataset.monoServiceActions) return;
+        row.dataset.monoServiceActions = 'true';
+        const title = q(services, ':scope > strong'), add = q(row, 'button');
+        const head = make('div', 'mono-service-heading'); title.before(head); title.textContent = '我的服务'; head.append(title, add);
+        const management = disclose([row], '管理当前服务', 'mono-service-management');
+        management.append(...[...services.children].filter(el => el !== head && el !== management && !el.matches('label,.mcp-service-search,.mcp-service-list')));
+        const search = q(services, '.mcp-service-search'); if (search && !q(services, '.mcp-service-list').querySelector('.mcp-service-item')) search.hidden = true;
+    }
+    function tavernPage(root) {
+        const head = q(root, '.app-header'), oldTitle = q(head, '.title-container'), close = q(head, '.back-btn'), body = q(root, '.uvu-bridge-page');
+        root.classList.add('mono-bridge-page'); head.classList.add('mono-page-nav');
+        close.classList.add('mono-nav-close'); close.setAttribute('aria-label', '返回主屏幕'); navIcon(close, 'm6 6 12 12M18 6 6 18');
+        oldTitle.remove(); q(head, '.placeholder')?.remove();
+        const back = make('button', 'mono-nav-back'); back.type = 'button'; back.setAttribute('aria-label', '返回'); navIcon(back, 'm14 6-6 6 6 6');
+        back.addEventListener('click', () => close.click()); head.prepend(back, make('span', 'mono-nav-brand', 'UvU'));
+        const heading = make('div', 'mono-page-heading'); heading.append(make('h2', 'mono-page-title', '酒馆')); head.after(heading);
+        const connection = q(body, '.kkt-settings-container'), handoff = q(body, '.uvu-bridge-handoff'), review = q(body, '.uvu-bridge-review'), guide = q(body, '.uvu-bridge-guide');
+        const channel = q(connection, '.panel-segment'); connection.before(channel);
+        const intro = q(connection, '.panel-bridge-intro'); if (intro) guide.append(intro);
+        const connectionItem = q(connection, '#uvu-story-bridge-settings > .kkt-item'), config = q(connection, '.panel-bridge-config');
+        const url = q(connection, '#uvu-bridge-url').closest('label'); config.before(url);
+        const onlineControls = q(config, '#uvu-bridge-online-controls');
+        const syncAddress = () => { url.hidden = onlineControls.hidden || onlineControls.style.display === 'none'; };
+        new MutationObserver(syncAddress).observe(onlineControls, { attributes: true, attributeFilter: ['hidden', 'style'] }); syncAddress();
+        const diagnostics = q(connection, '#uvu-bridge-diagnostics'); if (diagnostics) config.append(diagnostics);
+        config.open = false; q(config, 'summary').textContent = '配对与设备';
+        const connectionActions = q(config, '#uvu-bridge-online-actions'); config.append(connectionActions);
+        const serviceTitle = q(connectionItem, '.kkt-item-title'); if (serviceTitle) serviceTitle.hidden = true;
+        const state = q(root, '#uvu-bridge-status'); root.append(state); state.classList.add('mono-bridge-status');
+        const binding = make('section', 'mono-binding-settings'), roleRow = q(handoff, '.panel-bridge-role'); binding.append(roleRow);
+        const identity = make('section', 'mono-bridge-identity'), identityName = make('strong'), source = make('small'); identity.append(make('h3', '', '当前角色'), identityName, source);
+        const links = make('div', 'mono-route-list'), footer = make('footer', 'mono-bridge-footer'); root.append(footer);
+        const navigate = subviews(root, body, [
+            { id: 'main', title: '酒馆', nodes: [channel, connection, identity, links] },
+            { id: 'binding', title: '角色与存档', nodes: [binding] },
+            { id: 'online', title: '线上存档', nodes: [handoff] },
+            { id: 'review', title: '剧情审核', nodes: [review] },
+            { id: 'guide', title: '使用教程', nodes: [guide] }
+        ]);
+        root.monoNavigate = navigate;
+        links.append(routeButton('角色与存档', () => navigate('binding')), routeButton('剧情审核', () => navigate('review')), routeButton('使用教程', () => navigate('guide')));
+        const reviewEntry = links.children[1], badge = make('span', 'mono-review-badge'); reviewEntry.insertBefore(badge, reviewEntry.lastChild);
+        const refresh = () => {
+            const select = q(root, '#uvu-bridge-handoff-character'); identityName.textContent = select.selectedOptions[0]?.textContent || '尚未选择角色';
+            const text = q(root, '#uvu-bridge-handoff-source > summary')?.textContent || ''; if (source.textContent !== text) source.textContent = text;
+            const count = q(root, '#uvu-bridge-review-count').textContent; if (badge.textContent !== count) badge.textContent = count;
+        };
+        q(root, '#uvu-bridge-handoff-character').addEventListener('change', refresh);
+        for (const node of [q(root, '#uvu-bridge-handoff-source'), q(root, '#uvu-bridge-review-count')]) new MutationObserver(refresh).observe(node, { childList: true, characterData: true, subtree: true }); refresh();
+        const openOnline = make('button', 'panel-primary panel-compact-action', '交接线上消息'); openOnline.type = 'button'; openOnline.addEventListener('click', () => navigate('online')); footer.append(openOnline);
+        const save = q(root, '#uvu-bridge-save-character'), send = q(root, '#uvu-bridge-handoff'), exportFile = q(root, '#uvu-bridge-export-file');
+        footer.append(save, send, exportFile); save.classList.add('panel-primary');
+        const footerState = () => {
+            const view = root.dataset.monoView;
+            openOnline.hidden = view !== 'main'; save.hidden = view !== 'binding';
+            // Transport continues to own the real send/export visibility.
+            send.classList.toggle('mono-route-hidden', view !== 'online'); exportFile.classList.toggle('mono-route-hidden', view !== 'online');
+            footer.hidden = !['main', 'binding', 'online'].includes(view);
+        };
+        root.addEventListener('mono-view-change', footerState); footerState();
+        // The review entry is always visible on the dashboard; data collection and
+        // review controls retain their original transport and identity checks.
     }
     function documentLayout(root) {
         const context = q(root, '.shared-document-context');
@@ -381,6 +518,87 @@
         if (preview) body.append(preview);
         const footer = q(root, '.cc-foot');
         if (footer) [...footer.querySelectorAll('button')].at(-1)?.classList.add('panel-primary');
+    }
+    function navIcon(button, path) {
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + path + '"/></svg>';
+    }
+    function pageLayout(root) {
+        // A draft page has navigation, a separate large title, a reading area and
+        // a fixed action bar. A recoloured legacy dialog is not that layout.
+        if (root.dataset.monoPage || !root.matches('.shared-document-dialog,.mcp-settings,.derived-settings,.calendar-editor,.ms-dialog,.cc-export-dialog,.memory-library > .feature-dialog-card,#auto-memory-modal')) return;
+        const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
+        const head = q(panel, ':scope > .message-forward-header,:scope > .ms-dialog-head,:scope > .cc-head,:scope > .auto-memory-heading,:scope > header');
+        const title = head && q(head, 'strong,h2');
+        const close = head && q(head, '.message-forward-close,.cc-close,#auto-memory-close,[data-action=close]');
+        if (!title || !close) return;
+        root.dataset.monoPage = 'true'; panel.classList.add('mono-page');
+        const overlay = root.id === 'auto-memory-modal' ? root : root.parentElement;
+        overlay.classList.add('mono-page-overlay');
+        head.classList.add('mono-page-nav');
+        const heading = make('div', 'mono-page-heading'); head.after(heading); heading.append(title);
+        title.classList.add('mono-page-title');
+        if (root.monoNavigate) root.monoNavigate('main', false);
+        const back = make('button', 'mono-nav-back'); back.type = 'button'; back.setAttribute('aria-label', '返回');
+        navIcon(back, 'm14 6-6 6 6 6'); back.addEventListener('click', () => { if (!close.disabled) close.click(); });
+        const brand = make('span', 'mono-nav-brand', 'UvU');
+        if (!close.hasAttribute('aria-label')) close.setAttribute('aria-label', close.textContent.trim() || '关闭');
+        close.classList.add('mono-nav-close'); navIcon(close, 'm6 6 12 12M18 6 6 18');
+        head.prepend(back, brand);
+        if (root.matches('.memory-library > .feature-dialog-card')) {
+            const add = q(head, '[data-action=add]'); if (add) heading.append(add);
+            const content = make('div', 'mono-memory-body');
+            const nodes = [...panel.children].filter(el => el !== head && el !== heading);
+            panel.append(content); content.append(...nodes);
+        }
+        const help = q(head, '.shared-document-info'); if (help) { help.classList.add('mono-nav-help'); head.append(help, close); }
+        if (root.classList.contains('shared-document-dialog')) {
+            const context = q(root, '.shared-document-context'); if (context) heading.append(context);
+            filePage(root);
+        }
+        if (root.classList.contains('cc-export-dialog')) {
+            const format = q(head, '.cc-format'); if (format) format.hidden = true;
+            const body = q(root, '.cc-body'), author = q(body, ':scope > .cc-field');
+            if (author) { const settings = make('section', 'mono-export-settings'); author.before(settings); settings.append(author, q(body, '.cc-persona'), q(body, '.cc-cover-fields')); }
+            const preview = q(root, '.mono-cover-preview'), footer = q(root, '.cc-foot');
+            if (preview && footer) {
+                const show = make('button', 'mono-preview-action', '预览 ID Card'); show.type = 'button'; show.setAttribute('aria-expanded', 'false');
+                show.addEventListener('click', () => { preview.open = !preview.open; if (preview.open) preview.scrollIntoView({ block: 'nearest' }); });
+                preview.addEventListener('toggle', () => show.setAttribute('aria-expanded', String(preview.open))); footer.prepend(show);
+            }
+        }
+        if (root.classList.contains('ms-dialog') && q(root, '.mono-social-switches')) {
+            const body = q(root, '.ms-dialog-body'), npcs = q(body, '.ms-npcs');
+            const facts = [...body.children].find(el => el.matches('label.ms-field'));
+            const limits = q(body, '.ms-pair');
+            if (npcs) q(body, '.mono-social-switches').after(npcs);
+            if (facts || limits) group([facts, limits], '互动设置', 'mono-social-options');
+        }
+    }
+    function filePage(root) {
+        const editor = q(root, '.shared-document-editor'), text = q(editor, 'textarea');
+        if (!editor || !text || text.readOnly) return;
+        root.classList.add('mono-file-compose');
+        const excerpt = make('p', 'mono-file-excerpt'), tools = make('div', 'mono-file-shortcuts');
+        const show = make('button', '', '预览'), edit = make('button', '', '编辑');
+        show.type = edit.type = 'button';
+        show.setAttribute('aria-expanded', 'false'); edit.setAttribute('aria-expanded', 'false');
+        const render = () => { if (excerpt.textContent !== text.value) excerpt.textContent = text.value; };
+        const open = () => {
+            root.classList.remove('mono-file-preview-open');
+            show.setAttribute('aria-expanded', 'false');
+            root.classList.toggle('mono-file-open');
+            const expanded = root.classList.contains('mono-file-open');
+            edit.setAttribute('aria-expanded', String(expanded));
+            if (expanded) text.focus({ preventScroll: true });
+        };
+        show.addEventListener('click', () => {
+            root.classList.remove('mono-file-open'); edit.setAttribute('aria-expanded', 'false');
+            const expanded = root.classList.toggle('mono-file-preview-open'); show.setAttribute('aria-expanded', String(expanded));
+        }); edit.addEventListener('click', open);
+        tools.append(show, edit); q(editor, '.shared-document-file-header').after(excerpt, tools);
+        text.addEventListener('input', render);
+        new MutationObserver(render).observe(q(root, '.shared-document-status'), { childList: true, characterData: true, subtree: true }); render();
+        const encoding = q(editor, 'select'); if (encoding) q(root, '.shared-document-file-options').append(encoding);
     }
     function start() {
         document.querySelectorAll(allRoots).forEach(decorate);
