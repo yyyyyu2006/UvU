@@ -241,6 +241,18 @@
 .storage-backup-modes button { min-height: 34px; padding: 7px 12px; border-radius: 999px; }
 .storage-backup-extras { gap: 16px; padding: 16px; border: 1px solid #e8eaee; border-radius: 20px; background: #fff; color: #1b1d21; }
 .storage-backup-extras p { margin: 0; font-size: 12px; line-height: 1.6; }
+
+/* Added cloud-backup options only; keep the original tutorial and backup actions. */
+#tutorial-screen .gh-backup-options { display:grid; gap:0; min-width:0; margin-top:16px; padding-top:4px; border-top:1px solid #eef0f3; font-size:14px; color:#30353c; }
+#tutorial-screen .gh-backup-options > label { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:44px; margin:0; padding:6px 0; box-sizing:border-box; line-height:1.5; }
+#tutorial-screen .gh-backup-options input[type=checkbox] { flex:0 0 16px; width:16px; height:16px; min-width:16px; margin:0; padding:0; accent-color:#7197b7; }
+#tutorial-screen .gh-backup-branch input { box-sizing:border-box; flex:0 1 144px; width:144px; min-width:0; max-width:55%; min-height:36px; border:1px solid #e8eaee; border-radius:10px; padding:7px 10px; background:#f7f8fa; color:#30353c; font:inherit; font-size:14px; }
+#tutorial-screen .gh-backup-branch input::placeholder { color:#8b929b; }
+#tutorial-screen .gh-backup-option-actions { display:flex; justify-content:flex-end; margin-top:8px; }
+#tutorial-screen .gh-backup-option-actions button { box-sizing:border-box; flex:0 0 auto; width:auto; min-height:32px; margin:0; padding:6px 12px; border:1px solid #e8eaee; border-radius:999px; background:#f5f6f8; color:#626b78; font:inherit; font-size:12px; line-height:1.5; cursor:pointer; }
+#tutorial-screen .gh-backup-options :is(input,button):focus-visible { outline:2px solid #8fb4de; outline-offset:3px; }
+#tutorial-screen .gh-backup-notice { margin:16px 0 0; font-size:12px; line-height:1.65; color:#7b838e; overflow-wrap:anywhere; }
+@media(pointer:coarse) { #tutorial-screen .gh-backup-branch input { font-size:16px; } }
 .model-picker-card { gap: 16px; }
 .model-picker-count { margin: 0; font-size: 12px; color: #747b85; }
 .model-picker-overlay .model-picker-list > button { min-height: 40px; padding: 10px 12px; border-color: transparent; border-radius: 12px; text-align: left; }

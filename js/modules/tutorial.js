@@ -475,11 +475,13 @@ function renderTutorialContent() {
                 <div id="gh-check-btn" style="flex:1; background:#f5f5f5; color:#666; text-align:center; padding:8px; border-radius:4px; font-size:0.89rem; cursor:pointer;">检查状态</div>
             </div>
             
-            <label><input type="checkbox" id="gh-credentials-switch"> 云备份含 API 密钥（默认移除）</label><br>
-            <label><input type="checkbox" id="gh-vector-switch" checked> 云备份含向量索引</label><br>
-            <label>分支（留空使用默认分支）<input id="gh-branch-input" type="text" placeholder="main"></label>
-            <button id="gh-cancel-btn" type="button">取消备份任务</button>
-            <p>仅限私有仓库；备份含聊天隐私。压缩不是加密。请先用“检查状态”核对可见性；密钥默认移除。</p>
+            <div class="gh-backup-options">
+                <label class="gh-backup-option" for="gh-credentials-switch"><span>包含 API 密钥</span><input type="checkbox" id="gh-credentials-switch"></label>
+                <label class="gh-backup-option" for="gh-vector-switch"><span>包含向量索引</span><input type="checkbox" id="gh-vector-switch" checked></label>
+                <label class="gh-backup-branch" for="gh-branch-input"><span>备份分支</span><input id="gh-branch-input" type="text" placeholder="默认分支" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+                <div class="gh-backup-option-actions"><button id="gh-cancel-btn" type="button">取消备份任务</button></div>
+            </div>
+            <p class="gh-backup-notice">仅限私有仓库，备份含聊天隐私。压缩不等于加密；请先检查仓库可见性，密钥默认不包含。分支留空使用仓库默认分支。</p>
             <div id="gh-status-msg" style="margin-top:10px; font-size:0.74rem; color:#999;"></div>
         </div>
     `;
