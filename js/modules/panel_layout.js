@@ -2,6 +2,8 @@
 (function () {
     'use strict';
     const roots = '.shared-document-dialog,.memory-library > .feature-dialog-card,.mcp-settings,.derived-settings,.relationship-dialog,.text-editor-card,.model-picker-card,.sticker-description-card,.regenerate-guidance-card,.resource-health,.status-token-panel,#auto-memory-modal,#uvu-story-bridge-screen,#minimax-tts-settings,#uvu-notification-preferences';
+    const monochromeRoots = '.cc-export-dialog,.ms-dialog,.uvu-calendar,.calendar-editor,.worldbook-advanced,.relationship-settings,.storage-backup-extras,.storage-backup-modes,.storage-export-format,.pv-send-modes,#pv-generated-preview,#home-preset-preview > .feature-dialog-card,.kkt-item:has(> .kkt-item-control > #setting-char-tts-voice-id)';
+    const allRoots = roots + ',' + monochromeRoots;
     const initialized = new WeakSet();
     const q = (root, selector) => root.querySelector(selector);
     const make = (tag, className, text) => {
@@ -327,8 +329,10 @@
     }
     function decorate(root) {
         if (!root.isConnected) return;
+        // Explicit allow-list: music and original screens never receive this surface.
+        if (root.closest('#uvu-music-screen,.uvu-music-sheet,[id^=music-],.music-app,.music-dialog,.together-listening-dialog')) return;
         if (!initialized.has(root)) {
-            initialized.add(root); root.classList.add('uvu-panel-layout');
+            initialized.add(root); root.classList.add('uvu-panel-layout', 'uvu-mono-panel');
             if (root.id === 'auto-memory-modal') summary(root);
             else if (root.id === 'uvu-story-bridge-screen') tavern(root);
             else if (root.id === 'minimax-tts-settings') voice(root);
@@ -336,6 +340,17 @@
             else if (root.classList.contains('text-editor-card')) editor(root);
             else if (root.classList.contains('mcp-settings')) mcp(root);
             else if (root.classList.contains('derived-settings')) environment(root);
+            if (root.classList.contains('shared-document-dialog')) documentLayout(root);
+            if (root.classList.contains('cc-export-dialog')) exportLayout(root);
+            if (root.classList.contains('ms-dialog') && q(root, '.ms-dialog-head strong')?.textContent === '动态互动') {
+                const toggles = [...root.querySelectorAll('.ms-dialog-body > .ms-check')];
+                toggles.forEach(row => asSwitch(q(row, 'input')));
+                group(toggles, '', 'mono-social-switches');
+            }
+            if (root.classList.contains('mcp-settings')) {
+                const toggle = q(root, '.panel-mcp-global label');
+                if (toggle) label(toggle, '启用 MCP');
+            }
             root.addEventListener('invalid', event => {
                 let parent = event.target.parentElement;
                 while (parent && parent !== root) { if (parent.tagName === 'DETAILS') parent.open = true; parent = parent.parentElement; }
@@ -343,14 +358,38 @@
         }
         libraryRows(root); extra(root); actions(root);
     }
+    function documentLayout(root) {
+        const context = q(root, '.shared-document-context');
+        if (context) {
+            const caption = q(context, 'small'); if (caption) caption.textContent = '发送至';
+            context.classList.add('mono-recipient');
+        }
+        const body = q(root, '.shared-document-body');
+        const editor = q(root, '.shared-document-editor');
+        const status = q(root, '.shared-document-status');
+        if (editor && status) editor.after(status);
+        const options = q(root, '.shared-document-file-options');
+        if (body && options) body.append(options);
+        q(root, '[data-action=send]')?.classList.add('panel-primary');
+    }
+    function exportLayout(root) {
+        // Only settings move. The canvas and PNG renderer retain all original inputs.
+        const body = q(root, '.cc-body'), person = q(root, '.cc-person');
+        if (!body || !person) return;
+        const identity = q(person, '.cc-person-info'); if (identity) body.prepend(identity);
+        const preview = disclose([person], '封面预览', 'mono-cover-preview');
+        if (preview) body.append(preview);
+        const footer = q(root, '.cc-foot');
+        if (footer) [...footer.querySelectorAll('button')].at(-1)?.classList.add('panel-primary');
+    }
     function start() {
-        document.querySelectorAll(roots).forEach(decorate);
+        document.querySelectorAll(allRoots).forEach(decorate);
         const pending = new Set(); let queued = false;
         const observer = new MutationObserver(records => {
             for (const record of records) for (const node of record.addedNodes) {
                 if (node.nodeType !== 1 || node.closest('svg')) continue;
-                const owner = node.closest(roots); if (owner) pending.add(owner);
-                node.querySelectorAll(roots).forEach(el => pending.add(el));
+                const owner = node.closest(allRoots); if (owner) pending.add(owner);
+                node.querySelectorAll(allRoots).forEach(el => pending.add(el));
             }
             if (!pending.size || queued) return; queued = true;
             queueMicrotask(() => { queued = false; const batch = [...pending]; pending.clear(); batch.forEach(decorate); });

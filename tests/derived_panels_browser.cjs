@@ -73,7 +73,7 @@ const server = http.createServer((req, res) => {
                     const field = document.querySelector('.vector-memory-fieldset');
                     check([...field.querySelectorAll(':scope > section')].map(el => el.dataset.vectorSection).join(',') === 'enable,embedding,retrieval,rerank', 'Vector sections follow enable → embedding → retrieval → rerank');
                     const save = document.querySelector('#auto-memory-form > .auto-memory-actions button[type=submit]');
-                    check(rect(save).width < 110 && rect(save).height <= 36, 'Vector save is a compact action');
+                    check(rect(save).width < 110 && rect(save).height >= 40 && rect(save).height <= 44, 'Vector save follows v4 compact touch sizing');
                     const guide = field.querySelector('.panel-vector-retrieval .auto-memory-guide');
                     check(guide && parseFloat(getComputedStyle(guide).paddingTop) === 0 && parseFloat(getComputedStyle(guide).borderTopWidth) === 0, 'Retrieval help has no extra nested card');
                 }
@@ -85,8 +85,8 @@ const server = http.createServer((req, res) => {
                     const row = document.querySelector('.mcp-settings .panel-mcp-service-actions');
                     const buttons = [...(row?.querySelectorAll(':scope > button') || [])];
                     check(buttons.length === 4, 'All four service actions stay available');
-                    check(buttons.every(el => rect(el).height <= 36 && parseFloat(getComputedStyle(el).paddingLeft) <= 10), 'MCP actions use compact padding and height');
-                    if (width >= 390) check(new Set(buttons.map(el => Math.round(rect(el).y))).size === 1, 'MCP actions fit one row at regular mobile width');
+                    check(buttons.every(el => rect(el).height >= 40 && rect(el).height <= 44), 'MCP actions retain usable touch sizing');
+                    check(new Set(buttons.map(el => Math.round(rect(el).y))).size === 2, 'MCP actions form two balanced rows');
                 }
                 if (name === 'tavern') {
                     const pair = document.getElementById('uvu-bridge-pair'), reconnect = document.getElementById('uvu-bridge-reconnect'), disconnect = document.getElementById('uvu-bridge-disconnect'), recover = document.getElementById('uvu-bridge-recover');
@@ -130,7 +130,7 @@ const server = http.createServer((req, res) => {
         }
         await page.evaluate(() => openSharedDocumentDialog());
         await shot('file-empty', '#shared-document-dialog .shared-document-dialog');
-        assert.equal(await page.locator('#shared-document-dialog .message-forward-close').evaluate(el => getComputedStyle(el).borderRadius), '999px');
+        assert.equal(await page.locator('#shared-document-dialog .message-forward-close').evaluate(el => getComputedStyle(el).borderRadius), '50%');
         assert.equal(await page.locator('#shared-document-dialog .shared-document-name').evaluate(el => getComputedStyle(el).fontSize), '16px', 'Touch inputs retain readable size to avoid mobile focus zoom');
         await page.getByLabel('选择分享文件').setInputFiles({ name: '约定与计划.txt', mimeType: 'text/plain', buffer: Buffer.from('周末计划\n'.repeat(80)) });
         await page.locator('#shared-document-dialog .shared-document-actions').waitFor({ state: 'visible' });
@@ -247,7 +247,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => document.getElementById('mcp-services').dismissForward());
         await page.evaluate(async () => { await MCPServices.save(window.layoutMcpSettings); delete window.layoutMcpSettings; });
         await page.evaluate(() => openRelationshipDialog()); await shot('relationship', '.relationship-dialog');
-        assert.ok(await page.locator('.relationship-quick-actions .relationship-action').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height<=34&&n.getBoundingClientRect().width<220)),'relationship buttons stay compact');
+        assert.ok(await page.locator('.relationship-quick-actions .relationship-action').evaluateAll(nodes=>nodes.every(n=>n.getBoundingClientRect().height>=40&&n.getBoundingClientRect().height<=44&&n.getBoundingClientRect().width<220)),'relationship actions retain compact v4 touch targets');
         const actionRows=await page.locator('.relationship-quick-actions').first().locator('button').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));assert.ok(Math.abs(actionRows[0]-actionRows[1])<1,'primary relationship actions share one row');
         await page.evaluate(() => document.getElementById('chat-relationship-dialog').dismissForward());
         await page.evaluate(() => openEnvironmentSettings(true)); await shot('environment', '#environment-settings .derived-settings');
