@@ -346,8 +346,8 @@
         const card = node('div', undefined, 'message-bubble uvu-music-card'), body = node('div', undefined, 'uvu-music-card-body');
         // User bubble themes are retained; only this media card owns its surface.
         for (const [key, value] of Object.entries({ background: '#fff', color: '#202124', padding: '12px', width: '244px', 'max-width': '100%', 'min-width': '0', 'white-space': 'normal', 'border-radius': '20px', border: '1px solid #ebecf0', 'box-shadow': '0 3px 14px #16202b05' })) card.style.setProperty(key, value, 'important');
-        const cover = node('img', undefined, 'uvu-music-cover'); cover.src = track.cover || 'assets/music/icons/music-2.svg'; cover.alt = track.album || track.title; cover.loading = 'lazy'; cover.referrerPolicy = 'no-referrer';
-        cover.onerror = () => { cover.onerror = null; cover.src = 'assets/music/icons/music-2.svg'; };
+        const cover = node('img', undefined, 'uvu-music-cover'); cover.src = track.cover || 'assets/music/cover-placeholder.svg'; cover.alt = track.album || track.title; cover.loading = 'lazy'; cover.referrerPolicy = 'no-referrer';
+        cover.onerror = () => { cover.onerror = null; cover.src = 'assets/music/cover-placeholder.svg'; };
         const details = node('div', undefined, 'uvu-music-info'); details.append(node('strong', track.title, 'uvu-music-title'), node('span', track.artists.join(' / ') || '未知歌手', 'uvu-music-artist'));
         const start=()=>message.music.invitation?.status==='accepted'&&bindingMatches(chat,message.music.invitation)?listen(track,{chat,message}):root.UvUMusic.player.play(track);
         body.append(cover,details);card.append(body);

@@ -62,6 +62,8 @@ const server = http.createServer((req,res) => {
             db.characters=[{id:'music-char',realName:'林间',remarkName:'林间',myName:'我',myAvatar:'',avatar:'',persona:'温柔的朋友',myPersona:'我',history:[],maxMemory:20,worldBookIds:[]}]; db.groups=[];db.backupReminderSettings={enabled:false};ensureAllChatArchives();await saveData();await UvUMusic.saveSettings({endpoint:base});setupHomeScreen();
         },base);
         assert.equal(await page.locator('[data-id="app-uvu-music"]').count(),1); assert.equal(await page.locator('[data-id="app-placeholder"] [data-target="uvu-story-bridge-screen"]').count(),1);
+        assert.equal(await page.locator('[data-id="app-uvu-music"] img').getAttribute('src'),'assets/music/app-icon.png','music uses the user-provided default icon');
+        assert.ok(await page.locator('[data-id="app-uvu-music"] img').evaluate(n=>n.complete&&n.naturalWidth>0),'default music icon loads');
         await page.evaluate(()=>UvUMusicUI.open());
         assert.deepEqual(await page.locator('#uvu-music-screen [data-um-tab]').allTextContents(),['主页','新发现','广播','资料库','搜索'],'approved five-tab navigation');
         assert.equal(await page.locator('.um-hero h1').evaluate(n=>getComputedStyle(n).fontSize),'34px');
@@ -92,6 +94,7 @@ const server = http.createServer((req,res) => {
         assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().mode),'one');
         await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'player-390.png')});
         await page.getByRole('button',{name:'歌词',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.um-lyrics')?.textContent.includes('给你写'));
+        assert.match(await page.locator('.um-lyrics-sheet [aria-label="下一首"] img').getAttribute('src'),/skip-forward\.svg$/,'next-track uses a skip icon');
         assert.doesNotMatch(await page.locator('.um-lyrics').innerText(),/\[\d{1,3}:\d{2}/,'lyric timestamps stay out of the reading card');
         assert.equal(await page.locator('.um-lyrics').evaluate(n=>getComputedStyle(n).textAlign),'center');
         for (const width of [320,390,768]) {

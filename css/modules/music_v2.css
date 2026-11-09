@@ -43,8 +43,8 @@
 .um-player-sheet .um-artwork { border-radius:10px; margin:16px auto 32px; box-shadow:0 16px 30px #1f2e3e16; }
 .um-player-sheet .um-player-title h2 { font-size:23px; }
 .um-player-sheet .um-player-title p { font-size:19px; }
-.um-player-sheet .um-artwork[src$="music-2.svg"] { padding:22%; }
-.um-collection-sheet .um-collection-art>img[src$="music-2.svg"] { padding:48px; background:#f2f2f5; }
+.um-player-sheet .um-artwork[src$="cover-placeholder.svg"] { padding:37%; background:#edf1f6; }
+.um-collection-sheet .um-collection-art>img[src$="cover-placeholder.svg"] { padding:35%; background:#edf1f6; }
 .um-player-sheet .um-player-controls .um-primary { background:transparent; }
 /* Both active and inactive lyrics use the requested 14px. */
 .uvu-music-sheet .um-lyrics,.uvu-music-sheet .um-lyrics-line,.uvu-music-sheet .um-lyrics-line.current { font-size:14px; line-height:1.8; letter-spacing:0; text-align:center; }
@@ -103,3 +103,9 @@
 }
 @media(max-width:350px) { #uvu-music-screen .um-hero { padding-inline:16px; } #uvu-music-screen .um-nav-wrap>.um-button { width:54px; flex-basis:54px; height:54px; padding:16px; } .um-queue-sheet .um-queue-row { flex-wrap:wrap; } .um-queue-sheet .um-queue-title { flex-basis:calc(100% - 55px); } }
 @media(prefers-reduced-motion:reduce) { #uvu-music-screen .um-button,.uvu-music-sheet .um-button,.uvu-music-sheet .um-lyrics-line { transition:none; animation:none; } }
+
+/* Small, quiet record placeholders; real artwork is untouched. */
+#uvu-music-screen .um-cover[src$="cover-placeholder.svg"],.uvu-music-sheet .um-cover[src$="cover-placeholder.svg"],.uvu-music-cover[src$="cover-placeholder.svg"],.um-together-float img[src$="cover-placeholder.svg"] { padding:10px; background:#edf1f6; box-sizing:border-box; }
+#uvu-music-screen .um-playlist .um-cover[src$="cover-placeholder.svg"] { padding:35%; }
+.uvu-music-sheet .um-artwork[src$="cover-placeholder.svg"] { padding:35%; background:#edf1f6; }
+.um-collection-sheet .um-collection-art>img[src$="cover-placeholder.svg"] { padding:clamp(48px,18vw,78px); background:#edf1f6; }

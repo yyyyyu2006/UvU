@@ -18,8 +18,8 @@
         b.onclick = async event => { event.stopPropagation(); if (b.disabled) return; b.disabled = true; try { await action(event); } catch (e) { toast(e); } finally { b.disabled = false; } }; return b;
     }
     function cover(track, cls = '') {
-        const image = el('img', undefined, 'um-cover ' + cls); image.src = track?.cover || 'assets/music/icons/music-2.svg'; image.alt = track?.title || ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer';
-        image.onerror = () => { image.onerror = null; image.src = 'assets/music/icons/music-2.svg'; }; return image;
+        const image = el('img', undefined, 'um-cover ' + cls); image.src = track?.cover || 'assets/music/cover-placeholder.svg'; image.alt = track?.title || ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer';
+        image.onerror = () => { image.onerror = null; image.src = 'assets/music/cover-placeholder.svg'; }; return image;
     }
     const clock = seconds => { const n = Math.floor(Math.max(0, Number(seconds) || 0)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
     function section(title, action) { const box = el('section', undefined, 'um-section'), head = el('div', undefined, 'um-section-head'); head.append(el('h2', title)); if (action) head.append(action); box.append(head); return box; }
@@ -182,7 +182,7 @@
             const draw=()=>{tools.replaceChildren();list.replaceChildren();
                 count.textContent=tracks.length+' 首歌曲';footer.classList.toggle('um-editing',editing);
                 playback.hidden = !tracks.some(t => t.provider === 'netease' || t.provider === 'qq');
-                const play=button('播放全部',()=>tracks.length&&M.player.play(tracks[0],tracks,{label:item.name}),undefined,'um-play-pill');play.replaceChildren(icon('play-solid'),el('span','播放'));
+                const play=button('播放全部',()=>tracks.length&&M.player.play(tracks[0],tracks,{label:item.name}),undefined,'um-play-pill');play.replaceChildren(icon('play'),el('span','播放'));
                 const shuffle=button('随机播放',()=>{if(!tracks.length)return;M.player.setMode('shuffle');return M.player.play(tracks[Math.floor(Math.random()*tracks.length)],tracks,{label:item.name});},'shuffle','um-shuffle-pill');shuffle.append(el('span','随机'));play.disabled=shuffle.disabled=!tracks.length;
                 tools.append(shuffle,play,button(managed?(editing?'完成':'管理'):'播放队列',()=>{if(managed){editing=!editing;draw();}else queuePanel();},managed?'list-filter':'list-music'));
                 if(managed&&editing){const manage=el('div',undefined,'um-manage-tools');manage.append(button('全选',()=>{tracks.forEach(t=>selected.add(M.key(t)));draw();}),button('移除所选',async()=>{await M.removePlaylistTracks(item.id,[...selected]);selected.clear();tracks=M.library().playlists.find(p=>p.id===item.id)?.tracks||[];draw();render();}));list.append(manage);}
@@ -284,7 +284,7 @@
                 }
                 catch (error) { if (alive) status.textContent = error.message; }
                 finally { if (alive) check.disabled = false; }
-            }, 'repeat');
+            }, 'refresh-cw');
             choice.append(select, refresh);
             const actions = el('div', undefined, 'um-character-actions'), play = button('播放全部', () => { const list = root.UvUMusicCharacter.profile(chat).tracks; if (list.length) return M.player.play(list[0], list, { label: name }); }, 'play');
             play.append(el('span', '播放全部')); actions.append(play);
@@ -297,7 +297,7 @@
         const tracks = C.saved(lib);
         if (!libraryPage) {
             const links = el('div', undefined, 'um-library-links');
-            for (const [name, image] of [['播放列表','list-music'],['角色歌单','headphones'],['艺人','mic-vocal'],['专辑','gallery-vertical-end'],['歌曲','music-2'],['本地音乐','hard-drive-download']]) {
+            for (const [name, image] of [['播放列表','list-music'],['角色歌单','headphones'],['艺人','user-round'],['专辑','disc-3'],['歌曲','music-2'],['本地音乐','download']]) {
                 const b = button(name, () => { if (name === '角色歌单') return characterPlaylistPanel(); libraryPage = name; render(0); }, undefined, 'um-library-link'); b.replaceChildren(icon(image), el('span', name), icon('chevron-right')); links.append(b);
             }
             main.append(links);const added=C.recentAdded(lib); const recent = collectionSection('最近添加',added); renderCatalogGrid(recent, C.albums(added).slice(0, 12).map(x => ({ ...x, kind:'collection', subtitle:x.tracks[0]?.artists?.join(' / ') }))); main.append(recent); return;
@@ -315,7 +315,7 @@
         homeTitle.type = 'button'; homeTitle.title = '返回小手机桌面'; homeTitle.onclick = () => { closeSheet(); if (typeof switchScreen === 'function') switchScreen('home-screen'); };
         heading.append(homeTitle); hero.append(heading, tools);
         if (libraryPage) tools.append(button('返回资料库', () => { libraryPage = ''; render(0); }, 'chevron-left'));
-        tools.append(button('音乐账号与设置', accountsPanel, 'user-round', 'um-avatar')); main.append(hero);
+        tools.append(button('音乐账号与设置', accountsPanel, 'circle-user-round', 'um-avatar')); main.append(hero);
         if (tab === 'search') { renderSearch(); main.scrollTop = previousScroll; return; }
         const lib = M.library(), tracks = C.available(lib);
         if (tab === 'library') renderLibrary(lib);
@@ -384,11 +384,11 @@
         if (mini.dataset.key !== M.key(track)) {
             mini.dataset.key = M.key(track); mini.replaceChildren(); const open = el('button', undefined, 'um-mini-open'); open.type = 'button'; open.setAttribute('aria-label', '展开播放器');
             const info = el('span', undefined, 'um-track-info'); info.append(el('strong', track.title), el('small', track.artists.join(' / ') || names[track.provider])); open.append(cover(track), info); open.onclick = nowPlaying;
-            mini.append(open, button('播放或暂停', () => M.player.toggle(), 'play-solid'), button('下一首', () => M.player.next(), 'fast-forward-solid'), el('span', undefined, 'um-mini-progress'));
+            mini.append(open, button('播放或暂停', () => M.player.toggle(), 'play'), button('下一首', () => M.player.next(), 'skip-forward'), el('span', undefined, 'um-mini-progress'));
         }
         mini.querySelector('.um-track-info strong').textContent=track.title;mini.querySelector('.um-track-info small').textContent=track.artists.join(' / ')||names[track.provider];
-        const artwork=mini.querySelector('.um-cover'),coverURL=track.cover||'';if(artwork.dataset.cover!==coverURL){artwork.dataset.cover=coverURL;artwork.src=coverURL||'assets/music/icons/music-2.svg';}
-        const toggle = mini.querySelector('[aria-label="播放或暂停"] img'); toggle.src = 'assets/music/icons/' + (state.playing ? 'pause-solid' : 'play-solid') + '.svg';
+        const artwork=mini.querySelector('.um-cover'),coverURL=track.cover||'';if(artwork.dataset.cover!==coverURL){artwork.dataset.cover=coverURL;artwork.src=coverURL||'assets/music/cover-placeholder.svg';}
+        const toggle = mini.querySelector('[aria-label="播放或暂停"] img'); toggle.src = 'assets/music/icons/' + (state.playing ? 'pause' : 'play') + '.svg';
         mini.querySelector('.um-mini-progress').style.width = Math.max(0, Math.min(100, state.duration ? state.position / state.duration * 100 : 0)) + '%';
     }
     function nowPlaying() {
@@ -400,17 +400,17 @@
             const artwork = cover(null, 'um-artwork'), title = el('h2'), artist = el('p', undefined, 'um-muted'), status = el('p', undefined, 'um-player-status'), slider = el('input'), timing = el('div', undefined, 'um-timing');
             const elapsed = el('span'), remaining = el('span'); timing.append(elapsed, remaining);
             slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = .1; slider.setAttribute('aria-label', '播放进度'); slider.onchange = () => M.player.seek(Number(slider.value));
-            const controls = el('div', undefined, 'um-player-controls'), previous = button('上一首', () => M.player.previous(), 'rewind-solid'), toggle = button('播放或暂停', () => M.player.toggle(), 'play-solid', 'um-primary'), next = button('下一首', () => M.player.next(), 'fast-forward-solid'); controls.append(previous, toggle, next);
+            const controls = el('div', undefined, 'um-player-controls'), previous = button('上一首', () => M.player.previous(), 'skip-back'), toggle = button('播放或暂停', () => M.player.toggle(), 'play', 'um-primary'), next = button('下一首', () => M.player.next(), 'skip-forward'); controls.append(previous, toggle, next);
             const tools = el('div', undefined, 'um-player-tools');
-            const like=button('喜欢', async () => { const t = M.player.snapshot().track; if (t) { await M.toggleFavorite(t); like.classList.toggle('active',M.library().favorites.some(x=>M.key(x)===M.key(t)));toast('已更新喜欢的歌'); } }, 'star');
-            tools.append(button('歌词', lyricsPanel, 'quote'),button('一起听', async () => { const t = M.player.snapshot().track; if (t) { closeSheet(); await share(t, true); } }, 'headphones'),button('播放队列', queuePanel, 'list-music'));
+            const like=button('喜欢', async () => { const t = M.player.snapshot().track; if (t) { await M.toggleFavorite(t); like.classList.toggle('active',M.library().favorites.some(x=>M.key(x)===M.key(t)));toast('已更新喜欢的歌'); } }, 'heart');
+            tools.append(button('歌词', lyricsPanel, 'captions'),button('一起听', async () => { const t = M.player.snapshot().track; if (t) { closeSheet(); await share(t, true); } }, 'headphones'),button('播放队列', queuePanel, 'list-music'));
             const titleRow=el('div',undefined,'um-player-title'),info=el('div',undefined,'um-track-info');info.append(title,artist);titleRow.append(info,like);
             const volume=el('div',undefined,'um-volume'),level=el('input');level.type='range';level.min=0;level.max=1;level.step=.01;level.setAttribute('aria-label','音量');level.oninput=()=>M.player.setVolume(Number(level.value));volume.append(icon('volume-1'),level,icon('volume-2'));
             body.append(artwork,titleRow,status,slider,timing,controls,volume,tools);
             unsubscribe = M.player.subscribe(state => {
-                const t = state.track; if (t) { artwork.src = t.cover || 'assets/music/icons/music-2.svg'; title.textContent = t.title; artist.textContent = t.artists.join(' / '); }
+                const t = state.track; if (t) { artwork.src = t.cover || 'assets/music/cover-placeholder.svg'; title.textContent = t.title; artist.textContent = t.artists.join(' / '); }
                 slider.max = state.duration || 1; if (document.activeElement !== slider) slider.value = state.position; elapsed.textContent = clock(state.position); remaining.textContent = '−' + clock(Math.max(0, state.duration - state.position));
-                toggle.firstChild.src = 'assets/music/icons/' + (state.playing ? 'pause-solid' : 'play-solid') + '.svg';
+                toggle.firstChild.src = 'assets/music/icons/' + (state.playing ? 'pause' : 'play') + '.svg';
                 status.textContent = state.error || (state.phase === 'loading' ? '正在加载…' : t?.availability === 'preview' ? '平台试听' : state.sleepAt ? '定时关闭 · ' + new Date(state.sleepAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
                 if(document.activeElement!==level)level.value=state.volume;like.classList.toggle('active',!!t&&M.library().favorites.some(x=>M.key(x)===M.key(t)));like.setAttribute('aria-pressed',String(like.classList.contains('active')));
             });
@@ -424,7 +424,7 @@
             body.closest('.uvu-music-sheet').classList.add('um-queue-sheet');
             const heading=el('div',undefined,'um-queue-heading'),art=cover(M.player.snapshot().track),info=el('div',undefined,'um-track-info'),title=el('strong'),artist=el('small');info.append(title,artist);heading.append(art,info,button('返回播放器',nowPlaying,'chevron-down'));body.append(heading);
             const tools=el('div',undefined,'um-queue-tools'),list=el('div');tools.append(button('播放模式',modePanel,undefined),button('清空队列',()=>{M.player.clear();},undefined));body.append(tools,list);
-            unsubscribe=M.player.subscribe(state=>{const signature=JSON.stringify([state.queue.map(M.key),state.track&&M.key(state.track),state.playing]);if(signature===last)return;last=signature;list.replaceChildren();title.textContent=state.track?.title||'待播清单';artist.textContent=state.track?.artists.join(' / ')||'';art.src=state.track?.cover||'assets/music/icons/music-2.svg';
+            unsubscribe=M.player.subscribe(state=>{const signature=JSON.stringify([state.queue.map(M.key),state.track&&M.key(state.track),state.playing]);if(signature===last)return;last=signature;list.replaceChildren();title.textContent=state.track?.title||'待播清单';artist.textContent=state.track?.artists.join(' / ')||'';art.src=state.track?.cover||'assets/music/cover-placeholder.svg';
                 if(state.queueLabel)list.append(el('p',state.queueLabel,'um-muted'));
                 state.queue.forEach((track,index)=>{const row=el('div',undefined,'um-queue-row'),current=state.track&&M.key(track)===M.key(state.track);row.classList.toggle('current',!!current);
                     const play=button((current?'正在播放 · ':'')+track.title,()=>M.player.play(track),undefined,'um-queue-title');
@@ -447,11 +447,11 @@
             const paint=state=>{if(!alive||!state.track||M.key(state.track)!==M.key(track))return;let index=-1;for(let i=0;i<lines.length;i++)if(lines[i].time!==null&&lines[i].time<=state.position)index=i;if(index===current)return;current=index;[...words.children].forEach((n,i)=>n.classList.toggle('current',i===index));if(following&&index>=0){const n=words.children[index];words.scrollTop=Math.max(0,words.scrollTop+n.getBoundingClientRect().top-words.getBoundingClientRect().top-words.clientHeight*.45);follow.hidden=true;}};
             const playback=el('div',undefined,'um-lyrics-playback'),seek=el('input'),timing=el('div',undefined,'um-timing'),elapsed=el('span'),remaining=el('span'),controls=el('div',undefined,'um-player-controls');
             seek.type='range';seek.min=0;seek.max=1;seek.step=.1;seek.setAttribute('aria-label','播放进度');seek.onchange=()=>M.player.seek(Number(seek.value));timing.append(elapsed,remaining);
-            const toggle=button('播放或暂停',()=>M.player.toggle(),'play-solid','um-primary');controls.append(button('上一首',()=>M.player.previous(),'rewind-solid'),toggle,button('下一首',()=>M.player.next(),'fast-forward-solid'));
+            const toggle=button('播放或暂停',()=>M.player.toggle(),'play','um-primary');controls.append(button('上一首',()=>M.player.previous(),'skip-back'),toggle,button('下一首',()=>M.player.next(),'skip-forward'));
             const volume=el('div',undefined,'um-volume'),level=el('input');level.type='range';level.min=0;level.max=1;level.step=.01;level.setAttribute('aria-label','音量');level.oninput=()=>M.player.setVolume(Number(level.value));volume.append(icon('volume-1'),level,icon('volume-2'));
-            const bottomTools=el('div',undefined,'um-player-tools');bottomTools.append(button('返回播放器',nowPlaying,'quote'),button('一起听',async()=>{const t=M.player.snapshot().track;if(t)await share(t,true);},'headphones'),button('播放队列',queuePanel,'list-music'));
+            const bottomTools=el('div',undefined,'um-player-tools');bottomTools.append(button('返回播放器',nowPlaying,'captions'),button('一起听',async()=>{const t=M.player.snapshot().track;if(t)await share(t,true);},'headphones'),button('播放队列',queuePanel,'list-music'));
             playback.append(seek,timing,controls,volume,bottomTools);body.append(playback);
-            unsubscribePlayback=M.player.subscribe(state=>{seek.max=state.duration||1;if(document.activeElement!==seek)seek.value=state.position;if(document.activeElement!==level)level.value=state.volume;elapsed.textContent=clock(state.position);remaining.textContent='−'+clock(Math.max(0,state.duration-state.position));toggle.firstChild.src='assets/music/icons/'+(state.playing?'pause-solid':'play-solid')+'.svg';if(state.track&&M.key(state.track)!==M.key(track))lyricsPanel();});
+            unsubscribePlayback=M.player.subscribe(state=>{seek.max=state.duration||1;if(document.activeElement!==seek)seek.value=state.position;if(document.activeElement!==level)level.value=state.volume;elapsed.textContent=clock(state.position);remaining.textContent='−'+clock(Math.max(0,state.duration-state.position));toggle.firstChild.src='assets/music/icons/'+(state.playing?'pause':'play')+'.svg';if(state.track&&M.key(state.track)!==M.key(track))lyricsPanel();});
             void M.lyrics(track, controller.signal).then(data => { if (alive) {
                 let translation=false;const renderWords=()=>{lines=root.UvUMusicLyrics.parse(translation?data.translation:data.lyric);words.replaceChildren();for(const line of lines)words.append(el('span',line.text||'\u00a0','um-lyrics-line'));if(!lines.some(l=>l.text))words.textContent='暂无歌词';current=-1;paint(M.player.snapshot());};
                 if(data.translation)tools.append(button('原文 / 翻译',()=>{translation=!translation;renderWords();}));renderWords();unsubscribe=M.player.subscribe(paint);

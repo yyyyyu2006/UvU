@@ -11,7 +11,7 @@
         bar.hidden = true; bar.setAttribute('role', 'group'); bar.setAttribute('aria-label', '一起听状态');
         open.type = toggle.type = end.type = 'button'; open.setAttribute('aria-label', '打开一起听播放器'); end.setAttribute('aria-label', '结束一起听');
         image.alt = ''; image.referrerPolicy = 'no-referrer';
-        image.onerror = () => { if (image.getAttribute('src') !== 'assets/music/icons/music-2.svg') image.src = 'assets/music/icons/music-2.svg'; };
+        image.onerror = () => { if (image.getAttribute('src') !== 'assets/music/cover-placeholder.svg') image.src = 'assets/music/cover-placeholder.svg'; };
         const toggleIcon = node('img', ''), endIcon = node('img', ''); toggleIcon.alt = endIcon.alt = ''; endIcon.src = 'assets/music/icons/x.svg';
         info.append(status, song); open.append(image, info); toggle.append(toggleIcon); end.append(endIcon); bar.append(open, toggle, end); phone.append(bar);
         let sessionId = '';
@@ -44,7 +44,7 @@
             const label = '与' + (chat?.remarkName || chat?.realName || '角色') + '一起听' + (s.localPlayback ? '' : ' · 已暂停');
             if (status.textContent !== label) status.textContent = label;
             if (song.textContent !== s.track.title) song.textContent = s.track.title;
-            const cover = s.track.cover || 'assets/music/icons/music-2.svg'; if (image.getAttribute('src') !== cover && image.dataset.cover !== cover) { image.dataset.cover = cover; image.src = cover; }
+            const cover = s.track.cover || 'assets/music/cover-placeholder.svg'; if (image.getAttribute('src') !== cover && image.dataset.cover !== cover) { image.dataset.cover = cover; image.src = cover; }
             toggle.setAttribute('aria-label', s.localPlayback ? '暂停一起听' : '继续一起听');
             const src = 'assets/music/icons/' + (s.localPlayback ? 'pause' : 'play') + '.svg'; if (toggleIcon.getAttribute('src') !== src) toggleIcon.src = src;
         }
