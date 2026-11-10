@@ -58,9 +58,6 @@
 .shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded { width: auto; padding: 8px 0; background: transparent; border: 0; border-radius: 0; min-height: 44px; box-shadow: none; }
 .shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded small { display: none; }
 .shared-document-dialog.uvu-panel-layout .shared-document-upload.is-loaded > .derived-icon { width: 16px; height: 16px; padding: 0; background: transparent; border-radius: 0; }
-.message-wrapper .shared-document-card .shared-document-card-content { align-items: flex-start; text-align: left; padding: 16px; gap: 8px; border-radius: 16px; }
-.message-wrapper .shared-document-card .shared-document-card-footer { text-align: left; font-size: 11px; }
-.message-wrapper .shared-document-card .shared-document-open { background: #1b1d21; color: #fff; padding: 6px 14px; }
 
 .shared-document-dialog.uvu-panel-layout .message-forward-header { display: grid; grid-template-columns: 36px minmax(0,1fr) 36px; gap: 8px; padding: 16px; margin: 0; background: #fff; border-bottom: 1px solid #e9ecf0; }
 .shared-document-dialog.uvu-panel-layout .message-forward-header > strong { grid-column: 2; grid-row: 1; text-align: center; font-size: 18px; }

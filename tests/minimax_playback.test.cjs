@@ -74,6 +74,21 @@ test('voice playback suspends music, and pausing or blocked audio releases it on
     h.sounds.at(-1).emit('ended');assert.equal(resumed,2,'cleanup does not resume twice');
 });
 
+test('public stop pauses active audio and releases playback resources', async () => {
+    const h = harness(), b = bubble(); let resumed = 0;
+    h.window.UvUMusic = { player: { suspendVoice: () => async () => { resumed++; } } };
+    await h.tts.play(b, 'stop this voice');
+    const audio = h.sounds.at(-1);
+    assert.equal(audio.paused, false);
+    h.tts.stop();
+    assert.equal(audio.paused, true);
+    assert.equal(b.classes.has('voice-playing'), false);
+    assert.equal(b.attributes.has('aria-busy'), false);
+    assert.equal(resumed, 1);
+    h.tts.stop();
+    assert.equal(resumed, 1, 'repeated stops must not resume music twice');
+});
+
 test('late events from an old voice cannot stop or mark the new voice', async () => {
     const h = harness(), first = bubble(), second = bubble();
     await h.tts.play(first, 'one');

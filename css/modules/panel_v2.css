@@ -22,14 +22,6 @@
 .shared-document-dialog.uvu-panel-layout .shared-document-tools { padding-top:12px; gap:16px; }
 .shared-document-dialog.uvu-panel-layout .shared-document-file-options { margin:0; border:0; border-radius:0; background:transparent; padding:0; }
 .shared-document-dialog.uvu-panel-layout .shared-document-actions { padding:16px 22px 20px; }
-#chat-room-screen .message-wrapper .shared-document-card { width:264px; border-radius:20px; padding:16px; background:#fff; }
-.shared-document-card .shared-document-card-content { display:grid; grid-template-columns:40px minmax(0,1fr); column-gap:12px; row-gap:4px; padding:4px 0 0; text-align:left; background:transparent; }
-.shared-document-card .shared-document-icon { grid-column:1; grid-row:1 / 3; display:grid; place-items:center; width:40px; height:44px; padding:8px; border-radius:12px; background:#f4f6f9; box-sizing:border-box; }
-.shared-document-card .shared-document-card-content strong { grid-column:2; font-size:14px; font-weight:500; }
-.shared-document-card .shared-document-card-content small { grid-column:2; font-size:12px; }
-.shared-document-card .shared-document-open { display:none; }
-.shared-document-card .shared-document-card-preview { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; line-height:1.65; margin:16px 0; }
-.shared-document-card .shared-document-card-footer { border-top:1px solid #eceef1; padding:12px 0 0; text-align:left; font-size:12px; }
 /* Memory content is the row, rather than a card inside another card. */
 .memory-library > .feature-dialog-card.uvu-panel-layout { background:#fff; padding:24px 22px; }
 .memory-library .uvu-panel-layout .memory-library-list { gap:0; }

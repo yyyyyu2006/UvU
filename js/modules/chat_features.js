@@ -468,7 +468,7 @@ const MiniMaxTTS = (() => {
         return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
-    return { play, synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
+    return { play, stop: () => stop(), synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
 })();
 
 function getAudioPlaybackErrorMessage(code) {

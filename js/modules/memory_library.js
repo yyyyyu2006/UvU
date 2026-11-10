@@ -318,6 +318,36 @@ function openMemoryLibrary() {
         ].filter(Boolean).join('\n\n');
         for (const journal of visible) {
             const card = element('section', undefined, 'memory-library-card');
+            card.dataset.memoryId = journal.id;
+            card.dataset.memorySource = journal.source || (journal.autoMemory ? 'summary' : 'manual');
+            card.dataset.memoryCreatedAt = String(journal.createdAt || 0);
+            // Presentation only: preserve the library's captured character/archive ownership.
+            card.memoryPresentation = {
+                archive: chat.archives?.find(item => item.id === chat.activeArchiveId)?.name || '当前存档',
+                floors: journal.bridgeReview?.selectedFloorIds?.join('、') ||
+                    (journal.range?.start ? journal.range.start + '—' + journal.range.end : ''),
+                favorite: Boolean(journal.isFavorited),
+                canFavorite: !journal.autoMemory && !journal.vectorSupersededBy &&
+                    (journal.source !== 'sillytavern' || journal.bridgeReview?.status === 'approved'),
+                edit: () => edit(journal),
+                source: host => { assertCurrent(); original(journal, host); },
+                async setFavorite(value) {
+                    assertCurrent();if(!card.memoryPresentation.canFavorite)throw new Error('请先完成记忆审核。');
+                    const previous=journal.isFavorited;journal.isFavorited=Boolean(value);
+                    try { await saveData(); } catch(error) { if(journal.isFavorited===Boolean(value))journal.isFavorited=previous;throw error; }
+                    if(!closed&&isCurrent()){isCurrent=memoryLibrarySnapshot(chat);refresh();renderJournalList();}
+                },
+                async remove() {
+                    assertCurrent();if(!confirm('确定删除这篇记忆？原始聊天会保留。'))return false;
+                    const archiveId=chat.activeArchiveId,history=chat.history,previous=chat.memoryJournals,next=previous.filter(item=>item!==journal);chat.memoryJournals=next;
+                    try { await saveData(); } catch(error) {
+                        if(chat.activeArchiveId===archiveId&&chat.memoryJournals===next)chat.memoryJournals=previous;
+                        const archived=chat.archives?.find(item=>item.id===archiveId)?.data;if(archived?.memoryJournals===next)archived.memoryJournals=previous;
+                        throw error;
+                    }
+                    selection.delete(journal.id);if(!closed&&chat.activeArchiveId===archiveId&&chat.history===history&&chat.memoryJournals===next){isCurrent=memoryLibrarySnapshot(chat);refresh();renderJournalList();}return true;
+                }
+            };
             const heading = element('label', undefined, 'memory-library-pick'), checkbox = element('input'); checkbox.type = 'checkbox';
             checkbox.disabled = Boolean(journal.vectorSupersededBy || journal.autoMemory && !valid.has(journal.id));
             checkbox.checked = selection.has(journal.id);

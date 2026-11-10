@@ -21,20 +21,23 @@ const output = path.join(root, 'outputs/speech-refinement'); fs.mkdirSync(output
                 return route.abort();
             });
             await page.goto('https://speech-ui.test/');
-            for (const css of ['derived_features', 'ui_harmony', 'panel_layout', 'minimax_speech']) await page.addStyleTag({ path: path.join(root, 'css/modules/' + css + '.css') });
+            for (const css of ['derived_features', 'ui_harmony', 'minimax_speech', 'monochrome_panels']) await page.addStyleTag({ path: path.join(root, 'css/modules/' + css + '.css') });
             await page.evaluate(() => {
                 window.db = { characters: [{ id: 'role-a', realName: '林间' }], groups: [], minimaxTtsSettings: { apiKey: 'fixture', voiceId: 'global' } };
                 window.saved = 0; window.saveData = async () => { window.saved++; }; window.showToast = () => {};
             });
             for (const file of ['voice_director', 'minimax_speech', 'chat_features', 'settings_api']) await page.addScriptTag({ path: path.join(root, 'js/modules/' + file + '.js') });
             await page.evaluate(() => setupMiniMaxTtsSettings());
+            await page.addScriptTag({path:path.join(root,'js/vendor/lucide/uvu-icons.js')});
             await page.addScriptTag({ path: path.join(root, 'js/modules/panel_layout.js') });
             assert.equal(await page.evaluate(() => window.MiniMaxSpeech.fromForm().speech.stream), false);
+            await page.getByRole('button',{name:'语音设置',exact:true}).click();
+            await page.getByRole('button',{name:'角色音色与播放',exact:true}).click();
             const advanced = page.locator('#minimax-speech-advanced');
             await advanced.getByLabel('音色与表达', { exact: true }).selectOption('role-a');
+            await advanced.locator('.draft-voice-profile-rules > summary').click();
             await advanced.locator('.minimax-speech-profile').getByLabel('角色读音词典').fill('晴/(qing2)');
             await advanced.locator('.minimax-speech-profile').getByLabel('表达风格').selectOption('expressive');
-            await advanced.locator('summary').filter({ hasText: /^选择音色$/ }).click();
             await advanced.getByRole('button', { name: '读取音色', exact: true }).click();
             await advanced.getByLabel('搜索', { exact: true }).fill('自然');
             assert.equal(await advanced.locator('.minimax-voice-row').count(), 1);
@@ -47,6 +50,7 @@ const output = path.join(root, 'outputs/speech-refinement'); fs.mkdirSync(output
             await advanced.locator('.minimax-speech-profile').getByLabel('音色 ID', { exact: true }).fill('unsaved-voice');
             await advanced.getByLabel('音色与表达', { exact: true }).selectOption('');
             assert.equal(await page.evaluate(() => db.minimaxTtsSettings.profiles['role-a'].voiceId), 'voice-a', 'unsaved form changes cannot mutate saved settings');
+            await advanced.locator('.draft-voice-more > summary').click();
             await advanced.locator('summary').filter({ hasText: /^播放与缓存$/ }).click();
             const layout = await advanced.evaluate(el => {
                 const box = el.getBoundingClientRect();

@@ -30,6 +30,7 @@ function openSharedDocumentDialog(message, chat) {
     const controller = new AbortController();
     const dialog = createMessageForwardDialog(message ? '查看文件' : '分享文件', 'shared-document-dialog', () => controller.abort());
     dialog.panel.classList.add('shared-document-dialog');
+    dialog.panel.dataset.documentSender = message?.role === 'user' ? 'user' : message ? 'character' : '';
     const body = documentNode('div', undefined, 'shared-document-body'); dialog.panel.appendChild(body);
     const context = documentNode('div', undefined, 'shared-document-context');
     const contextAvatar = documentNode('img'); contextAvatar.src = target.chat.avatar || ''; contextAvatar.alt = '';
@@ -139,8 +140,8 @@ function openSharedDocumentDialog(message, chat) {
         const size = file?.bytes;
         fileMeta.textContent = file ? extension + (Number.isFinite(size) ? ' · ' + (size < 1024 ? size + ' B' : size < 1048576 ? Math.ceil(size / 1024) + ' KB' : (size / 1048576).toFixed(1) + ' MB') : '') : '';
         upload.classList.toggle('is-loaded', Boolean(file));
-        if (file && upload.parentElement === body) fileHeader.append(upload);
-        else if (!file && upload.parentElement !== body) body.insertBefore(upload, editor);
+        // The chooser remains a separate upload area; file identity belongs to its own row.
+        if (upload.parentElement !== body) body.insertBefore(upload, editor);
         status.textContent = file ? `${completeText().length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
         original.hidden = !file?.originalData;
         extraction.hidden = !file?.extractionReport?.length;

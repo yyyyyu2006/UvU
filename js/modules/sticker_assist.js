@@ -87,6 +87,64 @@ function openStickerDescriptionSettings() {
     document.body.append(overlay); preview();
 }
 
+function openStickerDescriptionEditor() {
+    const chat = currentChatType === 'private' && db.characters.find(c => c.id === currentChatId);
+    if (!chat) return showToast('请先打开角色私聊');
+    const archive = chat.activeArchiveId, controller = new AbortController();
+    let selected, original = '', editedName = '', busy = false;
+    const d = createMessageForwardDialog('表情包描述', 'sticker-description-editor', () => controller.abort());
+    d.panel.classList.add('derived-settings', 'draft-sticker-editor');
+    const make = (tag, cls, text) => { const el = document.createElement(tag); el.className = cls || ''; if (text) el.textContent = text; return el; };
+    const button = (text, action) => { const el = make('button', '', text); el.type = 'button'; el.onclick = action; return el; };
+    const body = make('div', 'derived-body'), footer = make('footer'), search = make('input'); search.type = 'search'; search.placeholder = '搜索表情包'; search.setAttribute('aria-label', '搜索表情包');
+    const choices = make('select'); choices.setAttribute('aria-label', '选择表情包');
+    const card = make('section', 'draft-card'), picture = make('div', 'draft-sticker-picture'), image = make('img'); image.alt = ''; picture.append(image);
+    const nameLabel = make('label', '', '名称'), name = make('input'); name.setAttribute('aria-label', '表情名称'); name.maxLength = 100; nameLabel.append(name);
+    const description = make('textarea'); description.setAttribute('aria-label', '画面说明'); description.maxLength = 1500; description.placeholder = '图片内容、情绪和适用场景';
+    card.append(picture, nameLabel, description);
+    const actions = make('div', 'draft-sticker-actions'), auto = button('自动描述', async () => {
+        if (!selected || busy) return; const sticker = selected; busy = true; auto.disabled = true; status.textContent = '正在识别…';
+        try { const changed = await recognizeStickerIntoInput(sticker.data, description, { signal: controller.signal, isCurrent: () => valid() && selected === sticker }); status.textContent = changed ? '请核对描述后保存' : '已保留你修改的描述'; }
+        catch (error) { if (!controller.signal.aborted) status.textContent = error.message; }
+        finally { busy = false; auto.disabled = !selected; }
+    }), next = button('下一张', () => {
+        const items = matches(); if (!items.length || !canLeave()) return;
+        load(items[(items.indexOf(selected) + 1) % items.length]); choices.value = selected.id;
+    }); actions.append(auto, next);
+    const settings = make('section', 'draft-card'), row = make('label'), read = make('input'); read.type = 'checkbox'; read.checked = chat.stickerDescriptionSettings?.enabled !== false;
+    read.setAttribute('aria-label', '让角色读取描述'); row.append(make('span', '', '让角色读取描述'), read); settings.append(row);
+    const budgets = button('注入设置', openStickerDescriptionSettings), status = make('p', 'panel-operation-status'); status.setAttribute('role', 'status');
+    const note = make('small', '', '描述用于帮助理解，不作为聊天正文。');
+    const save = button('保存描述', async () => {
+        if (!selected || busy) return;
+        if (!valid() || !db.myStickers.includes(selected)) { status.textContent = '角色、存档或表情已变化，请重新打开'; return; }
+        if (!name.value.trim()) { name.focus(); status.textContent = '请填写名称'; return; }
+        const target = selected, draftName = name.value, draftDescription = description.value, before = { name: target.name, description: target.description, settings: chat.stickerDescriptionSettings };
+        const updated = read.checked === (before.settings?.enabled !== false) ? before.settings :
+            { ...(before.settings || { relevantOnly: false, maxItems: 12, maxChars: 3000 }), enabled: read.checked };
+        busy = true; save.disabled = true; target.name = name.value.trim(); target.description = description.value.trim(); chat.stickerDescriptionSettings = updated;
+        try {
+            await saveData();
+            // Saving belongs to the captured sticker. A newer selection or draft owns the editor.
+            if (!valid() || selected !== target) return;
+            original = target.description; editedName = target.name;
+            if (description.value === draftDescription) description.value = original;
+            if (name.value === draftName) name.value = editedName;
+            renderChoices(false); status.textContent = '已保存';
+        }
+        catch (error) { target.name = before.name; target.description = before.description; if (chat.stickerDescriptionSettings === updated) chat.stickerDescriptionSettings = before.settings; if (valid() && selected === target) status.textContent = '保存失败：' + error.message; }
+        finally { busy = false; save.disabled = !selected; }
+    }); save.classList.add('panel-primary'); footer.append(save);
+    body.append(search, choices, card, actions, settings, note, budgets, status); d.panel.append(body, footer);
+    function valid() { return !controller.signal.aborted && db.characters.includes(chat) && chat.activeArchiveId === archive; }
+    function matches() { const q = search.value.trim().toLocaleLowerCase(); return (db.myStickers || []).filter(sticker => validStickerImage(sticker.data) && (sticker.name || '').toLocaleLowerCase().includes(q)); }
+    function canLeave() { return !selected || (description.value === original && name.value === editedName) || confirm('放弃这张表情尚未保存的修改？'); }
+    function load(sticker) { selected = sticker; image.src = sticker?.data || ''; picture.hidden = !sticker; original = description.value = sticker?.description || ''; editedName = name.value = sticker?.name || ''; auto.disabled = next.disabled = !sticker; save.disabled = busy || !sticker; card.hidden = actions.hidden = !sticker; status.textContent = sticker ? '' : '没有匹配的表情包，请先在聊天中添加表情。'; }
+    function renderChoices(change = true) { const items = matches(); choices.replaceChildren(...items.map(sticker => new Option(sticker.name || '未命名表情', sticker.id))); if (!change && selected && items.includes(selected)) choices.value = selected.id; else load(items[0]); }
+    choices.onchange = () => { const previous = selected; if (!canLeave()) { choices.value = previous.id; return; } load(matches().find(sticker => sticker.id === choices.value)); };
+    search.onchange = () => { if (canLeave()) renderChoices(); }; renderChoices();
+}
+
 function getStickerSuggestions(text, stickers, limit = Infinity) {
     const query = String(text || '').trim().toLocaleLowerCase();
     if (!query) return [];

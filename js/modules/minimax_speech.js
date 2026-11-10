@@ -262,9 +262,10 @@
         } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     }
     window.MiniMaxSpeech = { options, capabilities, dictionary, resolveSettings, requestOptions, endpoint, region, readResponse,
-        usage, segments, createCache, persistent, streamPlayer, listVoices, setupSettings, fromForm, inspect };
+        usage, segments, createCache, persistent, streamPlayer, listVoices, setupSettings, refreshRoles, fromForm, inspect };
 
     let formState = null;
+    function refreshRoles() { formState?.refreshRoles(); }
     function fromForm() {
         if (!formState) return {};
         formState.flush(); return { speech: formState.read(), profiles: JSON.parse(JSON.stringify(formState.profiles)), pronunciation: dictionary(formState.dictionary.value) };
@@ -286,7 +287,7 @@
         const advanced = node('section'); advanced.id = 'minimax-speech-advanced'; advanced.className = 'minimax-speech-advanced';
         const target = root.querySelector('.minimax-tts-actions'); if (target) target.before(advanced); else root.append(advanced);
         const profiles = JSON.parse(JSON.stringify(saved.profiles || {}));
-        const roles = (typeof db !== 'undefined' ? db.characters || [] : []).filter(c => c && typeof c.id === 'string');
+        let roles = (typeof db !== 'undefined' ? db.characters || [] : []).filter(c => c && typeof c.id === 'string');
         const roleSelect = select(advanced, '音色与表达', [['默认设置', ''], ...roles.map(c => [c.realName || c.remarkName || c.name || c.id, c.id])], '');
         const profile = node('div'); profile.className = 'minimax-speech-profile'; advanced.append(profile); profile.hidden = true;
         const voice = field(profile, '音色 ID'), mode = select(profile, '导演', [['跟随默认', 'inherit'], ['普通语音', 'off']], 'inherit');
@@ -340,7 +341,14 @@
         const clear = button('清理本机音频', async () => { MiniMaxTTS.clearCache(); status.textContent = await persistent.clear() ? '本机音频已清理' : '本机缓存不可用'; }); playback.append(clear);
         const dictionaryField = field(details(advanced, '默认读音词典'), '一行一个词语/读法', 'textarea', (saved.pronunciation || []).join('\n'));
         const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。展开聊天语音的“语音详情”可查看计费字符和导演 Token、切回普通语音、重试导演或手动选择本条语音的情绪与语速。接口未提供的用量不估作实际费用。'));
-        formState = { profiles, flush, dictionary: dictionaryField, read: () => ({ ...options({ stream: stream.checked, segmented: segmented.checked,
+        formState = { profiles, flush, dictionary: dictionaryField, refreshRoles: () => {
+            // Refresh the menu after data loading/import, without reloading a profile's unsaved fields.
+            const value = roleSelect.value;
+            roles = (typeof db !== 'undefined' ? db.characters || [] : []).filter(c => c && typeof c.id === 'string');
+            roleSelect.replaceChildren(new Option('默认设置', ''), ...roles.map(c => new Option(c.realName || c.remarkName || c.name || c.id, c.id)));
+            if (roles.some(c => c.id === value)) roleSelect.value = value;
+            else if (selected) { selected = ''; roleSelect.value = ''; profile.hidden = true; }
+        }, read: () => ({ ...options({ stream: stream.checked, segmented: segmented.checked,
             persistentCache: persistentCache.checked, cacheMiB: cacheMiB.value, cacheDays: cacheDays.value, segmentChars: segmentChars.value,
             volume: volume.value, language: language.value }), favoriteVoices: [...favorites].slice(0, 200) }) };
     }

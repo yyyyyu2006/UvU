@@ -39,6 +39,7 @@ function calendarDayWatcher(readDay, changed) {
     }
     function editEvent(key, span, original) {
         const d = editor(original ? '编辑日程' : '添加日程'), e = original || {}, dateSpan = span || { start: e.date || e.start, end: e.occurrenceEnd || e.end };
+        d.panel.dataset.calendarOwner = key;
         const title = field(d.fields, '标题', 'text', e.title || ''), dates = node('div', undefined, 'calendar-fields-row'); d.fields.append(dates);
         title.maxLength = 120; title.required = true;
         const start = field(dates, '开始日期', 'date', dateSpan.start), end = field(dates, '结束日期', 'date', dateSpan.end), times = node('div', undefined, 'calendar-fields-row'); d.fields.append(times);
@@ -80,7 +81,7 @@ function calendarDayWatcher(readDay, changed) {
         if (original) d.footer.prepend(button('删除', () => { if (confirm('删除所选范围内的日程？')) d.run(() => save(true)); }, 'calendar-danger'));
     }
     function editMood(key, date, original) {
-        const d = editor('记录心情'); let mood = original?.mood || 'happy', color = original?.color || C().moodColor;
+        const d = editor('记录心情'); d.panel.dataset.calendarOwner = key; let mood = original?.mood || 'happy', color = original?.color || C().moodColor;
         const picker = node('div', undefined, 'calendar-mood-picker'); d.fields.append(picker);
         for (const [value, label] of Object.entries(C().moods)) {
             const b = button('', () => { mood = value; paint(); }); b.dataset.mood = value; b.setAttribute('aria-label', label); b.append(face(value), node('span', label)); picker.append(b);
@@ -246,7 +247,7 @@ function calendarDayWatcher(readDay, changed) {
                     else section.append(node('p', s.prefs.ovulationEnabled === false ? '排卵估计已关闭' : p.irregular ? '周期波动较大，暂不估计排卵范围' : p.ongoing || p.overdue ? '请更新实际记录后查看排卵估计' : '至少记录3次经期开始日期后，再估计排卵范围', 'calendar-muted'));
                     section.append(node('p', '日期推算不能确认排卵，不用于避孕。', 'calendar-muted'));
                 }
-                s.periods.slice().sort((a, b) => b.start.localeCompare(a.start)).forEach(p => { const b = button('', () => editPeriod(span, p), 'calendar-period-record'); b.append(node('strong', p.start + '—' + (p.end || '进行中')), node('span', p.note || p.symptoms)); section.append(b); });
+                s.periods.slice().sort((a, b) => b.start.localeCompare(a.start)).forEach(p => { const b = button('', () => editPeriod(span, p), 'calendar-period-record'); b.dataset.start = p.start; b.dataset.end = p.end || ''; b.append(node('strong', p.start + '—' + (p.end || '进行中')), node('span', p.note || p.symptoms)); section.append(b); });
                 const shareTarget = node('select'); shareTarget.setAttribute('aria-label', '经期分享给角色'); shareTarget.append(new Option('选择分享角色', '')); db.characters.forEach(c => shareTarget.append(new Option(c.remarkName || c.realName, c.id))); actions.append(shareTarget, button('分享状态', () => { const c = db.characters.find(c => c.id === shareTarget.value); if (!c) { feedback.textContent = '请选择分享角色'; return; } const actual = s.periods.find(p => p.start <= selected && (!p.end || p.end >= selected)); share(c, '经期', (actual ? '已记录经期：' + actual.start + '—' + (actual.end || '进行中') : '该日未记录经期') + (p ? '\n预计下次：' + p.earliest + '—' + p.latest + '（估计）' : '')); }));
             }
         }

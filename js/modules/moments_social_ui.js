@@ -115,14 +115,14 @@
         saveDraft(chat);
         renderComposer(chat); document.querySelector('.ms-composer textarea')?.focus();
     }
-    function renderComposer(chat) {
-        const screen = document.getElementById('moments-screen'); screen.querySelector('.ms-composer')?.remove();
+    function renderComposer(chat, container = null, onSent = null) {
+        const screen = container || document.getElementById('moments-screen'); screen.querySelector('.ms-composer')?.remove();
         const state = draft(chat); if (!state.postId) return;
         const t = target(chat), post = M().view(chat).find(item => item.id === state.postId), parent = post?.comments.find(item => item.id === state.parentId && !item.deleted);
         if (!post || !M().canSee(chat, post, { kind: 'user', id: chat.id }) || state.parentId && !parent) { state.postId = state.parentId = null; return; }
         const box = node('div', 'ms-composer'), head = node('div', 'ms-composer-target');
-        head.append(node('span', '', parent ? '回复 ' + (M().actor(chat, parent.authorRef)?.name || parent.author) : '评论'), button('x', '取消回复', () => { state.postId = state.parentId = null; saveDraft(chat); renderComposer(chat); }));
-        const row = node('div', 'ms-composer-row'), input = node('textarea'); input.rows = 1; input.maxLength = 2000; input.placeholder = '评论'; input.value = state.text;
+        head.append(node('span', '', parent ? '回复 ' + (M().actor(chat, parent.authorRef)?.name || parent.author) : '评论'), button('x', '取消回复', () => { state.postId = state.parentId = null; saveDraft(chat); renderComposer(chat,container,onSent); }));
+        const row = node('div', 'ms-composer-row'), input = node('textarea'); input.rows = 1; input.maxLength = 2000; input.placeholder = '写下你的评论'; input.value = state.text;
         input.oninput = () => { state.text = input.value; saveDraft(chat); };
         const send = button('send', '发送评论', e => work(e.currentTarget, async () => {
             guard(t); const content = input.value, comment = await M().addComment(chat, state.postId, content, state.parentId);
@@ -130,12 +130,14 @@
             if (state.text === content) state.text = ''; state.postId = state.parentId = null;
             saveDraft(chat);
             if (valid(t) && current() === chat) { render(chat); renderComposer(chat); if (typeof renderMessages === 'function') renderMessages(false, false); }
+            onSent?.();
             AI().generate(chat, post.id, { triggerId: comment.id, automatic: true }).catch(error => { if (visible(chat)) toast(error.message); });
         }), 'ms-icon ms-send');
+        if(container)send.append(node('span','','发送'));
         input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send.click(); } });
         row.append(input, send); box.append(head, row); screen.append(box);
     }
-    function commentRow(chat, post, comment, inDetail = false, closeDetail) {
+    function commentRow(chat, post, comment, inDetail = false, closeDetail, onReply) {
         const row = node('div', 'ms-comment'); row.dataset.commentId = comment.id;
         row.append(actorLabel(chat, comment.authorRef, comment.author));
         const parent = comment.replyToCommentId && post.comments.find(item => item.id === comment.replyToCommentId);
@@ -147,14 +149,23 @@
         row.append(document.createTextNode('：'), node('span', comment.deleted ? 'ms-muted' : 'ms-comment-content', comment.deleted ? '原评论已删除' : comment.content));
         if (comment.read === false) { const dot = node('span', 'ms-unread-dot'); dot.setAttribute('aria-label', '未读'); row.append(dot); }
         let longPressed = false;
-        if (!comment.deleted) row.onclick = event => { if (longPressed) { longPressed = false; event.preventDefault(); return; } closeDetail?.(); composer(chat, post.id, comment.id); };
+        if (!comment.deleted) row.onclick = event => { if (longPressed) { longPressed = false; event.preventDefault(); return; } if(onReply)onReply(comment.id);else {closeDetail?.(); composer(chat, post.id, comment.id);} };
         const options = () => commentActions(chat, post, comment, closeDetail);
         row.oncontextmenu = event => { event.preventDefault(); options(); };
         let timer, point;
         row.addEventListener('pointerdown', event => { if (event.target.closest('button')) return; longPressed = false; point = [event.clientX, event.clientY]; timer = setTimeout(() => { timer = null; longPressed = true; options(); }, 550); });
         row.addEventListener('pointermove', event => { if (point && Math.hypot(event.clientX - point[0], event.clientY - point[1]) > 8) { clearTimeout(timer); timer = null; } });
         for (const type of ['pointerup', 'pointercancel', 'pointerleave']) row.addEventListener(type, () => { clearTimeout(timer); timer = null; });
-        if (inDetail) row.append(button('ellipsis', '评论操作', event => { event.stopPropagation(); options(); }));
+        if (inDetail) {
+            const person=M().actor(chat,comment.authorRef),copy=node('div','ms-comment-copy'),head=node('div','ms-comment-head'),name=row.firstElementChild;
+            head.append(name,node('span','ms-comment-role',comment.authorRef?.kind==='user'?'User':comment.authorRef?.kind==='character'?'角色':comment.authorRef?.kind==='npc'?'NPC':'未绑定'));
+            const content=row.querySelector('.ms-comment-content,.ms-muted');
+            const unread=row.querySelector('.ms-unread-dot');if(unread)head.append(unread);
+            const reply=node('div','ms-comment-reply');reply.append(...[...row.childNodes].filter(n=>n!==content));
+            copy.append(head);if(comment.replyToCommentId||comment.replyTo)copy.append(reply);if(content)copy.append(content);
+            copy.append(button('ellipsis', '评论操作', event => { event.stopPropagation(); options(); }));row.replaceChildren(avatar(person),copy);
+            if(!comment.deleted){const replyAction=command('回复',event=>{event.stopPropagation();onReply?.(comment.id);},'ms-comment-reply-action');copy.append(replyAction);}
+        }
         return row;
     }
     function commentActions(chat, post, comment, closeDetail) {
@@ -184,12 +195,12 @@
     function detail(chat, post, focusCommentId = null) {
         post = M().view(chat).find(item => item.id === post.id);
         if (!post || !M().canSee(chat, post, { kind: 'user', id: chat.id })) { toast('动态已不存在或不在可见范围'); return; }
-        const d = dialog('评论', chat); d.body.append(node('p', 'ms-detail-post', post.content));
+        const d = dialog('评论', chat); d.overlay.classList.add('ms-comment-detail');d.body.append(node('p', 'ms-detail-post', post.content));
         const comments = node('div', 'ms-thread-page'), more = command('加载更多评论', () => appendPage(), 'ms-more'); d.body.append(comments, more);
         let shown = 0;
         function appendPage() {
             const end = Math.min(post.comments.length, shown + 50);
-            for (; shown < end; shown++) comments.append(commentRow(chat, post, post.comments[shown], true, d.close));
+            for (; shown < end; shown++) comments.append(commentRow(chat, post, post.comments[shown], true, d.close,reply));
             more.hidden = shown >= post.comments.length; more.textContent = '加载更多评论（' + shown + '/' + post.comments.length + '）';
         }
         appendPage();
@@ -198,7 +209,15 @@
             while (shown <= index) appendPage();
             [...comments.children].find(row => row.dataset.commentId === focusCommentId)?.scrollIntoView({ block: 'nearest' });
         }
-        d.foot.append(command('评论', () => { d.close(); composer(chat, post.id); }));
+        function reply(parentId=null,focus=true){const state=draft(chat);state.postId=post.id;state.parentId=parentId;saveDraft(chat);renderComposer(chat,d.foot,()=>{d.close();detail(chat,post);});if(focus)d.foot.querySelector('.ms-composer textarea')?.focus();}
+        reply(null,false);
+        document.addEventListener('uvu-moments-change', event => {
+            if(event.detail.chatId!==chat.id||event.detail.archiveId!==d.t.archive||!valid(d.t))return;
+            const latest=M().view(chat).find(item=>item.id===post.id);
+            if(!latest||!M().canSee(chat,latest,{kind:'user',id:chat.id})){d.close();return;}
+            const limit=Math.max(shown,50),scroll=d.body.scrollTop;post=latest;comments.replaceChildren();shown=0;
+            do{appendPage();}while(shown<Math.min(limit,post.comments.length));d.body.scrollTop=scroll;
+        },{signal:d.signal});
         if (post.comments.some(comment => comment.read === false)) M().markRead(chat, post.id).catch(error => toast(error.message));
     }
     function notifications(chat) {
