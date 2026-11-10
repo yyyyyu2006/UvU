@@ -21,7 +21,7 @@ function fixture(root, provider, version, type) {
         filterHistoryForAI:(_chat, history)=>structuredClone(history), pad:n=>String(n).padStart(2,'0'), getRandomValue:v=>v,
         fetch:async (_url, init)=> { requests.push(JSON.parse(init.body)); return { ok:true, json:async()=>provider==='gemini'?{ candidates:[{content:{parts:[{text:'回复'}]}}] }:{choices:[{message:{content:'回复'}}]} }; },
         showApiError:error=>errors.push(error.message) });
-    if (root === current) for (const file of ['modules/chat_documents.js', 'modules/vector_index_store.js', 'modules/vector_memory_tools.js', 'modules/auto_memory.js', 'modules/worldbook_rules.js', 'modules/minimax_speech.js', 'modules/voice_director.js', 'modules/mcp_transport.js', 'modules/mcp_oauth.js', 'modules/mcp_forms.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    if (root === current) for (const file of ['modules/chat_documents.js', 'modules/vector_index_store.js', 'modules/vector_memory_tools.js', 'modules/auto_memory.js', 'modules/character_memos.js', 'modules/worldbook_rules.js', 'modules/minimax_speech.js', 'modules/voice_director.js', 'modules/mcp_transport.js', 'modules/mcp_oauth.js', 'modules/mcp_forms.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     if (root === current) vm.runInContext(fs.readFileSync(path.join(root,'js/modules/music_chat.js'),'utf8'),c);
     for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     c.handleAiReplyContent=async()=>{};
@@ -117,4 +117,11 @@ for (const provider of ['newapi','gemini']) test('music invitation is request sc
     // A normal share carries song facts but must not install action instructions.
     delete f.chat.history.at(-1).music.invitation;f.requests.length=0;await f.c.getAiReply('c','private');
     assert.doesNotMatch(JSON.stringify(f.requests[0]),/本轮一起听邀请/);assert.equal(plan.invitations.length,0);
+});
+
+test('character memos add only an explicitly enabled reference; provider history and failures retain ordinary flow',async()=>{
+ const a=fixture(current,'newapi','uwu','private');await a.c.getAiReply('c','private');
+ const b=fixture(current,'newapi','uwu','private');b.chat.characterMemos={settings:{enabled:true,useContext:true},notes:[{id:'memo',owner:b.c.characterMemoIdentity(b.chat),manual:true,status:'approved',subject:'user',fact:'MEMO-PRIVATE-SENTINEL',pinned:true,useContext:true}]};let scheduled=0;b.c.scheduleCharacterMemos=()=>scheduled++;await b.c.getAiReply('c','private');
+ assert.match(b.requests[0].messages[0].content,/MEMO-PRIVATE-SENTINEL/);assert.deepEqual(b.requests[0].messages.slice(1),a.requests[0].messages.slice(1));assert.equal(scheduled,1);
+ const c=fixture(current,'newapi','uwu','private');c.c.getCharacterMemoContext=()=>{throw Error('bad restored memo')};await c.c.getAiReply('c','private');assert.deepEqual(c.requests,a.requests);assert.deepEqual(c.errors,[]);
 });

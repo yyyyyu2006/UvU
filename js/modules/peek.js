@@ -2064,6 +2064,8 @@ async function generateAndRenderPeekContent(appType, options = {}) {
     const char = db.characters.find(c => c.id === currentChatId);
     if (!char) return showToast('无法找到当前角色');
     
+    if (appType === 'memos' && !forceRefresh && typeof openCharacterMemos === 'function') { openCharacterMemos(char); return; }
+
     if (!char.peekData) char.peekData = {};
 
     if (!forceRefresh && char.peekData[appType]) {

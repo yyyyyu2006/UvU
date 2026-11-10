@@ -123,6 +123,7 @@ function resetArchiveRuntime(data) {
     data.lastUserMessageTimestamp = null;
     data.status = '在线';
     data.peekData = {};
+    delete data.characterMemos;
     data.gallery = [];
 
     if (data.statusPanel) {

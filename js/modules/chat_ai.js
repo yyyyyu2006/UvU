@@ -257,6 +257,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             systemPrompt += `\n\n【本次重新生成的修改方向】\n${generationGuidance.trim()}\n请仅针对本次回复遵循以上修改方向；保留原有角色设定和既有规则。`;
         }
 
+        if (chatType === 'private' && typeof getCharacterMemoContext === 'function') {
+            try { systemPrompt += getCharacterMemoContext(chat, systemPrompt); }
+            catch (_) { console.warn('Optional character memo reference unavailable; continuing reply'); }
+        }
+
         if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
@@ -705,6 +710,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         chatGenerationRequests.delete(generationRequest);
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
+        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof scheduleCharacterMemos === 'function') scheduleCharacterMemos(chat);
         if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof window !== 'undefined' && window.UvUCalendarAI) {
             window.UvUCalendarAI.afterReply(chat).catch(() => console.warn('Optional calendar planning did not change the reply'));
         }

@@ -4,7 +4,7 @@
     const MAX = 8 * 1024 * 1024;
     const clone = value => JSON.parse(JSON.stringify(value));
     const strings = ['name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version'];
-    const hidden = /^(?:proto|constructor|prototype|history|chathistory|memoryjournals|mypersona|userpersona|userprofile|userinfo|apisettings|memoryapisettings|vectormemoryapisettings|minimaxttssettings|mcpsettings|credentials|password|secret|token|authorization|cookie|pairing|pairingcode|paircode|pairtoken|pairingtoken)$/;
+    const hidden = /^(?:proto|constructor|prototype|history|chathistory|memoryjournals|charactermemos|mypersona|userpersona|userprofile|userinfo|apisettings|memoryapisettings|vectormemoryapisettings|minimaxttssettings|mcpsettings|credentials|password|secret|token|authorization|cookie|pairing|pairingcode|paircode|pairtoken|pairingtoken)$/;
     const privateKey = key => { const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase(); return hidden.test(normalized) || /(?:apikey|apisecret|accesstoken|refreshtoken|bridgetoken|authtoken|bearertoken|sessiontoken)$/.test(normalized); };
     function safe(value, depth = 0, budget = { count: 0 }) {
         if (++budget.count > 100000 || depth > 24) throw new Error('角色卡数据结构过深或过大');

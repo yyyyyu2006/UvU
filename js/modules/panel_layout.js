@@ -1099,7 +1099,7 @@
             if(coverage){const details=disclose([coverage],'已整理记录','draft-card');if(run&&details)details.after(run);}
             const summaryApi=q(form,'.panel-summary-api');
             if(summaryApi){const apiView=disclose([summaryApi],'总结 API','draft-card');q(form,'.draft-summary-range')?.after(apiView);const editApi=routeButton('独立 API 配置',()=>configurationWorkspace(q(root,'#memory-api-panel'),'独立总结 API','draft-independent-api'));editApi.id='draft-open-summary-api';summaryApi.append(editApi);}
-            const options=[q(form,'.draft-summary-advanced'),q(form,'.panel-summary-options'),q(form,'.panel-summary-guides'),q(form,'.draft-range-summary')].filter(Boolean);
+            const options=[q(form,'.draft-summary-advanced'),q(form,'.panel-summary-options'),q(form,'.panel-summary-guides')].filter(Boolean);
             if(options.length){const more=disclose(options,'高级与使用说明','draft-summary-more');form.append(more);}
             const enable=q(vector,'.panel-vector-enable');if(enable){
                 const vectorOwner=make('div','draft-vector-owner');enable.append(vectorOwner);
@@ -1613,7 +1613,7 @@
         const notify=()=>{const root=document.getElementById('uvu-notification-preferences');switchScreen('api-settings-screen');if(root)root.open=true;};
         const groups = [
             [['酒馆互通','link',()=>switchScreen('uvu-story-bridge-screen')],['文件分享','file-text',()=>openSharedDocumentDialog()],['AI 生图','wand-sparkles',()=>{click('photo-video-btn');click('pv-mode-ai');}]],
-            [['自动记忆','book-open',()=>click('auto-memory-settings-btn')],['向量记忆','search',()=>click('vector-memory-settings-btn')],['MCP 服务','shield-check',()=>openMcpSettings()]],
+            [['角色备忘录','book-open',()=>openCharacterMemos()],['自动记忆','book-open',()=>click('auto-memory-settings-btn')],['向量记忆','search',()=>click('vector-memory-settings-btn')],['MCP 服务','shield-check',()=>openMcpSettings()]],
             [['语音与导演','play',voice],['通知','settings-2',notify],['备份与恢复','download',openBackupWorkspace]]
         ];
         const addRoute=(section,name,icon,action)=>{const route=routeButton(name,()=>{d.dismiss();try{action();}catch(error){showToast(error.message);}});route.dataset.searchText=name;
