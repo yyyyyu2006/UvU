@@ -28,6 +28,22 @@ function fixture(provider, placeholder, type, injectedRole) {
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/chat_ai.js'),'utf8'),c);c.handleAiReplyContent=async()=>{};
     return {c,chat,requests,errors,rolls:()=>rolls};
 }
+for(const provider of ['newapi','gemini'])for(const placeholder of [false,true])test(`actual diagnostic preserves ${provider}/${placeholder} body and single activation`,async()=>{
+ const plain=fixture(provider,placeholder,'private','system'),observed=fixture(provider,placeholder,'private','system');
+ observed.c.localStorage={getItem:()=>null,setItem(){}};
+ vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/request_memory_diagnostics.js'),'utf8'),observed.c);
+ observed.c.UvURequestDiagnostics.setEnabled(true);
+ await plain.c.getAiReply(plain.chat.id,'private');await observed.c.getAiReply(observed.chat.id,'private');
+ assert.deepEqual(observed.errors,[]);assert.deepEqual(observed.requests,plain.requests);assert.equal(observed.rolls(),plain.rolls());
+ const report=observed.c.UvURequestDiagnostics.get(observed.chat,'private');assert.equal(report.status,'completed');assert.ok(report.worldBooks.some(b=>b.id==='middle'&&b.matched));assert.ok(report.worldBooks.every(b=>b.id!=='off'));assert.ok(report.fieldCount>0);
+});
+test('broken optional request observer does not suppress ordinary replies',async()=>{
+ const f=fixture('newapi',false,'private','system');f.c.UvURequestDiagnostics={isEnabled:()=>true,begin:()=>{throw Error('observer failed');},finish:()=>{throw Error('observer failed');}};
+ await f.c.getAiReply(f.chat.id,'private');assert.equal(f.requests.length,1);assert.deepEqual(f.errors,[]);
+});
+test('broken optional diagnostic toggle does not suppress ordinary replies',async()=>{
+ const f=fixture('newapi',false,'private','system');f.c.UvURequestDiagnostics={isEnabled:()=>{throw Error('toggle failed');}};await f.c.getAiReply(f.chat.id,'private');assert.equal(f.requests.length,1);assert.deepEqual(f.errors,[]);
+});
 test('unselected advanced rules preserve bound worldbooks and legacy depth order', async () => {
     const f = fixture('newapi', false, 'private', 'system');
     f.c.db.worldBooks.forEach(book => { book.rules.advancedEnabled = false; });

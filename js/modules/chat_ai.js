@@ -193,7 +193,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         messageArea.scrollTop = messageArea.scrollHeight;
     }
 
-    let replyDelivered = false, mcpLease = null;
+    let replyDelivered = false, mcpLease = null, requestDiagnosticTicket = null;
     try {
         const memoryArchiveId = chat.activeArchiveId;
         const relationshipRevision = chat.friendRelationship?.revision;
@@ -237,6 +237,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         const documentPlan = chatType === 'private' && typeof prepareDocumentContext === 'function' ? prepareDocumentContext(historySlice) : { history: historySlice, instructions: '', sources: [] };
         historySlice = documentPlan.history;
         const musicPlan = chatType === 'private' && typeof window !== 'undefined' && window.UvUMusicChat ? window.UvUMusicChat.requestPlan(historySlice, chat) : null;
+        // Optional observer only: capture the sources while vector deduplication is still scoped to this build.
+        let requestDiagnostic = null;
+        try { if (globalThis.UvURequestDiagnostics?.isEnabled()) requestDiagnostic = { blocks: {}, journals: [], worldBooks: [] }; } catch (_) {}
         const buildBasePrompt = () => {
             if (chatType === 'private') {
                 systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
@@ -249,6 +252,13 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 }
             }
 
+            if (requestDiagnostic) {
+                try {
+                    requestDiagnostic.journals = typeof getContextMemoryJournals === 'function' ? getContextMemoryJournals(chat).map(j => ({ id: j.id, title: j.title, fragment: `标题：${j.title}\n内容：${j.content}` })) : [];
+                    const books = Array.isArray(worldBookPlan) ? worldBookPlan : (db.worldBooks || []).filter(b => (chat.worldBookIds || []).includes(b.id) && b.rules?.advancedEnabled !== true);
+                    requestDiagnostic.worldBooks = books.map(b => ({ id: b.id, name: b.name, fragment: b.content }));
+                } catch (_) { /* Diagnostics cannot block the established prompt build. */ }
+            }
             return systemPrompt;
         };
         systemPrompt = typeof buildPromptWithVectorMemory === 'function'
@@ -259,18 +269,18 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
 
         if (chatType === 'private' && typeof getCharacterMemoContext === 'function') {
-            try { systemPrompt += getCharacterMemoContext(chat, systemPrompt); }
+            try { const memoContext = getCharacterMemoContext(chat, systemPrompt); systemPrompt += memoContext; if (requestDiagnostic) requestDiagnostic.blocks.memo = memoContext; }
             catch (_) { console.warn('Optional character memo reference unavailable; continuing reply'); }
         }
 
-        if (typeof getStickerDescriptionContext === 'function') systemPrompt += getStickerDescriptionContext(chat);
+        if (typeof getStickerDescriptionContext === 'function') { const stickerContext = getStickerDescriptionContext(chat); systemPrompt += stickerContext; if (requestDiagnostic) requestDiagnostic.blocks.sticker = stickerContext; }
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
         if (documentPlan.instructions) systemPrompt += documentPlan.instructions;
         if (musicPlan?.instructions) systemPrompt += musicPlan.instructions;
         // Explicit calendar grants only; disabled path appends an empty string.
         if (chatType === 'private' && typeof window !== 'undefined' && window.UvUCalendar) {
-            try { systemPrompt += window.UvUCalendar.context(chat); }
+            try { const calendarContext = window.UvUCalendar.context(chat); systemPrompt += calendarContext; if (requestDiagnostic) requestDiagnostic.blocks.calendar = calendarContext; }
             catch (_) { console.warn('Calendar reference unavailable; continuing ordinary reply'); }
         }
 
@@ -645,6 +655,13 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             Authorization: `Bearer ${key}`
         };
         if (!requestIsCurrent()) return;
+        if (requestDiagnostic) {
+            try {
+                Object.assign(requestDiagnostic.blocks, { vector: typeof getInjectedVectorMemoryContext === 'function' ? getInjectedVectorMemoryContext(chat, vectorContext) : vectorContext,
+                    environment: environmentContext, mcp: mcpContext, documents: documentPlan.instructions, music: musicPlan?.instructions });
+                requestDiagnosticTicket = globalThis.UvURequestDiagnostics?.begin(chat, chatType, requestBody, requestDiagnostic);
+            } catch (_) { /* Read-only diagnostics never suppress a normal reply. */ }
+        }
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
@@ -708,6 +725,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (!isBackground && !generationController?.signal.aborted) showApiError(error);
         else console.error("Background Auto-Reply Error:", error);
     } finally {
+        try { globalThis.UvURequestDiagnostics?.finish(requestDiagnosticTicket, generationController?.signal.aborted ? 'cancelled' : replyDelivered ? 'completed' : chat.activeArchiveId !== generationRequest.archiveId || chat.history !== generationRequest.history ? 'stale' : 'failed'); } catch (_) {}
         chatGenerationRequests.delete(generationRequest);
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);

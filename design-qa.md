@@ -122,3 +122,9 @@ final result: passed for the six requested amendments and implemented sheet layo
 - 维持已有面板与CSS。备忘录语义检查收在设置页，默认关闭；导演预览入口留在API内嵌语音区，预览使用现有弹窗，320px时底部短按钮不换行；备份校验留在原内嵌选项。
 - 完整应用浏览器覆盖reload恢复日程待审、语义取消、导演预览不合成／原消息失效拒绝、实际EE导出和Worker校验；查看真实320px及短屏截图。旧语音浏览器脚本移除过时导航后通过，未更改生产布局来迁就脚本。
 - npm test 1177／1177；approved_sheets_browser和minimax_speech_browser通过。没有修改1900美化、音乐UI、导出ID Card、发送文件／一起听卡片或状态栏样式。尚未完成的增强和外部验收分别保留在剩余清单。
+
+
+### 2026-11-11 正文规则与请求诊断
+- 沿用现有酒馆审核和备忘录设置页面，未改CSS、Token、音乐和ID Card。
+- 完整应用390／320px及390×420短屏：规则保存／文件迁移／刷新恢复、请求诊断开启／实际聊天／刷新／清除／关闭可操作；无横向溢出。已查看`outputs/remaining-optimizations/rule-preview-320.png`和`request-diagnostic-320.png`，只读明细可内部滚动。
+- 使用隔离数据、Chrome触屏模拟和模拟API；不是iOS实机验收。

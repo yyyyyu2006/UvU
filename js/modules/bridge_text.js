@@ -88,12 +88,64 @@
         return {...result, filteredTags, unknownTags, sourceChars: source.length, extractedChars: result.text.length,
             requiresConfirmation: result.mode !== 'tagged' || unknownTags.length > 0};
     }
+    function ruleTags(value, label) {
+        if (value == null) return '';
+        if (typeof value !== 'string' || value.length > 500) throw new Error(label+'标签过长');
+        const tags=[...new Set(value.toLowerCase().split(/[,，\s]+/u).filter(Boolean))];
+        if(tags.length>20 || tags.some(t=>!(/^[a-z\u3400-\u9fff][a-z0-9_\-\u3400-\u9fff]{0,40}$/iu.test(t))))throw new Error(label+'标签只填名称，最多20个，不含尖括号');
+        return tags.join(' ');
+    }
+    const RULE_STORAGE_KEY='uvu-body-rules.v1';
+    function normalizeRule(value) {
+        if(!value || typeof value!=='object' || typeof value.name!=='string' || !value.name.trim() || value.name.length>48)throw new Error('规则名称须为1–48字');
+        const preset=value.preset, bodyTags=ruleTags(value.bodyTags,'正文'),excludeTags=ruleTags(value.excludeTags,'排除');
+        const fixed={auto:'',content:'content',maintext:'maintext main_text main-text',chinese:'正文 正文内容 正文部分'};
+        if(preset!=='custom' && !Object.hasOwn(fixed,preset))throw new Error('请选择有效正文规则');
+        if(preset==='custom'&&!bodyTags)throw new Error('请填写正文标签');
+        const effective=preset==='custom'?bodyTags:fixed[preset];
+        if(effective.split(' ').some(t=>t&&excludeTags.split(' ').includes(t)))throw new Error('正文与排除标签不能相同');
+        return {name:value.name.trim(),preset,bodyTags:effective,excludeTags};
+    }
+    function validateRuleLibrary(value) {
+        if(!value || value.format!=='uvu-body-rules' || value.version!==1 || !Array.isArray(value.rules))throw new Error('不是受支持的正文规则格式');
+        if(value.rules.length>30)throw new Error('最多保存30套正文规则');
+        const rules=value.rules.map(normalizeRule), names=new Set(rules.map(r=>r.name));
+        if(names.size!==rules.length)throw new Error('文件中含有同名规则');
+        return {format:'uvu-body-rules',version:1,rules,selectedName:names.has(value.selectedName)?value.selectedName:''};
+    }
+    function readRuleLibrary(storage) {
+        const text=storage.getItem(RULE_STORAGE_KEY);
+        if(text && text.length>65536)throw new Error('正文规则文件过大');
+        return validateRuleLibrary(text?JSON.parse(text):{format:'uvu-body-rules',version:1,rules:[]});
+    }
+    function writeRuleLibrary(storage,value) { const checked=validateRuleLibrary(value);storage.setItem(RULE_STORAGE_KEY,JSON.stringify(checked));return checked; }
+    function saveRule(storage,value) {
+        const rule=normalizeRule(value), library=readRuleLibrary(storage), index=library.rules.findIndex(r=>r.name===rule.name);
+        if(index<0)library.rules.push(rule);else library.rules[index]=rule;
+        library.selectedName=rule.name;return writeRuleLibrary(storage,library);
+    }
+    function selectRule(storage,name) {
+        const library=readRuleLibrary(storage);
+        if(name&&!library.rules.some(r=>r.name===name))throw new Error('规则已删除，请重新选择');
+        library.selectedName=name;return writeRuleLibrary(storage,library);
+    }
+    function removeRule(storage,name) {
+        const library=readRuleLibrary(storage);library.rules=library.rules.filter(r=>r.name!==name);
+        if(library.selectedName===name)library.selectedName='';return writeRuleLibrary(storage,library);
+    }
+    function exportRules(storage) { return JSON.stringify(readRuleLibrary(storage),null,2); }
+    function importRules(storage,text) {
+        if(typeof text!=='string'||text.length>65536)throw new Error('正文规则文件过大');
+        const incoming=validateRuleLibrary(JSON.parse(text)),library=readRuleLibrary(storage);
+        for(const rule of incoming.rules){const existing=library.rules.find(r=>r.name===rule.name);if(existing&&JSON.stringify(existing)!==JSON.stringify(rule))throw new Error('存在不同内容的同名规则：'+rule.name+'，请先改名或删除');if(!existing)library.rules.push(rule);}
+        library.selectedName=incoming.selectedName||library.selectedName;return writeRuleLibrary(storage,library);
+    }
     function previewRules(value, preset = 'auto', options = {}) {
         const text=String(value || ''),rules={auto:'',content:'content',maintext:'maintext main_text main-text',chinese:'正文 正文内容 正文部分',custom:options.bodyTags || ''};
         if(text.length>120000)throw new Error('检查原文过长，请每次粘贴一层楼（最多12万字符）');
         if(!Object.hasOwn(rules,preset))throw new Error('请选择有效正文规则');
         if(preset==='custom' && (!rules.custom.trim() || rules.custom.split(/[,，\s]+/u).filter(Boolean).some(t=>!(/^[a-z\u3400-\u9fff][a-z0-9_\-\u3400-\u9fff]{0,40}$/iu.test(t)))))throw new Error('正文标签只填名称，多个用空格分开，不含尖括号');
-        return inspectStory(text,{bodyTags:rules[preset],excludeTags:options.excludeTags || ''});
+        return inspectStory(text,{bodyTags:ruleTags(rules[preset],'正文'),excludeTags:ruleTags(options.excludeTags,'排除')});
     }
     function validateFloor(floor) {
         if (!floor || typeof floor !== 'object' || typeof floor.id !== 'string' || !floor.id || floor.id.length > 160 ||
@@ -152,7 +204,7 @@
     function segments(value) {
         return clean(value).split(/\n\s*\n/).map(text => text.trim()).filter(Boolean).map((text, index) => ({ id: String(index + 1), text, selected: false }));
     }
-    const api = { clean, fingerprint, extractStory, inspectStory, previewRules, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
+    const api = { clean, fingerprint, extractStory, inspectStory, previewRules, readRuleLibrary, saveRule, selectRule, removeRule, importRules, exportRules, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
     root.UvUBridgeText = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis === 'undefined' ? this : globalThis);

@@ -613,7 +613,7 @@ test('mode lookup propagates caller abort without network diagnostic wrapping',a
 test('safe capacity diagnostics contain counts but no tokens source text addresses or role identifiers',()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));f.db.uvuStoryBridgeSettings.outbox=[{payload:{text:'SECRET STORY'}}];
  const snapshot=f.bridge.diagnosticsSnapshot();assert.equal(snapshot.local.pendingSend,1);assert.equal(snapshot.local.remainingSend,499);
- assert.equal(snapshot.frontend.build,'20261111-review-tools-v1');assert.equal(snapshot.frontend.protocolVersion,1);
+ assert.equal(snapshot.frontend.build,'20261111-rules-request-v1');assert.equal(snapshot.frontend.protocolVersion,1);
  assert.doesNotMatch(JSON.stringify(snapshot),/paired-token|SECRET STORY|127\.0\.0\.1|char-1/);
 });
 

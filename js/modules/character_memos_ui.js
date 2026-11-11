@@ -24,6 +24,7 @@ function openCharacterMemos(target) {
     help.append(node('p','','审核通过可单独加入日记。旧版模拟便签不会自动变成真实记忆；酒馆、文件和动态不自动采集。来源删除或修改后，该条暂停用于对话。临时记录可设到期时间；锁定或手改内容不会被自动替换。备份包含备忘录，PNG角色卡不包含这些私人记录。整理使用所选API，失败不阻止聊天；独立记忆API请在API设置内配置。'));
     help.append(node('p','','冲突记录可替换旧记录、保留两条或忽略；锁定记录需先解锁才能替换。来源失效时可查看原消息，核对后另存为手动记录。加入日记及合并后的记忆也会检查原备忘录是否有效。保存时若提示记录已更新，请重新读取后再操作。'));
     help.append(node('p','','设置页可查看存档容量和每条记录的入选原因。接近500条时，可先在批量管理中导出，再手动整理。“相近记录”仅按文字匹配列出最多10组，需逐条核对，不自动合并，也不额外调用API。'));
+    help.append(node('p','','排查实际注入：在本设置页展开“实际请求诊断”，打开“记录实际请求诊断”，关闭面板并正常发送一轮聊天，再回来点“刷新诊断”。可核对备忘录、向量、日记、世界书及其他附加资料是否匹配最终请求。仅本页临时记录字段、来源名称和字符数，不保存正文；清除或关闭后无法恢复，刷新页面也会清空。“本轮可用记忆”仍是当前条件预览，不能代替实际请求记录。'));
     advanced.append(help);settings.append(advanced);
     const tools=node('div','memo-toolbar'),search=node('input');search.type='search';search.placeholder='搜索记录';search.setAttribute('aria-label','搜索备忘录');
     const filter=node('select');filter.setAttribute('aria-label','筛选备忘录');for(const [v,t]of [['active','全部记录'],['pending','待审核'],['approved','已确认'],['expired','已到期'],['计划','角色计划'],['偏好','偏好'],['习惯','习惯'],['沟通','沟通偏好'],['事实','重要事实'],['临时','临时状态'],['约定','约定'],['经历','共同经历'],['done','已完成'],['superseded','已更正']]){const o=node('option','',t);o.value=v;filter.append(o);}
@@ -45,6 +46,25 @@ function openCharacterMemos(target) {
     }));
     const undoButton=button('撤销删除',async()=>{if(!undo)return;const next=characterMemoState(chat);if(next.notes.length>=500)throw new Error('备忘录已达到500条');if(!next.notes.some(n=>n.id===undo.note.id))next.notes=[...next.notes,undo.note];if(undo.block)next.blocked=next.blocked.filter(b=>b!==undo.block);await saveCharacterMemoState(owner,next);undo=null;});undoButton.hidden=true;actions.append(undoButton);
     const diagnostic=node('details','memo-diagnostics');diagnostic.append(node('summary','','本轮可用记忆'));const diagnosticText=node('p');diagnostic.append(diagnosticText);
+    const actualDiagnostic=node('details','memo-diagnostics');actualDiagnostic.append(node('summary','','实际请求诊断'));
+    const requestToggle=node('input','panel-switch');requestToggle.type='checkbox';requestToggle.setAttribute('role','switch');requestToggle.setAttribute('aria-label','记录实际请求诊断');requestToggle.checked=globalThis.UvURequestDiagnostics?.isEnabled()===true;
+    const requestRow=node('label','memo-switch-row');requestRow.append(node('span','','记录实际请求诊断'),requestToggle);actualDiagnostic.append(requestRow);
+    const requestReport=node('div');requestReport.setAttribute('aria-live','polite');
+    const requestLabels={memo:'备忘录',vector:'向量记忆',environment:'环境',mcp:'MCP',documents:'文件',music:'音乐',calendar:'日历',sticker:'表情描述'};
+    const refreshRequestReport=()=>{
+        requestReport.replaceChildren();const report=globalThis.UvURequestDiagnostics?.get(chat,'private');
+        if(!report){requestReport.append(node('p','',requestToggle.checked?'暂无记录，开启后发送一轮聊天再刷新':'记录已关闭'));return;}
+        const statuses={dispatched:'请求已发出',completed:'回复已完成',failed:'请求失败',cancelled:'已取消',stale:'会话已变化'};
+        requestReport.append(node('p','',new Date(report.timestamp).toLocaleTimeString()+' · '+(statuses[report.status]||report.status)),node('p','',`${report.fieldCount}个文字字段 · ${report.textChars}字符 · ${report.opaqueParts}个非文字片段`));
+        const describe=(item,label)=>node('p','',label+' · '+(item.matched===true?'已匹配':item.matched===null?'扫描上限内未匹配':item.chars?'未匹配':'未附加')+(item.paths.length?' · '+item.paths.join('、'):''));
+        for(const item of report.blocks)requestReport.append(describe(item,requestLabels[item.kind]));
+        for(const [title,items]of [['日记来源',report.journals],['世界书来源',report.worldBooks]])if(items.length){const section=node('details');section.append(node('summary','',title+' '+items.length));for(const item of items)section.append(describe(item,item.label||item.id));requestReport.append(section);}
+        const fields=node('details');fields.append(node('summary','','请求字段'));for(const item of report.fields)fields.append(node('p','',item.path+' · '+item.role+' · '+item.chars+'字符'));requestReport.append(fields);
+        if(report.truncated||report.sourcesTruncated)requestReport.append(node('p','','明细已达到扫描上限；未匹配不代表未发送'));
+    };
+    requestToggle.onchange=()=>{try{guard();globalThis.UvURequestDiagnostics.setEnabled(requestToggle.checked);refreshRequestReport();}catch(error){requestToggle.checked=globalThis.UvURequestDiagnostics?.isEnabled()===true;feedback.textContent='诊断设置保存失败：'+error.message;}};
+    actualDiagnostic.append(button('刷新诊断',refreshRequestReport),button('清除诊断',()=>{globalThis.UvURequestDiagnostics?.clear(chat,'private');refreshRequestReport();}),requestReport,node('p','','仅核对最终请求中的文字和位置，不代表模型已采纳。不开额外API调用，不保存正文；本页临时保留1小时，最多16个会话，关闭记录即清除。'));
+    actualDiagnostic.ontoggle=()=>{if(actualDiagnostic.open)refreshRequestReport();};
     const capacity=node('p','memo-feedback'),similar=node('details','memo-diagnostics'),similarList=node('div');similar.append(node('summary','','相近记录'),node('p','','仅按文字相近提示，请核对否定、时间和人物。不会自动合并。'),button('检查相近记录',()=>{const hints=findSimilarCharacterMemos(chat);similarList.replaceChildren();for(const hint of hints){const row=node('section');row.append(node('p','',hint.first.fact+'\n'+hint.second.fact),button('查看第一条',()=>view(hint.first)),button('查看第二条',()=>view(hint.second)));similarList.append(row);}if(!hints.length)similarList.append(node('p','','未找到明显相近记录'));}),similarList);
     const semantic=node('details','memo-diagnostics'),semanticStatus=node('p'),semanticList=node('div'),semanticRun=node('button','','检查语义相近'),semanticCancel=node('button','','取消检查');
     semanticRun.type=semanticCancel.type='button';semanticCancel.hidden=true;semanticStatus.setAttribute('aria-live','polite');
@@ -68,7 +88,7 @@ function openCharacterMemos(target) {
     identity.append(avatar,node('span','',chat.remarkName||chat.realName),node('small','',chat.archives?.find(a=>a.id===owner.archive)?.name||'当前存档'));
     const batch=node('details','memo-batch');batch.append(node('summary','','批量管理'),filter,actions);
     const main=node('section','memo-main');main.append(identity,tools,list,batch);
-    const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,similar,semantic,legacy);
+    const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,actualDiagnostic,similar,semantic,legacy);
     const footer=node('footer','memo-footer'),done=node('button','panel-primary','完成');done.type='button';done.hidden=true;
     run.textContent='整理聊天';add.classList.add('panel-primary');footer.append(run,add,done);
     const head=d.panel.querySelector('.message-forward-header,header'),heading=head?.querySelector('strong,h2'),settingsButton=node('button','sheet-aux');settingsButton.type='button';settingsButton.setAttribute('aria-label','备忘录设置');
