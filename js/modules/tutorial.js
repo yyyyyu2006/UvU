@@ -340,6 +340,15 @@ function renderTutorialContent() {
         tutorialContentArea.appendChild(item);
     });
 
+    const persistenceHelp = document.createElement('div');
+    persistenceHelp.className = 'tutorial-item';
+    persistenceHelp.innerHTML = `<div class="tutorial-header">多窗口保存与索引冲突</div><div class="tutorial-content">
+        <p>多个窗口打开同一小手机时，请尽量只在一个窗口编辑同一个角色。旧页面没有修改的记录会跳过保存，避免覆盖另一页的新记忆；双方都修改同一记录时，本次保存会中止并提示冲突。</p>
+        <p>看到“已被其他页面或操作更新”：先在本页“数据管理 → 导出分类”保存未保存内容，关闭重复页面，刷新读取最新数据，再对照备份重新编辑。不要反复点击保存，也不要直接导入旧备份覆盖新内容；导入也会检查冲突。</p>
+        <p>酒馆收取失败不会推进接收游标或确认收到，刷新后可重新收取，剧情仍须审核。向量索引提示“索引已更新”时，先刷新索引清单；不会自动重发嵌入请求。索引格式损坏时仅手动清理对应缓存并重建，日记原文保留，重建可能产生接口费用。</p>
+        <p>保存保护适用于已更新页面；发布后请刷新仍开着的旧页面。备份主数据按一次快照读取，图片／字体／向量等独立存储并非一个全局原子快照，导出时建议暂停其他窗口编辑。</p>
+    </div>`;
+    tutorialContentArea.appendChild(persistenceHelp);
     const backupDataBtn = document.createElement('button');
     backupDataBtn.className = 'btn btn-primary';
     backupDataBtn.textContent = '备份数据';

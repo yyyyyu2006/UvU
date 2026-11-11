@@ -3,13 +3,42 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const { IDBFactory, IDBKeyRange } = require('fake-indexeddb');
 const { IDBObjectStore } = require('fake-indexeddb');
-function fixture() {
-    const c = vm.createContext({ indexedDB: new IDBFactory(), IDBKeyRange, console, setTimeout, clearTimeout, structuredClone });
+function fixture(indexedDB = new IDBFactory()) {
+    const c = vm.createContext({ indexedDB, IDBKeyRange, console, setTimeout, clearTimeout, structuredClone });
     const file = path.join(__dirname, '../js/modules/vector_index_store.js');
     if (fs.existsSync(file)) vm.runInContext(fs.readFileSync(file, 'utf8'), c);
     return c;
 }
 const index = (value = 1) => ({ source: { version: 2, chunks: [{ key: 'hash', start: 0, end: 10, vector: [value, 0] }] } });
+
+test('stale builders in separate pages cannot replace a newer committed scope, including first creation', async () => {
+    const factory = new IDBFactory(), first = fixture(factory).VectorIndexStore, second = fixture(factory).VectorIndexStore;
+    for (const seed of [false, true]) {
+        const scope = 'concurrent-' + seed;
+        if (seed) await first.commit(scope, index(), 'seed');
+        const before = await first.read(scope), peerBefore = await second.read(scope);
+        assert.equal(before.updatedAt, peerBefore.updatedAt);
+        await first.commit(scope, index(2), 'latest', undefined, before.updatedAt);
+        await assert.rejects(second.commit(scope, index(3), 'stale', undefined, peerBefore.updatedAt), /索引已更新/);
+        const saved = await second.read(scope);
+        assert.equal(saved.fingerprint, 'latest'); assert.equal(saved.index.source.chunks[0].vector[0], 2);
+        await second.commit(scope, index(4), 'retry', undefined, saved.updatedAt);
+        assert.equal((await first.read(scope)).index.source.chunks[0].vector[0], 4);
+    }
+});
+
+test('malformed cache manifests reject promptly without deleting sources or other scopes', async () => {
+    for (const entries of [{}, [null], [{ id: 'source' }], [{ id: 'source', chunks: [{ key: 'hash', start: -1, end: 10 }] }]]) {
+        const factory = new IDBFactory(), store = fixture(factory).VectorIndexStore;
+        await store.commit('scope', index(), 'before'); await store.commit('other', index(2), 'other');
+        const database = await new Promise((resolve, reject) => { const r = factory.open('uvu-vector-index-v1'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+        await new Promise((resolve, reject) => { const tx = database.transaction('manifests', 'readwrite'); tx.objectStore('manifests').put({ id: 'scope', entries, fingerprint: 'bad', updatedAt: 1 }); tx.oncomplete = resolve; tx.onabort = () => reject(tx.error); });
+        await assert.rejects(store.read('scope'), /索引.*(结构|格式)/);
+        assert.equal((await store.read('other')).fingerprint, 'other');
+        assert.equal((await store.listScopes()).length, 2);
+        database.close();
+    }
+});
 
 test('scope inventory contains only cache metadata and deletion is isolated and revision guarded', async () => {
     const store = fixture().VectorIndexStore;

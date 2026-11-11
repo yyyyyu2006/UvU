@@ -77,7 +77,7 @@
     const library = () => normalizeLibrary(database().musicLibrary || {});
     async function writeSetting(name, value) {
         if (typeof dexieDB !== 'undefined' && dexieDB?.globalSettings && typeof runDataPersistence === 'function') {
-            await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () => dexieDB.globalSettings.put({ key: name, value })));
+            await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () => typeof putGuardedSettings === 'function' ? putGuardedSettings([{ key: name, value }]) : dexieDB.globalSettings.put({ key: name, value })));
         } else if (typeof saveData === 'function') await saveData();
     }
     function persist(name, mutate) {

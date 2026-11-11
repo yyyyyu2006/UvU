@@ -42,22 +42,25 @@ globalThis.VectorIndexStore = (() => {
             };
             tx.onabort = tx.onerror = () => reject(tx.error || Error('独立向量索引读取失败'));
             tx.oncomplete = () => {
+                try {
                 const index = Object.create(null);
+                if (meta.result && (!Array.isArray(meta.result.entries) || meta.result.entries.some(entry => !entry || typeof entry.id !== 'string' || !Array.isArray(entry.chunks) || entry.chunks.some(chunk => !chunk || typeof chunk.key !== 'string' || !Number.isInteger(chunk.start) || chunk.start < 0 || !Number.isInteger(chunk.end) || chunk.end < chunk.start)))) throw Error('独立向量索引结构无效，请检查索引清单后手动重建；原始记忆未删除');
                 for (const entry of meta.result?.entries || []) {
                     const chunks = entry.chunks.flatMap(chunk => vectors.has(chunk.key) ? [{ ...chunk, vector: vectors.get(chunk.key) }] : []);
                     if (chunks.length) index[entry.id] = { version: 2, chunks };
                 }
                 resolve({ index, fingerprint: meta.result?.fingerprint || '', updatedAt: meta.result?.updatedAt || 0 });
+                } catch (error) { reject(error); }
             };
         });
     }
-    async function commit(scope, index, fingerprint, guard = () => {}) {
+    async function commit(scope, index, fingerprint, guard = () => {}, expectedUpdatedAt) {
         guard();
         const wanted = new Map(), entries = [];
         for (const [id, entry] of Object.entries(index)) {
             if (entry?.version !== 2 || !Array.isArray(entry.chunks)) throw Error('独立向量 index 结构无效');
             const chunks = entry.chunks.map(chunk => {
-                if (!valid(chunk.vector) || typeof chunk.key !== 'string' || !Number.isInteger(chunk.start) || !Number.isInteger(chunk.end) || chunk.end < chunk.start) throw Error('独立向量 index 分块无效');
+                if (!valid(chunk.vector) || typeof chunk.key !== 'string' || !Number.isInteger(chunk.start) || chunk.start < 0 || !Number.isInteger(chunk.end) || chunk.end < chunk.start) throw Error('独立向量 index 分块无效');
                 wanted.set(chunk.key, chunk.vector); return { key: chunk.key, start: chunk.start, end: chunk.end };
             });
             entries.push({ id, chunks });
@@ -72,6 +75,7 @@ globalThis.VectorIndexStore = (() => {
             request.onsuccess = () => {
                 try {
                     guard();
+                    if (expectedUpdatedAt !== undefined && (previousMeta.result?.updatedAt || 0) !== expectedUpdatedAt) throw Error('索引已更新，请刷新索引清单后重试；本次未覆盖，也未自动重新请求嵌入');
                     const cursor = request.result;
                     if (cursor) {
                         const row = cursor.value;
@@ -96,7 +100,7 @@ globalThis.VectorIndexStore = (() => {
                 const cursor = request.result; if (!cursor) return;
                 const meta = cursor.value, entries = Array.isArray(meta.entries) ? meta.entries : [];
                 rows.push({ id: meta.id, sourceCount: entries.length,
-                    chunkCount: entries.reduce((count, entry) => count + (entry.chunks?.length || 0), 0), updatedAt: meta.updatedAt || 0 });
+                    chunkCount: entries.reduce((count, entry) => count + (Array.isArray(entry?.chunks) ? entry.chunks.length : 0), 0), updatedAt: meta.updatedAt || 0 });
                 cursor.continue();
             };
             tx.oncomplete = () => resolve(rows);

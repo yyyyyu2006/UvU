@@ -128,3 +128,9 @@ final result: passed for the six requested amendments and implemented sheet layo
 - 沿用现有酒馆审核和备忘录设置页面，未改CSS、Token、音乐和ID Card。
 - 完整应用390／320px及390×420短屏：规则保存／文件迁移／刷新恢复、请求诊断开启／实际聊天／刷新／清除／关闭可操作；无横向溢出。已查看`outputs/remaining-optimizations/rule-preview-320.png`和`request-diagnostic-320.png`，只读明细可内部滚动。
 - 使用隔离数据、Chrome触屏模拟和模拟API；不是iOS实机验收。
+
+
+### 2026-11-11 跨窗口与持久化
+- 现有UI、CSS、Token、音乐和ID Card保留。本次仅在教程App增加既有样式的折叠说明，真实导航点击可展开。
+- approved_sheets_browser.cjs与remaining_optimizations_browser.cjs通过；新增双页面浏览器验收覆盖冲突提示数据、预设应用／撤销及教程，无删除遮罩、强制点击或救援计数绕过。
+- 非全局跨库快照、旧未刷新页面、TT/iOS实机与真实收费接口不在本批已通过结论内。

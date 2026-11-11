@@ -23,11 +23,11 @@ async function deleteChatEntity(chat, type) {
     if (index < 0) return false;
     // Remove from live state before enqueuing deletion so later saves cannot resurrect it.
     db[key] = db[key].filter(item => item !== chat);
-    try { await runDataPersistence(() => dexieDB.transaction("rw", dexieDB[key], () => dexieDB[key].delete(chat.id))); }
+    try { await runDataPersistence(() => dexieDB.transaction("rw", dexieDB[key], () => typeof deleteGuardedRecords === 'function' ? deleteGuardedRecords(dexieDB[key], [chat.id]) : dexieDB[key].delete(chat.id))); }
     catch (error) {
         if (!db[key].some(item => item.id === chat.id)) db[key].splice(Math.min(index, db[key].length), 0, chat);
         renderChatList();
-        showToast("删除未保存，已恢复角色或群聊，请重试");
+        showToast(error.name === 'DataConflictError' ? error.message : "删除未保存，已恢复角色或群聊，请重试");
         return false;
     }
     if (typeof chatGenerationRequests !== "undefined") [...chatGenerationRequests].filter(request => request.chat === chat).forEach(request => request.controller?.abort());

@@ -283,6 +283,23 @@ test('failed embedding model migration keeps old versioned scope usable after re
     await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
     assert.equal(calls.length, before, 'old vectors restored without repeating embedding');
 });
+
+test('external index rebuild detects a newer page commit and preserves its cache without paid retry', async () => {
+    for (const rebuild of [false, true]) {
+        const { c, chat, calls } = fixture({ vectorExternalIndex: true });
+        chat.memoryJournals = [{ id: 'j', content: '约定' }];
+        const scope = vm.runInContext('VectorMemoryTools', c).indexScope(chat, c.vectorMemoryApiFingerprint(c.resolveVectorMemoryApi()));
+        const normal = c.fetch;
+        c.fetch = async (...args) => {
+            const result = await normal(...args);
+            await c.VectorIndexStore.commit(scope, { peer: { version: 2, chunks: [{ key: 'peer', start: 0, end: 1, vector: [0, 1] }] } }, 'newer-page');
+            return result;
+        };
+        await assert.rejects(c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true, rebuild }), /索引已更新/);
+        assert.equal(calls.length, 1); assert.equal((await c.VectorIndexStore.read(scope)).fingerprint, 'newer-page');
+        assert.deepEqual(Object.keys(chat.memoryVectorIndex || {}), []); assert.equal(chat.memoryJournals[0].content, '约定');
+    }
+});
 test('configured character chunks do not split UTF16 pairs', () => {
     const { c, chat } = fixture({ vectorChunkSize: 200, vectorChunkOverlap: 10 }), tool = vm.runInContext('VectorMemoryTools', c);
     const chunks = tool.chunks(chat, { title: '', content: 'a😀'.repeat(250) });

@@ -75,6 +75,15 @@ test('preset resource summary exposes dependencies without loading external file
     const summary=f.api.inspectResources(preset);assert.ok(summary.resources.some(x=>x.includes('cdn.example')));assert.equal(JSON.stringify(summary).includes('token=private'),false);
     await f.api.applyPreset(preset);assert.equal(f.api.canUndo(),true);await f.api.undoPreset();assert.equal(JSON.stringify(f.db.homeLayoutPages),before);assert.equal(f.db.wallpaper,image);assert.equal(f.api.canUndo(),false);
 });
+
+test('home presets round-trip the derivative music entry without allowing unknown app identifiers', async () => {
+    const f = fixture(); f.db.homeLayoutPages[0].push('app-uvu-music');
+    const preset = await f.api.createPreset('music home', false);
+    assert.ok(preset.settings.homeLayoutPages[0].includes('app-uvu-music'));
+    await f.api.applyPreset(preset); await f.api.undoPreset();
+    const invalid = plain(preset); invalid.settings.homeLayoutPages[0].push('app-unregistered');
+    assert.throws(() => f.api.validate(invalid), /无法识别/);
+});
 test('preset undo persistence failure keeps imported settings available for retry', async () => {
     const f=fixture(),preset=await f.api.createPreset('next',true);preset.settings.homeSignature='new';await f.api.applyPreset(preset);f.setFailing(true);
     await assert.rejects(f.api.undoPreset(),/disk full/);assert.equal(f.db.homeSignature,'new');assert.equal(f.api.canUndo(),true);

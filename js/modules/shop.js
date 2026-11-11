@@ -162,7 +162,8 @@ async function saveShopSettings(settings) {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (!chat) return;
     chat.shopSettings = settings;
-    await dexieDB.characters.update(chat.id, { shopSettings: chat.shopSettings });
+    if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopSettings: chat.shopSettings });
+    else await dexieDB.characters.update(chat.id, { shopSettings: chat.shopSettings });
 }
 
 function getCustomCategories() {
@@ -538,7 +539,8 @@ async function forceRefreshShop() {
         const chat = db.characters.find(c => c.id === currentChatId);
         if (chat) {
             delete chat.shopData;
-            await dexieDB.characters.update(chat.id, { shopData: null });
+            if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopData: null });
+            else await dexieDB.characters.update(chat.id, { shopData: null });
         }
 
         await fetchShopData();
@@ -858,9 +860,11 @@ async function fetchShopData() {
             items: items,
             lastUpdated: Date.now()
         };
-        await dexieDB.characters.update(chat.id, { shopData: chat.shopData });
+        if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopData: chat.shopData });
+        else await dexieDB.characters.update(chat.id, { shopData: chat.shopData });
 
     } catch (e) {
+        if (e.name === 'DataConflictError') throw e;
         console.error("XML Parse Error", e);
         throw new Error("XML Parse Error");
     }

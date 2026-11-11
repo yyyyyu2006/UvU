@@ -93,7 +93,7 @@
         const task = async () => {
             if (guard && !guard()) throw new Error('角色、存档或记录已变化，请重试');
             if (store.calendarData !== old) throw new Error('日历数据已更新，请重试');
-            await dexieDB.transaction('rw', dexieDB.globalSettings, () => dexieDB.globalSettings.put({ key: 'calendarData', value }));
+            await dexieDB.transaction('rw', dexieDB.globalSettings, () => typeof putGuardedSettings === 'function' ? putGuardedSettings([{ key: 'calendarData', value }]) : dexieDB.globalSettings.put({ key: 'calendarData', value }));
             store.calendarData = value;
         };
         await (typeof runDataPersistence === 'function' ? runDataPersistence(task) : task());

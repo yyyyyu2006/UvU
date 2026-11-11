@@ -1030,6 +1030,17 @@ async function storagePersistImportedSelection(selection, modules, pending) {
     };
 
     await dexieDB.transaction('rw', tables, async () => {
+        // Validate against this page's last loaded/saved version inside the same write transaction.
+        if (typeof assertPersistedRecordsCurrent === 'function') {
+            if (includeChats && hasChatData) for (const key of ['characters', 'groups']) {
+                if (!pending[key]) continue;
+                const ids = new Set([...(selection.contacts || selection.chats ? modules[key] || [] : []), ...(selection.other ? modules.mediaCache?.[key] || [] : [])].map(chat => chat.id));
+                await assertPersistedRecordsCurrent(dexieDB[key], pending[key].filter(chat => ids.has(chat.id)), 'id', selection.replaceAll === true);
+            }
+            if (hasWorldBooks) await assertPersistedRecordsCurrent(dexieDB.worldBooks, pending.worldBooks, 'id', true);
+            if (hasStickers) await assertPersistedRecordsCurrent(dexieDB.myStickers, pending.myStickers, 'id', true);
+            if (selectedSettingKeys.length) await assertPersistedRecordsCurrent(dexieDB.globalSettings, selectedSettingKeys.map(key => ({ key, value: pending[key] })), 'key');
+        }
         if (includeChats && hasChatData) {
             for (const key of ['characters', 'groups']) {
                 if (!pending[key]) continue;
@@ -1043,15 +1054,21 @@ async function storagePersistImportedSelection(selection, modules, pending) {
                 });
                 if (selection.replaceAll) await dexieDB[key].clear();
                 if (changed.length) await putBatches(dexieDB[key], changed, 1);
+                if (typeof stagePersistedRecords === 'function') {
+                    if (selection.replaceAll && typeof stagePersistedReplacement === 'function') stagePersistedReplacement(dexieDB[key], changed);
+                    else stagePersistedRecords(dexieDB[key], changed);
+                }
             }
         }
         if (hasWorldBooks) {
             await dexieDB.worldBooks.clear();
             await putBatches(dexieDB.worldBooks, pending.worldBooks);
+            if (typeof stagePersistedReplacement === 'function') stagePersistedReplacement(dexieDB.worldBooks, pending.worldBooks);
         }
         if (hasStickers) {
             await dexieDB.myStickers.clear();
             await putBatches(dexieDB.myStickers, pending.myStickers);
+            if (typeof stagePersistedReplacement === 'function') stagePersistedReplacement(dexieDB.myStickers, pending.myStickers);
         }
         if (hasFonts) {
             if (selection.replaceAll) await dexieDB.customFonts.clear();
@@ -1063,6 +1080,7 @@ async function storagePersistImportedSelection(selection, modules, pending) {
             if (modules.mediaCache.tables[name].length) await putBatches(dexieDB[name], modules.mediaCache.tables[name]);
         }
         await Promise.all(selectedSettingKeys.map(key => dexieDB.globalSettings.put({ key, value: pending[key] })));
+        if (typeof stagePersistedRecords === 'function') stagePersistedRecords(dexieDB.globalSettings, selectedSettingKeys.map(key => ({ key, value: pending[key] })), 'key');
     });
 }
 
@@ -1071,7 +1089,9 @@ async function storageCommitImport(selection, modules) {
     const commit = async () => {
         const pending = storagePrepareImport(selection, modules);
         await storagePersistImportedSelection(selection, modules, pending);
-        Object.assign(db, pending);
+        // Nested transactions resolve before the outer transaction commits; expose restored data only on commit.
+        if (typeof afterDataPersistenceCommit === 'function') afterDataPersistenceCommit(() => Object.assign(db, pending));
+        else Object.assign(db, pending);
     };
     return runDataPersistence(commit);
 }

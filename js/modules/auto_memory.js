@@ -828,9 +828,11 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     }
     const external = settings.vectorExternalIndex && typeof VectorIndexStore !== 'undefined' && tools;
     const indexScope = external ? tools.indexScope(chat, apiFingerprint) : '';
-    if (external && !options.rebuild) {
+    let indexRevision;
+    if (external) {
         const stored = await VectorIndexStore.read(indexScope); assertCurrent(true);
-        oldIndex = stored.fingerprint === snapshot ? stored.index : { ...stored.index, ...legacyIndex };
+        indexRevision = stored.updatedAt;
+        if (!options.rebuild) oldIndex = stored.fingerprint === snapshot ? stored.index : { ...stored.index, ...legacyIndex };
     }
     const rewritten = options.indexOnly ? { query: '', queries: [] } : tools ? await tools.rewrite(chat, rawQuery, config, signal) : { query: rawQuery, queries: [rawQuery] };
     assertCurrent();
@@ -902,7 +904,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         if (indexCollected && (external || !sameMemoryVectorIndex(oldIndex, committedIndex))) {
             chat.memoryVectorIndex = committedIndex;
             try {
-                if (external) await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true, true));
+                if (external) await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true, true), indexRevision);
                 else await saveData();
             }
             catch (error) {

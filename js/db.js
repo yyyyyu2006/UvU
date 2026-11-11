@@ -604,7 +604,7 @@ function initDatabase() {
     });
 }
 
-// 按内容比较，兼容旧功能直接原地修改对象；不保留可能在事务失败后失真的缓存基线。
+// 按内容比较，兼容旧功能直接原地修改对象；冲突指纹仅在成功提交后更新。
 function persistedValuesEqual(left, right, seen = new WeakMap()) {
     if (Object.is(left, right)) return true;
     if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
@@ -620,12 +620,133 @@ function persistedValuesEqual(left, right, seen = new WeakMap()) {
     return keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && persistedValuesEqual(left[key], right[key], seen));
 }
 
+// Per-page optimistic baselines. Only compact stamps are retained, never another copy of chat history.
+const persistedPageBaselines = new WeakMap(), persistedTransactionBaselines = new WeakMap(), persistedCommitActions = new WeakMap();
+function persistedRecordStamp(value) {
+    // Merely opening/saving a chat touches archive.updatedAt; content remains the conflict boundary.
+    const archiveMetadata = new Set(Array.isArray(value?.archives) ? value.archives : []);
+    const text = JSON.stringify(value, function (key, item) { return key === 'updatedAt' && archiveMetadata.has(this) ? undefined : item; });
+    if (text === undefined) return 'missing';
+    let first = 2166136261, second = 5381;
+    for (let i = 0; i < text.length; i++) { const code = text.charCodeAt(i); first = Math.imul(first ^ code, 16777619); second = Math.imul(second, 33) ^ code; }
+    return text.length + ':' + (first >>> 0).toString(16) + ':' + (second >>> 0).toString(16);
+}
+function persistedPageTable(table, create = false) {
+    const database = table.db || dexieDB;
+    let tables = persistedPageBaselines.get(database);
+    if (!tables && create) { tables = new Map(); persistedPageBaselines.set(database, tables); }
+    if (!tables) return;
+    if (!tables.has(table.name) && create) tables.set(table.name, new Map());
+    return tables.get(table.name);
+}
+function persistedRootTransaction() {
+    let tx = typeof Dexie !== 'undefined' ? Dexie.currentTransaction : null;
+    while (tx?.parent) tx = tx.parent;
+    return tx;
+}
+function afterDataPersistenceCommit(action) {
+    const tx = persistedRootTransaction();
+    if (!tx) { action(); return; }
+    let actions = persistedCommitActions.get(tx);
+    if (!actions) {
+        actions = []; persistedCommitActions.set(tx, actions);
+        tx.on('complete', () => { for (const complete of actions) complete(); });
+    }
+    actions.push(action);
+}
+function persistedTransactionState() {
+    const tx = persistedRootTransaction();
+    if (!tx) return null;
+    let state = persistedTransactionBaselines.get(tx);
+    if (!state) {
+        state = new Map(); persistedTransactionBaselines.set(tx, state);
+        tx.on('complete', () => { for (const [table, rows] of state) { const target = persistedPageTable(table, true); for (const [key, stamp] of rows) target.set(key, { stored: stamp, local: stamp }); } });
+    }
+    return state;
+}
+function persistedRecordBaseline(table, key) {
+    const staged = persistedTransactionState()?.get(table);
+    if (staged?.has(key)) return { stored: staged.get(key), local: staged.get(key) };
+    const baseline = persistedPageTable(table);
+    return baseline ? baseline.get(key) || { stored: 'missing', local: 'missing' } : null;
+}
+function stagePersistedRecords(table, records, keyName = 'id') {
+    const state = persistedTransactionState();
+    if (!state) { const target = persistedPageTable(table, true); for (const row of records) { const stamp = persistedRecordStamp(row); target.set(row[keyName], { stored: stamp, local: stamp }); } return; }
+    if (!state.has(table)) state.set(table, new Map());
+    const pending = state.get(table);
+    for (const row of records) pending.set(row[keyName], persistedRecordStamp(row));
+}
+function stagePersistedDeletions(table, keys) {
+    const state = persistedTransactionState();
+    if (!state) { const target = persistedPageTable(table, true); for (const key of keys) target.set(key, { stored: 'missing', local: 'missing' }); return; }
+    if (!state.has(table)) state.set(table, new Map());
+    for (const key of keys) state.get(table).set(key, 'missing');
+}
+function stagePersistedReplacement(table, records, keyName = 'id') {
+    const keys = new Set([...(persistedPageTable(table)?.keys() || []), ...(persistedTransactionState()?.get(table)?.keys() || [])]);
+    stagePersistedDeletions(table, keys); stagePersistedRecords(table, records, keyName);
+}
+function persistedConflict(table) {
+    const label = { characters: '角色／存档', groups: '群聊', worldBooks: '世界书', myStickers: '表情', globalSettings: '设置' }[table.name] || '数据';
+    const error = new Error(label + '已被其他页面或操作更新，本次未覆盖。请先导出本页未保存内容，再刷新后重试。');
+    error.name = 'DataConflictError'; return error;
+}
+async function putGuardedSettings(records) {
+    await assertPersistedRecordsCurrent(dexieDB.globalSettings, records, 'key');
+    for (const row of records) await dexieDB.globalSettings.put(row);
+    stagePersistedRecords(dexieDB.globalSettings, records, 'key');
+}
+async function deleteGuardedRecords(table, keys, keyName = 'id') {
+    await assertPersistedRecordsCurrent(table, keys.map(key => ({ [keyName]: key })), keyName);
+    await table.bulkDelete(keys); stagePersistedDeletions(table, keys);
+}
+async function updateGuardedRecord(table, key, changes) {
+    return runDataPersistence(() => table.db.transaction('rw', table, async () => {
+        await assertPersistedRecordsCurrent(table, [{ id: key }]);
+        const updated = await table.update(key, changes);
+        if (updated) stagePersistedRecords(table, [await table.get(key)]);
+        return updated;
+    }));
+}
+async function assertPersistedRecordsCurrent(table, records, keyName = 'id', wholeTable = false) {
+    if (!persistedPageTable(table)) return;
+    const stored = wholeTable ? await table.toArray() : await table.bulkGet(records.map(row => row[keyName]));
+    const seen = new Set();
+    for (let i = 0; i < stored.length; i++) {
+        const row = stored[i], key = wholeTable ? row[keyName] : records[i][keyName]; seen.add(key);
+        const expected = persistedRecordBaseline(table, key);
+        if (expected && persistedRecordStamp(row) !== expected.stored) throw persistedConflict(table);
+    }
+    if (wholeTable) {
+        const keys = new Set([...persistedPageTable(table).keys(), ...(persistedTransactionState()?.get(table)?.keys() || [])]);
+        for (const key of keys) if (!seen.has(key) && persistedRecordBaseline(table, key).stored !== 'missing') throw persistedConflict(table);
+    }
+}
+function initializePersistedPageBaselines(rows, logical = false) {
+    for (const [name, records] of Object.entries(rows)) {
+        const table = dexieDB[name]; if (!table) continue;
+        if (!logical) { const tables = persistedPageBaselines.get(dexieDB) || new Map(); persistedPageBaselines.set(dexieDB, tables); tables.set(name, new Map()); }
+        const baseline = persistedPageTable(table, true), keyName = name === 'globalSettings' ? 'key' : 'id';
+        for (const row of records) { const stamp = persistedRecordStamp(row); const before = baseline.get(row[keyName]); baseline.set(row[keyName], logical ? { stored: before?.stored || 'missing', local: stamp } : { stored: stamp, local: stamp }); }
+    }
+}
 async function putChangedRecords(table, records, keyName = 'id', batchSize = 16) {
     // 限制每次读取的历史数据量，不长期复制整份数据库。
     for (let start = 0; start < records.length; start += batchSize) {
         const batch = records.slice(start, start + batchSize);
         const stored = await table.bulkGet(batch.map(record => record[keyName]));
-        const changed = batch.filter((record, index) => !persistedValuesEqual(record, stored[index]));
+        const changed = [];
+        for (let i = 0; i < batch.length; i++) {
+            const record = batch[i], local = persistedRecordStamp(record), remote = persistedRecordStamp(stored[i]);
+            const expected = persistedRecordBaseline(table, record[keyName]);
+            if (expected && remote !== expected.stored) {
+                if (local === expected.local) continue; // An untouched stale page has nothing to write here.
+                if (local !== remote) throw persistedConflict(table);
+            }
+            if (!persistedValuesEqual(record, stored[i])) changed.push(record);
+            stagePersistedRecords(table, [record], keyName);
+        }
         if (changed.length) await table.bulkPut(changed);
     }
 }
@@ -656,13 +777,15 @@ const saveData = async () => {
 };
 
 const loadData = async () => {
-    const [characters, groups, worldBooks, myStickers, settingsArray] = await Promise.all([
+    const [characters, groups, worldBooks, myStickers, settingsArray] = await dexieDB.transaction('r',
+        [dexieDB.characters, dexieDB.groups, dexieDB.worldBooks, dexieDB.myStickers, dexieDB.globalSettings], () => Promise.all([
         dexieDB.characters.toArray(),
         dexieDB.groups.toArray(),
         dexieDB.worldBooks.toArray(),
         dexieDB.myStickers.toArray(),
         dexieDB.globalSettings.toArray()
-    ]);
+    ]));
+    initializePersistedPageBaselines({ characters, groups, worldBooks, myStickers, globalSettings: settingsArray });
 
     db.characters = characters;
     db.groups = groups;
@@ -768,6 +891,12 @@ const loadData = async () => {
         if (!g.callHistory) g.callHistory = [];
     });
     
+    // Normalize existing mirrors without consuming main.init's one-time legacy archive migration.
+    if (typeof syncChatActiveArchive === 'function') for (const chat of [...db.characters, ...db.groups]) {
+        if (Array.isArray(chat.archives) && chat.archives.length) syncChatActiveArchive(chat);
+    }
+    initializePersistedPageBaselines({ characters: db.characters, groups: db.groups, worldBooks: db.worldBooks, myStickers: db.myStickers,
+        globalSettings: globalSettingKeys.filter(key => db[key] !== undefined).map(key => ({ key, value: db[key] })) }, true);
     // Handle old localStorage data if it exists
     const oldLocalStorageData = localStorage.getItem('gemini-chat-app-db');
     if(oldLocalStorageData) {

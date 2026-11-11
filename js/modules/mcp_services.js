@@ -143,7 +143,7 @@
             const previous = db.mcpSettings; db.mcpSettings = next; clearRuntime();
             try {
                 if (typeof dexieDB !== 'undefined' && dexieDB.globalSettings && typeof runDataPersistence === 'function') {
-                    await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () => dexieDB.globalSettings.put({ key: 'mcpSettings', value: next })));
+                    await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () => typeof putGuardedSettings === 'function' ? putGuardedSettings([{ key: 'mcpSettings', value: next }]) : dexieDB.globalSettings.put({ key: 'mcpSettings', value: next })));
                 } else await saveData();
             } catch (error) { if (db.mcpSettings === next) db.mcpSettings = previous; clearRuntime(); throw error; }
             return settings();

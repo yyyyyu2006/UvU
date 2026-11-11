@@ -3,7 +3,7 @@
     const STORAGE_KEY = 'uvu-story-bridge.v1';
     const DEFAULT_URL = 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge';
     const PREVIOUS_DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
-    const FRONTEND_BUILD = '20261111-rules-request-v1';
+    const FRONTEND_BUILD = '20261111-persistence-vector-v1';
     let syncBusy = false;
     let pollTimer = null;
     let sendBusy = false;

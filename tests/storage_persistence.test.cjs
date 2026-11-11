@@ -7,6 +7,11 @@ const Dexie = require('dexie');
 const { indexedDB, IDBKeyRange } = require('fake-indexeddb');
 
 let serial = 0;
+async function peerOf(f) {
+    const c=vm.createContext({Dexie,console,structuredClone,Blob,File,atob,window:{},document:{addEventListener(){}},localStorage:{getItem:()=>null}});
+    for(const file of ['db.js','modules/chat_archives.js','modules/storage.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js',file),'utf8'),c);
+    c.dexieDB=f.database;c.db=structuredClone(f.c.db);await vm.runInContext('saveData()',c);return {c,save:()=>vm.runInContext('saveData()',c)};
+}
 async function fixture(t) {
     const database = new Dexie(`uvu-regression-${Date.now()}-${serial++}`, { indexedDB, IDBKeyRange });
     database.version(1).stores({ characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key', customFonts: '&id',
@@ -132,6 +137,125 @@ test('concurrent saves serialize and retain latest state', async t => {
     const second = f.save();
     await Promise.all([first, second]);
     assert.equal((await f.database.characters.get('c')).persona, 'latest');
+});
+test('unchanged stale page cannot overwrite another page memo or resurrect a deleted record',async t=>{
+ const f=await fixture(t),p=await peerOf(f);f.c.db.characters[0].characterMemos={notes:[{id:'new',fact:'new fact'}]};await f.save();
+ p.c.db.apiSettings.model='other model';await p.save();assert.equal((await f.database.characters.get('c')).characterMemos.notes[0].id,'new');
+ await f.database.characters.delete('c');await p.save();assert.equal(await f.database.characters.get('c'),undefined);
+});
+test('two pages editing the same record reject stale writes atomically and preserve local draft',async t=>{
+ const f=await fixture(t),p=await peerOf(f);f.c.db.characters[0].persona='saved remotely';await f.save();
+ p.c.db.characters[0].persona='local draft';p.c.db.groups[0].name='must rollback';
+ await assert.rejects(p.save(),/更新|冲突/);assert.equal((await f.database.characters.get('c')).persona,'saved remotely');assert.equal((await f.database.groups.get('g')).name,undefined);assert.equal(p.c.db.characters[0].persona,'local draft');
+});
+test('outer rollback leaves persistence baseline retryable and nested import memory unchanged',async t=>{
+ const f=await fixture(t),original=f.c.db.characters;
+ await assert.rejects(f.database.transaction('rw',f.database.tables,async()=>{
+  await f.c.storageCommitImport({contacts:true,chats:true},{characters:[{id:'c',persona:'temporary restore',history:[]}]});throw Error('outer abort');
+ }),/outer abort/);
+ assert.equal(f.c.db.characters,original);assert.equal((await f.database.characters.get('c')).persona,'original persona');
+ f.c.db.characters[0].persona='retry after abort';await f.save();assert.equal((await f.database.characters.get('c')).persona,'retry after abort');
+});
+test('restore refuses stale selected data rather than clearing a newer page worldbooks',async t=>{
+ const f=await fixture(t),p=await peerOf(f),old=p.c.db.worldBooks;
+ f.c.db.worldBooks.push({id:'new-book',content:'newer external book'});await f.save();
+ await assert.rejects(p.c.storageCommitImport({worldbooks:true},{worldBooks:[{id:'replacement',content:'old restore'}]}),/更新|冲突/);
+ assert.equal(p.c.db.worldBooks,old);assert.equal((await f.database.worldBooks.get('new-book')).content,'newer external book');assert.equal(await f.database.worldBooks.get('replacement'),undefined);
+});
+
+test('real page loading keeps normalized unchanged roles from overwriting a peer update', async t => {
+    const f = await fixture(t), p = await peerOf(f);
+    f.c.localStorage = p.c.localStorage = { getItem: () => null };
+    await vm.runInContext('loadData()', f.c); await vm.runInContext('loadData()', p.c);
+    assert.equal(p.c.db.characters[0].showTimestamp, false);
+    f.c.db.characters[0].characterMemos = { notes: [{ id: 'remote', fact: 'new memory' }] }; await f.save();
+    p.c.db.apiSettings.model = 'local-setting'; await p.save();
+    assert.equal((await f.database.characters.get('c')).characterMemos.notes[0].id, 'remote');
+    p.c.db.characters[0].persona = 'local draft';
+    await assert.rejects(p.save(), /更新/); assert.equal(p.c.db.characters[0].persona, 'local draft');
+});
+
+test('loading legacy data preserves the startup archive migration signal and persists it once', async t => {
+    const f = await fixture(t);
+    await f.database.characters.put({ id: 'c', history: [{ id: 'legacy', content: 'legacy story' }] });
+    f.c.localStorage = { getItem: () => null };
+    await vm.runInContext('loadData()', f.c);
+    assert.equal(f.c.ensureAllChatArchives(), true);
+    await f.save(); const saved = await f.database.characters.get('c');
+    assert.ok(saved.activeArchiveId); assert.equal(saved.archives[0].data.history[0].content, 'legacy story');
+    await vm.runInContext('loadData()', f.c);
+    assert.equal(f.c.ensureAllChatArchives(), false);
+});
+
+test('touching an open archive timestamp alone is not a local edit when another page saved new memory', async t => {
+    const f = await fixture(t), p = await peerOf(f);
+    f.c.db.characters[0].memoryJournals = [{ id: 'remote', content: 'saved story' }]; await f.save();
+    p.c.currentChatId = 'c';
+    p.c.db.characters[0].archives[0].updatedAt = Date.now() + 100;
+    p.c.db.apiSettings.model = 'other setting';
+    await p.save();
+    assert.equal((await f.database.characters.get('c')).memoryJournals[0].id, 'remote');
+});
+
+test('table replacement stages deletions inside the same root transaction and publishes only on commit', async t => {
+    const f = await fixture(t);
+    await f.database.transaction('rw', f.database.tables, async () => {
+        await f.c.storageCommitImport({ worldbooks: true }, { worldBooks: [{ id: 'new', content: 'first' }] });
+        await f.c.storageCommitImport({ worldbooks: true }, { worldBooks: [{ id: 'second', content: 'second' }] });
+    });
+    assert.equal(f.c.db.worldBooks[0].id, 'second');
+    await f.save(); assert.deepEqual((await f.database.worldBooks.toArray()).map(x => x.id), ['second']);
+    f.c.db.worldBooks[0].content = 'normal edit'; await f.save();
+    assert.equal((await f.database.worldBooks.get('second')).content, 'normal edit');
+});
+
+test('guarded setting writes and deletions detect peers and leave baselines retryable after abort', async t => {
+    const f = await fixture(t), p = await peerOf(f);
+    await f.database.transaction('rw', f.database.globalSettings, () => f.c.putGuardedSettings([{ key: 'apiSettings', value: { model: 'new' } }]));
+    await assert.rejects(f.database.transaction('rw', f.database.globalSettings, () => p.c.putGuardedSettings([{ key: 'apiSettings', value: { model: 'stale' } }])), /更新/);
+    await assert.rejects(f.database.transaction('rw', f.database.globalSettings, async () => {
+        await f.c.deleteGuardedRecords(f.database.globalSettings, ['cotPresets'], 'key'); throw Error('abort');
+    }), /abort/);
+    await f.database.transaction('rw', f.database.globalSettings, () => f.c.deleteGuardedRecords(f.database.globalSettings, ['cotPresets'], 'key'));
+    delete f.c.db.cotPresets; f.c.db.apiSettings = { model: 'new' }; await f.save();
+    assert.equal(await f.database.globalSettings.get('cotPresets'), undefined);
+});
+
+test('field-only saves stay compatible with normal saves while stale field updates and deletion reject', async t => {
+    const f = await fixture(t), p = await peerOf(f);
+    f.c.db.characters[0].shopData = { items: ['one'] };
+    await f.c.updateGuardedRecord(f.database.characters, 'c', { shopData: f.c.db.characters[0].shopData });
+    await f.save();
+    await assert.rejects(p.c.updateGuardedRecord(f.database.characters, 'c', { shopData: null }), /更新/);
+    loadChatActions(p);
+    assert.equal(await p.c.deleteChatEntity(p.c.db.characters[0], 'private'), false);
+    assert.equal((await f.database.characters.get('c')).shopData.items[0], 'one');
+    assert.equal(p.c.db.characters.length, 1);
+    loadChatActions(f); assert.equal(await f.c.deleteChatEntity(f.c.db.characters[0], 'private'), true);
+    await f.c.storageCommitImport({ contacts: true, chats: true, replaceAll: true }, { characters: [{ id: 'replacement', history: [] }] });
+    await f.save(); assert.equal((await f.database.characters.get('replacement')).id, 'replacement');
+});
+
+test('Tavern receive conflict rolls back scene receipts and cursor, never acknowledging an uncommitted scene', async t => {
+    const f = await fixture(t), p = await peerOf(f); let acknowledgements = 0;
+    p.c.URL = URL; p.c.TextEncoder = TextEncoder; p.c.AbortSignal = AbortSignal; p.c.crypto = crypto;
+    p.c.setInterval = () => 1; p.c.clearInterval = () => {};
+    p.c.localStorage = { getItem: key => key === 'uvu-story-bridge.v1' ? JSON.stringify({ token: 'fixture' }) : null, setItem() {} };
+    p.c.document = { visibilityState: 'visible', addEventListener() {}, getElementById: () => null };
+    p.c.navigator = { permissions: { query: async () => ({ state: 'granted' }) } };
+    p.c.db.uvuStoryBridgeSettings = { baseUrl: 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge', bridgeEnabled: true };
+    p.c.fetch = async url => {
+        if (url.includes('/ack')) acknowledgements++;
+        return { ok: true, json: async () => url.includes('/events?') ? { latestSeq: 1, events: [{ seq: 1, kind: 'scene_transcript', characterKey: 'c', sceneId: 'incoming', payload: { archiveId: p.c.db.characters[0].activeArchiveId, part: 1, partCount: 1, text: 'scene to review' } }] } : {} };
+    };
+    for (const name of ['bridge_text', 'bridge_summary', 'bridge_file', 'story_bridge']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/' + name + '.js'), 'utf8'), p.c);
+    f.c.db.characters[0].characterMemos = { notes: [{ id: 'remote', fact: 'saved remotely' }] }; await f.save();
+    await assert.rejects(p.c.window.UvUStoryBridge.syncIncoming('c'), /更新/);
+    assert.equal(acknowledgements, 0);
+    assert.equal(p.c.db.characters[0].memoryJournals.length, 0);
+    assert.equal(p.c.db.uvuStoryBridgeSettings.cursorByCharacter.c || 0, 0);
+    assert.deepEqual(Object.keys(p.c.db.uvuStoryBridgeSettings.receipts), []);
+    assert.equal((await f.database.characters.get('c')).characterMemos.notes[0].id, 'remote');
 });
 
 test('fire-and-forget save captures active archive before an immediate archive switch', async t => {

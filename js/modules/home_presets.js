@@ -6,7 +6,7 @@
     const VERSION = 1;
     const MAX_BYTES = 50 * 1024 * 1024;
     const APP_IDS = new Set(['app-chat', 'app-api', 'app-wallpaper', 'app-worldbook',
-        'app-customize', 'app-tutorial', 'app-console', 'app-widget-market', 'app-reader', 'app-placeholder']);
+        'app-customize', 'app-tutorial', 'app-console', 'app-widget-market', 'app-reader', 'app-placeholder', 'app-uvu-music']);
     const HOME_KEYS = ['wallpaper', 'homeScreenMode', 'customIcons', 'homeSignature',
         'insWidgetSettings', 'homeWidgetSettings', 'homeLayoutPages'];
     const clone = value => JSON.parse(JSON.stringify(value));
@@ -250,7 +250,10 @@
         const saved = undoState;
         await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
             for (const [key, entry] of Object.entries(saved.snapshot)) {
-                if (entry.exists) await dexieDB.globalSettings.put({ key, value: entry.value });
+                if (entry.exists) {
+                    if (typeof putGuardedSettings === 'function') await putGuardedSettings([{ key, value: entry.value }]);
+                    else await dexieDB.globalSettings.put({ key, value: entry.value });
+                } else if (typeof deleteGuardedRecords === 'function') await deleteGuardedRecords(dexieDB.globalSettings, [key], 'key');
                 else await dexieDB.globalSettings.delete(key);
             }
         });
@@ -297,9 +300,9 @@
         const oldTemplateIds = new Set((db.widgetTemplates || []).map(item => item.id));
         // 先原子保存白名单设置，成功后才更新内存与页面；失败不覆盖原主页。
         await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
-            for (const [key, value] of Object.entries(settings)) {
-                await dexieDB.globalSettings.put({ key, value });
-            }
+            const records = Object.entries(settings).map(([key, value]) => ({ key, value }));
+            if (typeof putGuardedSettings === 'function') await putGuardedSettings(records);
+            else for (const record of records) await dexieDB.globalSettings.put(record);
         });
         Object.assign(db, settings);
         undoState = { snapshot, keys: Object.keys(settings), applied: JSON.stringify(settings), addedTemplates: settings.widgetTemplates.filter(item => !oldTemplateIds.has(item.id)).map(item => item.id) };
