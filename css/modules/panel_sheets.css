@@ -1,0 +1,162 @@
+/* November 11 approved sheets. Scoped to derivative dialogs, never chat cards or status templates. */
+.uvu-sheet-v2.uvu-mono-panel {
+    --draft-ink:#161719;--draft-muted:#85888c;--draft-line:#edeef0;
+    --draft-canvas:#fff;--draft-paper:#fff;--draft-soft:#f5f5f6;
+    --draft-body-size:14px;color:var(--draft-ink);font-size:14px;
+}
+.uvu-sheet-v2.uvu-mono-panel.mono-page:not(.screen),
+#auto-memory-modal.uvu-mono-panel > .uvu-sheet-v2.mono-page {
+    width:min(398px,calc(100% - 32px)) !important;max-width:398px !important;
+    height:min(800px,calc(100dvh - 120px)) !important;
+    max-height:calc(100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    min-height:0;margin:auto !important;border-radius:26px !important;overflow:hidden;
+    border:0 !important;background:#fff !important;box-shadow:0 12px 40px #0000000b !important;
+}
+.mono-page-overlay:has(.uvu-sheet-v2),.draft-workspace-overlay:has(.uvu-sheet-v2) {
+    padding:0 !important;align-items:center !important;justify-content:center !important;
+    background:rgba(35,38,42,.19);backdrop-filter:none;
+}
+#uvu-notification-preferences[open]::before,.worldbook-advanced[open]::before { content:'';position:fixed;inset:0;z-index:39999;background:rgba(35,38,42,.19); }
+body:has(#uvu-notification-preferences[open],.worldbook-advanced[open]) { overflow:hidden;overscroll-behavior:none; }
+.uvu-sheet-v2.uvu-mono-panel.mono-page > .mono-page-nav {
+    position:relative;display:flex !important;align-items:center;justify-content:flex-start;
+    flex:0 0 auto;min-height:76px;height:auto;gap:8px;padding:24px 24px 20px !important;
+    border:0;background:#fff !important;
+}
+.uvu-sheet-v2.uvu-mono-panel .mono-page-nav > .mono-page-title,
+.uvu-sheet-v2.uvu-mono-panel .mono-page-nav .calendar-home {
+    position:static !important;inset:auto !important;transform:none !important;
+    font-size:25px !important;font-weight:650 !important;line-height:1.3;
+    letter-spacing:-.8px;flex:1;text-align:left;white-space:normal;overflow-wrap:anywhere;
+}
+.uvu-sheet-v2.uvu-mono-panel .mono-page-nav > :is(.sheet-close,.sheet-aux,.sheet-back) {
+    display:inline-flex !important;flex:0 0 40px;width:40px !important;height:40px !important;
+    min-height:40px !important;min-width:40px !important;margin:-6px -8px -6px 0 !important;
+    padding:10px !important;background:#f5f5f6 !important;border:0;border-radius:50% !important;
+    color:#555b62;
+}
+.uvu-sheet-v2.uvu-mono-panel .mono-page-nav > .sheet-back { margin-left:-12px !important;background:transparent !important;flex-basis:32px; }
+.uvu-sheet-v2.uvu-mono-panel .mono-page-nav > .sheet-back[hidden] { display:none !important; }
+.uvu-sheet-v2 .mono-page-nav > :is(.mono-nav-help,.mono-nav-spacer) { display:none !important; }
+.uvu-sheet-v2.uvu-mono-panel.mono-page > :is(.shared-document-body,.mcp-body,.derived-body,.calendar-body,.calendar-editor-body,.ms-dialog-body,.cc-body,.mono-memory-body,.draft-scroll),
+#auto-memory-modal.uvu-mono-panel .uvu-sheet-v2 #auto-memory-form {
+    padding:0 24px 24px !important;gap:24px;background:#fff !important;
+    overflow-x:hidden;min-height:0;scrollbar-gutter:auto;
+}
+.uvu-sheet-v2 .mono-subview { gap:24px; }
+.uvu-sheet-v2.uvu-mono-panel :is(.draft-card,.panel-card,.relationship-section,.ms-npcs,.sticker-description-options,.draft-export-includes) {
+    border:0;border-radius:0;padding:0;background:transparent;box-shadow:none;gap:12px;
+}
+.uvu-sheet-v2.uvu-mono-panel :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select,textarea) {
+    background:#f7f7f8;border:1px solid #e9eaed;border-radius:12px;
+}
+.uvu-sheet-v2.uvu-mono-panel :where(button:not(.sheet-close,.sheet-aux,.sheet-back,.calendar-day,.calendar-home,.model-picker-list > button)) {
+    min-height:40px;border-radius:22px;padding:8px 18px;font-size:13px;font-weight:400;
+}
+.uvu-sheet-v2.uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mcp-actions,.panel-editor-actions),
+#auto-memory-modal.uvu-mono-panel .uvu-sheet-v2 .draft-fixed-actions {
+    padding:16px 24px 24px !important;gap:12px;background:#fff;border-top:1px solid #f2f2f3;
+}
+.uvu-sheet-v2.uvu-mono-panel :is(.panel-segment,.draft-segment,.calendar-tabs) { background:#f5f5f6;border-radius:14px; }
+.uvu-sheet-v2.uvu-mono-panel :is(.panel-segment button,.draft-segment button,.calendar-tabs button) { border-radius:10px;min-height:32px;padding:7px 8px;font-size:12px; }
+.uvu-sheet-v2.uvu-mono-panel :is(.panel-segment button[aria-pressed=true],.draft-segment button[aria-pressed=true],.calendar-tabs button[aria-selected=true]) { background:#fff;color:#171819;box-shadow:0 1px 5px #00000008; }
+.uvu-sheet-v2 .draft-search { background:#f5f5f6;border:0;border-radius:14px; }
+.uvu-sheet-v2.uvu-mono-panel .draft-avatar,.uvu-sheet-v2 .shared-document-context img { width:34px;height:34px;flex-basis:34px;font-size:13px; }
+.uvu-sheet-v2.uvu-mono-panel .mono-route { padding:12px 0;border-radius:0;min-height:52px;font-size:14px; }
+.uvu-sheet-v2 .draft-notice { border:0;padding:0; }
+.uvu-sheet-v2.uvu-mono-panel details > summary { font-size:12px;min-height:40px;color:var(--draft-muted); }
+.uvu-sheet-v2 .panel-summary-switches,.uvu-sheet-v2 .mono-social-switches { gap:0; }
+#auto-memory-modal .uvu-sheet-v2 .panel-summary-switches { border:0;padding:0;background:transparent; }
+.uvu-sheet-v2 :is(.panel-summary-switches,.mono-social-switches) > label { padding:12px 0;border-bottom:1px solid #edeef0; }
+.uvu-sheet-v2 .panel-coverage { background:#f5f5f6;border-radius:20px;padding:20px; }
+.uvu-sheet-v2 .panel-stats { gap:16px; }
+.uvu-sheet-v2 .panel-stats strong { font-size:28px; }
+.uvu-sheet-v2 .panel-summary-api,.uvu-sheet-v2 .draft-tools-list { border-top:1px solid #edeef0;padding-top:20px; }
+.uvu-sheet-v2 .memory-library-list { margin:0;padding:0;border:0; }
+.uvu-sheet-v2 .memory-library-card { padding:16px 0;border-bottom:1px solid #edeef0; }
+.uvu-sheet-v2 .memory-library-card::before { display:none; }
+.uvu-sheet-v2 .memory-library-pick strong { font-size:15px;font-weight:500; }
+.uvu-sheet-v2 .memory-library-card > pre { font-size:14px; }
+.uvu-sheet-v2 .mcp-service-list { gap:0; }
+#mcp-services .uvu-sheet-v2 .mcp-service-list > button.mcp-service-item { min-height:56px;padding:16px 0;border:0;border-bottom:1px solid #edeef0;border-radius:0;background:transparent; }
+#mcp-services .uvu-sheet-v2 .mcp-service-item strong { font-size:14px;font-weight:500; }
+#mcp-services .uvu-sheet-v2 :is(.mono-service-management,.mono-route-list) { border:0;padding:0;border-radius:0; }
+.uvu-sheet-v2 .mcp-tool { border:0;border-bottom:1px solid #edeef0;padding:16px 0;border-radius:0;background:transparent; }
+.uvu-sheet-v2 .mcp-result { border:0;border-radius:20px;background:#f5f5f6;padding:20px; }
+.uvu-sheet-v2 .shared-document-file-header { background:#f6f6f7;border:0;border-radius:20px;padding:20px; }
+.uvu-sheet-v2 .shared-document-context small { margin-left:auto; }
+.uvu-sheet-v2 .shared-document-editor { background:transparent;border:0;padding:0; }
+.uvu-sheet-v2[data-document-mode=send] .shared-document-preview-heading { display:none; }
+.uvu-sheet-v2[data-document-mode=send] .shared-document-editor { display:none; }
+#shared-document-dialog .uvu-sheet-v2[data-document-mode=send] .shared-document-preview-heading { display:none; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-heading { display:flex;align-items:center;justify-content:space-between;gap:16px; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-heading:not(:has(.is-loaded)) { display:block; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-heading:not(:has(.is-loaded)) > h3 { display:none; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-heading .is-loaded { width:auto;min-height:40px;padding:8px 16px;border:1px solid #e5e6e9;border-radius:22px; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-heading .is-loaded :is(.derived-icon,small) { display:none !important; }
+#shared-document-dialog .uvu-sheet-v2 .shared-document-file-header { background:#f5f5f6;border:0;border-radius:20px; }
+#shared-document-dialog .uvu-sheet-v2 .mono-file-shortcuts { display:flex;gap:8px;margin:0; }
+.uvu-sheet-v2 .mono-file-shortcuts[hidden] { display:none !important; }
+#shared-document-dialog .uvu-sheet-v2[data-document-mode=send] .shared-document-tools { display:none; }
+.uvu-sheet-v2 .mono-file-shortcuts > button { flex:1;min-height:36px;font-size:12px; }
+.uvu-sheet-v2 .shared-document-context :is(strong,h3) { font-size:14px;font-weight:400; }
+.uvu-sheet-v2 .draft-document-reader :is(p,pre) { font-size:14px;line-height:1.9; }
+.uvu-sheet-v2 .draft-document-reader h2 { font-size:18px; }
+.uvu-sheet-v2 .draft-calendar-overview,.uvu-sheet-v2 .calendar-editor-fields > section { border:0;padding:0;border-radius:0;background:transparent; }
+.uvu-sheet-v2 .calendar-mood-picker { padding:0; }
+.uvu-sheet-v2 .calendar-mood-options button { font-size:12px; }
+.uvu-sheet-v2 .draft-mood-prompt { font-size:16px; }
+.uvu-sheet-v2 .draft-export-style,.uvu-sheet-v2 .draft-export-signature { display:none; }
+.uvu-sheet-v2 .draft-export-includes { padding-top:16px;border-top:1px solid #edeef0; }
+.uvu-sheet-v2 .draft-hub-group + .draft-hub-group { border-top:1px solid #edeef0;padding-top:12px; }
+/* Notebook: content first, configuration in a separate view. */
+.character-memos-panel.uvu-sheet-v2.uvu-mono-panel :is(.memo-main,.memo-settings-page,.memo-batch) { border:0;padding:0;border-radius:0;background:transparent;box-shadow:none; }
+.uvu-sheet-v2 .memo-main,.uvu-sheet-v2 .memo-settings-page { display:flex;flex-direction:column;gap:24px; }
+.uvu-sheet-v2 .memo-identity { display:flex;align-items:center;gap:10px; }
+.uvu-sheet-v2 .memo-identity small { margin-left:auto; }
+.uvu-sheet-v2 .memo-toolbar { display:flex;flex-direction:column;gap:24px; }
+.uvu-sheet-v2 .memo-tabs { display:flex;gap:20px;border-bottom:1px solid #edeef0; }
+#character-memos-dialog .uvu-sheet-v2 .memo-tabs > button { position:relative;border:0;border-radius:0;padding:0 0 12px;min-height:32px;font-size:13px;color:#909296;background:transparent; }
+#character-memos-dialog .uvu-sheet-v2 .memo-tabs > button[aria-pressed=true] { color:#171819;font-weight:600;background:transparent; }
+.uvu-sheet-v2 .memo-tabs > button[aria-pressed=true]::after { content:'';position:absolute;top:auto;bottom:-1px;left:0;right:0;height:2px;background:#171819; }
+.uvu-sheet-v2 .memo-list { gap:0; }
+.uvu-sheet-v2 .memo-card { position:relative;padding:16px 0;border:0;border-radius:0;border-bottom:1px solid #edeef0;gap:10px; }
+.uvu-sheet-v2 .memo-card:first-child { padding-top:0; }
+.uvu-sheet-v2 .memo-card h3 { font-size:14px;font-weight:400;line-height:1.6; }
+.uvu-sheet-v2 .memo-card-head { font-size:12px;color:#85888c; }
+.uvu-sheet-v2 .memo-card-head > input { width:15px;height:15px; }
+#character-memos-dialog .memo-main:not(:has(.memo-batch[open])) .memo-card-head > input { display:none; }
+.uvu-sheet-v2 .memo-status { margin-left:auto;background:#eaf4fd;color:#4f718b;padding:3px 8px;border-radius:7px; }
+.uvu-sheet-v2 .memo-card-actions { justify-content:flex-end;gap:8px; }
+.uvu-sheet-v2 .memo-card-actions time { margin-right:auto;font-size:12px;color:#85888c; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more { position:relative;margin-left:auto;flex-basis:auto; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more > summary { display:grid;place-items:center;width:36px;height:36px;padding:8px;border-radius:50%;background:#f5f5f6;list-style:none;font-size:0; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more > summary::after { display:none; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more > summary :is(svg,img) { width:18px;height:18px; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more[open] { z-index:2; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more > div { position:absolute;right:0;top:40px;min-width:230px;padding:12px;background:#fff;border:1px solid #edeef0;border-radius:16px;box-shadow:0 8px 24px #00000012; }
+#character-memos-dialog .uvu-sheet-v2 .memo-more .memo-sources { padding-top:8px;flex-basis:100%; }
+#character-memos-dialog .uvu-sheet-v2 .memo-options > summary { display:none; }
+#character-memos-dialog .memo-main:not(:has(.memo-batch[open])) .memo-card:has(.memo-status) .memo-more { display:none; }
+#character-memos-dialog .uvu-sheet-v2 :is(.memo-footer > button,.memo-card-actions > button):not(.panel-primary) { background:#fff;border:1px solid #e5e6e9; }
+.uvu-sheet-v2 .memo-card-actions > button { min-height:32px;padding:6px 12px;font-size:12px; }
+.uvu-sheet-v2 .memo-note { font-size:13px;color:#8d9095; }
+.uvu-sheet-v2 .memo-batch > select { margin-top:12px; }
+.uvu-sheet-v2 .memo-batch-actions { margin-top:12px; }
+.uvu-sheet-v2 .memo-footer > button { flex:1; }
+.uvu-sheet-v2 .memo-detail-note { padding:20px;border-radius:20px;background:#f6f6f7;font-size:14px; }
+.uvu-sheet-v2 .memo-detail-source { border-left:2px solid #d9dce0;padding-left:14px;display:flex;flex-direction:column;gap:12px; }
+/* Exceptions explicitly requested by the user. */
+#char-status-overlay .status-token-panel,#char-status-overlay .status-token-panel :is(strong,b,span,p,button,summary,small) { font-size:13px; }
+#uvu-story-bridge-screen.uvu-mono-panel.mono-bridge-page { width:100% !important;max-width:none !important;height:100% !important;max-height:none !important;margin:0 !important;border-radius:0 !important;background:#fff !important; }
+#uvu-story-bridge-screen.uvu-mono-panel :is(.uvu-bridge-page,.mono-subview) { background:#fff; }
+#api-settings-screen #minimax-tts-settings { background:transparent;border-radius:0;box-shadow:none; }
+#minimax-tts-settings :is(.minimax-settings-section,.minimax-director-settings) { background:transparent;box-shadow:none;border:0;border-top:1px solid var(--border-color,#ececec);border-radius:0;padding:16px 0; }
+#minimax-tts-settings > .kkt-item { padding:16px !important; }
+#minimax-tts-settings .minimax-tts-actions { display:flex;gap:12px;flex-wrap:wrap; }
+#storage-analysis-screen :is(.storage-backup-extras,.storage-backup-modes,.storage-export-format) { background:transparent;color:inherit;box-shadow:none;border-radius:12px; }
+@media(max-height:560px) {
+    .uvu-sheet-v2.uvu-mono-panel.mono-page:not(.screen),#auto-memory-modal.uvu-mono-panel > .uvu-sheet-v2.mono-page { height:calc(100dvh - 32px) !important;max-height:calc(100dvh - 32px) !important; }
+    .uvu-sheet-v2.uvu-mono-panel.mono-page > .mono-page-nav { padding:16px 24px !important;min-height:64px; }
+}
+@media(prefers-reduced-motion:reduce) { .uvu-sheet-v2 *, .uvu-sheet-v2 *::before { animation:none !important;transition:none !important; } }

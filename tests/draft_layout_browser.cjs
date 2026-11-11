@@ -39,10 +39,11 @@ const server = http.createServer((req, res) => {
                 });
                 checks.push({ name, width, ...result });
                 const check = (ok, message) => { if (!ok) failures.push(name + '/' + width + ': ' + message); };
-                check(result.titleSize === '30px', 'draft page title is 30px');
-                check(result.title && result.nav && result.title.y >= result.nav.y + result.nav.h - 1, 'title sits below navigation');
+                check(result.titleSize === '25px', 'approved sheet title is 25px');
+                check(result.title && result.nav && result.title.y >= result.nav.y && result.title.y < result.nav.y + result.nav.h, 'title sits inside sheet header');
                 check(result.overflow <= 1, 'no horizontal overflow');
-                if (width <= 390) { check(result.panel.w >= width - 2, 'page uses full mobile width'); check(result.panel.h >= 840, 'page fills mobile height instead of floating old dialog'); }
+                check(result.panel.x >= 12 && result.panel.x + result.panel.w <= width - 12, 'sheet keeps side margins');
+                check(result.panel.y >= 12 && result.panel.y + result.panel.h <= 832, 'sheet remains inset vertically');
                 if (result.footer) check(result.footer.y + result.footer.h <= 845, 'action bar stays in viewport');
                 if (width === 390) await page.screenshot({ path: path.join(out, name + '.png'), animations: 'disabled' });
             }
@@ -52,15 +53,17 @@ const server = http.createServer((req, res) => {
         await page.getByLabel('选择分享文件').setInputFiles({ name: '周末计划.txt', mimeType: 'text/plain', buffer: Buffer.from('周六上午去旧书店，下午一起看场电影。\n\n周日留给散步、拍照和一顿慢慢吃的晚餐。\n'.repeat(12)) });
         await page.locator('.shared-document-actions').waitFor({ state: 'visible' });
         await inspect('file-send', '#shared-document-dialog .shared-document-dialog');
-        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '预览', exact: true }).click();
-        assert.equal(await page.locator('.mono-file-excerpt').evaluate(el => getComputedStyle(el).display), 'block');
-        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '编辑', exact: true }).click();
-        await page.getByLabel('文件正文', { exact: true }).fill('修订后的周末计划');
-        assert.equal(await page.locator('.mono-file-excerpt').textContent(), '修订后的周末计划');
+        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '预览正文', exact: true }).click();
+        assert.match(await page.locator('#shared-document-preview .draft-document-reader').textContent(), /周六上午/);
+        await page.locator('#shared-document-preview .sheet-close').click();
+        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '编辑文件', exact: true }).click();
+        await page.locator('.editor-draft').fill('修订后的周末计划');
+        await page.locator('#expanded-text-editor [data-action=apply]').click();
+        assert.equal(await page.getByLabel('文件正文', { exact: true }).inputValue(), '修订后的周末计划');
         await page.evaluate(() => document.getElementById('shared-document-dialog').dismissForward());
         await page.evaluate(() => UvUCharacterCardUI.open(db.characters[0]));
         await inspect('export', '.cc-export-dialog');
-        await page.getByRole('button', { name: '关闭角色卡导出', exact: true }).click();
+        await page.locator('.cc-export-dialog .sheet-close').click();
         await page.evaluate(() => UvUMomentsUI.settings(db.characters[0]));
         await inspect('npc', '.ms-dialog');
         await page.locator('.ms-dialog [data-action=close]').click();
@@ -73,10 +76,10 @@ const server = http.createServer((req, res) => {
             await MCPServices.save(config); openMcpSettings();
         });
         await inspect('mcp', '#mcp-services .mcp-settings');
-        await page.getByRole('button', { name: '工具与权限' }).click();
+        await page.getByRole('button', { name: '工具授权', exact: true }).click();
         assert.equal(await page.locator('#mcp-services .mono-page-title').textContent(), '工具授权');
         assert.equal(await page.locator('.mcp-tools-area').isVisible(), true);
-        await page.locator('#mcp-services .mono-nav-back').click();
+        await page.locator('#mcp-services .sheet-back').click();
         assert.equal(await page.locator('.mcp-services-area').isVisible(), true);
         await page.evaluate(() => document.getElementById('mcp-services').dismissForward());
         await page.evaluate(() => openEnvironmentCalendar());
@@ -92,7 +95,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => switchScreen('uvu-story-bridge-screen'));
         await page.locator('#uvu-story-bridge-screen.active').waitFor();
         await page.screenshot({ path: path.join(out, 'tavern.png'), animations: 'disabled' });
-        await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: /剧情审核/ }).click();
+        await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: '去审核', exact: true }).click();
         assert.equal(await page.locator('.uvu-bridge-review').isVisible(), true);
         assert.equal(await page.locator('#uvu-story-bridge-settings').isVisible(), false);
         await page.locator('#uvu-bridge-review-list > details > summary').first().click();
@@ -101,19 +104,19 @@ const server = http.createServer((req, res) => {
         await page.locator('.uvu-bridge-page').evaluate(el => el.scrollTop = 0);
         await page.screenshot({ path: path.join(out, 'tavern-review.png'), animations: 'disabled' });
         const floor = page.locator('.uvu-bridge-review-floor').first(); await floor.locator('summary').click();
-        await floor.getByLabel('编辑整层剧情').fill('修订剧情一');
-        await floor.getByLabel('编辑整层剧情').fill('修订剧情二');
-        await floor.locator('summary').click();
+        await page.locator('#draft-floor-editor').getByRole('textbox', { name: '编辑整层剧情', exact: true }).fill('修订剧情一');
+        await page.locator('#draft-floor-editor').getByRole('textbox', { name: '编辑整层剧情', exact: true }).fill('修订剧情二');
+        await page.getByRole('button', { name: '完成编辑', exact: true }).click();
         assert.equal(await floor.locator('xpath=..').locator('.mono-story-excerpt').textContent(), '修订剧情二', 'Repeated edits update the collapsed scene excerpt');
         await page.locator('.mono-story-summary-settings > summary').click();
         await page.locator('.mono-story-summary-settings select').waitFor({state:'visible'});
         await page.locator('#uvu-story-bridge-screen .mono-nav-back').click();
-        assert.equal(await page.locator('#uvu-story-bridge-settings').isVisible(), true);
+        assert.equal(await page.locator('#uvu-story-bridge-screen').getAttribute('data-mono-view'), 'main');
         await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: '角色与存档', exact: true }).click();
-        assert.equal(await page.locator('#uvu-bridge-handoff-character').isVisible(), true);
+        assert.equal(await page.locator('.draft-role-choices input[value="draft-char"]').isChecked(), true);
         assert.equal(await page.locator('#uvu-bridge-save-character').isVisible(), true);
         fs.writeFileSync(path.join(out, 'checks.json'), JSON.stringify({ origin, browser: 'Chrome / Playwright; Browser plugin not available', checks, failures, errors }, null, 2));
         assert.deepEqual(errors, []); assert.deepEqual(failures, []);
-        console.log('PASS draft navigation, 30px title, full mobile pages, fixed action bars at 320/390/768.');
+        console.log('PASS approved inset sheet navigation, 25px title, file draft edits, Tavern review isolation, fixed action bars at 320/390/768.');
     } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); server.closeAllConnections(); server.close(); process.exitCode = 1; });

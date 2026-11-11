@@ -1,8 +1,8 @@
 /* Presentation only for second-edition panels. Existing controls own their data and actions. */
 (function () {
     'use strict';
-    const roots = '.shared-document-dialog,.memory-library > .feature-dialog-card,.mcp-settings,.derived-settings,.relationship-dialog,.text-editor-card,.model-picker-card,.sticker-description-card,.regenerate-guidance-card,.resource-health,.status-token-panel,#auto-memory-modal,#uvu-story-bridge-screen,#minimax-tts-settings,#uvu-notification-preferences';
-    const monochromeRoots = '.cc-export-dialog,.ms-dialog,.uvu-calendar,.calendar-editor,.worldbook-advanced,.relationship-settings,.storage-backup-extras,.storage-backup-modes,.storage-export-format,.pv-send-modes,#pv-generated-preview,#home-preset-preview > .feature-dialog-card,.kkt-item:has(> .kkt-item-control > #setting-char-tts-voice-id)';
+    const roots = '.shared-document-dialog,.memory-library > .feature-dialog-card,.mcp-settings,.derived-settings,.relationship-dialog,.text-editor-card,.model-picker-card,.sticker-description-card,.regenerate-guidance-card,.resource-health,#auto-memory-modal,#uvu-story-bridge-screen,#uvu-notification-preferences';
+    const monochromeRoots = '.cc-export-dialog,.ms-dialog,.uvu-calendar,.calendar-editor,.worldbook-advanced,.relationship-settings,.pv-send-modes,#pv-generated-preview,#home-preset-preview > .feature-dialog-card,.kkt-item:has(> .kkt-item-control > #setting-char-tts-voice-id)';
     const allRoots = roots + ',' + monochromeRoots;
     const initialized = new WeakSet();
     const appearanceKey = 'uvu-derived-appearance.v1';
@@ -476,6 +476,11 @@
     }
     function decorate(root) {
         if (!root.isConnected) return;
+        // Comments keep their existing presentation; only the settings dialog is redesigned.
+        if (root.matches('.ms-dialog') && !root.matches('[data-sheet-settings]')) {
+            if (!['动态互动', '添加人物', '编辑人物', '人物草稿'].includes(q(root, '.ms-dialog-head strong')?.textContent)) return;
+            root.dataset.sheetSettings = 'true';
+        }
         // Explicit allow-list: music and original screens never receive this surface.
         if (root.closest('#uvu-music-screen,.uvu-music-sheet,[id^=music-],.music-app,.music-dialog,.together-listening-dialog')) return;
         if (!initialized.has(root)) {
@@ -516,8 +521,6 @@
         mcpToolRows(root);
         draftDetails(root);
         if(root.id==='auto-memory-modal'){const more=q(root,'.draft-vector-more'),refine=q(root,'.vector-refinements');if(more&&refine&&!more.contains(refine))more.append(refine);}
-        if (root.classList.contains('status-token-panel')) statusWorkspace(root);
-        if (root.id === 'minimax-tts-settings') voiceEnhancements(root);
         if (root.id === 'uvu-story-bridge-screen') reviewLayout(root);
         alignAtlas(root);
         for (const input of root.querySelectorAll('input[type=search]')) {
@@ -525,6 +528,35 @@
             const bar = make('div', 'draft-search'), icon = make('span', 'draft-search-icon');
             icon.innerHTML = window.UvULucide?.search || ''; icon.setAttribute('aria-hidden','true');
             input.before(bar); bar.append(icon,input);
+        }
+        sheetLayout(root);
+    }
+    function sheetLayout(root) {
+        const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
+        if (!panel?.matches('.mono-page:not(.screen)') || panel.dataset.sheetLayout) return;
+        panel.dataset.sheetLayout = 'true'; panel.classList.add('uvu-sheet-v2');
+        const head = q(panel, ':scope > .mono-page-nav'); if (!head) return;
+        const close = q(head, '.mono-nav-back'), title = q(head, '.mono-page-title');
+        const help = q(head, '.mono-nav-help');
+        if (help?.getAttribute('aria-label') === '选择记忆') {
+            help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux'); navIcon(help, 'check');
+        } else if (help && panel.classList.contains('character-memos-panel')) {
+            help.remove(); // Notebook instructions live with its recording settings.
+        } else if (help) {
+            const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .draft-scroll');
+            if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-help'); label(help, '使用说明'); body.append(help); }
+        }
+        if (close) {
+            close.classList.remove('mono-nav-back'); close.classList.add('sheet-close');
+            close.setAttribute('aria-label', '关闭'); navIcon(close, 'x'); head.append(close);
+        }
+        if (root.monoNavigate) {
+            const back = make('button', 'sheet-back'); back.type = 'button';
+            back.setAttribute('aria-label', '返回上一级'); navIcon(back, 'chevron-left');
+            back.onclick = () => root.monoNavigate('main');
+            if (title) title.before(back);
+            const sync = () => { back.hidden = !root.dataset.monoView || root.dataset.monoView === 'main'; };
+            root.addEventListener('mono-view-change', sync); sync();
         }
     }
     function reviewLayout(root) {
@@ -823,7 +855,7 @@
             { id: 'tt', title: 'TT 文件互通', nodes: [transport] },
             { id: 'guide', title: '使用教程', nodes: [guide] }
         ]); root.monoNavigate = navigate;
-        identity.append(routeButton('绑定存档', () => navigate('binding')), routeButton('角色与存档', () => navigate('binding')));
+        identity.append(routeButton('角色与存档', () => navigate('binding')));
         links.append(routeButton('使用教程', () => navigate('guide'))); help.onclick = () => navigate('guide');
         onlineEntry.onclick = () => navigate('online'); reviewEntry.onclick = () => navigate('review');
         const ttEntry = routeButton('TT 文件交接', () => navigate('tt')); links.prepend(ttEntry);
@@ -914,12 +946,18 @@
     }
 
     function pageLayout(root) {
-        if (root.dataset.monoPage || !root.matches('.shared-document-dialog,.mcp-settings,.derived-settings,.calendar-editor,.ms-dialog,.cc-export-dialog,.memory-library > .feature-dialog-card,.text-editor-card,.model-picker-card,.relationship-dialog,.sticker-description-card,.resource-health,#auto-memory-modal')) return;
+        if (root.dataset.monoPage || !root.matches('.shared-document-dialog,.mcp-settings,.derived-settings,.calendar-editor,.ms-dialog,.cc-export-dialog,.memory-library > .feature-dialog-card,.text-editor-card,.model-picker-card,.relationship-dialog,.sticker-description-card,.regenerate-guidance-card,.resource-health,#auto-memory-modal')) return;
         const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
         let head = q(panel, ':scope > .message-forward-header,:scope > .ms-dialog-head,:scope > .cc-head,:scope > .auto-memory-heading,:scope > header');
         let title = head && q(head, 'strong,h2');
         let close = head && q(head, '.message-forward-close,.cc-close,#auto-memory-close,[data-action=close],[data-cancel]');
         if (!close && root.classList.contains('text-editor-card')) close = q(root, '[data-action=keepDraft]');
+        if (!head && root.classList.contains('regenerate-guidance-card')) {
+            head = make('header'); title = make('h2', '', '调整回复'); close = q(root, '[data-action=cancel]');
+            const body = make('div', 'derived-body'), text = q(root, 'textarea');
+            root.prepend(head); head.append(title, close); if (text) { head.after(body); body.append(text); }
+            q(root, '[data-action=reroll]')?.classList.add('panel-primary');
+        }
         if (!head && root.matches('.memory-library > .feature-dialog-card') && q(root, ':scope > h3')) {
             head = make('header'); title = q(root, ':scope > h3');
             close = [...root.querySelectorAll('button')].find(el => el.textContent === '取消');
@@ -1015,6 +1053,23 @@
         const textarea = text; textarea.classList.add('draft-document-text');
         const title = q(root, '.mono-page-title'), send = q(root, '[data-action=send]'), edit = q(root, '.shared-document-preview-heading button'), name = q(root, '.shared-document-name');
         const reading = textarea.readOnly; let originalText = textarea.value;
+        if (!reading) {
+            const upload = q(root, '.shared-document-upload');
+            if (upload) { const heading = make('div', 'mono-file-heading'); upload.before(heading); heading.append(make('h3', '', '文件'), upload); }
+            const shortcuts = make('div', 'mono-file-shortcuts');
+            const previewButton = make('button', '', '预览正文'), editButton = make('button', '', '编辑文件');
+            previewButton.type = editButton.type = 'button'; shortcuts.append(previewButton, editButton);
+            if (identity) identity.after(shortcuts);
+            previewButton.onclick = () => {
+                const d = createMessageForwardDialog(name.value || '正文预览', 'shared-document-preview'); d.panel.classList.add('derived-settings');
+                const content = make('div', 'derived-body'), article = make('article', 'draft-document-reader');
+                for (const paragraph of textarea.value.split(/\n\s*\n/)) article.append(make('p', '', paragraph));
+                content.append(article); d.panel.append(content);
+            };
+            editButton.onclick = () => { if (typeof openExpandedEditor === 'function') openExpandedEditor(textarea); };
+            const syncFile = () => { shortcuts.hidden = editor.hidden; if (identity) identity.hidden = editor.hidden; };
+            new MutationObserver(syncFile).observe(editor, {attributes:true,attributeFilter:['hidden']}); syncFile();
+        }
         const tools = q(root, '.shared-document-tools'); if (tools) editor.after(tools);
         const sync = () => { root.dataset.documentMode = textarea.readOnly ? 'read' : reading ? 'copy' : 'send'; if (title) title.textContent = textarea.readOnly ? name.value || '查看文件' : reading ? '编辑副本' : '发送文件'; if (reading && edit && send) send.hidden = textarea.readOnly; };
         if (reading) {
@@ -1075,7 +1130,6 @@
             q(fields, '.calendar-mood-picker').before(prompt);
             q(fields, '.calendar-palette')?.before(make('h3', 'draft-mood-color', '颜色'));
         }
-        if (root.id === 'minimax-tts-settings') voiceWorkspace(root);
         if (root.classList.contains('uvu-calendar')) calendarLayout(root);
         if (root.id === 'auto-memory-modal') {
             const vector = q(root, '.vector-memory-fieldset');
@@ -1270,33 +1324,12 @@
             const fields=labels.filter(el=>!toggles.includes(el));group(fields.slice(0,2),'触发方式','draft-card');disclose(fields.slice(2).concat(toggles.slice(2)),'匹配与扫描','draft-card');
             const help=[...body.querySelectorAll(':scope > .feature-help')];if(help.length)disclose(help,'生效说明','draft-notice');
         }
+        sheetLayout(panel);
     }
     function openBackupWorkspace() {
-        if(document.getElementById('draft-backup-workspace'))return;
-        if(typeof renderStorageUI==='function')renderStorageUI();
-        const selectors=['.storage-backup-modes','#storage-backup-options','#storage-export-format-row','.storage-backup-extras','#storage-backup-progress','#storage-backup-cancel','.storage-action-group'];
-        const nodes=[...new Set(selectors.flatMap(selector=>[...document.querySelectorAll('#storage-analysis-screen '+selector)]))];
-        if(!nodes.length)return;
-        const slots=nodes.map(node=>{const slot=document.createComment('backup-control');node.before(slot);return{node,slot};});
-        let categoryObserver;
-        const d=createMessageForwardDialog('备份与恢复','draft-backup-workspace',()=>{categoryObserver?.disconnect();for(const {node,slot}of slots){if(slot.isConnected)slot.replaceWith(node);}if(typeof renderStorageUI==='function')renderStorageUI();});d.panel.classList.add('derived-settings');
-        const body=make('div','derived-body'),footer=make('footer');body.append(...nodes);d.panel.append(body,footer);
-        const modes=q(body,'.storage-backup-modes'),options=q(body,'#storage-backup-options');if(modes&&options){const title=make('h2','draft-backup-title','保存你的数据');modes.after(title);}
-        const actions=q(body,'.storage-action-group');if(actions)footer.append(actions);
-        const extras=[...body.querySelectorAll(':scope > .storage-backup-extras')];if(extras.length)disclose(extras,'备份选项','draft-card');
-        body.querySelectorAll('input[type=checkbox]').forEach(input=>{input.style.width='16px';input.style.height='16px';});
-        for(const button of modes.querySelectorAll('button'))label(button,button.dataset.backupMode==='export'?'导出':'导入');
-        const categories=()=>{
-            const rows=[...options.querySelectorAll(':scope > .storage-setting-item')];if(!rows.length)return;
-            const detail=make('details','draft-backup-categories'),groups=make('div','draft-backup-groups');detail.append(make('summary','','单独选择分类'));options.prepend(groups);
-            for(const [name,keys]of [['角色与私聊',['chats','contacts','personas']],['世界书',['worldbooks']],['外观与设置',['wallpapers','fonts','settings']],['相册 / 工坊 / 阅读',['other']]]){
-                const members=keys.map(key=>q(options,'input[data-key="'+key+'"]')).filter(Boolean),row=make('label','draft-backup-group'),input=make('input');input.type='checkbox';input.setAttribute('aria-label',name);row.append(input,make('span','',name));groups.append(row);
-                const sync=()=>{input.checked=members.every(el=>el.checked);input.indeterminate=!input.checked&&members.some(el=>el.checked);};sync();members.forEach(el=>el.addEventListener('change',sync));
-                input.onchange=()=>{const checked=input.checked;for(const member of members){member.checked=checked;member.dispatchEvent(new Event('change',{bubbles:true}));}sync();};
-            }
-            detail.append(...rows);const notes=[...options.children].filter(el=>el!==groups&&el!==detail);if(notes.length){const note=make('details','draft-backup-notes');note.append(make('summary','','恢复范围说明'),...notes);detail.append(note);}options.append(detail);
-        };
-        categories();categoryObserver=new MutationObserver(categories);categoryObserver.observe(options,{childList:true});
+        switchScreen('storage-analysis-screen');
+        if (typeof renderStorageUI === 'function') renderStorageUI();
+        document.getElementById('storage-backup-options')?.scrollIntoView({block:'start'});
     }
     function presetWorkspace() {
         const source=document.querySelector('.home-preset-card');if(!source||source.dataset.draftPreset)return;source.dataset.draftPreset='true';source.classList.add('uvu-mono-panel');
@@ -1309,88 +1342,7 @@
         const help=[...body.querySelectorAll(':scope > p:not(#home-preset-status)')];if(help.length)disclose(help,'导入与分享说明','draft-notice');
         launch.onclick=()=>{overlay.hidden=false;back.focus();};back.onclick=()=>{overlay.hidden=true;launch.focus();};
         overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();back.click();}if(event.key==='Tab'){const list=[...panel.querySelectorAll('button,input,summary')].filter(el=>!el.disabled&&el.getClientRects().length);if(event.shiftKey&&document.activeElement===list[0]){event.preventDefault();list.at(-1)?.focus();}else if(!event.shiftKey&&document.activeElement===list.at(-1)){event.preventDefault();list[0]?.focus();}}});
-    }
-    function voiceWorkspace(root) {
-        const host = q(root, ':scope > .kkt-item'), connection = q(root, '.panel-voice-connection'), director = q(root, '.minimax-director-settings');
-        const playback = [...root.querySelectorAll('.minimax-settings-section')].find(el => el.querySelector('#minimax-tts-model'));
-        const actions = q(root, '.minimax-tts-actions'), status = q(root, '#minimax-tts-status'); if (!host || !playback || !connection || !director || !actions) return;
-        const intro = q(host, ':scope > .kkt-item-content'); if (intro) { const note = q(intro, '.kkt-item-subtitle'); if (note) note.textContent = '音色与语音导演'; }
-        const launch = make('div', 'draft-voice-launchers'), voiceButton = make('button', '', '语音设置'), directorButton = make('button', '', '语音导演'); voiceButton.type = directorButton.type = 'button'; launch.append(voiceButton, directorButton); host.append(launch);
-        const overlay = make('div', 'draft-workspace-overlay'), panel = make('section', 'uvu-mono-panel mono-page draft-voice-workspace'); overlay.hidden = true; overlay.setAttribute('role', 'dialog'); overlay.setAttribute('aria-modal', 'true'); overlay.setAttribute('aria-label', '语音设置'); root.append(overlay); overlay.append(panel);
-        const nav = make('header', 'mono-page-nav'), back = make('button', 'mono-nav-back'), title = make('h2', 'mono-page-title', '语音'); back.type = 'button'; back.setAttribute('aria-label', '返回 API 设置'); navIcon(back, 'chevron-left'); nav.append(back, title, make('span', 'mono-nav-spacer'));
-        const body = make('div', 'draft-scroll'), footer = make('footer'); panel.append(nav, body, footer); footer.append(actions, status);
-        const apiSummary = q(connection, ':scope > summary'); if (apiSummary) apiSummary.hidden = true; connection.open = true;
-        q(playback, ':scope > strong')?.remove();
-        const audition = make('section', 'draft-card draft-voice-audition'); audition.append(make('h3', '', '试听'), make('p', '', '你好，这是角色语音试听。'));
-        const audioIcon = make('div', 'draft-audio-icon'); audioIcon.innerHTML = window.UvULucide?.['audio-lines'] || window.UvULucide?.['audio-waveform'] || window.UvULucide?.['volume-2'] || ''; audioIcon.setAttribute('aria-hidden','true'); audition.append(audioIcon);
-        const preview = q(root, '#minimax-tts-preview'); if (preview) audition.append(preview);
-        const key = q(root, '#minimax-tts-key')?.closest('label'), model = q(root, '#minimax-tts-model')?.closest('label'), groupId = q(root, '#minimax-tts-group-id')?.closest('label');
-        const pair = make('div', 'draft-columns'); pair.append(...[model, groupId].filter(Boolean));
-        const routes = make('section', 'draft-card draft-voice-routes');
-        const stop = make('button', '', '停止'); stop.type = 'button'; stop.onclick = () => { if (typeof MiniMaxTTS !== 'undefined') MiniMaxTTS.stop(); };
-        const auditionActions = make('div', 'draft-audition-actions'); if (preview) auditionActions.append(preview); auditionActions.append(stop); audition.append(auditionActions);
-        const navigate = subviews(panel, body, [{ id: 'main', title: 'MiniMax 语音', nodes: [audition, key, pair, routes] }, { id: 'director', title: '语音导演', nodes: [director] }, { id: 'api', title: '语音连接', nodes: [connection] }, { id:'parameters', title:'语音参数', nodes:[playback] }]);
-        panel.monoNavigate = navigate;
-        const save=q(actions,'#minimax-tts-save');if(save){save.classList.add('panel-primary');const caption=()=>label(save,panel.dataset.monoView==='director'?'保存导演设置':panel.dataset.monoView==='profiles'?'保存音色':'保存');panel.addEventListener('mono-view-change',caption);caption();}
-        if(status){const compact=()=>status.classList.toggle('draft-routine-status',status.textContent==='尚未设置 MiniMax 语音服务。');new MutationObserver(compact).observe(status,{childList:true,subtree:true,characterData:true});compact();}
-        routes.append(routeButton('语音导演', () => navigate('director')), routeButton('语音 API', () => navigate('api')), routeButton('高级参数', () => navigate('parameters')));
-        let trigger = voiceButton;
-        const show = (id, button) => { trigger = button; overlay.hidden = false; navigate(id); };
-        voiceButton.onclick = () => show('main', voiceButton); directorButton.onclick = () => show('director', directorButton);
-        const close = () => { overlay.hidden = true; trigger.focus(); };
-        back.onclick = close;
-        overlay.addEventListener('keydown', event => {
-            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (panel.dataset.monoView !== 'main') navigate('main'); else close(); }
-            if (event.key !== 'Tab') return;
-            const controls = [...panel.querySelectorAll('button,input,select,textarea,summary')].filter(el => !el.disabled && el.getClientRects().length);
-            const first = controls[0], last = controls.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-        });
-    }
-    function voiceEnhancements(root) {
-        const preset=q(root,'#minimax-director-preset');
-        if(preset&&!preset.dataset.panelSegment){
-            segment(preset,{});const choices=preset.closest('label').nextElementSibling,fields=q(root,'#minimax-director-fields');
-            if(choices&&fields)fields.prepend(choices);
-        }
-        if (preset) {
-            const choices=q(root,'#minimax-director-fields > .panel-segment');
-            if (choices?.classList.contains('panel-segment')) {
-                const keep=q(choices,'button[data-value=""]');if(keep){keep.classList.add('draft-current-style');keep.textContent='沿用当前';}
-            }
-        }
-        const advanced = q(root, '#minimax-speech-advanced'), panel = q(root, '.draft-voice-workspace');
-        if (!advanced || !panel?.monoNavigate || advanced.dataset.draftVoice) return;
-        advanced.dataset.draftVoice = 'true'; advanced.open = true;
-        const catalog=[...advanced.querySelectorAll(':scope > details')].find(el=>q(el,'summary')?.textContent==='选择音色');
-        if(catalog){catalog.open=true;const heading=q(catalog,'summary');if(heading)heading.hidden=true;}
-        const role = q(advanced, ':scope > label select');
-        if (role && typeof db !== 'undefined') {
-            const owner=make('div','draft-voice-role');advanced.prepend(owner);owner.append(role.closest('label'));
-            const renderOwner=()=>{const chat=db.characters.find(c=>c.id===role.value);owner.replaceChildren();if(chat)owner.append(identityRow(chat,'音色仅用于此角色'));};
-            const selector=role.closest('label');
-            const syncOwner=()=>{renderOwner();if(!role.value)owner.prepend(identityRow({name:'默认设置'},'作为未指定音色时的默认值'));owner.append(selector);};
-            role.addEventListener('change',syncOwner);syncOwner();
-        }
-        const profile=q(advanced,'.minimax-speech-profile');
-        if(profile) {
-            const voice=q(profile,'input')?.closest('label'),rules=[...profile.children].filter(el=>el!==voice);
-            if(rules.length)disclose(rules,'角色表达与读音','draft-voice-profile-rules');
-            profile.classList.add('draft-card');
-        }
-        const defaultVoice=q(root,'#minimax-tts-voice')?.closest('label');if(defaultVoice){const defaults=disclose([defaultVoice],'默认音色','draft-voice-default');advanced.append(defaults);}
-        if(catalog&&profile){
-            const search=q(catalog,'input[type=search]')?.closest('label');if(search){search.classList.add('draft-voice-search');q(search,'input').placeholder='搜索音色或 voice_id';for(const node of [...search.childNodes])if(node.nodeType===3)node.remove();profile.before(search);}
-            const advancedNotes=[...advanced.querySelectorAll(':scope > details')].filter(el=>el!==catalog&&el!==q(advanced,'.draft-voice-default'));
-            if(advancedNotes.length)disclose(advancedNotes,'播放与更多设置','draft-voice-more');
-            profile.after(catalog);catalog.classList.add('draft-voice-catalog');
-        }
-        panel.monoNavigate.add({ id: 'profiles', title: '角色音色', nodes: [advanced] });
-        const main = q(panel, '[data-mono-view=main]'), routes = q(main, '.draft-voice-routes');
-        routes?.prepend(routeButton('角色音色与播放', () => {
-            window.MiniMaxSpeech?.refreshRoles();
-            if (role && !role.value && typeof currentChatId !== 'undefined' && [...role.options].some(option=>option.value===currentChatId)) {role.value=currentChatId;role.dispatchEvent(new Event('change',{bubbles:true}));}
-            panel.monoNavigate('profiles');
-        }));
+        sheetLayout(panel);
     }
     function calendarLayout(root) {
         const header = q(root, '.message-forward-header'), body = q(root, '.calendar-body'), tabs = q(root, '.calendar-tabs'); if (!header || !body || !tabs) return;
@@ -1547,7 +1499,7 @@
         const panel = overlay && q(overlay, '.modal-window'); if (!panel || !form || !ai) return;
         const nav = make('header', 'mono-page-nav draft-ai-nav'), back = make('button', 'mono-nav-back'), title = make('h2', 'mono-page-title', 'AI 生图'); back.type = 'button'; back.setAttribute('aria-label', '关闭生图'); navIcon(back, 'chevron-left'); back.onclick = () => { ChatImageGeneration.cancel(); overlay.classList.remove('visible'); };
         nav.append(back, title, make('span', 'mono-nav-spacer')); panel.prepend(nav);
-        const sync = () => { const active = ai.checked; panel.classList.toggle('uvu-mono-panel', active); panel.classList.toggle('mono-page', active); panel.classList.toggle('draft-image-page', active); overlay.classList.toggle('mono-page-overlay', active); nav.hidden = !active; };
+        const sync = () => { const active = ai.checked; panel.classList.toggle('uvu-mono-panel', active); panel.classList.toggle('mono-page', active); panel.classList.toggle('draft-image-page', active); overlay.classList.toggle('mono-page-overlay', active); nav.hidden = !active; if(active)sheetLayout(panel);panel.classList.toggle('uvu-sheet-v2',active); };
         form.addEventListener('change', sync); form.addEventListener('reset', () => queueMicrotask(sync)); sync();
         const description=q(form,'#pv-text-input'),field=description?.closest('.form-group'),modes=q(form,'.pv-send-modes');
         const identity=make('div','draft-image-identity'),options=make('details','draft-image-options'),optionsTitle=make('summary','','生成选项');options.append(optionsTitle);
@@ -1559,34 +1511,6 @@
         const updateRatio=()=>{const config=typeof db!=='undefined'&&db.workshopSettings||{};ratio.textContent=config.provider==='gpt'?(config.gptAspectRatio||'1024×1024'):(config.aspectRatio||'3:4');};
         const refreshIdentity=()=>{identity.replaceChildren();const chat=typeof db!=='undefined'&&(currentChatType==='private'?db.characters:db.groups).find(c=>c.id===currentChatId);if(chat)identity.append(identityRow(chat,'生成后发送至当前聊天'));};
         new MutationObserver(()=>{refreshIdentity();updateRatio();}).observe(overlay,{attributes:true,attributeFilter:['class']});refreshIdentity();updateRatio();
-    }
-    function statusWorkspace(token){
-        const overlay=token.closest('#char-status-overlay'),content=overlay&&q(overlay,'#char-status-content');if(!overlay||!content)return;
-        overlay.classList.add('draft-status-workspace');
-        let nav=q(overlay,':scope > .draft-status-nav');
-        if(!nav){nav=make('header','draft-status-nav');const back=make('button','draft-status-back');back.type='button';back.setAttribute('aria-label','返回聊天');navIcon(back,'chevron-left');back.onclick=()=>q(overlay,'#close-status-panel-btn')?.click();nav.append(back,make('strong','','角色状态'));overlay.prepend(nav);}
-        let identity=q(content,':scope > .draft-status-identity');if(!identity&&typeof db!=='undefined'){const chat=db.characters.find(c=>c.id===currentChatId);if(chat){identity=identityRow(chat);identity.classList.add('draft-status-identity');content.prepend(identity);}}
-        const flip=q(content,'.status-flip-card');const update=()=>{nav.querySelector('strong').textContent=flip?.classList.contains('is-flipped')?'Token 用量':'角色状态';};
-        if(flip&&!flip.dataset.draftObserved){flip.dataset.draftObserved='true';new MutationObserver(update).observe(flip,{attributes:true,attributeFilter:['class']});}update();
-        if(q(token,':scope > .draft-token-breakdown'))return;
-        const heading=q(token,'.status-token-heading'),summary=q(token,'.status-token-summary'),list=q(token,'.status-token-list');if(!heading||!summary||!list)return;
-        // The original renderer owns all counts. This is only a reading layout for its existing rows.
-        const breakdown=make('details','draft-token-breakdown');breakdown.append(make('summary','','查看本轮组成'));
-        const context=q(token,'.status-token-context'),note=q(token,'.status-token-note'),floor=q(summary,':scope > span');
-        for(const node of [floor,context,note])if(node)breakdown.append(node);
-        const source=q(heading,'span');if(source){source.classList.add('draft-tag');token.prepend(source);}heading.hidden=true;
-        const bar=make('div','draft-token-bar');bar.setAttribute('aria-label','本地分类估算占比');bar.setAttribute('role','img');
-        const values=[];
-        for(const row of [...list.querySelectorAll(':scope > .status-token-row')]){
-            const name=q(row,'span'),amount=q(row,'b');if(!name||!amount)continue;
-            const original=name.textContent,value=Number(amount.textContent.replace(/,/g,''));
-            if(!original.includes('（估算）')){breakdown.append(row);continue;}
-            name.textContent=original.replace('（估算）','').replace('提示词 / 系统基础','系统提示词');name.title=original;
-            if(Number.isFinite(value)&&value>0)values.push([name.textContent,value]);
-        }
-        const sum=values.reduce((total,item)=>total+item[1],0);
-        for(const [name,value]of values){const piece=make('span');piece.style.flex=String(value);piece.title=name+' · '+value.toLocaleString();bar.append(piece);}
-        bar.setAttribute('aria-label','本地分类估算，共 '+sum.toLocaleString()+' token');summary.after(bar);token.append(breakdown);
     }
     function openAppearanceWorkspace() {
         const d=createMessageForwardDialog('二改界面','draft-appearance-workspace');d.panel.classList.add('derived-settings');
@@ -1609,11 +1533,11 @@
         const d = createMessageForwardDialog('二改功能', 'uvu-feature-workspace'); d.panel.classList.add('derived-settings');
         const body = make('div', 'derived-body'), search = make('input'); search.type = 'search'; search.placeholder = '搜索功能'; search.setAttribute('aria-label', '搜索二改功能'); body.append(search); d.panel.append(body);
         const click = id => { const control = document.getElementById(id); if (control) control.click(); };
-        const voice=()=>{switchScreen('api-settings-screen');q(document.getElementById('minimax-tts-settings'),'.draft-voice-launchers button')?.click();};
+        const voice=()=>{switchScreen('api-settings-screen');document.getElementById('minimax-tts-settings')?.scrollIntoView({block:'start'});};
         const notify=()=>{const root=document.getElementById('uvu-notification-preferences');switchScreen('api-settings-screen');if(root)root.open=true;};
         const groups = [
             [['酒馆互通','link',()=>switchScreen('uvu-story-bridge-screen')],['文件分享','file-text',()=>openSharedDocumentDialog()],['AI 生图','wand-sparkles',()=>{click('photo-video-btn');click('pv-mode-ai');}]],
-            [['角色备忘录','book-open',()=>openCharacterMemos()],['自动记忆','book-open',()=>click('auto-memory-settings-btn')],['向量记忆','search',()=>click('vector-memory-settings-btn')],['MCP 服务','shield-check',()=>openMcpSettings()]],
+            [['自动记忆','book-open',()=>click('auto-memory-settings-btn')],['向量记忆','search',()=>click('vector-memory-settings-btn')],['MCP 服务','shield-check',()=>openMcpSettings()]],
             [['语音与导演','play',voice],['通知','settings-2',notify],['备份与恢复','download',openBackupWorkspace]]
         ];
         const addRoute=(section,name,icon,action)=>{const route=routeButton(name,()=>{d.dismiss();try{action();}catch(error){showToast(error.message);}});route.dataset.searchText=name;
@@ -1630,7 +1554,7 @@
         search.oninput = () => { const term=search.value.trim().toLocaleLowerCase();body.querySelectorAll('[data-search-text]').forEach(el=>el.hidden=!el.dataset.searchText.toLocaleLowerCase().includes(term));body.querySelectorAll('.draft-hub-group').forEach(group=>group.hidden=[...group.querySelectorAll('[data-search-text]')].every(el=>el.hidden));more.hidden=other.hidden;if(term&&!other.hidden)more.open=true; };
     }
     function hubEntry() {
-        document.querySelectorAll('.derived-entry-group:not([data-draft-hub])').forEach(group => { group.dataset.draftHub = 'true'; const row = make('div', 'kkt-item'), title = make('div', 'kkt-item-label', '二改功能'), open = make('button', 'derived-compact', '打开'); open.type = 'button'; open.onclick = openDraftHub; row.append(title, open); group.prepend(row); });
+        document.querySelectorAll('.derived-entry-group:not([data-draft-hub])').forEach(group => { group.dataset.draftHub = 'true'; const row = make('div', 'kkt-item'), title = make('div', 'kkt-item-label', '更多设置'), open = make('button', 'derived-compact', '打开'); open.type = 'button'; open.onclick = openDraftHub; row.append(title, open); group.append(row); });
     }
     function start() {
         applyAppearance(readAppearance());

@@ -51,13 +51,15 @@ const server = http.createServer((req, res) => {
         await page.getByRole('button',{name:'保存',exact:true}).click();await page.locator('#character-memo-editor').waitFor({state:'detached'});
         assert.equal(await page.evaluate(()=>db.characters[0].characterMemos.notes[0].fact),'喜欢喝绿茶');
         assert.equal(await page.evaluate(()=>getCharacterMemoContext(db.characters[0])),'','disabled settings do not inject manual notes');
+        await page.getByRole('button',{name:'备忘录设置',exact:true}).click();
         await page.getByRole('switch',{name:'启用备忘录',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.enabled);
         await page.getByRole('switch',{name:'用于对话',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.useContext);
-        await page.locator('.memo-more > summary').click();await page.getByRole('button',{name:'置顶',exact:true}).click();await page.waitForFunction(()=>db.characters[0].characterMemos.notes[0].pinned);
+        await page.getByRole('button',{name:'完成',exact:true}).click();
+        await page.locator('.memo-more > summary').click();await page.locator('.memo-more').getByRole('button',{name:'置顶',exact:true}).click();await page.waitForFunction(()=>db.characters[0].characterMemos.notes[0].pinned);
         assert.match(await page.evaluate(()=>getCharacterMemoContext(db.characters[0])),/喜欢喝绿茶/);
-        await page.getByRole('button',{name:'编辑',exact:true}).click();await page.getByLabel('记住的事情',{exact:true}).fill('只喝温的绿茶');await page.getByRole('button',{name:'保存',exact:true}).click();await page.locator('#character-memo-editor').waitFor({state:'detached'});
+        await page.locator('.memo-more').evaluate(el=>el.open=true);await page.getByRole('button',{name:'编辑',exact:true}).click();await page.getByLabel('记住的事情',{exact:true}).fill('只喝温的绿茶');await page.getByRole('button',{name:'保存',exact:true}).click();await page.locator('#character-memo-editor').waitFor({state:'detached'});
         assert.equal(await page.evaluate(()=>db.characters[0].characterMemos.notes[0].locked),true);await page.locator('.memo-more').evaluate(el=>el.open=true);
-        await page.locator('.memo-card input[type=checkbox]').check();await page.getByRole('button',{name:'加入日记',exact:true}).click();await page.waitForFunction(()=>db.characters[0].memoryJournals.some(j=>j.characterMemoId));
+        await page.locator('.memo-batch').evaluate(el=>el.open=true);await page.locator('.memo-card input[type=checkbox]').check();await page.getByRole('button',{name:'加入日记',exact:true}).click();await page.waitForFunction(()=>db.characters[0].memoryJournals.some(j=>j.characterMemoId));
         assert.equal(await page.evaluate(()=>db.characters[0].memoryJournals.find(j=>j.characterMemoId).isFavorited),false,'diary import does not silently enable journal context');
         await page.locator('.memo-more').evaluate(el=>el.open=true);await page.getByRole('button',{name:'不再记这件事',exact:true}).click();await page.waitForFunction(()=>db.characters[0].characterMemos.notes.length===0);
         await page.getByRole('button',{name:'撤销删除',exact:true}).click();await page.waitForFunction(()=>db.characters[0].characterMemos.notes.length===1);assert.equal(await page.evaluate(()=>db.characters[0].characterMemos.blocked.length),0);
@@ -70,7 +72,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(()=>{document.getElementById('character-memos-dialog').dismissForward();const c=db.characters[0];c.myName='我';c.history.push({id:'memo-direct-user',role:'user',content:'我习惯晚上十点睡觉',timestamp:Date.now()});c.characterMemos.settings={...c.characterMemos.settings,automatic:true,mode:'auto',threshold:2};c.characterMemos.lastRun=0;c.characterMemos.processed={[characterMemoIdentity(c)]:Object.fromEntries(c.history.slice(0,-2).map(m=>[m.id,characterMemoFingerprint(m)]))};fetchAiResponse=async()=>JSON.stringify({notes:[{subject:'user',fact:'习惯晚上十点睡觉',category:'习惯',note:'十点前提醒你休息。',sourceIds:['memo-direct-user'],evidence:[{id:'memo-direct-user',quote:'我习惯晚上十点睡觉'}]}]});resolveAutoMemoryApi=()=>({provider:'newapi',url:'https://mock.invalid',key:'fake-test',model:'mock'});scheduleCharacterMemos(c);});
         await page.waitForFunction(()=>db.characters[0].characterMemos.notes.some(n=>n.fact==='习惯晚上十点睡觉'&&n.status==='approved'));
         await page.evaluate(()=>openCharacterMemos(db.characters[0]));await page.locator('#character-memos-dialog .mono-page').waitFor();
-        await page.getByLabel('选择 习惯晚上十点睡觉',{exact:true}).check();
+        await page.locator('.memo-batch').evaluate(el=>el.open=true);await page.getByLabel('选择 习惯晚上十点睡觉',{exact:true}).check();
         await page.evaluate(()=>{const c=db.characters[0],archive=c.activeArchiveId,history=c.history;window.memoSaveOriginal=runDataPersistence;window.memoJournalBefore=JSON.stringify(c.memoryJournals);runDataPersistence=async()=>{const staged=structuredClone(c.memoryJournals);c.activeArchiveId='switched-away';c.history=[];c.activeArchiveId=archive;c.history=history.slice();c.memoryJournals=staged;throw Error('模拟日记保存失败');};});
         await page.getByRole('button',{name:'加入日记',exact:true}).click();await page.waitForFunction(()=>document.querySelector('#character-memos-dialog .memo-feedback').textContent.includes('模拟日记保存失败'));
         assert.equal(await page.evaluate(()=>JSON.stringify(db.characters[0].memoryJournals)===memoJournalBefore),true,'journal rollback also restores A-B-A clone');

@@ -141,7 +141,7 @@ function openSharedDocumentDialog(message, chat) {
         fileMeta.textContent = file ? extension + (Number.isFinite(size) ? ' · ' + (size < 1024 ? size + ' B' : size < 1048576 ? Math.ceil(size / 1024) + ' KB' : (size / 1048576).toFixed(1) + ' MB') : '') : '';
         upload.classList.toggle('is-loaded', Boolean(file));
         // The chooser remains a separate upload area; file identity belongs to its own row.
-        if (upload.parentElement !== body) body.insertBefore(upload, editor);
+        if (upload.parentElement !== body && !upload.closest('.mono-file-heading')) body.insertBefore(upload, editor);
         status.textContent = file ? `${completeText().length} 字符${file.parentId ? ' · 修改副本' : ''}${file.warnings?.length ? ' · ' + file.warnings.join('；') : ''}` : '';
         original.hidden = !file?.originalData;
         extraction.hidden = !file?.extractionReport?.length;
@@ -221,4 +221,15 @@ function setupSharedDocuments() {
     const button = document.getElementById('share-document-btn');
     if (!button || button.dataset.bound) return; button.dataset.bound = 'true';
     button.onclick = () => openSharedDocumentDialog();
+    // Keep the character's notebook beside files in the existing chat action grid.
+    if (!document.getElementById('character-memos-btn')) {
+        const memo = document.createElement('div'); memo.id = 'character-memos-btn';
+        memo.className = 'expansion-item'; memo.setAttribute('role', 'button'); memo.tabIndex = 0;
+        const icon = document.createElement('div'); icon.className = 'expansion-item-icon';
+        icon.innerHTML = window.UvULucide?.['book-open'] || '';
+        const caption = document.createElement('span'); caption.className = 'expansion-item-name'; caption.textContent = '备忘录';
+        memo.append(icon, caption); button.after(memo);
+        memo.onclick = () => { if (typeof openCharacterMemos === 'function') openCharacterMemos(); };
+        memo.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); memo.click(); } };
+    }
 }

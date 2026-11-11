@@ -66,10 +66,10 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => UvUCharacterCardUI.open(db.characters[0]));
         await shot('export-settings', '.cc-export-dialog');
         assert.equal(await page.locator('.mono-cover-preview').evaluate(e => e.open), false);
-        await page.locator('.mono-cover-preview > summary').click();
+        await page.getByRole('button', { name: '预览原卡', exact: true }).click();
         assert.equal(await page.locator('.cc-portrait').isVisible(), true);
         assert.equal(await page.locator('.cc-portrait').evaluate(e => e.width / e.height), .75);
-        await page.getByRole('button', { name: '关闭角色卡导出', exact: true }).click();
+        await page.locator('.cc-export-dialog .sheet-close').click();
         await page.evaluate(() => { UvUMusicUI.open(); });
         await page.locator('#uvu-music-screen.active').waitFor();
         const music = page.locator('#uvu-music-screen');
