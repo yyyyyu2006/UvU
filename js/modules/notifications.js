@@ -31,6 +31,19 @@ function shouldShowMessageNotification(chatId, chatType, now = new Date()) {
 // Exact IDs only; this bounded, page-local ledger never changes messages or unread state.
 const incomingNotificationClaims = new Map(), incomingNotificationObjects = new WeakMap();
 let incomingNotificationObjectSequence = 0;
+// Render and reply completion can report the same in-memory message. This is
+// delivery ownership, independent of optional ID-based duplicate protection.
+const incomingNotificationDeliveries = new WeakMap();
+function claimIncomingNotificationDelivery(chat, message) {
+    if (!chat || typeof chat !== 'object' || !message || typeof message !== 'object') return true;
+    let scope = incomingNotificationDeliveries.get(chat);
+    if (!scope || scope.history !== chat.history || scope.archiveId !== chat.activeArchiveId) {
+        scope = { history: chat.history, archiveId: chat.activeArchiveId, messages: new WeakSet() };
+        incomingNotificationDeliveries.set(chat, scope);
+    }
+    if (scope.messages.has(message)) return false;
+    scope.messages.add(message); return true;
+}
 function claimIncomingMessageNotification(chat, message, chatId, chatType, now = Date.now()) {
     if (!getMessageNotificationPreferences().duplicateProtection) return true;
     const id = message?.id;
@@ -181,6 +194,12 @@ function setupMessageNotifications() {
     const status = document.getElementById('system-notification-status');
     const testButton = document.getElementById('system-notification-test');
     const testStatus = document.getElementById('system-notification-test-status');
+    if (testButton?.parentElement && !testButton.closest('.system-notification-actions')) {
+        const actions = document.createElement('div'); actions.className = 'system-notification-actions';
+        testButton.before(actions); actions.append(testButton);
+        const preferences = document.getElementById('uvu-notification-preferences');
+        if (preferences) actions.append(preferences);
+    }
     const supported = window.isSecureContext && typeof Notification !== 'undefined' && 'serviceWorker' in navigator;
     let testJob = null;
     const setTestStatus = message => {

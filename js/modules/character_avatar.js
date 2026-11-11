@@ -276,9 +276,10 @@ function openCharacterAvatarSettings() {
             const label = document.createElement('span'); label.textContent = ' ' + (index + 1) + ' · ' + candidate.source + ' '; row.appendChild(label);
             const choose = document.createElement('label'); choose.innerHTML = '<input type="radio" name="avatar-candidate-preferred">仅此图';
             choose.querySelector('input').checked = preferred === candidate.id;
-            choose.querySelector('input').onchange = () => { preferred = candidate.id; excluded.delete(candidate.id); omit.querySelector('input').checked = false; }; row.appendChild(choose);
+            choose.querySelector('input').onchange = () => { preferred = candidate.id; excluded.delete(candidate.id); omit.querySelector('input').checked = false; };
             const omit = document.createElement('label'); omit.innerHTML = '<input type="checkbox">排除'; omit.querySelector('input').checked = excluded.has(candidate.id);
-            omit.querySelector('input').onchange = event => { if (event.target.checked) { excluded.add(candidate.id); if (preferred === candidate.id) { preferred = ''; any.querySelector('input').checked = true; } } else excluded.delete(candidate.id); }; row.appendChild(omit); list.appendChild(row);
+            omit.querySelector('input').onchange = event => { if (event.target.checked) { excluded.add(candidate.id); if (preferred === candidate.id) { preferred = ''; any.querySelector('input').checked = true; } } else excluded.delete(candidate.id); };
+            const actions = document.createElement('div'); actions.className = 'avatar-candidate-actions'; actions.append(choose, omit); row.appendChild(actions); list.appendChild(row);
         });
     }).catch(() => { if (valid()) body.querySelector('.avatar-candidate-list').textContent = '候选读取失败，请重新打开后重试。'; });
     const run = async action => {

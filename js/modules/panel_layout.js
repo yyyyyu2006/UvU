@@ -447,7 +447,14 @@
             });
             const sections = [...root.querySelectorAll('.relationship-section')];
             const autonomy = sections.find(el => /允许角色自主|角色自主/.test(q(el, 'strong')?.textContent));
-            const recovery = sections.find(el => q(el, '#relationship-recovery-mode')); if (autonomy && recovery && autonomy.nextElementSibling !== recovery) recovery.before(autonomy);
+            const recovery = sections.find(el => q(el, '#relationship-recovery-mode'));
+            // Once disclosed, move the wrapper. Moving just its section empties the
+            // autonomy disclosure and reparents its controls inside recovery.
+            if (autonomy && recovery) {
+                const first = autonomy.closest('.draft-relationship-rule') || autonomy;
+                const second = recovery.closest('.draft-relationship-rule') || recovery;
+                if (first !== second && first.nextElementSibling !== second) second.before(first);
+            }
             for (const section of [autonomy, recovery].filter(Boolean)) {
                 if (section.closest('details')) continue;
                 const title = q(section, ':scope > strong');
@@ -946,18 +953,14 @@
     }
 
     function pageLayout(root) {
+        // Reroll keeps its original compact textarea/cancel/confirm dialog.
+        if (root.classList.contains('regenerate-guidance-card')) return;
         if (root.dataset.monoPage || !root.matches('.shared-document-dialog,.mcp-settings,.derived-settings,.calendar-editor,.ms-dialog,.cc-export-dialog,.memory-library > .feature-dialog-card,.text-editor-card,.model-picker-card,.relationship-dialog,.sticker-description-card,.regenerate-guidance-card,.resource-health,#auto-memory-modal')) return;
         const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
         let head = q(panel, ':scope > .message-forward-header,:scope > .ms-dialog-head,:scope > .cc-head,:scope > .auto-memory-heading,:scope > header');
         let title = head && q(head, 'strong,h2');
         let close = head && q(head, '.message-forward-close,.cc-close,#auto-memory-close,[data-action=close],[data-cancel]');
         if (!close && root.classList.contains('text-editor-card')) close = q(root, '[data-action=keepDraft]');
-        if (!head && root.classList.contains('regenerate-guidance-card')) {
-            head = make('header'); title = make('h2', '', '调整回复'); close = q(root, '[data-action=cancel]');
-            const body = make('div', 'derived-body'), text = q(root, 'textarea');
-            root.prepend(head); head.append(title, close); if (text) { head.after(body); body.append(text); }
-            q(root, '[data-action=reroll]')?.classList.add('panel-primary');
-        }
         if (!head && root.matches('.memory-library > .feature-dialog-card') && q(root, ':scope > h3')) {
             head = make('header'); title = q(root, ':scope > h3');
             close = [...root.querySelectorAll('button')].find(el => el.textContent === '取消');

@@ -110,6 +110,44 @@ body:has(#uvu-notification-preferences[open],.worldbook-advanced[open]) { overfl
 .uvu-sheet-v2 .draft-export-includes { padding-top:16px;border-top:1px solid #edeef0; }
 .uvu-sheet-v2 .draft-hub-group + .draft-hub-group { border-top:1px solid #edeef0;padding-top:12px; }
 /* Notebook: content first, configuration in a separate view. */
+/* Compact disclosures and choices; no message-card or original theme selectors. */
+.uvu-sheet-v2.uvu-mono-panel :is(.draft-relationship-rule,.derived-body > details,.draft-form-scroll > details),
+#environment-settings .uvu-sheet-v2.uvu-mono-panel details {
+    padding:0;border:0;border-radius:0;background:transparent;
+}
+.uvu-sheet-v2.uvu-mono-panel :is(.draft-relationship-rule,.derived-body > details,.draft-form-scroll > details) > summary,
+#environment-settings .uvu-sheet-v2.uvu-mono-panel details > summary {
+    min-height:40px;padding:8px 0;margin:0;line-height:24px;
+}
+.uvu-sheet-v2.uvu-mono-panel .draft-relationship-rule > .relationship-section { padding:8px 0 16px; }
+.uvu-sheet-v2.uvu-mono-panel .draft-avatar-candidates > .avatar-candidate-list {
+    grid-template-columns:repeat(2,minmax(0,1fr));padding:12px;gap:16px 12px;
+}
+.uvu-sheet-v2.uvu-mono-panel .avatar-candidate-row { gap:8px;text-align:center; }
+.uvu-sheet-v2.uvu-mono-panel .avatar-candidate-row > span { font-size:12px;line-height:18px;overflow-wrap:anywhere; }
+.uvu-sheet-v2.uvu-mono-panel .avatar-candidate-actions { display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px; }
+.uvu-sheet-v2.uvu-mono-panel .avatar-candidate-actions > label {
+    display:flex !important;flex-direction:row !important;align-items:center;gap:5px;
+    min-height:32px;padding:0;margin:0;font-size:12px;white-space:nowrap;
+}
+.uvu-sheet-v2.uvu-mono-panel .avatar-candidate-actions input {
+    appearance:auto;width:15px;height:15px;min-height:15px;flex:0 0 15px;margin:0;padding:0;
+}
+.uvu-sheet-v2.uvu-calendar .calendar-weather { margin:0;line-height:1.5;flex-shrink:0;overflow-wrap:anywhere; }
+#api-settings-screen .system-notification-actions { display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin-top:8px; }
+#api-settings-screen .system-notification-test-button {
+    align-self:auto;min-height:32px;margin:0;padding:5px 12px;border-radius:16px;font-size:12px;line-height:20px;
+}
+#api-settings-screen #uvu-notification-preferences {
+    flex:0 1 auto;width:auto;margin:0;padding:0;border:0;border-radius:0;background:transparent;
+}
+#api-settings-screen #uvu-notification-preferences > summary { min-height:32px;padding:5px 0;font-size:12px;line-height:22px; }
+.regenerate-guidance-dialog .regenerate-guidance-card.uvu-mono-panel {
+    width:min(360px,calc(100% - 32px));padding:16px;border-radius:20px;height:auto;gap:12px;
+}
+.regenerate-guidance-dialog .regenerate-guidance-card textarea { min-height:136px;height:156px;max-height:40dvh;font-size:14px; }
+.regenerate-guidance-dialog .regenerate-guidance-card footer button { min-height:36px;font-size:13px; }
+
 .character-memos-panel.uvu-sheet-v2.uvu-mono-panel :is(.memo-main,.memo-settings-page,.memo-batch) { border:0;padding:0;border-radius:0;background:transparent;box-shadow:none; }
 .uvu-sheet-v2 .memo-main,.uvu-sheet-v2 .memo-settings-page { display:flex;flex-direction:column;gap:24px; }
 .uvu-sheet-v2 .memo-identity { display:flex;align-items:center;gap:10px; }

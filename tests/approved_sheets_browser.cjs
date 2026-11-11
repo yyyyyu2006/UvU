@@ -51,7 +51,8 @@ try{
  await page.evaluate(()=>UvUCharacterCardUI.open(db.characters[0]));await inspect('export-settings','.cc-export-dialog');await page.locator('.cc-export-dialog .sheet-close').click();
  await page.evaluate(()=>openMemoryLibrary());await inspect('memory-library','.memory-library > .feature-dialog-card');await page.locator('.memory-library [data-action=close]').click();
  await page.evaluate(()=>openCharacterAvatarSettings());await inspect('avatar','#character-avatar-settings .derived-settings');await page.locator('#character-avatar-settings .sheet-close').click();
- await page.evaluate(()=>{window.sheetReroll=showRegenerateGuidanceDialog();});await inspect('reroll','.regenerate-guidance-card');await page.locator('.regenerate-guidance-card [data-action=cancel]').click();
+ // November 11 follow-up restores the earlier compact reroll dialog.
+ await page.evaluate(()=>{window.sheetReroll=showRegenerateGuidanceDialog();});await page.locator('.regenerate-guidance-card').waitFor();assert.ok((await page.locator('.regenerate-guidance-card').boundingBox()).height<380);await page.locator('.regenerate-guidance-card [data-action=cancel]').click();
  await page.evaluate(()=>openEnvironmentSettings(true));await inspect('environment','#environment-settings .derived-settings');await page.locator('#environment-settings .sheet-close').click();
  await page.evaluate(()=>openStickerDescriptionSettings());await inspect('sticker','.sticker-description-card');await page.locator('#sticker-description-settings [data-action=close]').click();
  await page.evaluate(()=>{switchScreen('api-settings-screen');document.getElementById('uvu-notification-preferences').open=true;});await inspect('notifications','#uvu-notification-preferences .draft-inline-workspace');await page.locator('#uvu-notification-preferences .sheet-close').click();

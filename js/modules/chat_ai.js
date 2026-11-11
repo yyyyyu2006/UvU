@@ -54,6 +54,7 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
         document.body.appendChild(host);
     }
     messages.filter(message => message.role === 'assistant' && !message.isStatusUpdate && !message.isThinking && !message.isContextDisabled).forEach(message => {
+        if (typeof claimIncomingNotificationDelivery === 'function' && !claimIncomingNotificationDelivery(chat, message)) return;
         if (typeof claimIncomingMessageNotification === 'function' && !claimIncomingMessageNotification(chat, message, chatId, chatType)) return;
         const card = document.createElement('button'); card.type = 'button'; card.className = 'incoming-message-toast';
         const member = chatType === 'group' && message.senderId ? chat.members?.find(item => item.id === message.senderId) : null;

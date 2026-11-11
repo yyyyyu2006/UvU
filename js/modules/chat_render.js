@@ -1243,11 +1243,11 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
             }
             
-            showToast({
-                avatar: senderAvatar,
-                name: senderName,
-                message: previewText.substring(0, 30)
-            });
+            if (typeof showIncomingMessageNotifications === 'function') {
+                showIncomingMessageNotifications(senderChat, [message], targetChatId, targetChatType);
+            } else {
+                showToast({ avatar: senderAvatar, name: senderName, message: previewText.substring(0, 30) });
+            }
         }
         return; 
     }
