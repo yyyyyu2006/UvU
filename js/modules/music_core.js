@@ -542,6 +542,8 @@
     }
     function fail(error) {
         if(state.phase==='error'||state.phase==='blocked')return Promise.resolve(false);
+        // A media error also invalidates a play() promise still waiting to settle.
+        ++intent; clearTimeout(stallTimer);
         const wasAttempting=state.playing||state.phase==='loading';
         state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
         const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':error?.code==='stalled'?'stalled':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
@@ -605,7 +607,7 @@
             for (const event of ['playing', 'timeupdate', 'canplay', 'pause', 'ended']) current.addEventListener(event, () => { if (valid()) clearTimeout(stallTimer); });
             current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(true); } });
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
-            current.addEventListener('ended', () => { if (valid() && state.playing) advance(1, true); });
+            current.addEventListener('ended', () => { if (valid() && state.playing) { state.playing = false; void advance(1, true); } });
             current.addEventListener('error', () => { if (valid()) void fail(new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error')); });
             current.addEventListener('pause', () => { if (valid() && current.paused && !current.ended && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
             await playAudio(current, generation);

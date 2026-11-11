@@ -85,6 +85,36 @@ test('a browser refusing programmatic volume still plays audio',async()=>{
     assert.equal(h.music.player.snapshot().playing,true);h.music.player.stop();
 });
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
+
+test('a late play result cannot revive audio after a native media failure', async () => {
+    for (const result of ['resolve', 'reject']) {
+        const h = harness(), pending = deferred(); h.playHook = () => pending.promise;
+        const task = h.music.player.play(h.music.importURL('https://media.test/a', {id:'a'}));
+        await tick(); const audio = h.sounds.at(-1); audio.error = {code:3}; audio.emit('error');
+        assert.equal(h.music.player.snapshot().errorCode, 'decode');
+        if (result === 'resolve') pending.resolve();
+        else pending.reject(Object.assign(new Error('late permission rejection'), {name:'NotAllowedError'}));
+        await task;
+        assert.equal(h.music.player.snapshot().phase, 'error', result);
+        assert.equal(h.music.player.snapshot().playing, false, result);
+        assert.equal(h.music.player.snapshot().errorCode, 'decode', result);
+        h.playHook = null; await h.music.player.retry();
+        assert.equal(h.music.player.snapshot().phase, 'playing', 'explicit retry still works');
+        h.music.player.stop();
+    }
+});
+
+test('repeat-one consumes an ended transition only once while restarting playback', async () => {
+    const h = harness(), song = h.music.importURL('https://media.test/a', {id:'a'});
+    await h.music.player.play(song); h.music.player.setMode('one');
+    const pending = deferred(), audio = h.sounds.at(-1); let restarts = 0;
+    h.playHook = () => { restarts++; return pending.promise; };
+    audio.emit('ended'); audio.emit('ended');
+    assert.equal(restarts, 1);
+    pending.resolve(); await tick(); assert.equal(h.music.player.snapshot().playing, true);
+    audio.emit('ended'); await tick(); assert.equal(restarts, 2, 'the following full play can repeat again');
+    h.music.player.stop();
+});
 test('position notifications reuse immutable queue metadata and never persist per tick',async()=>{const h=harness(),songs=Array.from({length:500},(_,i)=>h.music.importURL('https://media.test/'+i,{id:String(i)})),events=[];await h.music.player.play(songs[0],songs);const unsub=h.music.player.subscribe(state=>events.push(state)),audio=h.sounds.at(-1);for(let i=1;i<5;i++){audio.currentTime=i;audio.emit('timeupdate');}assert.equal(events.at(-1).position,4);assert.equal(events[1].queue,events[2].queue);assert.equal(events[1].track,events[2].track);assert.equal(Object.isFrozen(events[1].queue),true);unsub();h.music.player.stop();});
 test('health wakeup uses no session or credentials and waits longer than normal provider requests', async () => {
     const timers = [], h = harness({musicSettings:{endpoint:'https://free.onrender.com'}}, {setTimeout(fn, ms){timers.push(ms);return setTimeout(fn,ms);}});

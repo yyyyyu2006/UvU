@@ -6,7 +6,7 @@ const modulePath = path.join(__dirname, '../js/modules/chat_image_generation.js'
 const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII=';
 const dataUrl = `data:image/png;base64,${png}`;
 
-function fixture() {
+function fixture({preview = false} = {}) {
     const elements = new Map(), timers = new Map(), calls = [], bubbles = [], toasts = [];
     const element = id => {
         if (!elements.has(id)) {
@@ -14,12 +14,13 @@ function fixture() {
             elements.set(id, { value: '', textContent: '', checked: false, disabled: false, hidden: false,
                 classList: { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x) },
                 addEventListener(name, fn) { this[name] = fn; }, setAttribute() {}, removeAttribute() {},
-                querySelector() { return element(id + '-child'); } });
+                querySelector(selector) { return element(id + (preview ? ' ' + selector : '-child')); },
+                ...(preview ? {insertAdjacentElement() {}} : {}) });
         }
         return elements.get(id);
     };
     const chats = ['a', 'b'].map(id => ({ id, myName: 'me', activeArchiveId: 'first', history: [] }));
-    const c = vm.createContext({ window: {}, document: { getElementById: element },
+    const c = vm.createContext({ window: {}, document: { getElementById: element, ...(preview ? {createElement: tag => element('created-' + tag)} : {}) },
         db: { characters: chats, groups: [], workshopSettings: { provider: 'gpt', gptModel: 'image-model',
             gptApiUrl: 'https://image.test', gptApiKey: 'test-key', gptAspectRatio: '1024x1024' } },
         currentChatId: 'a', currentChatType: 'private', Blob, URL, AbortController, structuredClone, atob, btoa,
@@ -53,6 +54,31 @@ function fixture() {
     }
     return { c, chats, feature, element, calls, bubbles, toasts, timers };
 }
+
+test('confirm preview never purchases a generation when no prepared image exists', async () => {
+    const f = fixture({preview:true}); f.element('created-label input').checked = true;
+    assert.equal(await f.feature.send('draft', true), false);
+    assert.equal(f.calls.length, 0); assert.equal(f.chats[0].history.length, 0);
+    assert.match(f.element('pv-generation-status').textContent, /预览.*失效|重新.*预览/);
+});
+
+test('changed preview settings or text require a fresh preview before confirmation', async () => {
+    for (const change of ['settings', 'text']) {
+        const f = fixture({preview:true}); f.element('created-label input').checked = true;
+        f.element('pv-text-input').value = 'draft';
+        assert.equal(await f.feature.send('draft'), false); assert.equal(f.calls.length, 1);
+        if (change === 'settings') f.c.db.workshopSettings.gptModel = 'another-model';
+        const prompt = change === 'text' ? 'changed draft' : 'draft';
+        f.element('pv-text-input').value = prompt;
+        assert.equal(await f.feature.send(prompt, true), false);
+        assert.equal(f.calls.length, 1, 'confirm must not silently regenerate');
+        assert.equal(f.chats[0].history.length, 0);
+        assert.equal(await f.feature.send(prompt), false, 'explicit generation returns to preview');
+        assert.equal(f.calls.length, 2);
+        assert.equal(await f.feature.send(prompt, true), true);
+        assert.equal(f.calls.length, 2); assert.equal(f.chats[0].history.length, 1);
+    }
+});
 
 test('AI image mode sends one normal image with the entered description, without changing workshop settings', async () => {
     const f = fixture(); assert.ok(f.feature, 'chat generation module exists');

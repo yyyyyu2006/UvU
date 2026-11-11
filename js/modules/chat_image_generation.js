@@ -242,6 +242,11 @@ const ChatImageGeneration = (() => {
         if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
         const settings = structuredClone(db.workshopSettings || {});
         const key = JSON.stringify(settings);
+        // Confirmation sends exactly the prepared preview; it cannot buy a new image.
+        if (confirmPreview && !(retry?.target === source && retry.prompt === text && retry.key === key && retry.image)) {
+            status('预览已失效，请重新生成并预览后发送');
+            refresh(); return false;
+        }
         const session = { target: source, controller: new AbortController(), saving: false, timedOut: false };
         running = session;
         session.timer = setTimeout(() => {
