@@ -350,7 +350,9 @@
 .text-editor-card.uvu-mono-panel .editor-search input { width:100%; }
 .text-editor-card.uvu-mono-panel > footer { font-size:12px; }
 .model-picker-card.uvu-mono-panel.mono-page > :is(.model-picker-search,.model-picker-count) { flex-shrink:0;margin:16px 20px 0;width:calc(100% - 40px); }
-.model-picker-card.uvu-mono-panel .model-picker-list { flex:none;min-height:0;overflow:hidden;padding:0; }
+.model-picker-card.uvu-mono-panel.mono-page > .draft-scroll { overflow:hidden; }
+/* Keep search fixed; the list owns scrolling so overscroll containment cannot trap swipes. */
+.model-picker-card.uvu-mono-panel.mono-page > .draft-scroll > .model-picker-list { flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0;touch-action:pan-y; }
 .model-picker-card.uvu-mono-panel .model-picker-list > button { width:100%;min-height:56px;text-align:left;justify-content:flex-start;white-space:normal;overflow-wrap:anywhere;border:0;border-bottom:1px solid #edf0f3;border-radius:0;background:#fff;padding:16px 20px 16px 44px;font-size:14px; }
 .model-picker-card.uvu-mono-panel .model-picker-list > button[aria-selected=true] { color:#191b1f;background:#eef0f2; }
 .uvu-mono-panel .draft-summary-range { display:flex;flex-direction:column;gap:16px; }
