@@ -3,11 +3,13 @@
     const STORAGE_KEY = 'uvu-story-bridge.v1';
     const DEFAULT_URL = 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge';
     const PREVIOUS_DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
-    const FRONTEND_BUILD = '20261109-audit-repairs';
+    const FRONTEND_BUILD = '20261111-review-notification-guards';
     let syncBusy = false;
     let pollTimer = null;
     let sendBusy = false;
     let reviewBusy = false;
+    const reviewSaving = new WeakMap();
+    let reviewWriteCount = 0;
     let reviewSignature = '';
     const reviewDrafts = new Map();
     let generation = 0;
@@ -197,7 +199,7 @@
     }
     async function changeTTMode(value) {
         if (!['file', 'https'].includes(value)) throw new Error('不支持的 TT 交接方式。');
-        if (channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy) throw new Error('请等待当前收发或总结完成后切换交接方式。');
+        if (channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy) throw new Error('请等待当前收发或总结完成后切换交接方式。');
         const state = settings('tt'), previous = state.transport;
         channelSwitchBusy = true; generation++; state.transport = value;
         try { await saveData(); } catch (error) { if (previous === undefined) delete state.transport; else state.transport = previous; throw error; } finally { channelSwitchBusy = false; }
@@ -390,7 +392,8 @@
 
     function allowedMemory(chat, journal) {
         const state=settings(journal.bridgeReview?.channel || 'st');
-        return journal.source !== 'sillytavern' || (state.bridgeEnabled !== false && journal.isFavorited === true &&
+        const saving = reviewSaving.get(chat);
+        return journal.source !== 'sillytavern' || (!(saving && saving.journalId === journal.id && saving.archiveId === chat.activeArchiveId) && state.bridgeEnabled !== false && journal.isFavorited === true &&
             String(journal.bridgeReview?.archiveId || 'default') === String(chat.activeArchiveId || 'default') &&
             journal.bridgeReview?.status === 'approved' && journal.bridgeReview.items?.some(item => item.selected && item.text) &&
             state.injectionByCharacter[String(chat.id)] !== false);
@@ -785,10 +788,8 @@
     }
 
     async function persistReview(chat, journal, items) {
-        if (settings().receipts[String(chat.id) + ':' + journal.externalSceneId]?.cancelled && journal.bridgeReview?.status !== 'approved') throw new Error('本场导出已在酒馆取消，未加入日记。');
-        if (!(chat.memoryJournals || []).includes(journal) || String(chat.activeArchiveId || 'default') !== String(journal.bridgeReview?.archiveId || chat.activeArchiveId || 'default')) throw new Error('审核目标存档已切换，请打开原存档后重试。');
+        assertReviewTarget(chat, journal);
         const archiveId = chat.activeArchiveId;
-        const before = structuredClone(journal);
         const review = journal.bridgeReview || { version: 1, sourceText: journal.content, archiveId: String(archiveId || 'default') };
         const legacyItems = review.version !== 2 ? globalThis.UvUBridgeText.legacyFloorItems(review.sourceText || journal.content) : [];
         const next = items.map(item => {
@@ -798,18 +799,13 @@
                 ...(original?.floor ? {floor: structuredClone(original.floor)} : {})};
         });
         const content = globalThis.UvUBridgeText.memoryText(next);
-        journal.bridgeReview = { ...review, version: 2, items: next, status: content ? 'approved' : 'pending' };
-        journal.bridgeReview.memoryMode = 'raw'; delete journal.bridgeReview.summaryDraft;
-        if(content && journal.bridgeReview.summaryResume)journal.bridgeReview.summaryResume.completed=true;
-        journal.content = content || review.sourceText; journal.isFavorited = Boolean(content);
-        if (content) { journal.category ||= '酒馆线下剧情'; journal.timeline ||= new Date(journal.createdAt || Date.now()).toISOString().slice(0, 10); }
-        try { await saveData(); }
-        catch (error) {
-            if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) { for (const key of Object.keys(journal)) if (!Object.hasOwn(before, key)) delete journal[key]; Object.assign(journal, before); }
-            const archived = chat.archives?.find(item => item.id === archiveId)?.data?.memoryJournals?.find(item => item.id === journal.id);
-            if (archived) { for (const key of Object.keys(archived)) if (!Object.hasOwn(before, key)) delete archived[key]; Object.assign(archived, before); }
-            throw error;
-        }
+        await saveJournalChange(chat, journal, () => {
+            journal.bridgeReview = { ...review, version: 2, items: next, status: content ? 'approved' : 'pending' };
+            journal.bridgeReview.memoryMode = 'raw'; delete journal.bridgeReview.summaryDraft;
+            if(content && journal.bridgeReview.summaryResume)journal.bridgeReview.summaryResume.completed=true;
+            journal.content = content || review.sourceText; journal.isFavorited = Boolean(content);
+            if (content) { journal.category ||= '酒馆线下剧情'; journal.timeline ||= new Date(journal.createdAt || Date.now()).toISOString().slice(0, 10); }
+        });
     }
 
     function assertReviewTarget(chat, journal) {
@@ -822,16 +818,24 @@
     }
     async function saveJournalChange(chat, journal, mutate) {
         assertReviewTarget(chat, journal);
+        if (reviewSaving.has(chat)) throw new Error('该角色的剧情正在保存，请等待完成后重新审核。');
         const before = structuredClone(journal), archiveId = chat.activeArchiveId;
-        mutate();
-        try {await saveData();}
+        reviewSaving.set(chat, {journalId:journal.id, archiveId}); reviewWriteCount++;
+        let applied;
+        try {mutate(); applied = JSON.stringify(journal); await saveData();}
         catch(error) {
-            const restore = value => {for(const key of Object.keys(value))if(!Object.hasOwn(before,key))delete value[key];Object.assign(value,structuredClone(before));};
-            if (chat.activeArchiveId === archiveId && (chat.memoryJournals || []).includes(journal)) restore(journal);
+            // A synchronous mutation error happens before any other writer can run.
+            if (applied === undefined) applied = JSON.stringify(journal);
+            const restore = value => {
+                if (!value || JSON.stringify(value) !== applied) return;
+                for(const key of Object.keys(value))if(!Object.hasOwn(before,key))delete value[key];
+                Object.assign(value,structuredClone(before));
+            };
+            if (chat.activeArchiveId === archiveId) restore(chat.memoryJournals?.find(item=>item.id===journal.id));
             const archived=chat.archives?.find(item=>item.id===archiveId)?.data?.memoryJournals?.find(item=>item.id===journal.id);
-            if(archived)restore(archived);
+            restore(archived);
             throw error;
-        }
+        } finally {reviewSaving.delete(chat); reviewWriteCount--;}
     }
     async function summarizeReview(chat, journal, items, options = {}) {
         assertReviewTarget(chat, journal);
@@ -1220,7 +1224,7 @@
 
     async function changeChannel(value) {
         if(!['st','tt'].includes(value))throw new Error('不支持的酒馆通道。');
-        if(maintenanceBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
+        if(maintenanceBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
         const root=db.uvuStoryBridgeSettings ||= {}, before=root.channel;
         channelSwitchBusy=true;generation++;
         root.channel=value;

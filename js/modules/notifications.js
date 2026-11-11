@@ -5,6 +5,9 @@ let pendingNotificationTarget = null;
 let systemNotificationSequence = 0;
 const systemChatNotificationSequences = new Map();
 try { systemNotificationsEnabled = localStorage.getItem('uvu-system-notifications') === 'true'; } catch (_) {}
+if (typeof window !== 'undefined') window.addEventListener?.('storage', event => {
+    if (event.key === 'uvu-system-notifications' || event.key === null) systemNotificationsEnabled = event.key !== null && event.newValue === 'true';
+});
 
 function getMessageNotificationPreferences() {
     let raw;try{raw=JSON.parse(localStorage.getItem('uvu-notification-preferences.v1') || '{}');}catch{}
@@ -68,7 +71,8 @@ function getMessageNotificationPresentation(title, body, icon, chatId, chatType)
 function getMessageNotificationCapabilities() {
     const secure=typeof window!=='undefined' && window.isSecureContext===true,api=typeof Notification!=='undefined',worker=typeof navigator!=='undefined' && 'serviceWorker' in navigator;
     return {supported:secure && api && worker,secureContext:secure,notificationApi:api,serviceWorker:worker,permission:api?Notification.permission:'unavailable',
-        installed:typeof window!=='undefined' && (window.matchMedia?.('(display-mode: standalone)')?.matches===true || typeof navigator!=='undefined' && navigator.standalone===true),delivery:'page-dependent'};
+        installed:typeof window!=='undefined' && (window.matchMedia?.('(display-mode: standalone)')?.matches===true || typeof navigator!=='undefined' && navigator.standalone===true),delivery:'page-dependent',
+        crossWindowDedup:secure && typeof navigator!=='undefined' && typeof navigator.locks?.request==='function' && typeof crypto!=='undefined' && Boolean(crypto.subtle)};
 }
 function renderMessageNotificationPreferences() {
     const existing=document.getElementById('uvu-notification-preferences');if(existing){existing.refreshNotificationTargets?.();return;}
@@ -80,7 +84,7 @@ function renderMessageNotificationPreferences() {
     const preferences=getMessageNotificationPreferences();
     const row=(text,node)=>{const label=document.createElement('label');label.append(text,node);host.append(label);};
     host.append(heading,capability,help);
-    const duplicates=document.createElement('input');duplicates.type='checkbox';duplicates.checked=preferences.duplicateProtection;row('防止相同消息ID重复通知（可选，仅本次页面，最多记忆10分钟；不影响未读数）',duplicates);
+    const duplicates=document.createElement('input');duplicates.type='checkbox';duplicates.checked=preferences.duplicateProtection;row('防止重复通知（10分钟；'+(info.crossWindowDedup?'系统通知支持同源多窗口协调':'当前浏览器仅页面内去重')+'）',duplicates);
     const groupByChat=document.createElement('input');groupByChat.type='checkbox';groupByChat.checked=preferences.groupByChat;row('系统通知按聊天聚合',groupByChat);
     const quiet=document.createElement('input');quiet.type='checkbox';quiet.checked=preferences.quietHours.enabled;row('启用静音时段',quiet);
     const start=document.createElement('input'),end=document.createElement('input');start.type=end.type='time';start.value=preferences.quietHours.start;end.value=preferences.quietHours.end;row('开始（设备时间）',start);row('结束（设备时间）',end);
@@ -168,20 +172,61 @@ function messageNotificationTag(chatId, chatType) {
     for(let i=0;i<key.length;i++){a=Math.imul(a ^ key.charCodeAt(i),16777619);b=Math.imul(b,33)^key.charCodeAt(i);}
     return 'uvu-chat-'+(a>>>0).toString(36)+'-'+(b>>>0).toString(36);
 }
-async function showSystemMessageNotification(title, body, icon, chatId, chatType) {
+
+// Coordinate only opted-in system delivery. Receipts contain hashes and times,
+// never chat names, source text, credentials or unread counts.
+async function deliverSharedSystemNotification(identity, eligible, deliver) {
+    if (!identity || !getMessageNotificationPreferences().duplicateProtection || !getMessageNotificationCapabilities().crossWindowDedup) {
+        if (eligible()) return deliver();
+        return;
+    }
+    let started = false;
+    try {
+        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(identity)));
+        const key = [...new Uint8Array(bytes)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+        return await navigator.locks.request('uvu-system-notification-claims.v1', async () => {
+            if (!eligible()) return;
+            if (!getMessageNotificationPreferences().duplicateProtection) {started = true; return deliver();}
+            const now = Date.now(); let stored;
+            try {stored = JSON.parse(localStorage.getItem('uvu-system-notification-claims.v1') || '{}');} catch (_) {}
+            const entries = Object.entries(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {})
+                .filter(([id,time])=>/^[a-f0-9]{64}$/.test(id) && Number.isFinite(time) && time <= now && now-time < 600000).slice(-1024);
+            const claims = Object.fromEntries(entries);
+            if (Object.hasOwn(claims,key)) return;
+            started = true; await deliver();
+            claims[key] = Date.now();
+            try {localStorage.setItem('uvu-system-notification-claims.v1', JSON.stringify(Object.fromEntries(Object.entries(claims).slice(-1024))));} catch (_) {}
+        });
+    } catch (error) {
+        // A failed display must remain retryable; never display twice if an API
+        // or storage failure happened after display already began.
+        if (started) throw error;
+        if (eligible()) return deliver();
+    }
+}
+
+async function showSystemMessageNotification(title, body, icon, chatId, chatType, scope) {
     if (!systemNotificationsEnabled || document.visibilityState !== 'hidden' ||
         typeof Notification === 'undefined' || Notification.permission !== 'granted' || !shouldShowMessageNotification(chatId,chatType)) return;
     const grouped = getMessageNotificationPreferences().groupByChat;
+    const owner = scope?.chat, message = scope?.message, archive = owner?.activeArchiveId, history = owner?.history;
+    const messageId = message?.id, content = message?.content;
+    const validId = typeof messageId === 'string' && messageId.length > 0 && messageId.length <= 400 || typeof messageId === 'number' && Number.isFinite(messageId);
+    const identity = owner && validId ? [chatType,String(chatId),archive ?? null,message.role ?? null,message.senderId ?? null,messageId,message.timestamp ?? null] : null;
     const key = JSON.stringify([String(chatType),String(chatId)]);
     const sequence = grouped ? (systemChatNotificationSequences.get(key) || 0) + 1 : ++systemNotificationSequence;
     if (grouped) { systemChatNotificationSequences.set(key, sequence); if (systemChatNotificationSequences.size > 1024) systemChatNotificationSequences.delete(systemChatNotificationSequences.keys().next().value); }
-    const current = () => grouped ? systemChatNotificationSequences.get(key) === sequence : sequence === systemNotificationSequence;
+    const current = () => (grouped ? systemChatNotificationSequences.get(key) === sequence : sequence === systemNotificationSequence) &&
+        (!owner || owner.activeArchiveId === archive && owner.history === history && message?.id === messageId && message?.content === content &&
+            (typeof db === 'undefined' || (chatType === 'group' ? db.groups : db.characters)?.includes(owner)));
     try {
         const registration = await getMessageNotificationRegistration();
-        if (!current() || !systemNotificationsEnabled || Notification.permission !== 'granted' || document.visibilityState !== 'hidden' || !shouldShowMessageNotification(chatId,chatType)) return;
-        const display=getMessageNotificationPresentation(title,body,icon,chatId,chatType);
-        await registration.showNotification(display.title, { body:display.body, icon:display.icon, tag: grouped ? messageNotificationTag(chatId,chatType) : 'uvu-incoming-message',
-            data: { chatId, chatType }, timestamp: Date.now() });
+        const eligible = () => current() && systemNotificationsEnabled && Notification.permission === 'granted' && document.visibilityState === 'hidden' && shouldShowMessageNotification(chatId,chatType);
+        await deliverSharedSystemNotification(identity, eligible, () => {
+            const display=getMessageNotificationPresentation(title,body,icon,chatId,chatType);
+            return registration.showNotification(display.title, { body:display.body, icon:display.icon, tag: grouped ? messageNotificationTag(chatId,chatType) : 'uvu-incoming-message',
+                data: { chatId, chatType }, timestamp: Date.now() });
+        });
     } catch (_) {
         const status = document.getElementById('system-notification-status');
         if (status) status.textContent = '系统通知暂不可用；站内通知仍可使用';

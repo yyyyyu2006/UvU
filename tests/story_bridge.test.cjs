@@ -92,6 +92,66 @@ test('late scene summary cannot apply after archive change or source edit',async
  await assert.rejects(pending,/存档|变更/);assert.equal(journal.bridgeReview.summaryDraft,undefined);
 });
 
+test('raw review rejects a different channel or a removed character before any save',async()=>{
+ for(const edit of [f=>f.db.uvuStoryBridgeSettings.channel='tt',f=>f.db.characters=[]]){
+  const f=harness(async()=>({ok:true,json:async()=>({})}));let saves=0;f.context.saveData=async()=>{saves++;};
+  const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',channel:'st',status:'pending',items}};
+  f.chat.memoryJournals=[journal];edit(f);const before=JSON.stringify(journal);
+  await assert.rejects(f.bridge.persistReview(f.chat,journal,items),/角色|存档|通道/);assert.equal(saves,0);assert.equal(JSON.stringify(journal),before);
+ }
+});
+
+test('two review writes cannot mutate the same journal while the first save is pending',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',status:'pending',items}};
+ f.chat.memoryJournals=[journal];let rejectSave,saves=0;f.context.saveData=()=>++saves===1?new Promise((_,reject)=>rejectSave=reject):Promise.resolve();
+ const first=f.bridge.persistReview(f.chat,journal,[{...items[0],text:'第一次编辑'}]);const failed=assert.rejects(first,/quota/);
+ try { await assert.rejects(f.bridge.persistReview(f.chat,journal,[{...items[0],text:'第二次编辑'}]),/正在保存|保存中/); }
+ finally { rejectSave(Error('quota'));await failed; }
+ assert.equal(journal.content,'原文');assert.equal(journal.bridgeReview.status,'pending');
+});
+
+test('failed raw review restores an unchanged journal clone after archive history replacement',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));f.chat.activeArchiveId='a';f.chat.history=[];
+ const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',isFavorited:false,bridgeReview:{version:2,archiveId:'a',status:'pending',items}};
+ f.chat.memoryJournals=[journal];const before=JSON.stringify(journal);
+ f.context.saveData=async()=>{f.chat.history=[];f.chat.memoryJournals=structuredClone(f.chat.memoryJournals);throw Error('quota');};
+ await assert.rejects(f.bridge.persistReview(f.chat,journal,items),/quota/);
+ assert.equal(JSON.stringify(f.chat.memoryJournals[0]),before);assert.equal(f.bridge.allowedMemory(f.chat,f.chat.memoryJournals[0]),false);
+});
+
+test('review serialization failure restores fields and releases its save guard',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const items=[{id:'f',text:'原文',selected:true}];
+ const journal={id:'j',createdAt:Infinity,source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',status:'pending',items}};
+ f.chat.memoryJournals=[journal];const before=JSON.stringify(journal);
+ await assert.rejects(f.bridge.persistReview(f.chat,journal,items),/Invalid time/);assert.equal(JSON.stringify(journal),before);
+ journal.createdAt=1;await f.bridge.persistReview(f.chat,journal,items);assert.equal(journal.bridgeReview.status,'approved');
+});
+
+test('switching bridge channels waits for an outstanding review save',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',status:'pending',items}};
+ f.chat.memoryJournals=[journal];let finish;f.context.saveData=()=>new Promise(resolve=>finish=resolve);
+ const pending=f.bridge.persistReview(f.chat,journal,items);
+ try {await assert.rejects(f.bridge.changeChannel('tt'),/等待/);} finally {finish();await pending;}
+ assert.equal(f.db.uvuStoryBridgeSettings.channel,undefined);
+});
+
+test('a review being saved cannot be injected even through an unchanged journal clone',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',status:'pending',items}};
+ f.chat.memoryJournals=[journal];let finish;f.context.saveData=()=>new Promise(resolve=>finish=resolve);
+ const pending=f.bridge.persistReview(f.chat,journal,items);
+ try {assert.equal(f.bridge.allowedMemory(f.chat,journal),false);assert.equal(f.bridge.allowedMemory(f.chat,structuredClone(journal)),false);}
+ finally {finish();await pending;}
+ assert.equal(f.bridge.allowedMemory(f.chat,journal),true);
+});
+
+test('another journal of the same character waits rather than sharing an unfinished review write',async()=>{
+ const f=harness(async()=>({ok:true,json:async()=>({})}));const items=[{id:'f',text:'原文',selected:true}],journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{version:2,archiveId:'default',status:'pending',items}},other=structuredClone({...journal,id:'other'});
+ f.chat.memoryJournals=[journal,other];let finish,saves=0;f.context.saveData=()=>++saves===1?new Promise(resolve=>finish=resolve):Promise.resolve();
+ const pending=f.bridge.persistReview(f.chat,journal,items);
+ try {await assert.rejects(f.bridge.persistReview(f.chat,other,items),/正在保存|保存中/);} finally {finish();await pending;}
+ assert.equal(other.bridgeReview.status,'pending');
+});
+
 test('latest handoff range counts 50 eligible messages rather than hidden history slots', () => {
     const f = harness(async () => ({ok:true,json:async()=>({})}));
     f.chat.history = Array.from({length:120}, (_,i) => ({id:'m'+i,role:i%2?'assistant':'user',content:'正文'+i,isThinking:i%2===0}));
@@ -553,7 +613,7 @@ test('mode lookup propagates caller abort without network diagnostic wrapping',a
 test('safe capacity diagnostics contain counts but no tokens source text addresses or role identifiers',()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));f.db.uvuStoryBridgeSettings.outbox=[{payload:{text:'SECRET STORY'}}];
  const snapshot=f.bridge.diagnosticsSnapshot();assert.equal(snapshot.local.pendingSend,1);assert.equal(snapshot.local.remainingSend,499);
- assert.equal(snapshot.frontend.build,'20261109-audit-repairs');assert.equal(snapshot.frontend.protocolVersion,1);
+ assert.equal(snapshot.frontend.build,'20261111-review-notification-guards');assert.equal(snapshot.frontend.protocolVersion,1);
  assert.doesNotMatch(JSON.stringify(snapshot),/paired-token|SECRET STORY|127\.0\.0\.1|char-1/);
 });
 

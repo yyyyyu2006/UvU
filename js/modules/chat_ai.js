@@ -78,7 +78,7 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
         card.append(avatar, content);
         host.replaceChildren(card);
         bindIncomingNotificationSwipe(card, () => openChatRoom(chatId, chatType));
-        showSystemMessageNotification(titleText, String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息', member?.avatar || chat.avatar, chatId, chatType);
+        showSystemMessageNotification(titleText, String(message.content || '').replace(/^\[[^：:]+(?:的消息|的语音|发送的表情包|发来的照片\/视频)[：:]\s*/, '').replace(/\]$/, '').trim() || '发送了一条消息', member?.avatar || chat.avatar, chatId, chatType, {chat, message});
         setTimeout(() => card.remove(), 5000);
     });
 }

@@ -186,6 +186,20 @@ test('relationship save failure restores live relation and archive snapshot', as
     assert.equal(f.c.relationshipCanChat(f.chat), true);
 });
 
+test('failed relationship save repairs the unchanged cloned state instead of leaving autonomy enabled',async()=>{
+ const f=fixture();const before={autonomy:{enabled:false},revision:3};f.chat.friendRelationship=before;
+ f.c.saveData=async()=>{f.chat.history=[];f.chat.friendRelationship=plain(f.chat.friendRelationship);throw Error('quota');};
+ await assert.rejects(f.c.updateChatRelationship(f.chat,r=>r.autonomy.enabled=true),/保存失败/);
+ assert.deepEqual(plain(f.chat.friendRelationship),before);assert.equal(f.c.getChatRelationship(f.chat).autonomy.enabled,false);
+});
+
+test('failed relationship rollback does not overwrite separately edited archive content with the same revision',async()=>{
+ const f=fixture();f.chat.friendRelationship={peer:{blocked:true},revision:3};f.chat.archives=[{id:'a',data:{}}];
+ f.c.saveData=async()=>{const archived=plain(f.chat.friendRelationship);archived.recovery.condition='后来另存的条件';f.chat.archives[0].data.friendRelationship=archived;throw Error('quota');};
+ await assert.rejects(f.c.updateChatRelationship(f.chat,r=>r.peer.blocked=false),/保存失败/);
+ assert.equal(f.chat.friendRelationship.peer.blocked,true);assert.equal(f.chat.archives[0].data.friendRelationship.recovery?.condition,'后来另存的条件');
+});
+
 test('invalid or failed recovery response never restores friendship', async () => {
     for (const response of ['oops', '{"restore":"true"}', '{}']) {
         const f = fixture(); f.chat.friendRelationship = { peer: { deleted: true }, recovery: { mode: 'condition', condition: 'test' } };

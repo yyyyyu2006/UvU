@@ -15,3 +15,31 @@ test('revoking notification permission during service lookup stops the pending r
  const task=c.showSystemMessageNotification('角色','消息','avatar','a','private');c.Notification.permission='denied';
  finish({active:{},showNotification:async(...args)=>shown.push(args)});await task;assert.equal(shown.length,0);
 });
+
+test('shared notification receipts expire and discard future or malformed entries',async()=>{
+ const {context:c,values}=fixture();c.crypto=require('node:crypto').webcrypto;c.TextEncoder=TextEncoder;c.navigator.locks={request:async(_,run)=>run()};
+ c.saveMessageNotificationPreferences({duplicateProtection:true});let shown=0;const send=()=>c.deliverSharedSystemNotification(['same'],()=>true,async()=>shown++);
+ await send();await send();assert.equal(shown,1);const key='uvu-system-notification-claims.v1',records=JSON.parse(values.get(key)),id=Object.keys(records)[0];
+ records[id]=Date.now()-600001;records['bad-key']=Date.now();records['a'.repeat(64)]=Date.now()+600000;values.set(key,JSON.stringify(records));
+ await send();assert.equal(shown,2);assert.equal(Object.keys(JSON.parse(values.get(key))).length,1);
+});
+
+test('shared notification history stays bounded and contains only opaque receipt keys',async()=>{
+ const {context:c,values}=fixture();c.crypto=require('node:crypto').webcrypto;c.TextEncoder=TextEncoder;c.navigator.locks={request:async(_,run)=>run()};c.saveMessageNotificationPreferences({duplicateProtection:true});
+ values.set('uvu-system-notification-claims.v1',JSON.stringify(Object.fromEntries(Array.from({length:1024},(_,i)=>[i.toString(16).padStart(64,'0'),Date.now()]))));
+ let shown=0;await c.deliverSharedSystemNotification(['secret-account','private message'],()=>true,async()=>shown++);
+ const receipts=values.get('uvu-system-notification-claims.v1');assert.equal(shown,1);assert.equal(Object.keys(JSON.parse(receipts)).length,1024);assert.doesNotMatch(receipts,/secret|private|account/);
+});
+
+test('missing Web Locks and lock rejection keep notification delivery available',async()=>{
+ for(const rejects of [false,true]){
+  const {context:c}=fixture();c.crypto=require('node:crypto').webcrypto;c.TextEncoder=TextEncoder;c.saveMessageNotificationPreferences({duplicateProtection:true});
+  if(rejects)c.navigator.locks={request:async()=>{throw Error('not available');}};
+  let shown=0;await c.deliverSharedSystemNotification(['message'],()=>true,async()=>shown++);assert.equal(shown,1);
+ }
+});
+
+test('receipt storage failure after successful notification never displays a second time',async()=>{
+ const {context:c}=fixture();c.crypto=require('node:crypto').webcrypto;c.TextEncoder=TextEncoder;c.navigator.locks={request:async(_,run)=>run()};c.saveMessageNotificationPreferences({duplicateProtection:true});
+ c.localStorage.setItem=()=>{throw Error('quota');};let shown=0;await c.deliverSharedSystemNotification(['message'],()=>true,async()=>shown++);assert.equal(shown,1);
+});

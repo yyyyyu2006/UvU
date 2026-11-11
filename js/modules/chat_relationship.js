@@ -74,19 +74,20 @@ async function updateChatRelationship(chat, update) {
     const archiveId = chat.activeArchiveId;
     const before = chat.friendRelationship;
     const next = getChatRelationship(chat);
-    try { update(next); } catch (error) { relationshipWrites.delete(chat); throw error; }
-    next.revision = (Number(before?.revision) || 0) + 1;
+    let applied;
+    try { update(next); next.revision = (Number(before?.revision) || 0) + 1; applied = JSON.stringify(next); }
+    catch (error) { relationshipWrites.delete(chat); throw error; }
     chat.friendRelationship = next;
     try { await saveData(); }
     catch (error) {
-        if (chat.activeArchiveId === archiveId && chat.friendRelationship === next) {
+        if (chat.activeArchiveId === archiveId && JSON.stringify(chat.friendRelationship) === applied) {
             if (before === undefined) delete chat.friendRelationship; else chat.friendRelationship = before;
         }
         const stored = chat.archives?.find(a => a.id === archiveId)?.data;
-        if (stored?.friendRelationship?.revision === next.revision) {
+        if (stored && JSON.stringify(stored.friendRelationship) === applied) {
             if (before === undefined) delete stored.friendRelationship; else stored.friendRelationship = JSON.parse(JSON.stringify(before));
         }
-        throw new Error('好友状态保存失败，已恢复原状态');
+        throw new Error('好友状态保存失败，请核对当前状态后重试');
     } finally { relationshipWrites.delete(chat); }
     if (chat.activeArchiveId === archiveId) refreshRelationshipUI(chat);
 }
