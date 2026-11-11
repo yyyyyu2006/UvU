@@ -375,7 +375,7 @@ const MiniMaxTTS = (() => {
             const lines = playback?.segmented ? speech.segments(text, playback.segmentChars) : [text];
             const blobs = [], details = [];
             session.diagnostic = { directorMs: 0, synthesisMs: 0, emotion: ttsSettings.emotion || '', speed: Number(ttsSettings.speed) || 1,
-                pauseCount: 0, warning: '', cacheHit: true, segments: lines.length, directorUsage: [],
+                pauseCount: 0, warning: '', cacheHit: true, segments: lines.length, segmentDetails: [], directorUsage: [],
                 region: speech ? speech.region(ttsSettings.endpoint) : '', persistent: playback?.persistentCache === true };
             for (const line of lines) {
                 if (activeSession !== session || identity && !VoiceDirector.isCurrent(identity)) return stop(session);
@@ -417,6 +417,9 @@ const MiniMaxTTS = (() => {
                 } : undefined);
                 session.diagnostic.synthesisMs += Date.now() - synthesisStarted;
                 const detail = audioDetails.get(blob) || {};
+                session.diagnostic.segmentDetails.push({ text: line, emotion: speech ? speech.requestOptions(lineSettings).voice_setting.emotion || 'auto' : lineSettings.emotion || 'auto', speed: Number(lineSettings.speed) || 1,
+                    pauses: [...speechText.matchAll(/<#([0-9.]+)#>/g)].map(m => ({ after: speechText.slice(0,m.index).replace(/<#([0-9.]+)#>/g,'').slice(-20), seconds:Number(m[1]) })),
+                    usageCharacters: detail.cacheHit ? 0 : detail.usageCharacters ?? null, cacheHit: Boolean(detail.cacheHit) });
                 session.diagnostic.cacheHit = session.diagnostic.cacheHit && Boolean(detail.cacheHit);
                 session.diagnostic.speed = Number(lineSettings.speed) || 1;
                 blobs.push(blob); details.push(detail);
@@ -468,7 +471,7 @@ const MiniMaxTTS = (() => {
         return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
-    return { play, stop: () => stop(), synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && { ...lastDiagnostic } };
+    return { play, stop: () => stop(), synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && JSON.parse(JSON.stringify(lastDiagnostic)) };
 })();
 
 function getAudioPlaybackErrorMessage(code) {

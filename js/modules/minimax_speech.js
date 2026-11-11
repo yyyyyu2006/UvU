@@ -340,7 +340,7 @@
         const language = field(playback, '语言增强', 'text', config.language); language.placeholder = 'auto / Chinese / Chinese,Yue';
         const clear = button('清理本机音频', async () => { MiniMaxTTS.clearCache(); status.textContent = await persistent.clear() ? '本机音频已清理' : '本机缓存不可用'; }); playback.append(clear);
         const dictionaryField = field(details(advanced, '默认读音词典'), '一行一个词语/读法', 'textarea', (saved.pronunciation || []).join('\n'));
-        const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。展开聊天语音的“语音详情”可查看计费字符和导演 Token、切回普通语音、重试导演或手动选择本条语音的情绪与语速。接口未提供的用量不估作实际费用。'));
+        const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。展开聊天语音的“语音详情”可查看计费字符和导演 Token、切回普通语音、重试导演或手动选择本条语音的情绪与语速。合成后展开“分段参数”，可核对各段台词、实际情绪、语速、停顿位置及缓存状态；这不是合成前试听。接口未提供的用量不估作实际费用。'));
         formState = { profiles, flush, dictionary: dictionaryField, refreshRoles: () => {
             // Refresh the menu after data loading/import, without reloading a profile's unsaved fields.
             const value = roleSelect.value;
@@ -365,6 +365,16 @@
             (diagnostic.directorUsage?.some(u => u.inputTokens != null || u.outputTokens != null) ? ' · 导演输入/输出 Token ' +
                 ['inputTokens', 'outputTokens'].map(key => diagnostic.directorUsage.every(u => u.cacheHit || u[key] != null)
                     ? diagnostic.directorUsage.reduce((n, u) => n + (u.cacheHit ? 0 : u[key]), 0) : '未提供').join('/') : '') + (diagnostic.warning ? ' · ' + diagnostic.warning : ''); detail.append(line);
+        if (diagnostic.segmentDetails?.length) {
+            const segments = document.createElement('details'), heading = document.createElement('summary'); heading.textContent = '分段参数'; segments.append(heading);
+            diagnostic.segmentDetails.forEach((segment,index) => {
+                const row = document.createElement('section'), title = document.createElement('p'), text = document.createElement('p');
+                title.textContent = '第 '+(index+1)+' 段 · '+segment.emotion+' · 语速 '+segment.speed+' · '+(segment.cacheHit?'音频缓存':segment.usageCharacters==null?'合成用量未返回':'本次合成 '+segment.usageCharacters+' 字符');
+                text.textContent = segment.text; row.append(title,text);
+                for (const pause of segment.pauses || []) { const p=document.createElement('p');p.textContent='“'+pause.after+'”后停顿 '+pause.seconds+' 秒';row.append(p); }
+                segments.append(row);
+            }); detail.append(segments);
+        }
         const actions = document.createElement('div'); actions.className = 'minimax-tts-actions';
         for (const [text, callback] of [['普通语音', onPlain], ['重试导演', onRetry]]) { if (!callback) continue; const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.onclick = callback; actions.append(button); }
         detail.append(actions);

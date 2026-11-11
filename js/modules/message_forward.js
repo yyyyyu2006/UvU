@@ -113,7 +113,7 @@ function openMessageForwardPicker(source, sourceType, ids) {
             button.disabled = sending;
             button.addEventListener('click', () => {
                 if (sending) return;
-                selected = { ...target, archiveId: target.chat.activeArchiveId }; send.disabled = false; render();
+                selected = { ...target, archiveId: target.chat.activeArchiveId, binding: captureMessageForwardTarget(target.chat, target.type) }; send.disabled = false; render();
             });
             list.appendChild(button);
         });
@@ -128,7 +128,7 @@ function openMessageForwardPicker(source, sourceType, ids) {
         if (summary.estimatedBytes > 4 * 1048576 && !window.confirm('本次转发约 ' + size + ' MB，可能需要较长保存时间。继续发送？取消会保留当前选择。')) return;
         sending = true; dialog.setBusy(true); send.disabled = true; search.disabled = true; render();
         try {
-            await sendMessageForward(snapshot, selected.chat.id, selected.type, selected.archiveId);
+            await sendMessageForward(snapshot, selected.chat.id, selected.type, selected.archiveId, selected.binding);
             dialog.setBusy(false); dialog.dismiss();
             // 保存期间切换聊天时，不打断用户正在进行的操作。
             if (messageSelectionScope === sourceScope && isCurrentMessageSelection(source) && selected.chat.activeArchiveId === selected.archiveId) {
@@ -143,9 +143,13 @@ function openMessageForwardPicker(source, sourceType, ids) {
     });
 }
 
-async function sendMessageForward(snapshot, targetId, type, archiveId) {
+function captureMessageForwardTarget(chat, type) {
+    return { chat, history: chat.history, identity: JSON.stringify([chat.myName, chat.myPersona, type === 'group' ? chat.me : null, type === 'group' ? (chat.members || []).map(m => [m.id, m.originalCharId]) : null]) };
+}
+async function sendMessageForward(snapshot, targetId, type, archiveId, binding) {
     const target = (type === 'private' ? db.characters : db.groups).find(chat => chat.id === targetId);
     if (!target || target.activeArchiveId !== archiveId) throw new Error('接收会话或存档已改变，请重新选择接收对象');
+    if (binding && (binding.chat !== target || binding.history !== target.history || binding.identity !== captureMessageForwardTarget(target, type).identity)) throw new Error('接收会话、用户或群成员已变化，请重新选择接收对象');
     if (getMessageForwardSummary(snapshot).estimatedBytes > 16 * 1048576) throw new Error('转发内容过大（上限16MB），请缩小所选范围');
     const text = messageForwardText(snapshot);
     const message = { id: 'forward_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2)),

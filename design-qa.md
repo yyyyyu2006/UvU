@@ -107,3 +107,11 @@ final result: passed for the six requested amendments and implemented sheet layo
 - `npm test` 1134／1134；`optimization_memory_browser.cjs`、`memo_modal_browser.cjs`、`approved_sheets_browser.cjs`、`browser_notification_environment_optimizations.cjs` 通过。备份历史存档及分类导入的补充断言 16／16 通过。
 - 查看本次浏览器截图；保持当前弹窗布局、内滚动、全屏酒馆、原生 Token、内嵌语音／备份及音乐像素隔离。没有修改 1900 原版美化、聊天组装与回复流程、音乐 UI、导出 ID Card、发送文件／一起听邀请卡片。
 - 多窗口统一通知去重、字体／媒体／向量跨库原子快照及真实手机／外部账号服务尚未验收。此次修复不能代表完整审查清单全部完成，推送也不代表 Pages／Render 已部署。
+
+## 补充：日程审核与诊断入口 · 2026-11-11
+
+- 不重做已有面板和CSS；新增控件沿用当前界面。日历审核每项单独组织，勾选框与操作文字同行，原安排在下方；心情默认不选，忽略与保存保留在底部。
+- 实际浏览器发现日历设置被`mono-nav-help`隐藏；仅将日历设置作为头部辅助控件保留。酒馆连续检查正文原触发五击救援遮挡按钮，现只排除酒馆交互控件；空白背景救援和主题保留回归通过。
+- 摘要原楼层变化时，在当前阅读窗内显示错误并替换旧摘录；不再仅在被遮住的外层状态栏提示。记忆管理重复初始化不重复生成入口。
+- `remaining_optimizations_browser.cjs`覆盖新增功能和320／390px／402×420短屏，查看实际截图；`approved_sheets_browser.cjs`、`memo_interaction_browser.cjs`及千条评论压力回归通过。语音分段只补现有详情，不修改可见气泡或原文。
+- `npm test`1162／1162；两个固定MCP SDK分别通过JSON／SSE互通。1900基线、音乐像素、原生Token和已有内嵌语音／备份布局保持；真实手机／平台账号仍需实测。

@@ -4,7 +4,7 @@
     const clone = value => JSON.parse(JSON.stringify(value));
     const MOOD_COLOR = '#a9cbea';
     const MOODS = { happy: '开心', calm: '平静', tired: '疲惫', sad: '低落', upset: '烦躁' };
-    const FLAGS = ['shareSchedule', 'shareUserSchedule', 'shareMood', 'shareUserMood', 'shareHealth', 'autoGenerate', 'autonomy'];
+    const FLAGS = ['shareSchedule', 'shareUserSchedule', 'shareMood', 'shareUserMood', 'shareHealth', 'autoGenerate', 'autonomy', 'reviewChanges'];
     let tail = Promise.resolve(), undoEntry = null;
     const database = () => typeof db !== 'undefined' ? db : root.db;
     const empty = () => ({ version: 1, revision: 0, events: [], moods: [], periods: [], profiles: [], prefs: { cycleDays: 28, periodDays: 5, predictionEnabled: true, ovulationEnabled: true } });

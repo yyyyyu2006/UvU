@@ -4,6 +4,18 @@ function memoryLibrarySnapshot(chat) {
     return () => chat.activeArchiveId === archive && chat.history === history && chat.memoryJournals === journals &&
         [...(db.characters || []), ...(db.groups || [])].includes(chat);
 }
+function memorySummarySentenceLinks(chat, journal) {
+    const ids = new Set(journal.autoMemory?.sources?.map(s => s.id) || []), start = journal.range?.start || 0, end = journal.range?.end || 0;
+    const normalize = text => String(text || '').replace(/\s+/g, '');
+    const sources = (chat.history || []).map((message,index) => ({ message, floor:index+1 }))
+        .filter(({message,floor}) => (ids.size ? ids.has(message.id) : start > 0 && floor >= start && floor <= end) &&
+            ['user','assistant'].includes(message.role) && !message.isWithdrawn && !message.isHidden && !message.isContextDisabled && !message.isThinking && !message.isStatusUpdate)
+        .slice(0,200).map(item => ({...item,text:normalize(String(item.message.content || '').slice(0,12000))}));
+    return String(journal.content || '').slice(0,24000).split(/(?<=[。！？!?\n])/u).map(s => s.trim()).filter(Boolean).slice(0,80).map(sentence => {
+        const text = normalize(sentence);
+        return { sentence, matches: text.length < 4 ? [] : sources.filter(item => item.text.includes(text)).slice(0,5).map(({message,floor}) => ({id:message.id,floor})) };
+    });
+}
 function memoryLibraryGroups(journals, size = 6) {
     const categories = new Map();
     for (const journal of journals) {
@@ -278,6 +290,24 @@ function openMemoryLibrary() {
             const sourceFacts = journal.manualMergeSources?.length ? journal.manualMergeSources : messages;
             facts.append(element('pre', getMemoryFactChecklist(sourceFacts).map(row => `来源 ${row.id || row.floor} · ${row.speaker}\n日期线索：${row.dates.join('、') || '未知；不使用发送时间推断剧情日期'}\n约定：${row.commitments.join(' ') || '未识别，请核对原文'}\n待办：${row.todos.join(' ') || '未识别，请核对原文'}`).join('\n\n') || '无关联来源；请对照手动输入。'));
             details.append(facts);
+            const links = element('details'); links.append(element('summary', '逐句核对'), element('p', '按原文文字匹配，最多80句；改写或未命中请人工核对，不代表事实已确认。', 'feature-help'));
+            links.addEventListener('toggle', () => {
+                if (!links.open || links.dataset.loaded) return;
+                if (closed || !isCurrent()) { status.textContent = '存档或记忆已变化，请重新打开记忆管理'; return; } links.dataset.loaded = 'true';
+                for (const row of memorySummarySentenceLinks(chat, journal)) {
+                    const item = element('section'); item.append(element('p', row.sentence));
+                    const excerpt = element('pre'); excerpt.hidden = true;
+                    const stale = message => { status.textContent = message; excerpt.textContent = message; excerpt.hidden = false; };
+                    for (const match of row.matches) item.append(button('第 '+match.floor+' 楼', () => {
+                        if (closed || !isCurrent()) { stale('存档或记忆已变化，请重新打开记忆管理'); return; }
+                        const original = chat.history[match.floor-1];
+                        if (!memorySummarySentenceLinks(chat,journal).some(candidate => candidate.sentence === row.sentence && candidate.matches.some(m => m.id === match.id && m.floor === match.floor))) { stale('原消息已变化，请重新打开核对'); return; }
+                        excerpt.textContent = original.content; excerpt.hidden = false; excerpt.scrollIntoView?.({block:'nearest'});
+                    }));
+                    if (!row.matches.length) item.append(element('small', '无逐字匹配，请对照完整来源'));
+                    item.append(excerpt); links.append(item);
+                }
+            }); details.append(links);
         });
         host.append(details);
     };
@@ -482,7 +512,7 @@ function openMemoryLibrary() {
 }
 function setupMemoryLibrary() {
     const entry = document.querySelector('#memory-journal-screen .auto-memory-entry');
-    if (!entry) return;
+    if (!entry || document.getElementById('memory-library-open')) return;
     const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-secondary';
     button.id = 'memory-library-open'; button.textContent = '记忆管理 / 手动合并'; button.onclick = openMemoryLibrary;
     entry.append(button);

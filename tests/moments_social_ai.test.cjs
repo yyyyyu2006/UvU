@@ -7,6 +7,12 @@ function fixture(){
  return {chat,c,calls,api:c.UvUMomentsAI,data:c.UvUMoments};
 }
 const enable=async f=>{assert.ok(f.api,'AI module exists');await f.data.configure(f.chat,{enabled:true,cooldown:5});return f;};
+test('interaction task report is bounded, isolated and does not claim token usage',async()=>{
+ const f=await enable(fixture());await f.api.generate(f.chat,'p');
+ const report=f.api.inspect(f.chat);assert.equal(report.requests,1);assert.equal(report.completed,1);assert.equal(report.phase,'completed');assert.equal(report.usage,null);
+ report.speakers[0].name='tampered';assert.notEqual(f.api.inspect(f.chat).speakers[0].name,'tampered');
+ f.chat.activeArchiveId='b';assert.equal(f.api.inspect(f.chat),null);
+});
 test('disabled social mode never calls the API or changes history',async()=>{const {api,chat,calls}=fixture();assert.ok(api);assert.equal((await api.generate(chat,'p')).length,0);assert.equal(calls.length,0);assert.equal(chat.history.length,1);});
 test('NPC generation excludes private character/user personas and private history',async()=>{const {api,data,chat,calls}=await enable(fixture());await data.configure(chat,{charReplies:false,publicFacts:'公开认识于学校'});await data.saveNpc(chat,{name:'NPC',persona:'NPC_PUBLIC_PERSONA',knowledge:'只知道学校',knowsUser:false});await api.generate(chat,'p');assert.equal(calls.length,1);const payload=JSON.stringify(calls[0]);assert.ok(payload.includes('NPC_PUBLIC_PERSONA'));assert.ok(payload.includes('公开认识于学校'));assert.ok(!payload.includes('PRIVATE_CHARACTER_SECRET'));assert.ok(!payload.includes('PRIVATE_USER_SECRET'));assert.ok(!payload.includes('PRIVATE_HISTORY_SECRET'));assert.equal(chat.history.length,1);});
 test('reply generation is bounded and the same user trigger is not generated twice',async()=>{const {api,data,chat,calls}=await enable(fixture());await data.configure(chat,{maxReplies:2});for(const name of ['A','B','C'])await data.saveNpc(chat,{name,persona:name});await api.generate(chat,'p',{triggerId:'event'});assert.ok(calls.length<=2);const count=calls.length;await api.generate(chat,'p',{triggerId:'event'});assert.equal(calls.length,count);assert.ok(chat.moments[0].comments.length<=2);});

@@ -549,6 +549,8 @@
             help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux'); navIcon(help, 'check');
         } else if (help && panel.classList.contains('character-memos-panel')) {
             help.remove(); // Notebook instructions live with its recording settings.
+        } else if (help && panel.classList.contains('uvu-calendar')) {
+            help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux');
         } else if (help) {
             const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .draft-scroll');
             if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-help'); label(help, '使用说明'); body.append(help); }

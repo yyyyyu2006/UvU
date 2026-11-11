@@ -7,9 +7,9 @@
     const clean = text => typeof VoiceDirector !== 'undefined' && typeof VoiceDirector.cleanText === 'function' ? VoiceDirector.cleanText(text) : String(text || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').replace(/<[^>]*>/g, '').slice(0, 2000);
     function capture(chat) {
         const owner = C().owner(chat), data = db.calendarData;
-        return { chat, owner, data, revision: C().state().revision, persona: chat.persona, history: chat.history, stamp: JSON.stringify(chat.history?.slice(-6).map(m => [m.id, m.content])) };
+        return { chat, owner, data, revision: C().state().revision, persona: chat.persona, user: JSON.stringify([chat.myName, chat.myPersona]), history: chat.history, stamp: JSON.stringify(chat.history?.slice(-6).map(m => [m.id, m.content])) };
     }
-    function valid(s) { return C().resolve(s.owner) === s.chat && db.calendarData === s.data && C().state().revision === s.revision && s.chat.persona === s.persona && s.chat.history === s.history && JSON.stringify(s.chat.history?.slice(-6).map(m => [m.id, m.content])) === s.stamp; }
+    function valid(s) { return C().resolve(s.owner) === s.chat && db.calendarData === s.data && C().state().revision === s.revision && s.chat.persona === s.persona && JSON.stringify([s.chat.myName, s.chat.myPersona]) === s.user && s.chat.history === s.history && JSON.stringify(s.chat.history?.slice(-6).map(m => [m.id, m.content])) === s.stamp; }
     function setStatus(key, text) { statuses.set(key, text); if (statuses.size > 64) statuses.delete(statuses.keys().next().value); root.document?.dispatchEvent(new root.CustomEvent('uvu-calendar-ai-status', { detail: { owner: key, text } })); }
     async function generate(chat, date, signal, options = {}) {
         C().date(date); const s = capture(chat); if (!valid(s)) throw abort(); if (busy.has(s.owner)) throw new Error('此角色的行程正在生成，请稍候');
@@ -52,7 +52,8 @@
         const ticket = tickets.get(proposal.token); if (!ticket || ticket.s.chat !== chat || !valid(ticket.s)) throw new Error('预览已失效或日历已变化，请重新生成');
         const { s, update } = ticket;
         if (proposal.date !== ticket.proposal.date) throw new Error('日程预览日期已变化，请重新生成');
-        if (!Array.isArray(proposal.events) || proposal.events.some(e => !ticket.proposal.events.some(original => JSON.stringify(e) === JSON.stringify(original)))) throw new Error('日程预览已变化，请重新生成');
+        const actions = Array.isArray(proposal.events) ? proposal.events.map(e => JSON.stringify(e)) : [];
+        if (!Array.isArray(proposal.events) || new Set(actions).size !== actions.length || proposal.events.some(e => !ticket.proposal.events.some(original => JSON.stringify(e) === JSON.stringify(original)))) throw new Error('日程预览已变化或重复，请重新生成');
         let saved = 0, skipped = 0;
         await C().mutate(data => {
             if (!valid(s) || (update && !C().profile(s.owner).autonomy)) throw abort();
@@ -81,14 +82,35 @@
         }, { expected: s.revision, guard: () => valid(s) && (!update || C().profile(s.owner).autonomy) });
         tickets.delete(proposal.token); setStatus(s.owner, '已保存' + saved + '项' + (skipped ? '，冲突跳过' + skipped + '项' : '')); return { saved, skipped };
     }
+    function pending(chat) {
+        const result = [];
+        for (const [token, ticket] of tickets) {
+            if (!valid(ticket.s)) { tickets.delete(token); continue; }
+            if (ticket.waiting && ticket.s.chat === chat) result.push(JSON.parse(JSON.stringify(ticket.proposal)));
+        }
+        return result;
+    }
+    function defer(chat, proposal) {
+        const ticket = tickets.get(proposal.token);
+        if (!ticket || ticket.s.chat !== chat || !valid(ticket.s)) throw abort();
+        for (const [token, old] of tickets) if (token !== proposal.token && old.waiting && old.s.owner === ticket.s.owner) tickets.delete(token);
+        ticket.waiting = true; setStatus(ticket.s.owner, '有行程变更待审核');
+    }
+    function discard(chat, token) {
+        const ticket = tickets.get(token);
+        if (!ticket || ticket.s.chat !== chat || !valid(ticket.s)) throw abort();
+        tickets.delete(token); setStatus(ticket.s.owner, '已忽略本次安排，原记录保留');
+    }
     async function afterReply(chat) {
         const key = C().owner(chat), p = C().profile(key); if ((!p.autonomy && !p.autoGenerate) || busy.has(key)) return;
         if (!C().resolve(key)) return;
+        if (p.reviewChanges && pending(chat).length) return;
         const date = C().today(C().timezone(chat)), stamp = chat.history?.at(-1)?.id;
         if (attempted.get(key) === stamp) return;
         const daily = p.autoGenerate && !p.generatedDates.includes(date); if (!daily && !p.autonomy) return;
         attempted.set(key, stamp); if (attempted.size > 128) attempted.delete(attempted.keys().next().value);
-        const proposal = await generate(chat, date, undefined, { update: !daily }); await apply(chat, proposal);
+        const proposal = await generate(chat, date, undefined, { update: !daily });
+        if (C().profile(key).reviewChanges) defer(chat, proposal); else await apply(chat, proposal);
     }
-    root.UvUCalendarAI = { generate, apply, afterReply, status: key => statuses.get(key) || '' };
+    root.UvUCalendarAI = { generate, apply, afterReply, pending, defer, discard, status: key => statuses.get(key) || '' };
 })(window);

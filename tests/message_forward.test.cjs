@@ -58,6 +58,19 @@ test('stale recipient or archive is rejected before writing', async () => {
     assert.equal(f.target.history.length, 0);
 });
 
+test('picker target snapshot rejects a same-id replacement, history replacement and group identity change',async()=>{
+    for(const action of ['replace','history','persona','members']){
+        const f=fixture(),target=action==='members'?f.group:f.target,type=action==='members'?'group':'private';
+        const binding=f.c.captureMessageForwardTarget(target,type),snapshot=f.snapshot();
+        if(action==='replace')f.c.db.characters[1]={...target,history:[]};
+        if(action==='history')target.history=[];
+        if(action==='persona')target.myPersona='other user';
+        if(action==='members')target.members=[{id:'new-member'}];
+        await assert.rejects(f.c.sendMessageForward(snapshot,target.id,type,target.activeArchiveId,binding),/变化|改变/);
+        assert.equal(target.history.length,0,action);
+    }
+});
+
 test('failed save rolls back only appended card in live history and synchronized archive', async () => {
     const f = fixture(); f.target.history.push({ id: 'existing' });
     f.c.saveData = async () => { f.target.archives[0].data.history = JSON.parse(JSON.stringify(f.target.history)); f.target.history.push({ id: 'concurrent' }); throw new Error('disk full'); };

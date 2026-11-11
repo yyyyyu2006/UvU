@@ -1,0 +1,6 @@
+{
+  "name": "uvu-local-mcp-sdk-current-fixture",
+  "private": true,
+  "description": "Isolated official SDK 1.32.2 interoperability fixture; never bundled into UvU",
+  "dependencies": { "@modelcontextprotocol/sdk": "1.32.2" }
+}

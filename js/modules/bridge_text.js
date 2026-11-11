@@ -88,6 +88,13 @@
         return {...result, filteredTags, unknownTags, sourceChars: source.length, extractedChars: result.text.length,
             requiresConfirmation: result.mode !== 'tagged' || unknownTags.length > 0};
     }
+    function previewRules(value, preset = 'auto', options = {}) {
+        const text=String(value || ''),rules={auto:'',content:'content',maintext:'maintext main_text main-text',chinese:'正文 正文内容 正文部分',custom:options.bodyTags || ''};
+        if(text.length>120000)throw new Error('检查原文过长，请每次粘贴一层楼（最多12万字符）');
+        if(!Object.hasOwn(rules,preset))throw new Error('请选择有效正文规则');
+        if(preset==='custom' && (!rules.custom.trim() || rules.custom.split(/[,，\s]+/u).filter(Boolean).some(t=>!(/^[a-z\u3400-\u9fff][a-z0-9_\-\u3400-\u9fff]{0,40}$/iu.test(t)))))throw new Error('正文标签只填名称，多个用空格分开，不含尖括号');
+        return inspectStory(text,{bodyTags:rules[preset],excludeTags:options.excludeTags || ''});
+    }
     function validateFloor(floor) {
         if (!floor || typeof floor !== 'object' || typeof floor.id !== 'string' || !floor.id || floor.id.length > 160 ||
             !Number.isInteger(floor.number) || floor.number < 1 || !['user', 'assistant'].includes(floor.role) ||
@@ -145,7 +152,7 @@
     function segments(value) {
         return clean(value).split(/\n\s*\n/).map(text => text.trim()).filter(Boolean).map((text, index) => ({ id: String(index + 1), text, selected: false }));
     }
-    const api = { clean, fingerprint, extractStory, inspectStory, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
+    const api = { clean, fingerprint, extractStory, inspectStory, previewRules, BODY_TAGS, validateFloor, floorItems, legacyFloorItems, memoryText, segments };
     root.UvUBridgeText = api;
     if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis === 'undefined' ? this : globalThis);

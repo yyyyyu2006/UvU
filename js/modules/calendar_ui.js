@@ -118,6 +118,7 @@ function calendarDayWatcher(readDay, changed) {
             routine = field(automation, '作息与固定安排', 'textarea', profile.routine); routine.rows = 4; routine.maxLength = 4000; routine.placeholder = '例如：周一到周五上课，晚上散步';
             controls.autoGenerate = check(automation, '自动生成每日行程', profile.autoGenerate);
             controls.autonomy = check(automation, '允许角色调整自己的行程和心情', profile.autonomy);
+            controls.reviewChanges = check(automation, '自动安排先审核', profile.reviewChanges);
             automation.append(node('p', '打开日历或聊天后检查；使用当前聊天 API。锁定事项不被 AI 修改。', 'calendar-muted'));
             const sharing = node('section'); sharing.append(node('h3', '允许本角色参考')); d.fields.append(sharing);
             for (const [flag, label] of [['shareSchedule', '分享角色日程'], ['shareUserSchedule', '分享我的日程'], ['shareMood', '分享角色心情'], ['shareUserMood', '分享我的心情'], ['shareHealth', '分享经期状态与预测']]) controls[flag] = check(sharing, label, profile[flag]);
@@ -128,6 +129,7 @@ function calendarDayWatcher(readDay, changed) {
         const upload = node('input'); upload.type = 'file'; upload.accept = '.json'; upload.hidden = true; d.fields.append(upload);
         actions.append(button('导入记录', () => upload.click())); upload.onchange = async () => { try { const f = upload.files[0]; if (!f || f.size > 8 * 1024 * 1024) throw new Error('请选择8MB以内的日历 JSON'); const data = C().validate(JSON.parse(await f.text())); if (confirm('用此文件替换全部日历记录？可在保存后撤销。')) { await C().mutate(s => Object.assign(s, data)); d.dismiss(); } } catch (e) { d.status.textContent = e.message; } };
         const tutorial = node('details'); tutorial.append(node('summary', '使用说明'));
+        tutorial.append(node('p', '需要核对自动安排时，先选择角色，打开右上角日历设置，开启“自动安排先审核”。生成后从“更多操作 → 审核安排”核对新增、修改、删除，取消不需要的条目再保存；心情需单独勾选。忽略本次不会改原记录。待审安排仅在本页保留；刷新页面或对话、日历、角色存档变化后需重新生成。', 'calendar-muted'));
         for (const text of ['点日期查看当天；点“选择范围”再点起止日期，或长按日期后拖动。选区预览不会自动写入记录。', '日程支持重复、锁定和撤销。选择角色后可生成行程，预览核对后保存；自动安排需在本页开启。', '心情模式用表情显示每天最近一次记录；点击日期可查看或修改当天全部记录。经期实色为记录，虚线为预测。', '日历分享卡片会进入选定私聊；持续参考需单独授权。记录只保存在本机，设置备份包含日历与经期，分享备份前请核对。', '网页关闭后不会继续调用 AI，也不保证后台定时提醒。预测不用于避孕或诊断。']) tutorial.append(node('p', text, 'calendar-muted'));
         d.fields.append(tutorial);
         d.form.onsubmit = ev => { ev.preventDefault(); d.run(async () => {
@@ -218,6 +220,7 @@ function calendarDayWatcher(readDay, changed) {
             actions.append(button('撤销', async () => { try { await C().undo(); feedback.textContent = '已撤销'; } catch (e) { feedback.textContent = e.message; } }));
             if (mode === 'schedule') { const latestMood = C().state().moods.filter(m => m.owner === key && m.date === selected).sort((a,b) => b.at-a.at)[0]; actions.append(button('记录心情', () => { if (valid()) editMood(key, selected, latestMood); })); }
             if (chat && mode === 'schedule') actions.append(button('生成行程', () => generate(false)));
+            if (chat && mode === 'schedule') for (const proposal of root.UvUCalendarAI?.pending(chat) || []) actions.append(button('审核安排', () => showProposal(chat, proposal)));
             if (mode === 'period' && key !== 'user') { section.append(node('p', '切换至“我的日历”记录经期。', 'calendar-muted')); return; }
             const s = C().state();
             if (mode === 'schedule') {
@@ -252,9 +255,25 @@ function calendarDayWatcher(readDay, changed) {
             }
         }
         async function share(target, kind, text) { try { if (!valid()) throw new Error('请重新打开日历'); if (!confirm('将' + kind + '卡片发送给“' + (target.remarkName || target.realName) + '”？')) return; const sent = await root.UvUCalendarChat.share(target, { title: kind, date: selected, text }); feedback.textContent = sent ? '已分享' : '当前关系状态下无法分享'; } catch (e) { feedback.textContent = e.message; } }
-        async function generate(auto) { if (!chat || !valid() || !root.UvUCalendarAI) return; const target = chat, owner = key; feedback.textContent = '正在安排…'; try { const proposal = await root.UvUCalendarAI.generate(target, auto ? currentDay() : selected, life.signal); if (!valid() || owner !== key) return; if (auto) { await root.UvUCalendarAI.apply(target, proposal); feedback.textContent = root.UvUCalendarAI.status(owner); } else showProposal(target, proposal); } catch (e) { if (valid() && e.name !== 'AbortError') feedback.textContent = e.message; } }
-        function maybeGenerate() { if (chat && C().profile(key).autoGenerate && !C().profile(key).generatedDates.includes(currentDay())) generate(true); }
-        function showProposal(target, proposal) { const dialog = editor('行程预览', 'calendar-plan-preview'); dialog.fields.append(node('p', '勾选后保存', 'calendar-muted')); const choices = proposal.events.map(e => { const b = check(dialog.fields, (e.time || '全天') + ' ' + e.title, true); return { e, b }; }); const moodChoice = proposal.mood ? check(dialog.fields, '同时保存心情：' + C().moods[proposal.mood.mood], false) : null; dialog.form.onsubmit = ev => { ev.preventDefault(); dialog.run(() => root.UvUCalendarAI.apply(target, { ...proposal, includeMood: moodChoice?.checked === true, events: choices.filter(x => x.b.checked).map(x => x.e) })); }; }
+        async function generate(auto) { if (!chat || !valid() || !root.UvUCalendarAI) return; const target = chat, owner = key; feedback.textContent = '正在安排…'; try { const proposal = await root.UvUCalendarAI.generate(target, auto ? currentDay() : selected, life.signal); if (!valid() || owner !== key) return; if (auto) { if (C().profile(owner).reviewChanges) { root.UvUCalendarAI.defer(target, proposal); paint(); } else await root.UvUCalendarAI.apply(target, proposal); feedback.textContent = root.UvUCalendarAI.status(owner); } else showProposal(target, proposal); } catch (e) { if (valid() && e.name !== 'AbortError') feedback.textContent = e.message; } }
+        function maybeGenerate() { if (chat && C().profile(key).autoGenerate && !C().profile(key).generatedDates.includes(currentDay()) && !root.UvUCalendarAI?.pending(chat).length) generate(true); }
+        function showProposal(target, proposal) {
+            const dialog = editor('行程预览', 'calendar-plan-preview'), targetOwner = C().owner(target);
+            dialog.fields.append(node('p', proposal.date + ' · 勾选后保存', 'calendar-muted'));
+            const choices = proposal.events.map(e => {
+                const item = node('section'); dialog.fields.append(item);
+                const previous = C().state().events.find(old => old.owner === targetOwner && old.id === e.id);
+                const label = ({ add: '新增', update: '修改', delete: '删除' })[e.action] || '新增';
+                const b = check(item, label + ' · ' + (e.time || previous?.time || '全天') + ' ' + (e.title || previous?.title || '日程'), true);
+                if (previous) item.append(node('p', '原安排：' + (previous.time || '全天') + ' ' + previous.title, 'calendar-muted'));
+                if (e.action !== 'delete' && (e.endTime || e.location || e.note)) item.append(node('p', [e.endTime && '至 ' + e.endTime, e.location, e.note].filter(Boolean).join(' · '), 'calendar-muted'));
+                return { e, b };
+            });
+            const moodSection = node('section'); if (proposal.mood) dialog.fields.append(moodSection);
+            const moodChoice = proposal.mood ? check(moodSection, '同时保存心情：' + C().moods[proposal.mood.mood], false) : null;
+            dialog.footer.prepend(button('忽略本次', () => dialog.run(async () => { root.UvUCalendarAI.discard(target, proposal.token); paint(); })));
+            dialog.form.onsubmit = ev => { ev.preventDefault(); dialog.run(() => root.UvUCalendarAI.apply(target, { ...proposal, includeMood: moodChoice?.checked === true, events: choices.filter(x => x.b.checked).map(x => x.e) })); };
+        }
         // Explicit range mode disables touch scrolling only on the grid; ordinary swipes still scroll.
         grid.addEventListener('pointerdown', ev => {
             suppressClickUntil = 0; const day = ev.target.closest('[data-date]')?.dataset.date; if (!day || ev.button > 0) return;
@@ -277,7 +296,7 @@ function calendarDayWatcher(readDay, changed) {
         grid.addEventListener('touchmove', ev => { if (drag?.active && ev.cancelable) ev.preventDefault(); }, { passive: false });
         grid.addEventListener('keydown', ev => { if (ev.key === 'Escape' && (rangeMode || span.days > 1)) { ev.preventDefault(); ev.stopPropagation(); rangeMode = false; rangeAnchor = null; span = C().range(selected); paint(); return; } if (ev.shiftKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(ev.key)) { ev.preventDefault(); rangeMode = true; rangeAnchor ||= selected; const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[ev.key]; try { const day = C().addDays(selected, delta), next = C().range(rangeAnchor, day); if (next.days > 400) { feedback.textContent = '每次最多选择400天'; return; } selected = day; span = next; month = selected.slice(0, 7); paint(); grid.querySelector('[data-date="' + selected + '"]')?.focus(); } catch (_) {} } });
         side.onchange = () => { weatherController?.abort(); setOwner(true); };
-        document.addEventListener('uvu-calendar-ai-status', ev => { if (valid() && ev.detail.owner === key) feedback.textContent = ev.detail.text; }, { signal: life.signal });
+        document.addEventListener('uvu-calendar-ai-status', ev => { if (valid() && ev.detail.owner === key) { feedback.textContent = ev.detail.text; paint(); } }, { signal: life.signal });
         document.addEventListener('uvu-calendar-changed', () => { if (valid()) paint(); }, { signal: life.signal });
         document.addEventListener('uvu-environment-settings-changed', () => { if (valid()) { loadWeather(); paint(); } }, { signal: life.signal });
         const checkDay = calendarDayWatcher(currentDay, () => { paintDays(); void loadWeather(); });

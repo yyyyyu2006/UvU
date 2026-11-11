@@ -1,5 +1,13 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const helper = require('../js/modules/bridge_text.js');
+test('named story rule preview is bounded and never changes source text or default extraction',()=>{
+    const text='<content>正文甲。</content><maintext>正文乙。</maintext><status>状态。</status>';
+    assert.equal(helper.previewRules(text,'auto').text,'正文甲。');assert.equal(helper.previewRules(text,'maintext').text,'正文乙。');
+    assert.equal(helper.previewRules('<自定>内容</自定>','custom',{bodyTags:'自定'}).text,'内容');
+    assert.throws(()=>helper.previewRules(text,'custom',{bodyTags:'<script>'}),/标签/);
+    assert.throws(()=>helper.previewRules('字'.repeat(120001),'auto'),/过长/);
+    assert.equal(helper.extractStory(text).text,'正文甲。');
+});
 
 test('incoming story extraction ignores nested status content and preserves paragraphs', () => {
     const result = helper.extractStory('<status><content>not story</content></status><content>第一段。\n\n第二段。</content><small_theater>extra</small_theater>');

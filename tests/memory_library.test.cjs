@@ -10,6 +10,19 @@ function fixture() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/memory_library.js'), 'utf8'), c);
     return { chat, c };
 }
+test('summary sentence lookup links only literal fragments in its own source floors',()=>{
+    const {chat,c}=fixture();chat.history=[{id:'one',role:'user',content:'我不吃花生。约好周六见。'},{id:'two',role:'assistant',content:'周六见。'},{id:'foreign',role:'user',content:'火星旅行。'}];
+    const journal={content:'我不吃花生。火星旅行。周六见。',autoMemory:{sources:[{id:'one'},{id:'two'}]}};
+    const before=JSON.stringify(chat),rows=c.memorySummarySentenceLinks(chat,journal);
+    assert.equal(rows[0].matches[0].floor,1);assert.equal(rows[1].matches.length,0);assert.equal(rows[2].matches.length,2);
+    chat.history[0].isWithdrawn=true;assert.equal(c.memorySummarySentenceLinks(chat,journal)[0].matches.length,0);
+    delete chat.history[0].isWithdrawn;assert.equal(JSON.stringify(chat),before);
+});
+test('refreshing derived memory entry never duplicates the management button',()=>{
+    const {c}=fixture(),children=[],entry={append:el=>children.push(el)};
+    c.document={querySelector:()=>entry,getElementById:id=>children.find(e=>e.id===id),createElement:()=>({})};
+    c.setupMemoryLibrary();c.setupMemoryLibrary();assert.equal(children.length,1);
+});
 test('memory groups are kept within category and configured size', () => {
     const { c } = fixture();
     const entries = Array.from({ length: 13 }, (_, i) => ({ id: String(i), category: i === 12 ? '其他' : '剧情', createdAt: i }));

@@ -15,3 +15,35 @@ test('calendar AI rechecks owner after waiting in shared persistence queue',asyn
 
 test('calendar autonomy tolerates a director without its internal cleaner',async()=>{const c=fixture(),C=c.UvUCalendar;c.VoiceDirector={};await C.saveProfile(C.owner(c.chat),{autonomy:true});c.fetchAiResponse=async()=>JSON.stringify({events:[]});await c.UvUCalendarAI.generate(c.chat,'2026-11-07',undefined,{update:true});assert.equal(c.calls,0);});
 test('manual proposal can opt out of AI mood independently of events',async()=>{const c=fixture(),p=await c.UvUCalendarAI.generate(c.chat,'2026-11-07');await c.UvUCalendarAI.apply(c.chat,{...p,includeMood:false});assert.equal(c.UvUCalendar.state().events.length,1);assert.equal(c.UvUCalendar.state().moods.length,0);});
+
+test('optional schedule review queues automatic proposals without changing records or repeating calls',async()=>{
+    const c=fixture(),C=c.UvUCalendar,A=c.UvUCalendarAI,key=C.owner(c.chat);
+    await C.saveProfile(key,{autoGenerate:true,reviewChanges:true});
+    await A.afterReply(c.chat);
+    assert.equal(C.state().events.length,0);assert.equal(C.state().moods.length,0);
+    const proposals=A.pending(c.chat);assert.equal(proposals.length,1);
+    proposals[0].events[0].title='tampered';assert.equal(A.pending(c.chat)[0].events[0].title,'备课');
+    c.chat.history.push({id:'next',role:'assistant',content:'新回复'});
+    await A.afterReply(c.chat);assert.equal(A.pending(c.chat).length,1,'obsolete proposal replaced after new conversation');
+    const current=A.pending(c.chat)[0];await A.apply(c.chat,{...current,includeMood:false});
+    assert.equal(C.state().events.length,1);assert.equal(A.pending(c.chat).length,0);
+});
+test('pending calendar review can be discarded and is invalidated by archive and manual changes',async()=>{
+    const c=fixture(),C=c.UvUCalendar,A=c.UvUCalendarAI,key=C.owner(c.chat);
+    await C.saveProfile(key,{autoGenerate:true,reviewChanges:true});await A.afterReply(c.chat);
+    const p=A.pending(c.chat)[0];A.discard(c.chat,p.token);assert.equal(A.pending(c.chat).length,0);assert.equal(C.state().events.length,0);
+    c.chat.history.push({id:'next',role:'user',content:'安排'});await A.afterReply(c.chat);
+    c.chat.activeArchiveId='two';assert.equal(A.pending(c.chat).length,0);c.chat.activeArchiveId='one';
+    await C.saveMood({owner:'user',date:C.today(),mood:'happy'});assert.equal(A.pending(c.chat).length,0);
+});
+test('duplicate selected calendar action cannot be applied twice',async()=>{
+    const c=fixture(),A=c.UvUCalendarAI,p=await A.generate(c.chat,'2026-11-07');
+    await assert.rejects(A.apply(c.chat,{...p,events:[p.events[0],p.events[0]]}),/重复|变化/);
+    assert.equal(c.UvUCalendar.state().events.length,0);
+});
+
+test('changing user persona invalidates pending independent schedule analysis',async()=>{
+    const c=fixture(),A=c.UvUCalendarAI;let release;c.fetchAiResponse=()=>new Promise(r=>release=r);
+    const waiting=A.generate(c.chat,'2026-11-07');c.chat.myPersona='另一位用户';release(JSON.stringify({events:[{title:'旧用户的约定'}]}));
+    await assert.rejects(waiting,/角色|记录|变化/);assert.equal(c.UvUCalendar.state().events.length,0);
+});

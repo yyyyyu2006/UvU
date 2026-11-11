@@ -4,7 +4,9 @@ const { test } = require('node:test'), assert = require('node:assert/strict');
 const { createServer } = require('node:http');
 const { createRequire } = require('node:module');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const sdk = createRequire(path.join(__dirname, 'fixtures/mcp-sdk/package.json'));
+const fixtureName=process.env.UVU_MCP_SDK_FIXTURE || 'mcp-sdk';
+if(!['mcp-sdk','mcp-sdk-current'].includes(fixtureName))throw new Error('Unknown local SDK fixture');
+const sdk = createRequire(path.join(__dirname, 'fixtures',fixtureName,'package.json'));
 const { Server } = sdk('@modelcontextprotocol/sdk/server/index.js');
 const { StreamableHTTPServerTransport } = sdk('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const types = sdk('@modelcontextprotocol/sdk/types.js');
@@ -21,7 +23,8 @@ async function fixture(t, enableJsonResponse) {
     });
     server.setRequestHandler(types.ListPromptsRequestSchema, async () => ({ prompts: [{ name: 'review', arguments: [{ name: 'topic', required: true }] }] }));
     server.setRequestHandler(types.GetPromptRequestSchema, async request => ({ messages: [{ role: 'user', content: { type: 'text', text: request.params.arguments.topic } }] }));
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse });
+    // Recent SDKs reject reusing a stateless transport; exercise their session contract.
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: fixtureName==='mcp-sdk-current'?()=> 'uvu-fixture-session':undefined, enableJsonResponse });
     await server.connect(transport);
     const http = createServer(async (req, res) => {
         if (req.url === '/auth') { res.writeHead(401, { 'content-type': 'application/json' }); res.end('{}'); return; }
@@ -39,12 +42,13 @@ async function fixture(t, enableJsonResponse) {
     const root = 'http://127.0.0.1:' + http.address().port;
     return { requests, api: c.window.MCPTransport, root, changeDefinition: () => revision++ };
 }
-for (const json of [true, false]) test('official SDK 1.24.3 loopback ' + (json ? 'JSON' : 'SSE') + ' negotiation, pagination, resource/template and failure contracts', async t => {
+for (const json of [true, false]) test('official SDK '+(fixtureName==='mcp-sdk'?'1.24.3':'1.32.2')+' loopback ' + (json ? 'JSON' : 'SSE') + ' negotiation, pagination, resource/template and failure contracts', async t => {
     const f = await fixture(t, json);
     const client = f.api.create({ url: f.root + '/mcp' });
     assert.deepEqual(Array.from(await client.listTools(), tool => tool.name), ['read', 'second']);
     assert.ok(f.requests.some(request => request.body.method === 'initialize'), 'real 2025 SDK negotiated from modern probe');
     assert.equal(client.version, '2025-11-25');
+    if(fixtureName==='mcp-sdk-current') assert.ok(f.requests.some(r=>r.headers['mcp-session-id']==='uvu-fixture-session'),'negotiated session is reused');
     assert.equal((await client.listResources()).length, 2);
     assert.equal((await client.readResource('memo://notes')).contents[0].text, 'resource result');
     assert.equal((await client.listPrompts())[0].name, 'review');

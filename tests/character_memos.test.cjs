@@ -3,6 +3,23 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
 function fixture(){const chat={id:'a',activeArchiveId:'x',myName:'我',myPersona:'喜欢书',realName:'晴',persona:'温和',history:[{id:'u1',role:'user',content:'我不喜欢喝咖啡，喜欢喝茶',timestamp:1},{id:'a1',role:'assistant',content:'我记下了',timestamp:2}]};let requests=0,saves=0;const c=vm.createContext({console,AbortController,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,db:{characters:[chat],apiSettings:{}},saveData:async()=>{saves++},resolveAutoMemoryApi:()=>({url:'https://test',key:'fake',model:'mock'}),buildChatApiRequest:(_,messages)=>({requestBody:messages}),fetchAiResponse:async()=>{requests++;return JSON.stringify({notes:[{fact:'喜欢喝茶',note:'下次记得给你泡茶。',category:'偏好',subject:'user',sourceIds:['u1'],evidence:[{id:'u1',quote:'喜欢喝茶'}]}]})}});vm.runInContext(fs.readFileSync('js/modules/character_memos.js','utf8'),c);return {c,chat,get requests(){return requests},get saves(){return saves}};}
 function enable(f){f.chat.characterMemos={settings:{enabled:true,automatic:true,useContext:true,mode:'auto',threshold:2},notes:[],processed:{},blocked:[]};}
 
+test('memo inspection is read only and explains off, source, selection and capacity',async()=>{
+    const f=fixture();const before=JSON.stringify(f.chat);assert.equal(f.c.inspectCharacterMemos(f.chat).enabled,false);assert.equal(JSON.stringify(f.chat),before);
+    enable(f);await f.c.runCharacterMemos(f.chat,true);const n=f.chat.characterMemos.notes[0];
+    f.chat.characterMemos.notes.push({...n,id:'pending',status:'pending'},{...n,id:'paused',useContext:false},{...n,id:'expired',expiresAt:1});
+    const snapshot=JSON.stringify(f.chat),r=f.c.inspectCharacterMemos(f.chat);
+    assert.equal(r.total,4);assert.equal(r.remaining,496);assert.equal(r.rows.find(x=>x.id===n.id).code,'selected');
+    for(const id of ['pending','paused','expired'])assert.equal(r.rows.find(x=>x.id===id).code,id);
+    assert.equal(JSON.stringify(f.chat),snapshot);assert.equal(f.c.inspectCharacterMemos(f.chat,'喜欢喝茶').rows[0].code,'duplicate');
+    f.chat.history[0].content='changed';assert.equal(f.c.inspectCharacterMemos(f.chat).rows[0].code,'edited');
+});
+test('manual similarity hints never merge, approve or compare other personas',async()=>{
+    const f=fixture();enable(f);const a=await f.c.addManualCharacterMemo(f.chat,{fact:'喜欢喝绿茶'}),b=await f.c.addManualCharacterMemo(f.chat,{fact:'喜欢喝绿茶，少放糖'});
+    f.chat.characterMemos.notes.push({...a,id:'other',owner:'other'});const before=JSON.stringify(f.chat);
+    const hints=f.c.findSimilarCharacterMemos(f.chat);assert.equal(hints.length,1);assert.equal(hints[0].first.id,a.id);assert.equal(hints[0].second.id,b.id);
+    assert.equal(JSON.stringify(f.chat),before);assert.ok(hints[0].score>0);
+});
+
 test('memo writes serialize: a failed edit cannot be committed by a concurrent delete',async()=>{
     const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const note=f.chat.characterMemos.notes[0],before=JSON.stringify(f.chat.characterMemos);
     let release;let calls=0;f.c.saveData=()=>{calls++;return new Promise((resolve,reject)=>{release={resolve,reject};});};

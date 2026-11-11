@@ -3,7 +3,7 @@
     const STORAGE_KEY = 'uvu-story-bridge.v1';
     const DEFAULT_URL = 'http://127.0.0.1:8765/api/plugins/uvu-story-bridge';
     const PREVIOUS_DEFAULT_URL = 'http://127.0.0.1:8000/api/plugins/uvu-story-bridge';
-    const FRONTEND_BUILD = '20261111-review-notification-guards';
+    const FRONTEND_BUILD = '20261111-review-tools-v1';
     let syncBusy = false;
     let pollTimer = null;
     let sendBusy = false;
@@ -1245,6 +1245,20 @@
         const injectCheckbox = document.getElementById('uvu-bridge-inject-scenes');
         const enabledCheckbox = document.getElementById('uvu-bridge-enabled');
         if (!urlInput || !pairButton || pairButton.dataset.bound === 'true') return;
+        const reviewHost=document.querySelector('#uvu-story-bridge-screen .uvu-bridge-review');
+        if(reviewHost && !document.getElementById('uvu-bridge-rule-preview')) {
+            const inspector=document.createElement('details');inspector.id='uvu-bridge-rule-preview';
+            const title=document.createElement('summary');title.textContent='正文规则预览';inspector.append(title);
+            const preset=document.createElement('select');preset.setAttribute('aria-label','正文规则');
+            for(const [value,label] of [['auto','默认识别'],['content','content 优先'],['maintext','maintext 优先'],['chinese','正文 优先'],['custom','自定义优先']]){const option=document.createElement('option');option.value=value;option.textContent=label;preset.append(option);}
+            const tags=document.createElement('input');tags.placeholder='标签名称，不含尖括号';tags.setAttribute('aria-label','自定义正文标签');tags.hidden=true;tags.maxLength=500;preset.onchange=()=>{tags.hidden=preset.value!=='custom';};
+            const raw=document.createElement('textarea');raw.rows=5;raw.maxLength=120000;raw.placeholder='粘贴一层楼的原文';raw.setAttribute('aria-label','检查剧情原文');
+            const run=document.createElement('button');run.type='button';run.className='btn btn-secondary';run.textContent='检查正文';
+            const result=document.createElement('pre');result.setAttribute('aria-live','polite');
+            const help=document.createElement('p');help.className='uvu-bridge-note';help.textContent='本机预览，不发送或改写剧情。确认规则后，在酒馆插件的正文标签中填写相同名称；空标签内无内容或未闭合时请先修正原文。';
+            run.onclick=()=>{try{const report=globalThis.UvUBridgeText.previewRules(raw.value,preset.value,{bodyTags:tags.value});result.textContent=(report.mode==='malformed'?'标签未闭合，请核对':report.mode==='tagged'?'命中 '+report.tag:'未命中正文标签，需人工核对')+'\n过滤：'+(report.filteredTags.join('、')||'无')+'\n未知标签：'+(report.unknownTags.join('、')||'无')+'\n\n'+report.text;}catch(error){result.textContent=error.message;}};
+            inspector.append(preset,tags,raw,run,result,help);reviewHost.append(inspector);
+        }
         urlInput.value = baseUrl();
         const ttModeSelect=document.getElementById('uvu-bridge-tt-mode');
         ttModeSelect?.addEventListener('change',async()=>{try{await changeTTMode(ttModeSelect.value);}catch(error){ttModeSelect.value=ttMode();status(error.message,true);}});

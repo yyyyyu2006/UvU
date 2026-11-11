@@ -160,6 +160,10 @@ test('optional long speech segments preserve text, aggregate usage and bound syn
     f.c.db.minimaxTtsSettings.speech = { segmented: true, segmentChars: 300 };
     const text = '啊'.repeat(300) + '唉'.repeat(300) + '哦'.repeat(10);
     await f.tts.play(f.bubble, text);
+    const diagnostic=f.tts.getDiagnostics();assert.equal(diagnostic.segmentDetails.length,3);
+    assert.equal(diagnostic.segmentDetails.map(s=>s.text).join(''),text);assert.equal(diagnostic.segmentDetails[0].usageCharacters,3);
+    assert.equal(diagnostic.segmentDetails[0].speed,1);
+    diagnostic.segmentDetails[0].text='外部修改';assert.notEqual(f.tts.getDiagnostics().segmentDetails[0].text,'外部修改');
     assert.equal(calls.length, 3); assert.equal(calls.map(x => x.text).join(''), text);
     assert.equal(f.tts.getDiagnostics().usageCharacters, 9); assert.equal(f.tts.getDiagnostics().segments, 3);
     f.sounds[0].dispatchEvent(new Event('ended'));

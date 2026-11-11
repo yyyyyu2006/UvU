@@ -83,6 +83,9 @@
         for (const [input, min, max] of [[count.input, 1, 8], [cooldown.input, 5, 3600]]) { input.type = 'number'; input.min = min; input.max = max; input.step = 1; }
         limits.append(count.row, cooldown.row); d.body.append(limits);
         const facts = field('共同知道的事情', config.publicFacts, true); facts.input.maxLength = 12000; d.body.append(facts.row);
+        const task=node('details','ms-details'),taskText=node('p'),stopTask=command('停止互动',()=>AI().cancel(chat));task.append(node('summary','','本次互动'),taskText,stopTask);d.body.append(task);
+        const refreshTask=()=>{if(!valid(d.t))return;const r=AI().inspect(chat);taskText.textContent=r?`${({running:'进行中',completed:'已完成',cancelled:'已取消',failed:'未完成'})[r.phase]} · ${r.speakers.map(s=>s.name).join('、')}\n请求 ${r.requests}/${r.speakers.length} 次 · 返回 ${r.completed} 次 · ${(r.elapsedMs/1000).toFixed(1)} 秒\n接口未提供 Token 用量，请以服务方记录为准。`:'尚无本次互动记录';stopTask.hidden=!AI().isBusy(chat);};refreshTask();
+        document.addEventListener('uvu-moments-status',event=>{if(event.detail.chatId===chat.id&&event.detail.archiveId===d.t.archive){refreshTask();stopTask.hidden=!event.detail.busy;}},{signal:d.signal});
         const list = node('section', 'ms-npcs'), listHead = node('div', 'ms-section-head');
         const redrawList = () => {
             list.querySelectorAll('.ms-npc-row,.ms-empty').forEach(el => el.remove());
