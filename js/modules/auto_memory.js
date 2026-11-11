@@ -192,6 +192,8 @@ function memoryJournalSourcesAllowed(chat, journal, path = new Set()) {
     if (!journal || path.has(journal.id) || path.size > 64) return false;
     const target = journal.memorySourceTarget;
     if (target && (target.chatId !== chat.id || target.archiveId !== String(chat.activeArchiveId || 'default'))) return false;
+    if ((journal.source === 'character-memo' || journal.characterMemoId != null) &&
+        (typeof characterMemoJournalAllowed !== 'function' || !characterMemoJournalAllowed(chat, journal))) return false;
     if (journal.source === 'sillytavern' &&
         (journal.bridgeReview?.archiveId != null && String(journal.bridgeReview.archiveId) !== String(chat.activeArchiveId || 'default') ||
         !globalThis.UvUStoryBridge?.allowedMemory(chat, journal))) return false;
@@ -220,6 +222,11 @@ function getMemoryUsageExplanation(chat, journal) {
             if (!item || seen.has(item) || seen.size > 128) return;
             seen.add(item);
             if (item.source === 'sillytavern' && !memoryJournalSourcesAllowed(chat, item)) issues.push(`${item.title || item.id} · ${(item.bridgeReview?.channel || 'st').toUpperCase()} · 存档 ${item.bridgeReview?.archiveId || 'default'}`);
+            if (item.source === 'character-memo' && !memoryJournalSourcesAllowed(chat, item)) {
+                const note=(chat.characterMemos?.notes || []).find(n=>n.id===item.characterMemoId);
+                const reason=note&&typeof characterMemoSourceStatus==='function'?characterMemoSourceStatus(chat,note):null;
+                issues.push('备忘录 · '+(!note?'原记录已移除':reason&&!reason.valid?reason.message:note.status!=='approved'?'原记录未确认或已更正':note.expiresAt&&note.expiresAt<=Date.now()?'原记录已到期':'原记录事实已变化'));
+            }
             for (const source of Array.isArray(item.manualMergeSources) ? item.manualMergeSources : []) {
                 trace(source); const live = (chat.memoryJournals || []).find(entry => entry.id === source.id); if (live) trace(live);
             }

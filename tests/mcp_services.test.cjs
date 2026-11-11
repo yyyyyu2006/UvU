@@ -20,6 +20,26 @@ async function enabled(f) {
     const list=await f.api.discover('s'); const next=f.api.settings(); next.services[0].tools.weather={enabled:true,readOnly:true,signature:list[0].signature,cacheSeconds:30};
     next.policies=[{chatId:'a',type:'private',enabled:true,auto:false,grants:[{serviceId:'s',toolName:'weather'}]}]; await f.api.save(next); return list;
 }
+
+test('cancelled write records an unknown remote outcome and is never retried',async()=>{
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].tools.weather.readOnly=false;await f.api.save(next);
+    const original=f.c.window.MCPTransport.create;let invoked=0,started;
+    const entered=new Promise(r=>started=r);
+    f.c.window.MCPTransport.create=(...args)=>({...original(...args),call:async(_name,_args,signal)=>{invoked++;started();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancel','AbortError')),{once:true}));}});
+    f.api.clearRuntime();const controller=new AbortController();const pending=f.api.call('s','weather',{city:'x'},{confirmed:true,signal:controller.signal});
+    const rejected=assert.rejects(pending,e=>e.executionState==='unknown'&&/核实|确认/.test(e.message));await entered;controller.abort();await rejected;
+    assert.equal(invoked,1);assert.equal(f.api.logs()[0].executionState,'unknown');assert.match(f.api.logs()[0].status,/未确认|不确定/);
+});
+test('preflight rejection never reports a remote write as executed',async()=>{
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].tools.weather.readOnly=false;await f.api.save(next);
+    await assert.rejects(f.api.call('s','weather',{city:'x'}),/确认/);assert.equal(f.calls.length,0);assert.ok(!f.api.logs().some(l=>l.executionState==='unknown'));
+});
+test('read-only cancellation stays distinct from an unknown write outcome',async()=>{
+    const f=fixture();await enabled(f);const original=f.c.window.MCPTransport.create;let started;
+    const entered=new Promise(r=>started=r);f.c.window.MCPTransport.create=(...args)=>({...original(...args),call:async(_n,_a,signal)=>{started();return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancel','AbortError')),{once:true}));}});
+    f.api.clearRuntime();const controller=new AbortController(),pending=f.api.call('s','weather',{city:'x'},{signal:controller.signal});const rejected=assert.rejects(pending,/取消/);await entered;controller.abort();await rejected;
+    assert.equal(f.api.logs()[0].executionState,'read-only');assert.ok(!f.api.logs()[0].status.includes('远端已取消'));
+});
 test('MCP defaults off, normalizes imports to disabled and excludes credentials and grants', async () => {
     const f=fixture(); assert.equal(f.api.settings().enabled,false); const raw=config(); raw.token='secret';raw.services[0].token='secret';raw.planner={key:'secret',source:'independent',url:'https://ai.test',model:'m'};
     await f.api.save(raw); const exp=f.api.exportConfig(); assert.ok(!JSON.stringify(exp).includes('secret')); assert.equal(exp.enabled,false);

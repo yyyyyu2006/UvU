@@ -73,3 +73,12 @@ final result: passed for the six requested amendments and implemented sheet layo
 - 应用源码清点排除 vendor、依赖和 `.runtime/` 后为 184 个文件，137 个脚本语法检查通过；`sw.js` 与酒馆桥接插件 12 个脚本另查通过。
 - 完整范围、7 项修复、53 项待验证／增强及 12 个 GitHub 项目的固定源码依据记录在 `docs/derived-feature-audit-2026-11-11.md`。不是声称所有项目均有已复现缺陷。
 - 检查环境仍是隔离数据、模拟接口、桌面 Chrome；真实手机软键盘、付费接口、扫码和外部音乐源不在已通过项中。
+
+## 补充：记忆来源与 MCP 结果 · 2026-11-11
+
+- 冲突审核同时显示旧记录和原话，底部四个操作两列排列；查看截图并验证 320／390px、402×420 短屏，不挤成单行。来源失效可展开当前原消息，手动校订保留原证据。
+- 串行保存与草稿校验防止备忘录并发覆盖；备忘录日记及其合并结果保留来源限制，失效时暂停引用，保留内容供查看。
+- MCP 写调用停止等待后显示远端结果未确认；服务详情增加异步任务与事件恢复的实际能力限制，主界面未增加说明堆叠。
+- `npm test`：1125／1125；`memo_review_priority_browser.cjs`、`memo_modal_browser.cjs`、`memo_interaction_browser.cjs`、`approved_sheets_browser.cjs`、`browser/mcp_browser.cjs` 通过。后者修正缺失的当前弹窗样式和旧导航选择器。
+- SDK 1.24.3 JSON／SSE 两项通过；合成向量样本和桌面性能基准已跑，不能替代手机／真实模型质量验收。
+- 未更改原版 CSS、基础提示词、回复流程、音乐 UI、导出 ID Card 或发送卡片。修改范围、基准及待办见 `docs/derived-optimization-progress-2026-11-11.md`。

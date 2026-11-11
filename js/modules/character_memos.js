@@ -1,5 +1,6 @@
 // Optional factual memory. Legacy peekData.memos remains simulated phone content.
 const characterMemoJobs = new Map(), characterMemoTimers = new Map(), characterMemoFailures = new Map();
+const characterMemoWrites = new WeakMap(), characterMemoDrafts = new WeakMap();
 function characterMemoHash(value) {
     let hash = 2166136261;
     for (const c of String(value)) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
@@ -17,8 +18,10 @@ function characterMemoSettings(chat) {
 }
 function characterMemoState(chat) {
     const s = chat.characterMemos || {};
-    return { version: 1, settings: characterMemoSettings(chat), notes: Array.isArray(s.notes) ? s.notes : [],
+    const state = { version: 1, settings: characterMemoSettings(chat), notes: Array.isArray(s.notes) ? s.notes : [],
         processed: s.processed || {}, blocked: Array.isArray(s.blocked) ? s.blocked : [], lastRun: s.lastRun || 0, lastError: s.lastError || '' };
+    characterMemoDrafts.set(state, { chat, base: JSON.stringify(chat.characterMemos) });
+    return state;
 }
 function characterMemoOwner(chat) { return { chat, archive: chat.activeArchiveId, history: chat.history, persona: characterMemoIdentity(chat) }; }
 function characterMemoCurrent(owner) {
@@ -31,26 +34,47 @@ function characterMemoEligible(message) {
         !message.storyBridge && !message.document && !message.worldBookInjection && !message.isStatusUpdate;
 }
 function characterMemoSourceValid(chat, note) {
-    if (note.owner !== characterMemoIdentity(chat)) return false;
-    if (note.manual) return true;
-    return note.sources?.length > 0 && note.sources.every(source => {
-        const message = chat.history.find(m => m.id === source.id);
-        return characterMemoEligible(message) && characterMemoFingerprint(message) === source.fingerprint;
-    });
+    return characterMemoSourceStatus(chat, note).valid;
 }
-async function saveCharacterMemoState(owner, next) {
-    if (!characterMemoCurrent(owner)) throw new Error('角色、存档或用户身份已改变，请重新打开备忘录');
-    const chat = owner.chat, before = chat.characterMemos;
-    chat.characterMemos = next;
-    try { await saveData(); }
-    catch (error) {
-        if (chat.activeArchiveId === owner.archive && (chat.characterMemos === next || JSON.stringify(chat.characterMemos) === JSON.stringify(next))) { if (before) chat.characterMemos = before; else delete chat.characterMemos; }
-        const archived = chat.archives?.find(a => a.id === owner.archive);
-        if (archived?.data && archived.data.characterMemos && JSON.stringify(archived.data.characterMemos) === JSON.stringify(next)) {
-            if (before) archived.data.characterMemos = before; else delete archived.data.characterMemos;
-        }
-        throw error;
+function characterMemoSourceStatus(chat, note) {
+    const invalid = (code, message, sourceId) => ({ valid: false, code, message, sourceId });
+    if (note.owner !== characterMemoIdentity(chat)) return invalid('owner', '用户身份已变化');
+    if (note.manual) return { valid: true, code: 'manual', message: '手动确认的记录' };
+    if (!note.sources?.length) return invalid('evidence', '没有可核对的原话');
+    for (const source of note.sources) {
+        const message = (chat.history || []).find(m => m.id === source.id);
+        if (!message) return invalid('missing', '原消息已删除或不在当前存档', source.id);
+        if (message.isWithdrawn) return invalid('withdrawn', '原消息已撤回', source.id);
+        if (message.isHidden) return invalid('hidden', '原消息已隐藏', source.id);
+        if (message.isContextDisabled) return invalid('disabled', '原消息已停用于上下文', source.id);
+        if (!characterMemoEligible(message)) return invalid('ineligible', '原消息不再属于可用聊天内容', source.id);
+        if (characterMemoFingerprint(message) !== source.fingerprint) return invalid('edited', '原消息已编辑', source.id);
     }
+    return { valid: true, code: 'valid', message: '原话可核对' };
+}
+function saveCharacterMemoState(owner, next) {
+    const chat = owner.chat, draft = characterMemoDrafts.get(next);
+    const commit = async () => {
+        if (!characterMemoCurrent(owner)) throw new Error('角色、存档或用户身份已改变，请重新打开备忘录');
+        if (!draft || draft.chat !== chat || draft.base !== JSON.stringify(chat.characterMemos)) throw new Error('备忘录已更新，请重新读取后重试');
+        const before = chat.characterMemos;
+        chat.characterMemos = next;
+        try { await saveData(); }
+        catch (error) {
+            if (chat.activeArchiveId === owner.archive && (chat.characterMemos === next || JSON.stringify(chat.characterMemos) === JSON.stringify(next))) { if (before) chat.characterMemos = before; else delete chat.characterMemos; }
+            const archived = chat.archives?.find(a => a.id === owner.archive);
+            if (archived?.data && archived.data.characterMemos && JSON.stringify(archived.data.characterMemos) === JSON.stringify(next)) {
+                if (before) archived.data.characterMemos = before; else delete archived.data.characterMemos;
+            }
+            throw error;
+        }
+    };
+    const prior = characterMemoWrites.get(chat);
+    const task = prior ? prior.catch(() => {}).then(commit) : commit();
+    characterMemoWrites.set(chat, task);
+    const cleanup = () => { if (characterMemoWrites.get(chat) === task) characterMemoWrites.delete(chat); };
+    task.then(cleanup, cleanup);
+    return task;
 }
 function characterMemoId() { return 'memo_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2)); }
 function characterMemoNormalize(text) { return String(text || '').replace(/[\s，。！？、,.!?]/g, '').toLowerCase(); }
@@ -147,8 +171,40 @@ async function changeCharacterMemo(chat,id,patch) {
     if(changes.content!==undefined)changes.content=String(changes.content).slice(0,600);
     if(characterMemoSecret(String(changes.fact||'')+String(changes.content||'')))throw new Error('请勿将密钥、密码或验证码保存为备忘录');
     next.notes=next.notes.map((n,i)=>i===index?{...n,...changes,updatedAt:Date.now()}:n);
-    if(changes.status==='approved'&&before.replacesId){const old=next.notes.find(n=>n.id===before.replacesId&&n.owner===owner.persona);if(old?.locked)throw new Error('原记录已锁定，请先解除锁定再确认更正');next.notes=next.notes.map(n=>n===old?{...n,status:'superseded'}:n);}
+    if(changes.status==='approved'&&before.replacesId){
+        const old=next.notes.find(n=>n.id===before.replacesId&&n.owner===owner.persona);
+        const decision=patch.conflictResolution || 'replace';
+        if(!['replace','keep-both'].includes(decision))throw new Error('请选择如何处理原记录');
+        if(decision==='replace'){
+            if(!old || old.status!=='approved')throw new Error('原记录已变化，请重新审核或选择保留两条');
+            if(old.locked)throw new Error('原记录已锁定，请先解除锁定再确认更正');
+            next.notes=next.notes.map(n=>n.id===old.id?{...n,status:'superseded',updatedAt:Date.now()}:n);
+        }
+        next.notes=next.notes.map(n=>n.id===id?{...n,replacesId:null,conflictReview:{id:before.replacesId,decision,at:Date.now()}}:n);
+    }
     await saveCharacterMemoState(owner,next);
+}
+async function addManualCharacterMemo(chat, fields) {
+    const owner=characterMemoOwner(chat), next=characterMemoState(chat);
+    const fact=String(fields.fact || '').trim().slice(0,400),content=String(fields.content || '').trim().slice(0,600);
+    if(!fact)throw new Error('请填写记住的事情');
+    if(characterMemoSecret(fact+content))throw new Error('请勿记录密钥、密码或验证码');
+    if(fields.expiresAt!=null && !Number.isFinite(fields.expiresAt))throw new Error('到期时间无效');
+    if(next.notes.length>=500)throw new Error('备忘录已达到500条，请先导出并整理旧记录');
+    const subject=fields.subject==='char'?'char':'user',category=['偏好','习惯','沟通','事实','临时','约定','经历','计划'].includes(fields.category)?fields.category:subject==='char'?'计划':'事实';
+    const note={id:characterMemoId(),owner:owner.persona,fact,content,subject,category,status:'approved',manual:true,userEdited:true,locked:true,useContext:true,sources:[],createdAt:Date.now(),expiresAt:fields.expiresAt ?? null};
+    next.notes=[...next.notes,note];await saveCharacterMemoState(owner,next);return note;
+}
+function characterMemoJournalAllowed(chat, journal) {
+    const note=(chat.characterMemos?.notes || []).find(n=>n.id===journal.characterMemoId);
+    if(!note || note.status!=='approved' || note.expiresAt&&note.expiresAt<=Date.now() || !characterMemoSourceValid(chat,note))return false;
+    const reference=journal.characterMemoReference;
+    return reference ? reference.version===1 && reference.owner===note.owner && reference.factHash===characterMemoHash(note.fact) : journal.content===note.fact;
+}
+function characterMemoToJournal(chat, note) {
+    if(!(chat.characterMemos?.notes || []).includes(note) || note.status!=='approved' || note.expiresAt&&note.expiresAt<=Date.now() || !characterMemoSourceValid(chat,note))throw new Error('请先选择已确认、未到期且来源有效的记录');
+    return {id:characterMemoId(),title:note.category+' · 备忘录',content:note.fact,source:'character-memo',characterMemoId:note.id,
+        characterMemoReference:{version:1,owner:note.owner,factHash:characterMemoHash(note.fact)},isFavorited:false,createdAt:Date.now()};
 }
 async function deleteCharacterMemo(chat,id,suppress=false) {
     const owner=characterMemoOwner(chat),next=characterMemoState(chat),note=next.notes.find(n=>n.id===id&&n.owner===owner.persona);

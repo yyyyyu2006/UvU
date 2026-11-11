@@ -266,6 +266,9 @@
                     const row = node('tr'); for (const value of [label, health.capabilities ? (health.capabilities[key] ? '支持' : '未声明') : '列表时确认', action]) row.append(node('td', value)); capabilityTable.append(row);
                 }
                 const unsupported = node('tr'); for (const value of ['服务端交互', '未启用', '不执行远程反向请求']) unsupported.append(node('td', value)); capabilityTable.append(unsupported);
+                for (const values of [['异步任务', '按服务声明', '当前仅接收完整结果，不轮询任务'], ['断线恢复', '按服务声明', '不恢复事件游标；写操作不自动重试']]) {
+                    const row=node('tr');for(const value of values)row.append(node('td',value));capabilityTable.append(row);
+                }
                 detail.append(capabilityTable, node('p', '外传范围：工具收到本次参数与认证信息；手动资源读取发送所选 URI；模板发送所填参数。启用独立判断时，判断 API 收到设置范围内的近期清洗消息与已授权工具定义；不附加人设与日记。只读自动批准仍须角色授权，定义变化后重新确认。', 'mcp-help')); serviceArea.append(detail);
             }
             renderPermissions();

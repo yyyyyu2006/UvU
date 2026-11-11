@@ -98,7 +98,7 @@
     });
     function diagnostics(){const cfg=settings();return {format:'uvu-mcp-diagnostics',version:1,enabled:cfg.enabled,serviceCount:cfg.services.length,
         services:cfg.services.map(s=>{const h=health(s.id);return {enabled:s.enabled,auth:s.auth,protocol:s.protocol,credentialsPresent:!!h.credentialsPresent,toolCount:Object.keys(s.tools).length};}),
-        logs:logItems.map(({at,stage,code,status,ms,cached})=>({at,stage,code,status,ms,cached}))};}
+        logs:logItems.map(({at,stage,code,status,ms,cached,executionState})=>({at,stage,code,status,ms,cached,executionState}))};}
     function canonical(value) {
         if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
         if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonical(value[key])).join(',') + '}';
@@ -278,13 +278,15 @@
         if (!stillValid()) throw new Error('配置或存档已变更，本次调用失效');
         const key = id + '\n' + name + '\n' + tool.signature + '\n' + scopeKey(options.scope) + '\n' + canonical(args);
         const cached = cache.get(key); const started = Date.now();
+        let invoked = false, received = false;
         try {
             let output;
             if (permission.readOnly && cached && cached.until > started) output = cached.text;
             else {
                 const client = runtime.get(id).client;
-                const execute = signal => client.call(name, args, signal, tool.headers, { safeRead: permission.readOnly });
+                const execute = signal => { invoked = true; return client.call(name, args, signal, tool.headers, { safeRead: permission.readOnly }); };
                 const result = permission.readOnly ? await sharedRead(key, options.signal, execute) : await execute(options.signal);
+                received = true;
                 output = plainResult(result, tool);
                 if (!stillValid()) throw new Error('配置或存档已变更，迟到的工具结果已失效');
                 if (permission.readOnly && permission.cacheSeconds > 0) {
@@ -295,7 +297,17 @@
             if (!stillValid()) throw new Error('配置或存档已变更，工具结果已失效');
             const result = { serviceId: id, toolName: name, text: output, at: Date.now(), scope: options.scope, stamp: start };
             minted.add(result); log({ serviceId: id, toolName: name, status: '成功', ms: Date.now() - started, cached: !!(cached && cached.until > started) }); return result;
-        } catch (error) { log({ serviceId: id, toolName: name, stage: 'call', status: options.signal?.aborted ? '取消' : '失败', code: error.status || error.rpc?.code || null, protocol: runtime.get(id)?.client.version || svc.protocol, ms: Date.now() - started }); throw error; }
+        } catch (error) {
+            const uncertain = !permission.readOnly && invoked && !received && error.requestDispatched !== false;
+            const executionState = permission.readOnly ? 'read-only' : uncertain ? 'unknown' : received ? 'returned' : 'not-dispatched';
+            log({ serviceId: id, toolName: name, stage: 'call', status: uncertain ? '远端执行结果未确认，请先核实' : received && !permission.readOnly ? '远端已返回，本地结果未采用' : options.signal?.aborted ? '已停止等待' : '失败', executionState,
+                code: error.status || error.rpc?.code || null, protocol: runtime.get(id)?.client.version || svc.protocol, ms: Date.now() - started });
+            if (uncertain) {
+                const outcome = new Error('已停止等待，远端执行结果未确认；请先核实服务端记录，写入操作不会自动重试');
+                outcome.name = error.name; outcome.executionState = 'unknown'; outcome.status = error.status; throw outcome;
+            }
+            throw error;
+        }
     }
     async function authorized(s, signal) {
         if (!settings().enabled || !valid(s) || !policy(s)?.enabled) return [];

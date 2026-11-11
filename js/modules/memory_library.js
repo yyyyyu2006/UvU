@@ -32,6 +32,7 @@ async function saveLibraryMemory(chat, fields, { existing = null, sources = [], 
     if (sources.length) journal.manualMergeSources = sources.map(source => JSON.parse(JSON.stringify({ id: source.id, title: source.title, content: source.content,
         category: source.category || '', timeline: source.timeline || '', createdAt: source.createdAt, range: source.range,
         source: source.source, bridgeReview: source.bridgeReview, externalSceneId: source.externalSceneId, isFavorited: source.isFavorited,
+        characterMemoId: source.characterMemoId, characterMemoReference: source.characterMemoReference,
         autoMemory: source.autoMemory, manualMergeSources: source.manualMergeSources,
         memorySourceTarget: { chatId: chat.id, archiveId: String(archiveId || 'default') } })));
     const next = before.filter(item => item.id !== id).map(item => sources.includes(item) ? { ...item, vectorSupersededBy: id } : item);

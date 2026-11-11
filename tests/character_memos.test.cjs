@@ -2,6 +2,49 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 function fixture(){const chat={id:'a',activeArchiveId:'x',myName:'我',myPersona:'喜欢书',realName:'晴',persona:'温和',history:[{id:'u1',role:'user',content:'我不喜欢喝咖啡，喜欢喝茶',timestamp:1},{id:'a1',role:'assistant',content:'我记下了',timestamp:2}]};let requests=0,saves=0;const c=vm.createContext({console,AbortController,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,db:{characters:[chat],apiSettings:{}},saveData:async()=>{saves++},resolveAutoMemoryApi:()=>({url:'https://test',key:'fake',model:'mock'}),buildChatApiRequest:(_,messages)=>({requestBody:messages}),fetchAiResponse:async()=>{requests++;return JSON.stringify({notes:[{fact:'喜欢喝茶',note:'下次记得给你泡茶。',category:'偏好',subject:'user',sourceIds:['u1'],evidence:[{id:'u1',quote:'喜欢喝茶'}]}]})}});vm.runInContext(fs.readFileSync('js/modules/character_memos.js','utf8'),c);return {c,chat,get requests(){return requests},get saves(){return saves}};}
 function enable(f){f.chat.characterMemos={settings:{enabled:true,automatic:true,useContext:true,mode:'auto',threshold:2},notes:[],processed:{},blocked:[]};}
+
+test('memo writes serialize: a failed edit cannot be committed by a concurrent delete',async()=>{
+    const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const note=f.chat.characterMemos.notes[0],before=JSON.stringify(f.chat.characterMemos);
+    let release;let calls=0;f.c.saveData=()=>{calls++;return new Promise((resolve,reject)=>{release={resolve,reject};});};
+    const first=f.c.changeCharacterMemo(f.chat,note.id,{fact:'尚未保存的修改'}),a=assert.rejects(first,/disk/);
+    const second=f.c.deleteCharacterMemo(f.chat,note.id,true),b=assert.rejects(second,/更新|变化|重试/);
+    assert.equal(calls,1,'second writer must wait for first persistence outcome');
+    release.reject(Error('disk'));await a;await b;assert.equal(calls,1);assert.equal(JSON.stringify(f.chat.characterMemos),before);
+});
+test('memo drafts reject stale replacement without losing a newer saved note',async()=>{
+    const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const owner=f.c.characterMemoOwner(f.chat),stale=f.c.characterMemoState(f.chat),note=f.chat.characterMemos.notes[0];
+    await f.c.changeCharacterMemo(f.chat,note.id,{content:'用户已经改过的便签'});stale.notes=[];
+    await assert.rejects(f.c.saveCharacterMemoState(owner,stale),/更新|变化|重试/);
+    assert.equal(f.chat.characterMemos.notes[0].content,'用户已经改过的便签');
+});
+test('memo source diagnosis distinguishes edited withdrawn hidden missing and changed persona',async()=>{
+    const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const note=f.chat.characterMemos.notes[0],source=f.chat.history[0],content=source.content;
+    assert.equal(f.c.characterMemoSourceStatus(f.chat,note).valid,true);
+    source.content='改过的内容';assert.equal(f.c.characterMemoSourceStatus(f.chat,note).code,'edited');source.content=content;
+    source.isWithdrawn=true;assert.equal(f.c.characterMemoSourceStatus(f.chat,note).code,'withdrawn');delete source.isWithdrawn;
+    source.isHidden=true;assert.equal(f.c.characterMemoSourceStatus(f.chat,note).code,'hidden');delete source.isHidden;
+    f.chat.history.shift();assert.equal(f.c.characterMemoSourceStatus(f.chat,note).code,'missing');f.chat.history.unshift(source);
+    f.chat.myName='别人';assert.equal(f.c.characterMemoSourceStatus(f.chat,note).code,'owner');
+});
+test('review can retain both facts without superseding a locked original',async()=>{
+    const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const old=f.chat.characterMemos.notes[0];await f.c.changeCharacterMemo(f.chat,old.id,{locked:true});
+    f.chat.history.push({id:'u2',role:'user',content:'我最近不喜欢喝茶了'});f.c.fetchAiResponse=async()=>JSON.stringify({notes:[{subject:'user',fact:'最近不喜欢喝茶',sourceIds:['u2'],evidence:[{id:'u2',quote:'不喜欢喝茶'}],replacesId:old.id}]});
+    await f.c.runCharacterMemos(f.chat,true);const next=f.chat.characterMemos.notes[1];
+    await f.c.changeCharacterMemo(f.chat,next.id,{status:'approved',conflictResolution:'keep-both'});
+    assert.equal(f.chat.characterMemos.notes[0].status,'approved');assert.equal(f.chat.characterMemos.notes[1].status,'approved');
+    assert.equal(f.chat.characterMemos.notes[1].conflictReview.decision,'keep-both');assert.equal(f.chat.characterMemos.notes[1].replacesId,null);
+});
+test('manual correction creates a separate confirmed note and preserves invalid evidence',async()=>{
+    const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);const old=f.chat.characterMemos.notes[0];f.chat.history[0].content='原话已变化';
+    const created=await f.c.addManualCharacterMemo(f.chat,{fact:'现在更喜欢红茶',content:'手动核实',expiresAt:null});
+    assert.equal(f.chat.characterMemos.notes.length,2);assert.equal(f.c.characterMemoSourceValid(f.chat,old),false);
+    assert.equal(created.manual,true);assert.equal(created.status,'approved');assert.equal(f.c.characterMemoSourceValid(f.chat,created),true);
+    await assert.rejects(f.c.addManualCharacterMemo(f.chat,{fact:'密码: secret'}),/密钥|密码|验证码/);
+});
+test('a manual copy of a character plan stays a character plan instead of becoming a user fact',async()=>{
+    const f=fixture();enable(f);const created=await f.c.addManualCharacterMemo(f.chat,{fact:'周末为你买茶',subject:'char',category:'计划'});
+    assert.equal(created.subject,'char');assert.equal(created.category,'计划');
+});
 test('disabled memo feature is a no-op without state allocation or network',async()=>{const f=fixture();assert.equal(f.c.getCharacterMemoContext(f.chat),'');await f.c.runCharacterMemos(f.chat,true);assert.equal(f.requests,0);assert.equal(f.saves,0);assert.equal(f.chat.characterMemos,undefined)});
 test('evidenced extraction, incremental dedup, relevant bounded recall',async()=>{const f=fixture();enable(f);await f.c.runCharacterMemos(f.chat,true);assert.equal(f.chat.characterMemos.notes.length,1);assert.equal(f.chat.characterMemos.notes[0].status,'approved');f.chat.history.push({id:'u2',role:'user',content:'今晚想喝茶'});assert.match(f.c.getCharacterMemoContext(f.chat),/喜欢喝茶/);await f.c.runCharacterMemos(f.chat,true);assert.equal(f.chat.characterMemos.notes.length,1);assert.ok(f.c.getCharacterMemoContext(f.chat).length<1800)});
 test('hallucinated sources and assistant-derived user facts are rejected',async()=>{const f=fixture();enable(f);f.c.fetchAiResponse=async()=>JSON.stringify({notes:[{subject:'user',fact:'爱猫',sourceIds:['a1'],evidence:[{id:'a1',quote:'我记下了'}]},{subject:'user',fact:'爱狗',sourceIds:['u1'],evidence:[{id:'u1',quote:'根本不存在'}]}]});await f.c.runCharacterMemos(f.chat,true);assert.equal(f.chat.characterMemos.notes.length,0)});
