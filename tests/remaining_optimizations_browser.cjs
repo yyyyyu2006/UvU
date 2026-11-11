@@ -9,7 +9,7 @@ const browser=await chromium.launch({headless:true,executablePath:'C:/Program Fi
 try{
  const ctx=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,serviceWorkers:'block'});
  await ctx.addInitScript(()=>{localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');});
- await ctx.route('**/*',r=>{const u=r.request().url();if(libs.has(u))return r.fulfill({path:libs.get(u),contentType:'application/javascript'});return u.startsWith(origin)||u.startsWith('data:')||u.startsWith('blob:')?r.continue():r.abort();});
+ await ctx.route('**/*',r=>{const u=r.request().url();if(libs.has(u))return r.fulfill({path:libs.get(u),contentType:'application/javascript'});if(u.startsWith('https://fixture.invalid/')&&u.endsWith('/models'))return r.fulfill({json:{data:[{id:'fixture'}]}});return u.startsWith(origin)||u.startsWith('data:')||u.startsWith('blob:')?r.continue():r.abort();});
  const page=await ctx.newPage(),errors=[];page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
  await page.goto(origin,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
  await page.evaluate(async()=>{
@@ -22,6 +22,12 @@ try{
  const memo=page.locator('#character-memos-dialog');assert.match(await memo.locator('.memo-settings-page').textContent(),/本存档 2\/500/);
  await memo.getByText('本轮可用记忆',{exact:true}).tap();assert.match(await memo.locator('.memo-diagnostics').first().textContent(),/备忘录未启用/);
  await memo.getByText('相近记录',{exact:true}).tap();await memo.getByRole('button',{name:'检查相近记录',exact:true}).tap();assert.equal(await memo.getByRole('button',{name:'查看第一条',exact:true}).count(),1);
+ await memo.getByRole('switch',{name:'启用备忘录',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.enabled===true);
+ await memo.getByText('语义相近检查',{exact:true}).tap();await memo.getByRole('switch',{name:'允许语义相近检查',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.semanticHints===true);
+ await page.evaluate(()=>{window.semanticCalls=0;resolveVectorMemoryApi=()=>({url:'https://fixture.invalid',key:'fake',embeddingModel:'test'});requestMemoryEmbeddings=async texts=>{semanticCalls++;return texts.map(()=>[1,0]);};});
+ await memo.getByRole('button',{name:'检查语义相近',exact:true}).tap();await memo.getByText('已检查2条最近有效记录 · 1组相近提示',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>semanticCalls),1);
+ await memo.screenshot({path:path.join(out,'memo-semantic.png')});
+ await page.evaluate(()=>{requestMemoryEmbeddings=()=>new Promise(resolve=>window.semanticRelease=resolve);});await memo.getByRole('button',{name:'检查语义相近',exact:true}).tap();await memo.getByRole('button',{name:'取消检查',exact:true}).tap();await memo.getByText('检查已取消或来源、配置已变化',{exact:true}).waitFor();await page.evaluate(()=>semanticRelease([[1,0],[1,0]]));
  await memo.screenshot({path:path.join(out,'memo-diagnostics.png')});await memo.locator('.sheet-close').tap();
  await page.evaluate(()=>{setupMemoryLibrary();setupMemoryLibrary();openMemoryLibrary();});assert.equal(await page.locator('#memory-library-open').count(),1);
  await page.getByRole('button',{name:'阅读记忆',exact:true}).tap();const reader=page.locator('#draft-memory-reader');await reader.getByRole('button',{name:'查看原文',exact:true}).tap();await reader.getByText('逐句核对',{exact:true}).tap();
@@ -34,8 +40,10 @@ try{
   window.auditOldIds=[a.id,b.id];db.apiSettings={...db.apiSettings,url:'https://fixture.invalid',key:'fixture',model:'fixture'};
   fetchAiResponse=async()=>JSON.stringify({events:[{action:'update',id:a.id,title:'调整备课',time:'10:00',endTime:'11:00'},{action:'delete',id:b.id}],mood:{mood:'calm'}});
   UvUCalendarAI.defer(c,await UvUCalendarAI.generate(c,date,undefined,{update:true}));
-  localStorage.setItem('uvu-calendar-view.v1',JSON.stringify({side:'character:'+c.id,date,month:date.slice(0,7),mode:'schedule'}));openEnvironmentCalendar();
+  localStorage.setItem('uvu-calendar-view.v1',JSON.stringify({side:'character:'+c.id,date,month:date.slice(0,7),mode:'schedule'}));await saveData();
  });
+ await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
+ await page.evaluate(()=>{GuideSystem.cleanup();openChatRoom(db.characters[0].id,'private');openEnvironmentCalendar();});
  const cal=page.locator('.uvu-calendar');await cal.getByText('更多操作',{exact:true}).tap();await cal.getByRole('button',{name:'审核安排',exact:true}).tap();const plan=page.locator('#calendar-plan-preview');assert.match(await plan.textContent(),/原安排：09:00 原备课/);
  assert.equal(await plan.locator('.calendar-check').first().evaluate(el=>getComputedStyle(el).flexDirection),'row','review checkboxes stay beside their action labels');
  await plan.getByLabel(/^删除 ·/).uncheck();await plan.screenshot({path:path.join(out,'calendar-review.png')});await plan.getByRole('button',{name:'保存',exact:true}).tap();await plan.waitFor({state:'detached'});
@@ -47,10 +55,27 @@ try{
   openChatRoom(db.characters[0].id,'private');const bubble=document.createElement('button');bubble.textContent='本地语音诊断样本';document.getElementById('message-area').append(bubble);
   MiniMaxSpeech.inspect(bubble,{emotion:'happy',speed:1.1,pauseCount:1,segmentDetails:[{text:'明天一起去看书。',emotion:'happy',speed:1.1,pauses:[{after:'明天',seconds:.4}],usageCharacters:8,cacheHit:false},{text:'就这样约定了。',emotion:'calm',speed:1,pauses:[],usageCharacters:0,cacheHit:true}]});
  });
+ assert.equal(await page.locator('#error-modal-overlay').count(),0);
  const speech=page.locator('.minimax-message-diagnostic');await speech.getByText('语音详情',{exact:true}).tap();await speech.getByText('分段参数',{exact:true}).tap();assert.match(await speech.textContent(),/“明天”后停顿 0.4 秒/);assert.match(await speech.textContent(),/第 2 段 · calm · 语速 1 · 音频缓存/);assert.doesNotMatch(await speech.textContent(),/<#|<emotion/);await speech.screenshot({path:path.join(out,'speech-segments.png')});
+ let directorCalls=0,ttsCalls=0;
+ await page.route('https://director-fixture.test/**',r=>{directorCalls++;return r.fulfill({json:{choices:[{message:{content:JSON.stringify({emotion:'calm',speedMultiplier:.9,pauses:[{after:'你好，',seconds:.4}]})}}],usage:{prompt_tokens:11,completion_tokens:5}}});});
+ await page.route('https://api.minimaxi.com/**',r=>{ttsCalls++;return r.abort();});
+ await page.evaluate(()=>{const c=db.characters[0],message={id:'preview-voice',role:'assistant',content:'[陆沉的语音：你好，明天见。]',timestamp:Date.now()};c.history.push(message);addMessageBubble(message,c.id,'private');db.minimaxTtsSettings={...(db.minimaxTtsSettings||{}),director:{enabled:true,endpoint:'https://director-fixture.test/v1',apiKey:'fake',model:'fixture'}};switchScreen('api-settings-screen');});
+ await page.getByRole('button',{name:'导演预览',exact:true}).tap();
+ const preview=page.locator('#minimax-director-preview-dialog');await preview.getByLabel('预览台词',{exact:true}).fill('你好，明天见。');
+ await page.evaluate(()=>{document.getElementById('minimax-director-enabled').checked=true;document.getElementById('minimax-director-endpoint').value='https://director-fixture.test/v1';document.getElementById('minimax-director-key').value='fake';document.getElementById('minimax-director-model').value='fixture';});
+ await preview.getByRole('button',{name:'分析语气',exact:true}).tap();await preview.getByText('分析完成，尚未合成语音',{exact:true}).waitFor();assert.match(await preview.textContent(),/Token 11\/5/);assert.match(await preview.textContent(),/后停顿 0.4 秒/);assert.equal(directorCalls,1);assert.equal(ttsCalls,0);assert.doesNotMatch(await preview.textContent(),/<#/);
+ for(const size of [{width:320,height:740},{width:390,height:420}]){await page.setViewportSize(size);assert.equal(await preview.evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);await preview.screenshot({path:path.join(out,'director-preview-'+size.width+'.png')});}
+ await preview.getByLabel('预览语音来源',{exact:true}).selectOption('0');assert.equal(await preview.getByLabel('预览台词',{exact:true}).getAttribute('readonly'),'');await preview.getByRole('button',{name:'分析语气',exact:true}).tap();await preview.getByText('分析完成，尚未合成语音',{exact:true}).waitFor();assert.match(await preview.textContent(),/第 1 段 · calm/);assert.equal(directorCalls,2);assert.equal(ttsCalls,0);
+ await page.evaluate(()=>{db.characters[0].history=db.characters[0].history.filter(m=>m.id!=='preview-voice');});await preview.getByRole('button',{name:'播放语音',exact:true}).tap();await preview.getByText('来源或设置已变化，请重新分析',{exact:true}).waitFor();assert.equal(ttsCalls,0);assert.equal(directorCalls,2);
+ await preview.locator('.sheet-close').tap();await page.setViewportSize({width:390,height:844});
+ await page.evaluate(()=>switchScreen('storage-analysis-screen'));await page.getByLabel('添加完整性校验',{exact:false}).waitFor({state:'visible'});assert.equal(await page.getByLabel('添加完整性校验',{exact:false}).isChecked(),false);
+ await page.getByLabel('添加完整性校验',{exact:false}).check();
+ const checksum=await page.evaluate(async()=>{Object.keys(selectedModules).forEach(key=>selectedModules[key]=key==='chats');let blob;const old=URL.createObjectURL;URL.createObjectURL=value=>{blob=value;return old(value)};try{await handleExport();}finally{URL.createObjectURL=old;}const json=JSON.parse(await new Response(blob.stream().pipeThrough(new DecompressionStream('gzip'))).text());const selected=await storageReadBackup(new File([blob],'test.ee'),{chats:true});const before=JSON.stringify(db.characters);json.modules.characters[0].history[0].content='corrupted';let error='';try{await storageReadBackup(new File([JSON.stringify(json)],'bad.json'),{chats:true});}catch(e){error=e.message;}return {has:json.backupManifest.integrity.algorithm,restored:selected.characters[0].id,error,unchanged:before===JSON.stringify(db.characters)};});
+ assert.equal(checksum.has,'SHA-256');assert.equal(checksum.restored,'audit-role');assert.match(checksum.error,/characters/);assert.equal(checksum.unchanged,true);
  await page.evaluate(()=>switchScreen('uvu-story-bridge-screen'));await page.getByRole('button',{name:'去审核',exact:true}).tap();
  const rules=page.locator('#uvu-bridge-rule-preview');await rules.locator('summary').tap();await rules.getByLabel('检查剧情原文').fill('<content>审核正文。</content><status>秘密状态</status>');
  for(let i=0;i<6;i++)await rules.getByRole('button',{name:'检查正文',exact:true}).tap();assert.equal(await page.locator('#global-rescue-panel').count(),0,'ordinary Tavern controls do not open background rescue');assert.match(await rules.locator('pre').textContent(),/命中 content/);assert.doesNotMatch(await rules.locator('pre').textContent(),/秘密状态/);
  for(const [width,height]of [[320,740],[390,844],[402,420]]){await page.setViewportSize({width,height});assert.equal(await rules.evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);await rules.screenshot({path:path.join(out,'rule-preview-'+width+'.png')});}
- assert.deepEqual(errors,[]);console.log('PASS memo capacity/diagnostics/similarity, summary floor links/stale source, schedule review/selection/mood, NPC task report, Tavern rules, repeated setup and touch controls');
+ assert.deepEqual(errors,[]);console.log('PASS memo semantic opt-in/cancel, refreshed calendar review/apply, director-only preview/no TTS/narrow-screen, optional backup integrity entry, existing diagnostic and Tavern controls');
 }finally{await browser.close();server.closeAllConnections();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;server.closeAllConnections();server.close();});

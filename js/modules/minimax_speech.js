@@ -262,7 +262,7 @@
         } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     }
     window.MiniMaxSpeech = { options, capabilities, dictionary, resolveSettings, requestOptions, endpoint, region, readResponse,
-        usage, segments, createCache, persistent, streamPlayer, listVoices, setupSettings, refreshRoles, fromForm, inspect };
+        usage, segments, createCache, persistent, streamPlayer, listVoices, setupSettings, refreshRoles, fromForm, inspect, openDirectorPreview };
 
     let formState = null;
     function refreshRoles() { formState?.refreshRoles(); }
@@ -286,6 +286,7 @@
         const details = (parent, label) => { const el = node('details'), title = node('summary', label); el.append(title); parent.append(el); return el; };
         const advanced = node('section'); advanced.id = 'minimax-speech-advanced'; advanced.className = 'minimax-speech-advanced';
         const target = root.querySelector('.minimax-tts-actions'); if (target) target.before(advanced); else root.append(advanced);
+        if (target && !document.getElementById('minimax-director-preview')) { const preview = button('导演预览', () => openDirectorPreview()); preview.id = 'minimax-director-preview'; target.prepend(preview); }
         const profiles = JSON.parse(JSON.stringify(saved.profiles || {}));
         let roles = (typeof db !== 'undefined' ? db.characters || [] : []).filter(c => c && typeof c.id === 'string');
         const roleSelect = select(advanced, '音色与表达', [['默认设置', ''], ...roles.map(c => [c.realName || c.remarkName || c.name || c.id, c.id])], '');
@@ -340,7 +341,7 @@
         const language = field(playback, '语言增强', 'text', config.language); language.placeholder = 'auto / Chinese / Chinese,Yue';
         const clear = button('清理本机音频', async () => { MiniMaxTTS.clearCache(); status.textContent = await persistent.clear() ? '本机音频已清理' : '本机缓存不可用'; }); playback.append(clear);
         const dictionaryField = field(details(advanced, '默认读音词典'), '一行一个词语/读法', 'textarea', (saved.pronunciation || []).join('\n'));
-        const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。展开聊天语音的“语音详情”可查看计费字符和导演 Token、切回普通语音、重试导演或手动选择本条语音的情绪与语速。合成后展开“分段参数”，可核对各段台词、实际情绪、语速、停顿位置及缓存状态；这不是合成前试听。接口未提供的用量不估作实际费用。'));
+        const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。点击“导演预览”，可选择试听台词或当前已加载的聊天语音，先分析情绪、语速、停顿和导演用量；分析只调用导演API，不合成声音。试听使用当前表单，聊天使用已保存的角色配置和消息之前的剧情。可取消，或点“普通语音”跳过导演。分析成功后播放会复用相同来源与设置的临时导演方案；刷新或方案被淘汰后需重新分析。合成后的“语音详情 → 分段参数”显示实际参数及用量。接口未提供的用量不估作实际费用。'));
         formState = { profiles, flush, dictionary: dictionaryField, refreshRoles: () => {
             // Refresh the menu after data loading/import, without reloading a profile's unsaved fields.
             const value = roleSelect.value;
@@ -351,6 +352,57 @@
         }, read: () => ({ ...options({ stream: stream.checked, segmented: segmented.checked,
             persistentCache: persistentCache.checked, cacheMiB: cacheMiB.value, cacheDays: cacheDays.value, segmentChars: segmentChars.value,
             volume: volume.value, language: language.value }), favoriteVoices: [...favorites].slice(0, 200) }) };
+    }
+    function openDirectorPreview(initialBubble) {
+        if (typeof createMessageForwardDialog !== 'function') return;
+        let controller, generation = 0, prepared;
+        const d = createMessageForwardDialog('导演预览', 'minimax-director-preview-dialog', () => { generation++; controller?.abort(); });
+        d.panel.classList.add('derived-settings');
+        const node = (tag, text) => { const el = document.createElement(tag); if (text) el.textContent = text; return el; };
+        const body = node('div'), footer = node('footer'), status = node('p'), result = node('div'), source = node('select'), text = node('textarea');body.className = 'derived-body';
+        source.setAttribute('aria-label', '预览语音来源');text.setAttribute('aria-label', '预览台词');text.rows = 4;text.maxLength = 10000;status.setAttribute('aria-live', 'polite');
+        const bubbles = [...document.querySelectorAll('#message-area .voice-bubble[data-voice-text]')].slice(-8);
+        if (initialBubble && !bubbles.includes(initialBubble)) bubbles.push(initialBubble);
+        source.add(new Option('试听台词', 'sample'));bubbles.forEach((b, i) => source.add(new Option('聊天语音 · ' + b.dataset.voiceText.slice(0, 32), String(i))));
+        let sample = '你好，这是角色语音试听。';
+        const reset = () => { generation++; controller?.abort(); controller = null; prepared = null; play.disabled = true; analyze.disabled = false; cancel.hidden = true; result.replaceChildren(); status.textContent = ''; };
+        const action = (label, fn) => { const b = node('button', label);b.type = 'button';b.onclick = fn;footer.append(b);return b; };
+        const input = () => {
+            const bubble = source.value === 'sample' ? null : bubbles[Number(source.value)];
+            if (bubble && (!bubble.isConnected || text.value !== bubble.dataset.voiceText)) throw abort();
+            const value = bubble ? undefined : { ...(db.minimaxTtsSettings || {}), ...fromForm(),
+                apiKey: document.getElementById('minimax-tts-key')?.value.trim(), endpoint: document.getElementById('minimax-tts-endpoint')?.value.trim(), groupId: document.getElementById('minimax-tts-group-id')?.value.trim(),
+                model: document.getElementById('minimax-tts-model')?.value.trim(), voiceId: document.getElementById('minimax-tts-voice')?.value.trim(), speed: document.getElementById('minimax-tts-speed')?.value,
+                pitch: document.getElementById('minimax-tts-pitch')?.value, director: VoiceDirector.fromForm() };
+            return { bubble: bubble || play, text: text.value, settings: value };
+        };
+        const analyze = action('分析语气', async () => {
+            reset(); const task = generation, job = new AbortController(); controller = job; analyze.disabled = true; cancel.hidden = false; status.textContent = '正在分析语气…';
+            try {
+                const current = input(), report = await MiniMaxTTS.previewPlan(current.bubble, current.text, current.settings, job.signal);
+                if (task !== generation || !d.panel.isConnected) return;
+                prepared = { ...current, isCurrent: report.isCurrent, stamp: JSON.stringify(current.settings || db.minimaxTtsSettings) };
+                for (const [i, segment] of report.segments.entries()) {
+                    const row = node('section');row.append(node('p', '第 ' + (i + 1) + ' 段 · ' + segment.emotion + ' · 语速 ' + segment.speed), node('p', segment.text));
+                    for (const pause of segment.pauses) row.append(node('p', '“' + pause.after + '”后停顿 ' + pause.seconds + ' 秒'));
+                    row.append(node('p', segment.cacheHit ? '导演方案缓存 · 本次未调用导演' : '导演输入/输出 Token ' + (segment.usage?.inputTokens ?? '未提供') + '/' + (segment.usage?.outputTokens ?? '未提供')));
+                    if (segment.warning) row.append(node('p', segment.warning)); result.append(row);
+                }
+                play.disabled = report.segments.some(s => s.warning); status.textContent = '分析完成，尚未合成语音';
+            } catch (error) { if (task === generation && d.panel.isConnected) status.textContent = error.name === 'AbortError' ? '分析已取消或来源、设置已变化' : error.message; }
+            finally { if (task === generation) { controller = null;analyze.disabled = false;cancel.hidden = true; } }
+        });
+        const cancel = action('取消分析', () => { reset();status.textContent = '分析已取消'; });cancel.hidden = true;
+        const play = action('播放语音', () => {
+            try { const current = input();if (!prepared || !prepared.isCurrent() || prepared.text !== current.text || prepared.bubble !== current.bubble || prepared.stamp !== JSON.stringify(current.settings || db.minimaxTtsSettings)) throw new Error('来源或设置已变化，请重新分析');return MiniMaxTTS.play(current.bubble, current.text, current.settings); }
+            catch (error) { status.textContent = error.message; }
+        });play.disabled = true;
+        action('普通语音', () => { try { const current = input();reset();return MiniMaxTTS.play(current.bubble, current.text, current.settings, { plain: true }); } catch (error) { status.textContent = error.message; } });
+        for (const [i, caption] of ['分析', '取消', '播放', '普通'].entries()) { const b = footer.children[i];b.setAttribute('aria-label', b.textContent);b.title = b.textContent;b.textContent = caption; }
+        source.onchange = () => { reset();const b = source.value === 'sample' ? null : bubbles[Number(source.value)];text.readOnly = !!b;text.value = b ? b.dataset.voiceText : sample; };
+        text.oninput = () => { if (source.value === 'sample') sample = text.value;reset(); };
+        if (initialBubble) source.value = String(bubbles.indexOf(initialBubble));source.onchange();
+        body.append(source, text, status, result);d.panel.append(body, footer);
     }
     function inspect(bubble, diagnostic, onPlain, onRetry, onManual, model) {
         if (typeof document === 'undefined' || !document.createElement || !bubble?.insertAdjacentElement || bubble.id === 'minimax-tts-preview') return;

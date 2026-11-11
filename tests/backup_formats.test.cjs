@@ -210,3 +210,18 @@ test('calendar records export with settings and old backups preserve existing ca
         assert.equal(f.imports.length, 1, name); assert.equal(f.imports[0].modules.worldBooks[0].content, 'restored');
     }
  });
+
+test('optional checksums survive EE export and corrupt fallback imports never reach persistence',async()=>{
+    const f=fixture();f.c.crypto=require('node:crypto').webcrypto;f.c.setTimeout=setTimeout;vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/backup_integrity.js'),'utf8'),f.c);
+    f.element('storage-export-integrity').checked=true;await f.c.handleExport();assert.equal(f.downloads.length,1);assert.match(f.downloads[0],/\.ee$/);
+    const json=JSON.parse(await new Response(f.blobs[0].stream().pipeThrough(new DecompressionStream('gzip'))).text());assert.equal(json.backupManifest.integrity.algorithm,'SHA-256');
+    const restored=await f.c.storageReadBackup(new File([f.blobs[0]],'test.ee'),{contacts:true});assert.equal(restored.characters[0].persona,'original persona');
+    vm.runInContext('Object.keys(selectedImportModules).forEach(key => selectedImportModules[key] = key === "contacts");',f.c);
+    json.modules.characters[0].persona='corrupted';await f.c.handleImport({target:{files:[new File([JSON.stringify(json)],'broken.json')],value:'chosen'}});
+    assert.equal(f.imports.length,0);assert.match(f.toasts.at(-1),/characters/);assert.equal(f.c.db.characters[0].persona,'original persona');
+});
+test('fallback and worker checksum scope both verify only selected categories',async()=>{
+ const f=fixture();f.c.crypto=require('node:crypto').webcrypto;f.c.setTimeout=setTimeout;vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/backup_integrity.js'),'utf8'),f.c);
+ const modules={characters:[{id:'c',persona:'old'}],worldBooks:[{id:'w',content:'valid'}]},integrity=await f.c.UvUBackupIntegrity.create(modules);modules.characters[0].persona='changed';
+ const file=new File([JSON.stringify({modules,backupManifest:{integrity}})],'test.json');assert.equal((await f.c.storageReadBackup(file,{worldbooks:true})).worldBooks[0].id,'w');await assert.rejects(f.c.storageReadBackup(file,{contacts:true}),/characters/);
+});

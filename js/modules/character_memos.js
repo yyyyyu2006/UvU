@@ -12,7 +12,7 @@ function characterMemoIdentity(chat) {
 }
 function characterMemoSettings(chat) {
     const s = chat.characterMemos?.settings || {};
-    return { enabled: s.enabled === true, automatic: s.automatic === true, useContext: s.useContext === true,
+    return { enabled: s.enabled === true, automatic: s.automatic === true, useContext: s.useContext === true, semanticHints: s.semanticHints === true,
         mode: ['auto','review','manual'].includes(s.mode) ? s.mode : 'review', threshold: Math.max(2, Math.min(60, Number(s.threshold) || 10)),
         budget: Math.max(200, Math.min(2400, Number(s.budget) || 1000)), apiSource: ['primary','secondary','memory','journal'].includes(s.apiSource) ? s.apiSource : 'journal' };
 }
@@ -269,4 +269,57 @@ function findSimilarCharacterMemos(chat) {
         }
     }
     return result;
+}
+
+// Manual, read-only experiment. Embeddings are transient and never join reply selection.
+const characterMemoSimilarityJobs = new WeakMap();
+async function findSemanticCharacterMemos(chat, { ids, signal, onProgress } = {}) {
+    const settings = characterMemoSettings(chat);
+    if (!settings.enabled || !settings.semanticHints) throw new Error('请先开启备忘录和语义相近检查');
+    if (characterMemoSimilarityJobs.has(chat)) throw new Error('语义检查正在进行，请先取消或等待完成');
+    if (typeof resolveVectorMemoryApi !== 'function' || typeof requestMemoryEmbeddings !== 'function') throw new Error('当前页面未加载向量 API');
+    const owner = characterMemoOwner(chat), config = { ...resolveVectorMemoryApi() }, configStamp = JSON.stringify(config), stateStamp = JSON.stringify(chat.characterMemos);
+    if (!config.url || !config.key || !config.embeddingModel) throw new Error('请先在 API 设置中配置向量 API 和嵌入模型');
+    if (ids !== undefined && (!Array.isArray(ids) || new Set(ids).size > 50)) throw new Error('一次最多选择50条记录');
+    const chosen = ids === undefined ? null : new Set(ids);
+    const eligible = (chat.characterMemos?.notes || []).filter(n => n.owner === owner.persona && ['approved', 'pending'].includes(n.status) &&
+        ['user', 'char'].includes(n.subject) && typeof n.fact === 'string' && n.fact.trim() && n.fact.length <= 500 && !characterMemoSecret(n.fact) &&
+        (!n.expiresAt || n.expiresAt > Date.now()) && characterMemoSourceValid(chat, n) && (!chosen || chosen.has(n.id)));
+    const notes = eligible.slice(-50).map(n => ({ id: n.id, fact: n.fact, subject: n.subject }));
+    const cancelled = () => Object.assign(new Error('语义检查已取消或来源、配置已变化'), { name: 'AbortError' });
+    const controller = new AbortController(), cancel = () => controller.abort();
+    const guard = () => {
+        if (controller.signal.aborted || !characterMemoCurrent(owner) || JSON.stringify(chat.characterMemos) !== stateStamp || JSON.stringify(resolveVectorMemoryApi()) !== configStamp ||
+            notes.some(n => !characterMemoSourceValid(chat, chat.characterMemos.notes.find(live => live.id === n.id) || {}))) throw cancelled();
+    };
+    if (signal?.aborted) cancel(); signal?.addEventListener('abort', cancel, { once: true });
+    const timer = setTimeout(cancel, 45000); characterMemoSimilarityJobs.set(chat, controller);
+    let rejectCancel;
+    const cancellation = new Promise((_, reject) => { rejectCancel = () => reject(cancelled()); controller.signal.addEventListener('abort', rejectCancel, { once: true }); });
+    // A rejected cancellation promise must be observed even when fewer than two notes qualify.
+    cancellation.catch(() => {});
+    try {
+        guard(); if (notes.length < 2) return { scanned: notes.length, limit: 50, scope: chosen ? 'selected' : 'latest', pairs: [] };
+        const batch = Math.max(1, Math.min(16, Math.floor(Number(config.batchSize) || 8))), vectors = [];
+        for (let i = 0; i < notes.length; i += batch) {
+            guard(); const values = await Promise.race([requestMemoryEmbeddings(notes.slice(i, i + batch).map(n => n.fact), config, controller.signal, 'document'), cancellation]); guard();
+            if (!Array.isArray(values) || values.length !== Math.min(batch, notes.length - i) || values.some(v => !Array.isArray(v) || !v.length || v.length > 16384 || !v.every(Number.isFinite) || !v.some(x => x !== 0) || v.length !== (vectors[0]?.length || values[0]?.length))) throw new Error('嵌入 API 返回的向量数量、维度或数值无效');
+            vectors.push(...values); onProgress?.({ completed: vectors.length, total: notes.length });
+        }
+        const normalized = vectors.map(v => { const max = v.reduce((m, x) => Math.max(m, Math.abs(x)), 0), scaled = v.map(x => x / max), norm = Math.sqrt(scaled.reduce((s, x) => s + x * x, 0)); return scaled.map(x => x / norm); });
+        const negative = text => /(?:不|没|别|戒|讨厌|拒绝|\bnever\b|\bnot\b|don.t)/i.test(text);
+        const pairs = [];
+        let lastYield = Date.now();
+        for (let i = 0; i < notes.length; i++) { for (let j = i + 1; j < notes.length; j++) {
+            if (notes[i].subject !== notes[j].subject) continue;
+            const score = Math.max(-1, Math.min(1, normalized[i].reduce((sum, n, k) => sum + n * normalized[j][k], 0)));
+            if (score < .88) continue;
+            pairs.push({ first: notes[i], second: notes[j], score, polarityDiffers: negative(notes[i].fact) !== negative(notes[j].fact) });
+            pairs.sort((a, b) => b.score - a.score); if (pairs.length > 10) pairs.pop();
+        } if (Date.now() - lastYield > 8) { await Promise.race([new Promise(resolve => setTimeout(resolve, 0)), cancellation]); guard(); lastYield = Date.now(); } }
+        guard(); return { scanned: notes.length, limit: 50, scope: chosen ? 'selected' : 'latest', pairs };
+    } finally {
+        clearTimeout(timer); signal?.removeEventListener('abort', cancel); controller.signal.removeEventListener('abort', rejectCancel);
+        if (characterMemoSimilarityJobs.get(chat) === controller) characterMemoSimilarityJobs.delete(chat);
+    }
 }

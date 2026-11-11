@@ -924,6 +924,13 @@ async function storageExportMediaCache(snapshot = db) {
     return result;
 }
 
+function storageBackupImportKeys(selection) {
+    return ['_uvuBackup', ...(selection.replaceAll ? ['_exportVersion', '__chunks__'] : []),
+        ...(selection.contacts || selection.chats ? ['characters', 'groups'] : []),
+        ...(selection.worldbooks ? ['worldBooks'] : []), ...(selection.wallpapers ? ['myStickers'] : []),
+        ...(selection.fonts ? ['customFonts'] : []), ...(selection.other ? ['mediaCache'] : []),
+        ...Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).flatMap(([category, items]) => selection[category] ? items : [])];
+}
 async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
     const cancelled = () => Object.assign(new Error('备份导入已取消'), { name: 'AbortError' });
     if (signal?.aborted) throw cancelled();
@@ -931,15 +938,10 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
         throw new Error('当前浏览器不支持解压 .ee 备份，请升级浏览器，或使用原设备导出 .json 备份后导入');
     }
     if (typeof Worker === 'function') {
-        const keys = ['_uvuBackup', ...(selection.replaceAll ? ['_exportVersion', '__chunks__'] : []),
-            ...(selection.contacts || selection.chats ? ['characters', 'groups'] : []),
-            ...(selection.worldbooks ? ['worldBooks'] : []), ...(selection.wallpapers ? ['myStickers'] : []),
-            ...(selection.fonts ? ['customFonts'] : []), ...(selection.other ? ['mediaCache'] : []),
-            ...Object.entries(STORAGE_IMPORT_CATEGORY_KEYS).flatMap(([category, items]) => selection[category] ? items : [])
-        ];
+        const keys = storageBackupImportKeys(selection);
         return new Promise((resolve, reject) => {
             let worker;
-            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261108-backup-signature'); }
+            try { worker = new Worker('js/modules/storage_backup_worker.js?v=20261111-review-recovery-v1'); }
             catch (_) { reject(new Error('备份后台解析无法启动，请检查浏览器或网站脚本策略')); return; }
             let settled = false;
             const finish = () => { settled = true; worker.terminate(); clearTimeout(timer); signal?.removeEventListener('abort', abort); };
@@ -979,6 +981,11 @@ async function storageReadBackup(file, selection, { signal, onProgress } = {}) {
     if (signal?.aborted) throw cancelled();
     const imported = JSON.parse(text);
     const modules = imported?.modules ?? imported;
+    if (imported?.backupManifest && Object.hasOwn(imported.backupManifest, 'integrity')) {
+        if (!globalThis.UvUBackupIntegrity) throw new Error('完整性校验模块未加载，请刷新后重试');
+        const keys = storageBackupImportKeys(selection), selected = Object.fromEntries(Object.entries(modules).filter(([key]) => keys.includes(key)));
+        await globalThis.UvUBackupIntegrity.verify(selected, imported.backupManifest.integrity, { signal, keys });
+    }
     if (selection.replaceAll && imported?.modules && typeof imported.modules === 'object') modules._exportVersion = '3.0';
     return modules;
 }
@@ -1083,6 +1090,7 @@ async function handleExport() {
     const format = document.getElementById('storage-export-format')?.value || 'ee';
     const exportOptions = { includeCredentials: document.getElementById('storage-export-purpose')?.value !== 'share' && document.getElementById('storage-export-credentials')?.checked !== false,
         includeVectorIndex: document.getElementById('storage-export-vector-index')?.checked !== false };
+    const includeIntegrity = document.getElementById('storage-export-integrity')?.checked === true;
     storageBackupBusy = true;
     exportBtn.disabled = true;
     exportText.textContent = '处理中...';
@@ -1155,6 +1163,11 @@ async function handleExport() {
         if (typeof storageApplyExportOptions === 'function') exportData.modules = storageApplyExportOptions(exportData.modules, exportOptions);
         exportData.backupManifest = { version: 1, categories: Object.keys(exportSelection).filter(key => exportSelection[key]),
             ...exportOptions, resources: 'external-links-preserved' };
+        if (includeIntegrity) {
+            if (!globalThis.UvUBackupIntegrity) throw new Error('完整性校验模块未加载，请刷新后重试');
+            exportText.textContent = '正在生成校验…';
+            exportData.backupManifest.integrity = await globalThis.UvUBackupIntegrity.create(exportData.modules);
+        }
         let outputBlob;
         let extension = 'json';
         if (format !== 'json') {
@@ -1184,7 +1197,7 @@ async function handleExport() {
         showToast(extension === 'ee' ? '导出成功' : '导出成功 (未压缩 JSON)');
     } catch (error) {
         console.error('导出失败:', error);
-        showToast('导出失败，请重试');
+        showToast(includeIntegrity ? '导出失败：' + error.message : '导出失败，请重试');
     } finally {
         storageBackupBusy = false;
         exportBtn.disabled = false;

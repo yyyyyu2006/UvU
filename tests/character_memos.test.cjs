@@ -3,6 +3,28 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
 function fixture(){const chat={id:'a',activeArchiveId:'x',myName:'我',myPersona:'喜欢书',realName:'晴',persona:'温和',history:[{id:'u1',role:'user',content:'我不喜欢喝咖啡，喜欢喝茶',timestamp:1},{id:'a1',role:'assistant',content:'我记下了',timestamp:2}]};let requests=0,saves=0;const c=vm.createContext({console,AbortController,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,db:{characters:[chat],apiSettings:{}},saveData:async()=>{saves++},resolveAutoMemoryApi:()=>({url:'https://test',key:'fake',model:'mock'}),buildChatApiRequest:(_,messages)=>({requestBody:messages}),fetchAiResponse:async()=>{requests++;return JSON.stringify({notes:[{fact:'喜欢喝茶',note:'下次记得给你泡茶。',category:'偏好',subject:'user',sourceIds:['u1'],evidence:[{id:'u1',quote:'喜欢喝茶'}]}]})}});vm.runInContext(fs.readFileSync('js/modules/character_memos.js','utf8'),c);return {c,chat,get requests(){return requests},get saves(){return saves}};}
 function enable(f){f.chat.characterMemos={settings:{enabled:true,automatic:true,useContext:true,mode:'auto',threshold:2},notes:[],processed:{},blocked:[]};}
 
+function semanticFixture(){const f=fixture();enable(f);f.chat.characterMemos.settings.semanticHints=true;f.chat.characterMemos.notes=['我爱喝茶','我喜欢喝茶','我不喝茶'].map((fact,i)=>({id:'s'+i,owner:f.c.characterMemoIdentity(f.chat),fact,subject:'user',status:'approved',manual:true}));f.c.resolveVectorMemoryApi=()=>({url:'https://fixture.test',key:'fake',embeddingModel:'test',batchSize:2});let calls=0;f.c.requestMemoryEmbeddings=async texts=>{calls++;return texts.map(()=>[1,0])};return {...f,get calls(){return calls}};}
+test('semantic memo suggestions are explicit opt in and never change selection or records',async()=>{
+    const f=semanticFixture(),before=JSON.stringify(f.chat),context=f.c.getCharacterMemoContext(f.chat);
+    const result=await f.c.findSemanticCharacterMemos(f.chat);assert.equal(result.scanned,3);assert.equal(result.pairs.length,3);assert.equal(f.calls,2);
+    assert.equal(JSON.stringify(f.chat),before);assert.equal(f.c.getCharacterMemoContext(f.chat),context);assert.ok(result.pairs.some(p=>p.polarityDiffers));
+    f.chat.characterMemos.settings.semanticHints=false;await assert.rejects(f.c.findSemanticCharacterMemos(f.chat),/开启/);assert.equal(f.calls,2);
+});
+test('semantic memo analysis rejects late response after source/config change or cancellation',async()=>{
+    for(const change of [f=>f.chat.activeArchiveId='other',f=>f.chat.characterMemos.notes[0].fact='new',f=>f.c.resolveVectorMemoryApi=()=>({url:'https://other.test',key:'fake',embeddingModel:'test'})]){
+        const f=semanticFixture();let release;f.c.requestMemoryEmbeddings=()=>new Promise(r=>release=r);const waiting=f.c.findSemanticCharacterMemos(f.chat);change(f);release([[1,0],[1,0]]);await assert.rejects(waiting,/变化|改变/);
+    }
+    const f=semanticFixture(),controller=new AbortController();let release;f.c.requestMemoryEmbeddings=()=>new Promise(r=>release=r);const waiting=f.c.findSemanticCharacterMemos(f.chat,{signal:controller.signal});controller.abort();release([[1,0],[1,0]]);await assert.rejects(waiting,/取消/);
+});
+test('semantic memo suggestions bound work, exclude invalid sources and never compare different subjects',async()=>{
+    const f=semanticFixture(),base=f.chat.characterMemos.notes[0];f.chat.characterMemos.notes=Array.from({length:55},(_,i)=>({...base,id:'s'+i,fact:'记录'+i}));
+    const result=await f.c.findSemanticCharacterMemos(f.chat);assert.equal(result.scanned,50);assert.equal(result.pairs.length,10);
+    await assert.rejects(f.c.findSemanticCharacterMemos(f.chat,{ids:f.chat.characterMemos.notes.map(n=>n.id)}),/50/);
+    f.chat.characterMemos.notes=[{...base,id:'one'},{...base,id:'char',subject:'char'},{...base,id:'bad',manual:false,sources:[{id:'missing'}]}];
+    assert.equal((await f.c.findSemanticCharacterMemos(f.chat)).pairs.length,0);
+    f.c.requestMemoryEmbeddings=async()=>[[NaN],[0]];await assert.rejects(f.c.findSemanticCharacterMemos(f.chat),/向量/);
+});
+
 test('memo inspection is read only and explains off, source, selection and capacity',async()=>{
     const f=fixture();const before=JSON.stringify(f.chat);assert.equal(f.c.inspectCharacterMemos(f.chat).enabled,false);assert.equal(JSON.stringify(f.chat),before);
     enable(f);await f.c.runCharacterMemos(f.chat,true);const n=f.chat.characterMemos.notes[0];

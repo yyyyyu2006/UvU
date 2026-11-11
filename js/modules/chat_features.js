@@ -323,6 +323,30 @@ const MiniMaxTTS = (() => {
         return startPlayback(session);
     }
 
+    async function previewPlan(bubble, text, settings, signal) {
+        const cancelled = () => Object.assign(new Error('预览已取消，或语音来源、设置已变化'), { name: 'AbortError' });
+        if (signal?.aborted) throw cancelled();
+        if (typeof VoiceDirector === 'undefined') throw new Error('语音导演尚未加载');
+        if (typeof text !== 'string' || !text.trim() || text.length > 10000) throw new Error('预览台词需在1至10000字符内');
+        const read = () => { const saved = settings || getSettings(), role = !settings ? VoiceDirector.roleFor(bubble) : null; return speech ? speech.resolveSettings(saved, role) : saved; };
+        const ttsSettings = read(), snapshot = JSON.stringify(ttsSettings), director = VoiceDirector.settings(ttsSettings.director);
+        if (!director.enabled) throw new Error('请先开启语音导演；聊天使用已保存设置');
+        const identity = VoiceDirector.capture(bubble, text, director);
+        const guard = () => { if (signal?.aborted || !VoiceDirector.isCurrent(identity) || JSON.stringify(read()) !== snapshot) throw cancelled(); };
+        guard(); const options = speech?.options(ttsSettings.speech), lines = options?.segmented ? speech.segments(text, options.segmentChars) : [text], segments = [];
+        for (const line of lines) {
+            guard(); const source = lines.length === 1 ? identity : VoiceDirector.capture(bubble, line, director);
+            const direction = await VoiceDirector.prepare(line, director, source, signal); guard();
+            const speed = Math.round(Math.max(.5, Math.min(2, (Number(ttsSettings.speed) || 1) * direction.speedMultiplier)) * 100) / 100;
+            const effective = { ...ttsSettings, model: ttsSettings.model || 'speech-2.8-hd', emotion: direction.emotion };
+            const spoken = direction.text.length <= 10000 ? direction.text : line;
+            segments.push({ text: line.replace(/<#([0-9.]+)#>/g, ''), emotion: speech ? speech.requestOptions(effective).voice_setting.emotion || 'auto' : direction.emotion || 'auto', speed,
+                pauses: [...spoken.matchAll(/<#([0-9.]+)#>/g)].map(m => ({ after: spoken.slice(0, m.index).replace(/<#([0-9.]+)#>/g, '').slice(-20), seconds: Number(m[1]) })),
+                usage: direction.usage, cacheHit: direction.cacheHit === true, warning: direction.warning || '' });
+        }
+        guard(); return { segments, isCurrent: () => { try { guard(); return true; } catch (_) { return false; } } };
+    }
+
     async function play(bubble, text, settings, override = {}) {
         if (!bubble) return;
         let ttsSettings, cacheKey, directorSettings, source, identity;
@@ -471,7 +495,7 @@ const MiniMaxTTS = (() => {
         return String(characterVoiceId || '').trim() || String(settings.voiceId || '').trim();
     }
 
-    return { play, stop: () => stop(), synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && JSON.parse(JSON.stringify(lastDiagnostic)) };
+    return { play, previewPlan, stop: () => stop(), synthesize, resolveVoiceId, getCacheInfo, clearCache, getAudioDetails: blob => ({ ...audioDetails.get(blob) }), getDiagnostics: () => lastDiagnostic && JSON.parse(JSON.stringify(lastDiagnostic)) };
 })();
 
 function getAudioPlaybackErrorMessage(code) {

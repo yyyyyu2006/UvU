@@ -47,3 +47,36 @@ test('changing user persona invalidates pending independent schedule analysis',a
     const waiting=A.generate(c.chat,'2026-11-07');c.chat.myPersona='另一位用户';release(JSON.stringify({events:[{title:'旧用户的约定'}]}));
     await assert.rejects(waiting,/角色|记录|变化/);assert.equal(c.UvUCalendar.state().events.length,0);
 });
+
+function calendarSession(c){
+    const values=new Map();c.sessionStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+    const reload=()=>{c.db=JSON.parse(JSON.stringify(c.db));c.chat=c.db.characters[0];vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/calendar_ai.js'),'utf8'),c);};
+    return {values,reload};
+}
+test('calendar pending review survives same-tab reload without another request and clears after apply',async()=>{
+    const c=fixture(),session=calendarSession(c),key=c.UvUCalendar.owner(c.chat);
+    await c.UvUCalendar.saveProfile(key,{autoGenerate:true,reviewChanges:true});await c.UvUCalendarAI.afterReply(c.chat);
+    const token=c.UvUCalendarAI.pending(c.chat)[0].token;session.reload();
+    const restored=c.UvUCalendarAI.pending(c.chat);assert.equal(restored.length,1);assert.equal(restored[0].token,token);assert.equal(c.calls,1);
+    await c.UvUCalendarAI.apply(c.chat,restored[0]);session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);assert.equal(c.UvUCalendar.state().events.length,1);
+});
+test('restored calendar review rejects changed sources, revision, owner and malformed storage',async()=>{
+    for(const change of [c=>c.chat.myPersona='new',c=>c.chat.persona='new',c=>c.chat.history[0].isWithdrawn=true,c=>c.chat.activeArchiveId='two',c=>c.db.calendarData.revision++]){
+        const c=fixture(),session=calendarSession(c);await c.UvUCalendar.saveProfile(c.UvUCalendar.owner(c.chat),{autoGenerate:true,reviewChanges:true});await c.UvUCalendarAI.afterReply(c.chat);
+        change(c);session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);assert.equal(c.UvUCalendar.state().events.length,0);
+    }
+    const c=fixture(),session=calendarSession(c);await c.UvUCalendar.saveProfile(c.UvUCalendar.owner(c.chat),{autoGenerate:true,reviewChanges:true});await c.UvUCalendarAI.afterReply(c.chat);
+    assert.equal(session.values.size,1);const key=[...session.values.keys()][0];session.values.set(key,'{bad');session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);
+});
+test('calendar deferred review tolerates unavailable storage and discard never resurrects on reload',async()=>{
+    const c=fixture(),session=calendarSession(c);await c.UvUCalendar.saveProfile(c.UvUCalendar.owner(c.chat),{autoGenerate:true,reviewChanges:true});await c.UvUCalendarAI.afterReply(c.chat);
+    const p=c.UvUCalendarAI.pending(c.chat)[0];c.UvUCalendarAI.discard(c.chat,p.token);session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);
+    c.sessionStorage={getItem(){throw Error('denied')},setItem(){throw Error('quota')},removeItem(){throw Error('denied')}};session.reload();
+    await c.UvUCalendarAI.afterReply(c.chat);assert.equal(c.UvUCalendarAI.pending(c.chat).length,1);assert.match(c.UvUCalendarAI.status(c.UvUCalendar.owner(c.chat)),/仅本页/);
+});
+test('calendar restored proposals reject malformed actions and expired storage',async()=>{
+    for(const mutate of [r=>r.proposal.events[0].time='99:00',r=>r.proposal.events[0].action='delete',r=>r.proposal.mood={mood:'unknown',note:''},r=>r.at-=25*60*60*1000]){
+        const c=fixture(),session=calendarSession(c);await c.UvUCalendar.saveProfile(c.UvUCalendar.owner(c.chat),{autoGenerate:true,reviewChanges:true});await c.UvUCalendarAI.afterReply(c.chat);
+        const key=[...session.values.keys()][0],data=JSON.parse(session.values.get(key));mutate(data.items[0]);session.values.set(key,JSON.stringify(data));session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);assert.equal(c.UvUCalendar.state().events.length,0);
+    }
+});

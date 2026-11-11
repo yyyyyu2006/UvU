@@ -2,13 +2,14 @@
 // constructing objects for categories that were not selected.
 function createBackupParser(keys, fullRestore = false) {
     const selected = new Set(keys), stack = [];
-    let root, rootDone = false, rootStarted = false, lex = '', token = '', escape = false, unicode = 0, retain = false;
+    let root, manifest, rootDone = false, rootStarted = false, lex = '', token = '', escape = false, unicode = 0, retain = false;
     const syntax = () => { throw new SyntaxError('备份 JSON 格式无效'); };
     const top = () => stack[stack.length - 1];
     const plan = () => {
         const parent = top();
         if (!parent) return { keep: false, mode: 'root' };
         if (parent.mode === 'root' && parent.key === 'modules') return { keep: true, mode: 'modules' };
+        if (parent.mode === 'root' && parent.key === 'backupManifest') return { keep: true, mode: '' };
         return { keep: parent.mode ? selected.has(parent.key) : parent.keep, mode: '' };
     };
     const complete = value => {
@@ -16,6 +17,7 @@ function createBackupParser(keys, fullRestore = false) {
         if (!parent) { root = value; rootDone = true; return; }
         if (parent.type === 'array') { if (parent.keep) parent.value.push(value); }
         else if (parent.mode === 'root' && parent.key === 'modules') { parent.hasModules = true; parent.modules = value; }
+        else if (parent.mode === 'root' && parent.key === 'backupManifest') { manifest = value; }
         else if (parent.mode ? selected.has(parent.key) : parent.keep) {
             Object.defineProperty(parent.value, parent.key, { value, enumerable: true, configurable: true, writable: true });
         }
@@ -81,6 +83,7 @@ function createBackupParser(keys, fullRestore = false) {
                 else { lex = 'primitive'; token = char; }
             }
         },
+        integrity() { return manifest?.integrity; },
         finish() {
             if (lex === 'primitive') finishPrimitive();
             if (lex || stack.length || !rootDone || !root || typeof root !== 'object' || Array.isArray(root)) syntax();
@@ -114,6 +117,11 @@ self.onmessage = async event => {
             }
             parser.write(decoder.decode());
         } finally { reader.releaseLock(); }
-        self.postMessage({ modules: parser.finish() });
+        const modules = parser.finish(), integrity = parser.integrity();
+        if (integrity !== undefined) {
+            if (!globalThis.UvUBackupIntegrity) importScripts('backup_integrity.js?v=20261111-review-recovery-v1');
+            await globalThis.UvUBackupIntegrity.verify(modules, integrity, { keys });
+        }
+        self.postMessage({ modules });
     } catch (error) { self.postMessage({ error: error instanceof SyntaxError ? '备份 JSON 格式无效' : error.message }); }
 };

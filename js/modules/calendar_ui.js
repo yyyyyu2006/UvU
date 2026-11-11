@@ -129,7 +129,7 @@ function calendarDayWatcher(readDay, changed) {
         const upload = node('input'); upload.type = 'file'; upload.accept = '.json'; upload.hidden = true; d.fields.append(upload);
         actions.append(button('导入记录', () => upload.click())); upload.onchange = async () => { try { const f = upload.files[0]; if (!f || f.size > 8 * 1024 * 1024) throw new Error('请选择8MB以内的日历 JSON'); const data = C().validate(JSON.parse(await f.text())); if (confirm('用此文件替换全部日历记录？可在保存后撤销。')) { await C().mutate(s => Object.assign(s, data)); d.dismiss(); } } catch (e) { d.status.textContent = e.message; } };
         const tutorial = node('details'); tutorial.append(node('summary', '使用说明'));
-        tutorial.append(node('p', '需要核对自动安排时，先选择角色，打开右上角日历设置，开启“自动安排先审核”。生成后从“更多操作 → 审核安排”核对新增、修改、删除，取消不需要的条目再保存；心情需单独勾选。忽略本次不会改原记录。待审安排仅在本页保留；刷新页面或对话、日历、角色存档变化后需重新生成。', 'calendar-muted'));
+        tutorial.append(node('p', '需要核对自动安排时，先选择角色，打开右上角日历设置，开启“自动安排先审核”。生成后从“更多操作 → 审核安排”核对新增、修改、删除，取消不需要的条目再保存；心情需单独勾选。忽略本次不会改原记录。同一标签页刷新后可恢复24小时内的待审安排；关闭标签页不保证保留。对话、人设、日历或存档变化后草稿失效，需重新生成。浏览器临时存储不可用时会提示仅本页保留。', 'calendar-muted'));
         for (const text of ['点日期查看当天；点“选择范围”再点起止日期，或长按日期后拖动。选区预览不会自动写入记录。', '日程支持重复、锁定和撤销。选择角色后可生成行程，预览核对后保存；自动安排需在本页开启。', '心情模式用表情显示每天最近一次记录；点击日期可查看或修改当天全部记录。经期实色为记录，虚线为预测。', '日历分享卡片会进入选定私聊；持续参考需单独授权。记录只保存在本机，设置备份包含日历与经期，分享备份前请核对。', '网页关闭后不会继续调用 AI，也不保证后台定时提醒。预测不用于避孕或诊断。']) tutorial.append(node('p', text, 'calendar-muted'));
         d.fields.append(tutorial);
         d.form.onsubmit = ev => { ev.preventDefault(); d.run(async () => {

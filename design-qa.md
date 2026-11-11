@@ -115,3 +115,10 @@ final result: passed for the six requested amendments and implemented sheet layo
 - 摘要原楼层变化时，在当前阅读窗内显示错误并替换旧摘录；不再仅在被遮住的外层状态栏提示。记忆管理重复初始化不重复生成入口。
 - `remaining_optimizations_browser.cjs`覆盖新增功能和320／390px／402×420短屏，查看实际截图；`approved_sheets_browser.cjs`、`memo_interaction_browser.cjs`及千条评论压力回归通过。语音分段只补现有详情，不修改可见气泡或原文。
 - `npm test`1162／1162；两个固定MCP SDK分别通过JSON／SSE互通。1900基线、音乐像素、原生Token和已有内嵌语音／备份布局保持；真实手机／平台账号仍需实测。
+
+
+## 补充：语义检查、导演预览与刷新恢复 · 2026-11-11
+
+- 维持已有面板与CSS。备忘录语义检查收在设置页，默认关闭；导演预览入口留在API内嵌语音区，预览使用现有弹窗，320px时底部短按钮不换行；备份校验留在原内嵌选项。
+- 完整应用浏览器覆盖reload恢复日程待审、语义取消、导演预览不合成／原消息失效拒绝、实际EE导出和Worker校验；查看真实320px及短屏截图。旧语音浏览器脚本移除过时导航后通过，未更改生产布局来迁就脚本。
+- npm test 1177／1177；approved_sheets_browser和minimax_speech_browser通过。没有修改1900美化、音乐UI、导出ID Card、发送文件／一起听卡片或状态栏样式。尚未完成的增强和外部验收分别保留在剩余清单。

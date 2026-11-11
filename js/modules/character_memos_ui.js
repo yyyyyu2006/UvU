@@ -2,7 +2,8 @@
 function openCharacterMemos(target) {
     const chat=target || (typeof currentChatType!=='undefined'&&currentChatType==='private' ? db.characters.find(c=>c.id===currentChatId) : null);
     if(!chat)return showToast('请先打开角色私聊');
-    const owner=characterMemoOwner(chat), d=createMessageForwardDialog('他的备忘录','character-memos-dialog');
+    let semanticController;
+    const owner=characterMemoOwner(chat), d=createMessageForwardDialog('他的备忘录','character-memos-dialog',()=>semanticController?.abort());
     d.panel.classList.add('derived-settings','character-memos-panel');
     const node=(tag,cls,text)=>messageForwardNode(tag,cls,text);
     const body=node('div','derived-body'), feedback=node('p','memo-feedback');feedback.setAttribute('aria-live','polite');
@@ -45,12 +46,29 @@ function openCharacterMemos(target) {
     const undoButton=button('撤销删除',async()=>{if(!undo)return;const next=characterMemoState(chat);if(next.notes.length>=500)throw new Error('备忘录已达到500条');if(!next.notes.some(n=>n.id===undo.note.id))next.notes=[...next.notes,undo.note];if(undo.block)next.blocked=next.blocked.filter(b=>b!==undo.block);await saveCharacterMemoState(owner,next);undo=null;});undoButton.hidden=true;actions.append(undoButton);
     const diagnostic=node('details','memo-diagnostics');diagnostic.append(node('summary','','本轮可用记忆'));const diagnosticText=node('p');diagnostic.append(diagnosticText);
     const capacity=node('p','memo-feedback'),similar=node('details','memo-diagnostics'),similarList=node('div');similar.append(node('summary','','相近记录'),node('p','','仅按文字相近提示，请核对否定、时间和人物。不会自动合并。'),button('检查相近记录',()=>{const hints=findSimilarCharacterMemos(chat);similarList.replaceChildren();for(const hint of hints){const row=node('section');row.append(node('p','',hint.first.fact+'\n'+hint.second.fact),button('查看第一条',()=>view(hint.first)),button('查看第二条',()=>view(hint.second)));similarList.append(row);}if(!hints.length)similarList.append(node('p','','未找到明显相近记录'));}),similarList);
+    const semantic=node('details','memo-diagnostics'),semanticStatus=node('p'),semanticList=node('div'),semanticRun=node('button','','检查语义相近'),semanticCancel=node('button','','取消检查');
+    semanticRun.type=semanticCancel.type='button';semanticCancel.hidden=true;semanticStatus.setAttribute('aria-live','polite');
+    semantic.append(node('summary','','语义相近检查'),node('p','','手动检查时，将所选或最近50条有效记录发送到向量API。只给建议，不改记录。'));
+    const semanticToggle=toggle('semanticHints','允许语义相近检查');semantic.append(semanticToggle.parentElement,semanticRun,semanticCancel,semanticStatus,semanticList);
+    semanticCancel.onclick=()=>semanticController?.abort();
+    semanticRun.onclick=async()=>{
+        if(semanticController||busy)return;
+        const controller=new AbortController();semanticController=controller;semanticRun.disabled=true;semanticCancel.hidden=false;semanticList.replaceChildren();semanticStatus.textContent='正在检查…';
+        try{
+            guard();const report=await findSemanticCharacterMemos(chat,{...(selection.size?{ids:[...selection]}:{}),signal:controller.signal,onProgress:p=>{if(d.panel.isConnected)semanticStatus.textContent=`正在检查 ${p.completed}/${p.total}`;}});
+            guard();if(!d.panel.isConnected)return;
+            semanticStatus.textContent=`已检查${report.scanned}条${report.scope==='selected'?'所选':'最近'}有效记录 · ${report.pairs.length}组相近提示`;
+            for(const hint of report.pairs){const row=node('section');row.append(node('p','',hint.first.fact+'\n'+hint.second.fact),node('p','',hint.polarityDiffers?'含肯定与否定差异，可能表达相反含义':'请核对人物、时间与原话，相近不代表同一事实'));
+                for(const [label,item]of [['查看第一条',hint.first],['查看第二条',hint.second]])row.append(button(label,()=>{const live=characterMemoState(chat).notes.find(n=>n.id===item.id);if(!live||live.fact!==item.fact)throw new Error('记录已变化，请重新检查');view(live);}));semanticList.append(row);}
+        }catch(error){if(d.panel.isConnected)semanticStatus.textContent=error.name==='AbortError'?'检查已取消或来源、配置已变化':error.message;}
+        finally{if(semanticController===controller)semanticController=null;semanticRun.disabled=false;semanticCancel.hidden=true;}
+    };
     const legacy=button('模拟便签',()=>{guard();d.dismiss();if(chat.peekData?.memos?.memos){renderMemosList(chat.peekData.memos.memos);switchScreen('peek-memos-screen');}else generateAndRenderPeekContent('memos',{forceRefresh:true});});
     const identity=node('div','memo-identity'),avatar=node('span','draft-avatar',(chat.remarkName||chat.realName||'角').slice(0,1));
     identity.append(avatar,node('span','',chat.remarkName||chat.realName),node('small','',chat.archives?.find(a=>a.id===owner.archive)?.name||'当前存档'));
     const batch=node('details','memo-batch');batch.append(node('summary','','批量管理'),filter,actions);
     const main=node('section','memo-main');main.append(identity,tools,list,batch);
-    const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,similar,legacy);
+    const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,similar,semantic,legacy);
     const footer=node('footer','memo-footer'),done=node('button','panel-primary','完成');done.type='button';done.hidden=true;
     run.textContent='整理聊天';add.classList.add('panel-primary');footer.append(run,add,done);
     const head=d.panel.querySelector('.message-forward-header,header'),heading=head?.querySelector('strong,h2'),settingsButton=node('button','sheet-aux');settingsButton.type='button';settingsButton.setAttribute('aria-label','备忘录设置');
@@ -60,7 +78,7 @@ function openCharacterMemos(target) {
     done.onclick=()=>{try{showSettings(false);}catch(error){feedback.textContent=error.message;}};
     head?.append(settingsButton);body.append(feedback,main,settingsPage);d.panel.append(body,footer);
     function render(){
-        const s=characterMemoSettings(chat);enabled.checked=s.enabled;auto.checked=s.automatic;context.checked=s.useContext;mode.value=s.mode;api.value=s.apiSource;run.disabled=!s.enabled;auto.disabled=s.mode==='manual';
+        const s=characterMemoSettings(chat);enabled.checked=s.enabled;auto.checked=s.automatic;context.checked=s.useContext;semanticToggle.checked=s.semanticHints;mode.value=s.mode;api.value=s.apiSource;run.disabled=!s.enabled;auto.disabled=s.mode==='manual';
         const failure=characterMemoFailures.get(JSON.stringify([chat.id,owner.archive,owner.persona]));if(failure&&!feedback.textContent)feedback.textContent=failure.message;
         undoButton.hidden=!undo;
         ignored.querySelectorAll(':scope > div').forEach(el=>el.remove());

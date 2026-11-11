@@ -64,6 +64,19 @@ function harness() {
     return state;
 }
 
+test('director preview never synthesizes or plays audio and reuses its plan on later playback',async()=>{
+    const h=harness(),b=bubble();h.db.minimaxTtsSettings.director={enabled:true,endpoint:'https://director.test/v1',apiKey:'fake-director',model:'test'};
+    let directorCalls=0,speechCalls=0;h.fetch=async url=>{if(String(url).includes('director.test')){directorCalls++;return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({emotion:'calm',speedMultiplier:.9,pauses:[{after:'你好，',seconds:.4}]})}}],usage:{prompt_tokens:7,completion_tokens:3}})};}speechCalls++;return reply();};
+    const p=await h.tts.previewPlan(b,'你好，明天见。');assert.equal(p.segments.length,1);assert.equal(p.segments[0].speed,.9);assert.equal(p.segments[0].pauses[0].seconds,.4);assert.equal(h.sounds.length,0);assert.equal(speechCalls,0);
+    await h.tts.play(b,'你好，明天见。');assert.equal(directorCalls,1);assert.equal(speechCalls,1);h.tts.stop();
+});
+test('director preview rejects stale settings and already cancelled requests',async()=>{
+    const h=harness(),b=bubble();h.db.minimaxTtsSettings.director={enabled:true,endpoint:'https://director.test/v1',apiKey:'fake-director',model:'test'};
+    const pending=deferred();h.fetch=()=>pending.promise;const request=h.tts.previewPlan(b,'你好，明天见。');h.db.minimaxTtsSettings.speed=1.2;
+    pending.resolve({ok:true,json:async()=>({choices:[{message:{content:'{"emotion":"calm"}'}}]})});await assert.rejects(request,/变化|取消/);assert.equal(h.sounds.length,0);
+    const controller=new AbortController();controller.abort();await assert.rejects(h.tts.previewPlan(b,'你好',undefined,controller.signal),/取消/);
+});
+
 test('voice playback suspends music, and pausing or blocked audio releases it once', async () => {
     const h=harness(), b=bubble();let suspended=0,resumed=0;
     h.window.UvUMusic={player:{suspendVoice(){suspended++;let used=false;return async()=>{if(!used){used=true;resumed++;}};}}};
