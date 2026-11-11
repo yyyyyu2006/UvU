@@ -7,7 +7,9 @@
     const allowed = el => el.id === 'char-status-overlay' || el.matches('.feature-dialog') || !!el.querySelector('.mcp-settings,.derived-settings,.resource-health');
     const isolated = new Map();
     let isolationRoot = null, syncing = false;
-    const topDialog = () => [...document.querySelectorAll('.feature-dialog,.message-forward-overlay,#char-status-overlay.visible')]
+    // The native rescue window must remain interactive above a derived dialog.
+    const overlaySelector = '.feature-dialog,.message-forward-overlay,#char-status-overlay.visible,#global-rescue-panel';
+    const topDialog = () => [...document.querySelectorAll(overlaySelector)]
         .filter(el => el.getClientRects().length).pop() || null;
     function restoreBackground() {
         for (const [element, before] of isolated) {
@@ -70,7 +72,7 @@
         sync(); const root = [...records.keys()].filter(active).pop();
         if (!root) return;
         // An unmanaged overlay (for example the editor) owns its own keys.
-        const topOverlay = [...document.querySelectorAll('.feature-dialog,.message-forward-overlay,#char-status-overlay.visible')].filter(el => el.getClientRects().length).pop();
+        const topOverlay = topDialog();
         if (topOverlay && topOverlay !== root) return;
         // The calendar range owns the first Escape; a later Escape closes it.
         if (event.key === 'Escape' && event.target.closest?.('.uvu-calendar .calendar-month.is-range-mode')) return;

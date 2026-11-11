@@ -244,7 +244,12 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
-        if (e.target.closest?.('.feature-dialog, .relationship-dialog')) return;
+        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, #global-rescue-panel')) {
+            // Dialog controls are ordinary interactions, not background rescue taps.
+            globalRescueClickCount = 0;
+            globalRescueLastClickTime = 0;
+            return;
+        }
         const now = Date.now();
         const gap = now - globalRescueLastClickTime;
         

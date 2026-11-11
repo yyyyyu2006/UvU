@@ -93,10 +93,12 @@ async function runCharacterMemos(chat, force = false) {
         const text = String(raw).trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
         if (text.length > 32000) throw new Error('备忘录响应过大，未保存');
         const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed.notes)) throw new Error('备忘录响应格式错误，未保存');
+        // Some models follow the empty-array instruction literally; evidence checks still apply.
+        const notes = Array.isArray(parsed) ? parsed : parsed?.notes;
+        if (!Array.isArray(notes)) throw new Error('备忘录响应格式错误，未保存');
         const next = characterMemoState(chat), commitSettings=characterMemoSettings(chat); next.notes = [...next.notes];
         let added = 0;
-        for (const entry of parsed.notes.slice(0,8)) {
+        for (const entry of notes.slice(0,8)) {
             const fact = String(entry.fact || '').trim().slice(0,400), content = String(entry.note || fact).trim().slice(0,600);
             const subject = entry.subject;
             if (!fact || !['user','char'].includes(subject) || characterMemoSecret(fact + content)) continue;
