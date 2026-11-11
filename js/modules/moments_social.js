@@ -95,7 +95,7 @@
     const snapshotText = chat => {
         const config = settings(chat); delete config.revision;
         const posts = view(chat).map(post => ({ ...post, comments: post.comments.map(comment => { const copy = { ...comment }; delete copy.read; return copy; }) }));
-        return JSON.stringify([chat.persona, chat.realName, chat.myName, config, posts]);
+        return JSON.stringify([chat.persona, chat.realName, chat.myName, chat.myPersona, config, posts]);
     };
     function capture(chat, postId) { return { chat, archiveId: chat.activeArchiveId, history: chat.history, postId, stamp: snapshotText(chat) }; }
     function isCurrent(scope) { return present(scope.chat) && scope.chat.activeArchiveId === scope.archiveId && scope.chat.history === scope.history && scope.stamp === snapshotText(scope.chat) && (!scope.postId || view(scope.chat).some(post => post.id === scope.postId)); }

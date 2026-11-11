@@ -1072,6 +1072,7 @@ async function requestAutoMemory(chat, type, sources, kind, settings, control) {
     const timeout = setTimeout(() => controller.abort(), 90000);
     try {
         const raw = await fetchAiResponse(config, request.requestBody, request.headers, request.endpoint, false, { signal: controller.signal });
+        if (controller.signal.aborted || control?.cancelled) { const error = new Error('总结请求已取消或超时，原文保留'); error.name = 'AbortError'; throw error; }
         return parseAutoMemoryResponse(raw, Boolean((kind === 'summary' ? settings.summaryPrompt : settings.mergePrompt).trim()));
     } finally { clearTimeout(timeout); if (control) control.controller = null; }
 }
@@ -1165,6 +1166,11 @@ async function saveAutoMemoryReview(chat, draft, { action = 'approve', fields = 
         };
         if (chat.activeArchiveId === archive) restore(chat);
         restore(chat.archives?.find(item => item.id === archive)?.data);
+        // A completed second write may already be durable when cancellation or
+        // an archive switch is detected. Persist the restored review as well.
+        try { await saveData(); } catch (_) {
+            throw new Error('审核恢复状态未能保存，请暂时不要刷新或关闭页面。检查存储后在原存档重新审核；下次打开时请核对审核状态。');
+        }
         throw error;
     } finally { autoMemoryPending.delete(draft.id); }
     return next;
@@ -1198,6 +1204,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
     const execute = async () => {
         let count = 0;
         let completedParts = 0;
+        let retainedReview = false;
         try {
             const steps = rangePlan ? (rangePlan.batches.length ? rangePlan.batches.flatMap(sources => [{ kind: 'summary', sources }, { kind: 'merged' }]) : [{ kind: 'merged' }])
                 : [{ kind: 'summary' }, { kind: 'merged' }];
@@ -1252,9 +1259,12 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
                     if (!unchanged()) throw new Error('保存期间聊天已改变，本次结果未启用。');
                 } catch (error) {
                     journal.autoMemory.committed = false;
-                    if (chat.activeArchiveId === archiveId) chat.memoryJournals = (chat.memoryJournals || []).filter(item => item.id !== journal.id);
-                    const archive = chat.archives?.find(item => item.id === archiveId);
-                    if (archive?.data?.memoryJournals) archive.data.memoryJournals = archive.data.memoryJournals.filter(item => item.id !== journal.id);
+                    retainedReview = Boolean(settings.summaryQualityReviewEnabled && unchanged() && (chat.memoryJournals || []).includes(journal));
+                    if (!retainedReview) {
+                        if (chat.activeArchiveId === archiveId) chat.memoryJournals = (chat.memoryJournals || []).filter(item => item.id !== journal.id);
+                        const archive = chat.archives?.find(item => item.id === archiveId);
+                        if (archive?.data?.memoryJournals) archive.data.memoryJournals = archive.data.memoryJournals.filter(item => item.id !== journal.id);
+                    }
                     // 尽力持久化回滚；草稿即使残留也不会覆盖原文。
                     try { await saveData(); } catch (_) { /* 下一次成功保存会清理回滚状态。 */ }
                     throw error;
@@ -1269,11 +1279,12 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
             return { count, completedParts, skipped: rangePlan?.skipped || 0 };
         } catch (error) {
             // 不显示请求体、密钥或原始 API 错误响应。
-            const safeError = control.cancelled ? '整理已停止，已成功保存的记忆保留，未完成楼层保持原文。' : /API Error|Failed to|fetch|network|abort/i.test(error.message || '')
+            let safeError = control.cancelled ? '整理已停止，已成功保存的记忆保留，未完成楼层保持原文。' : /API Error|Failed to|fetch|network|abort/i.test(error.message || '')
                 ? '总结 API 请求失败或超时，请检查配置后重试；本次未压缩楼层保留。' : error.message;
+            if (retainedReview) safeError += ' 待审稿已保留在当前页面，请检查存储并重新审核；原文继续保留。';
             autoMemoryStatus.set(key, { text: safeError, error: true, at: Date.now() });
             if (stillCurrent()) refreshAutoMemoryViews(chat, type);
-            return { count, completedParts, error: safeError, cancelled: control.cancelled };
+            return { count, completedParts, error: safeError, cancelled: control.cancelled, retainedReview };
         } finally { autoMemoryJobs.delete(key); autoMemoryControls.delete(key); renderAutoMemoryStatus(); }
     };
     execute().then(finish, error => { autoMemoryJobs.delete(key); finish({ count: 0, error: error.message }); });

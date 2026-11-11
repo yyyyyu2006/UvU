@@ -398,7 +398,7 @@ function setupStorageAnalysisScreen() {
 }
 
 // 将设定和运行数据分开；存档也遵循同一勾选范围。
-const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'memoryVectorIndex', 'lastUserMessageTimestamp',
+const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'characterMemos', 'memoryVectorIndex', 'lastUserMessageTimestamp',
     'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship', 'avatarAutonomy', 'environmentProfile'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
 const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
@@ -1146,9 +1146,11 @@ async function handleExport() {
             if (key !== 'characters' && key !== 'groups') exportData.modules[key] = storageClone(exportData.modules[key]);
         }
         await Promise.all([
-            exportSelection.chats && exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.portableExport(exportData.modules) : undefined,
+            // Media captures live galleries synchronously before any external
+            // index hydration can yield or switch the active archive.
+            exportSelection.other ? storageExportMediaCache().then(cache => { exportData.modules.mediaCache = cache; }) : undefined,
             exportSelection.fonts ? storageExportFonts().then(fonts => { exportData.modules.customFonts = fonts; }) : undefined,
-            exportSelection.other ? storageExportMediaCache().then(cache => { exportData.modules.mediaCache = cache; }) : undefined
+            exportSelection.chats && exportOptions.includeVectorIndex && typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.portableExport(exportData.modules) : undefined
         ]);
         if (typeof storageApplyExportOptions === 'function') exportData.modules = storageApplyExportOptions(exportData.modules, exportOptions);
         exportData.backupManifest = { version: 1, categories: Object.keys(exportSelection).filter(key => exportSelection[key]),

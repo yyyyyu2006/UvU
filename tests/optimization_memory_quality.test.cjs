@@ -69,10 +69,44 @@ test('approval rollback repairs the original archive after a switch and leaves t
     const { c, chat, run } = fixture(); await run(); const draft = chat.memoryJournals[0];
     chat.archives = [{ id: 'a', data: { memoryJournals: [] } }]; let saves = 0;
     c.saveData = async () => {
+        if (chat.activeArchiveId !== 'a') return;
         chat.archives[0].data.memoryJournals = JSON.parse(JSON.stringify(chat.memoryJournals));
         if (++saves === 2) { chat.activeArchiveId = 'b'; chat.history = []; chat.memoryJournals = [{ id: 'new-branch' }]; }
     };
     await assert.rejects(c.saveAutoMemoryReview(chat, draft, { action: 'approve' }), /存档|变化/);
     assert.equal(chat.memoryJournals[0].id, 'new-branch');
     assert.equal(chat.archives[0].data.memoryJournals[0].qualityReview.status, 'pending'); assert.equal(chat.archives[0].data.memoryJournals[0].autoMemory.committed, false);
+});
+
+test('a late successful response after abort cannot replace a pending summary review', async () => {
+    const { c, chat, run } = fixture(); await run(); const draft=chat.memoryJournals[0],control={};
+    c.fetchAiResponse=async()=>{control.controller.abort();return '<title>迟到结果</title><content>不能采用的结果。</content>';};
+    await assert.rejects(c.saveAutoMemoryReview(chat,draft,{action:'retry',control}),/取消|超时/);
+    assert.equal(chat.memoryJournals[0],draft);assert.equal(c.getAutoMemoryState(chat).covered.size,0);
+});
+
+test('an initial review save failure retains the generated draft without another model request', async () => {
+    const { c, chat, run, calls }=fixture();let writes=0;
+    c.saveData=async()=>{if(++writes===1)throw Error('quota');};
+    const result=await run();assert.ok(result.error);assert.equal(chat.memoryJournals.length,1);
+    assert.equal(chat.memoryJournals[0].qualityReview.status,'pending');assert.equal(chat.memoryJournals[0].autoMemory.committed,false);
+    assert.equal(c.getAutoMemoryState(chat).covered.size,0);
+    await run();assert.equal(calls(),1,'retained review avoids billing for identical source floors');
+});
+
+test('cancellation after final approval persistence repairs the durable review state', async () => {
+    const { c, chat, run }=fixture();await run();const control={};let persisted,writes=0;
+    c.saveData=async()=>{persisted=JSON.parse(JSON.stringify(chat.memoryJournals));if(++writes===2)control.cancelled=true;};
+    await assert.rejects(c.saveAutoMemoryReview(chat,chat.memoryJournals[0],{action:'approve',control}),/变化|取消|启用/);
+    chat.memoryJournals=persisted;
+    assert.equal(chat.memoryJournals[0].qualityReview.status,'pending');assert.equal(chat.memoryJournals[0].autoMemory.committed,false);
+    assert.equal(c.getAutoMemoryState(chat).covered.size,0);
+});
+
+test('failed rollback persistence warns that pending review recovery is only in this page', async () => {
+    const { c, chat, run }=fixture();await run();const control={};let writes=0,persisted;
+    c.saveData=async()=>{if(++writes===3)throw Error('quota');persisted=JSON.parse(JSON.stringify(chat.memoryJournals));if(writes===2)control.cancelled=true;};
+    await assert.rejects(c.saveAutoMemoryReview(chat,chat.memoryJournals[0],{action:'approve',control}),/恢复状态未能保存.*不要刷新/);
+    assert.equal(chat.memoryJournals[0].qualityReview.status,'pending');assert.equal(c.getAutoMemoryState(chat).covered.size,0);
+    assert.equal(persisted[0].qualityReview.status,'approved','a failed rollback must not be reported as durably pending');
 });

@@ -8,3 +8,10 @@ test('privacy hides message body or all identifying content without mutating sou
 test('capability report distinguishes missing permission support and page-dependent delivery',()=>{const {context:c}=fixture();assert.equal(c.getMessageNotificationCapabilities().delivery,'page-dependent');assert.equal(c.getMessageNotificationCapabilities().permission,'granted');c.window.isSecureContext=false;assert.equal(c.getMessageNotificationCapabilities().supported,false);});
 
 test('per-chat aggregation is opt-in and does not suppress another chat while service lookup waits',async()=>{const {context:c,shown}=fixture();vm.runInContext('systemNotificationsEnabled=true',c);assert.equal(c.getMessageNotificationPreferences().groupByChat,false);c.saveMessageNotificationPreferences({groupByChat:true,privacy:'private'});const resolvers=[];c.navigator.serviceWorker.getRegistration=()=>new Promise(resolve=>resolvers.push(resolve));const a=c.showSystemMessageNotification('SECRET_A','body','avatar','a','private'),b=c.showSystemMessageNotification('SECRET_B','body','avatar','b','group');for(const resolve of resolvers)resolve({active:{},showNotification:async(...args)=>shown.push(args)});await Promise.all([a,b]);assert.equal(shown.length,2);assert.notEqual(shown[0][1].tag,shown[1][1].tag);assert.doesNotMatch(JSON.stringify(shown.map(x=>x[1].tag)),/SECRET|body|avatar/);assert.equal(c.messageNotificationTag('a','private'),c.messageNotificationTag('a','private'));assert.notEqual(c.messageNotificationTag('same','private'),c.messageNotificationTag('same','group'));});
+
+test('revoking notification permission during service lookup stops the pending real delivery',async()=>{
+ const {context:c,shown}=fixture();vm.runInContext('systemNotificationsEnabled=true',c);let finish;
+ c.navigator.serviceWorker.getRegistration=()=>new Promise(resolve=>finish=resolve);
+ const task=c.showSystemMessageNotification('角色','消息','avatar','a','private');c.Notification.permission='denied';
+ finish({active:{},showNotification:async(...args)=>shown.push(args)});await task;assert.equal(shown.length,0);
+});

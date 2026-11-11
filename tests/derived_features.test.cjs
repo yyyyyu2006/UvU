@@ -26,6 +26,15 @@ test('environment and avatar defaults are disabled and do not make network calls
     assert.equal(requests.length, 0); assert.equal(chat.environmentProfile, undefined);
 });
 
+test('environment result cannot outlive its archive history user identity or owning chat',async()=>{
+    for(const change of [f=>f.chat.activeArchiveId='b',f=>f.chat.history=[],f=>f.chat.myPersona='另一个用户',f=>f.c.db.characters=[]]){
+        const f=fixture();f.c.db.environmentSettings={enabled:true,userLocation:{...shanghai}};f.chat.environmentProfile={aiEnabled:true};
+        let finish;f.c.getEnvironmentWeather=()=>new Promise(resolve=>finish=resolve);f.c.getEnvironmentHolidays=async()=>({days:[]});
+        const pending=f.c.getEnvironmentContext(f.chat);change(f);finish({text:'old weather'});
+        assert.equal(await pending,'');
+    }
+});
+
 test('environment can explicitly use centrally managed read-only MCP tools without legacy initialization', async () => {
     const {c}=fixture();let called;
     c.window.MCPServices={stamp:()=> 'x',call:async(id,name,args,options)=>{called={id,name,args,options};return {text:'{"temperature":18,"text":"晴","observedAt":"2026-11-05T00:00:00Z"}'};}};

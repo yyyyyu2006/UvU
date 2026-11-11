@@ -32,7 +32,21 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
         await editor.getByText('人物 / 日期 / 约定 / 待办对照', { exact: true }).click();
         assert.match(await editor.locator('pre').last().textContent(), /日期线索：未知/);
         await editor.locator('textarea').fill('核对后的去海边看日落约定。');
+        await page.evaluate(() => {
+            window.reviewMessages = []; window.showToast = text => reviewMessages.push(text);
+            window.saveData = async () => { throw new Error('simulated storage failure'); };
+        });
         await editor.getByRole('button', { name: '确认并启用总结', exact: true }).click();
+        await page.waitForFunction(() => reviewMessages.some(text => text.includes('恢复状态未能保存')));
+        assert.match(await page.evaluate(() => reviewMessages.at(-1)), /不要刷新/);
+        assert.equal(await page.evaluate(() => getAutoMemoryState(db.characters[0]).covered.size), 0);
+        assert.equal(await page.evaluate(() => db.characters[0].memoryJournals.find(journal => journal.id === 'draft').qualityReview.status), 'pending');
+        await editor.getByRole('button', { name: '取消', exact: true }).click();
+        await page.locator('.memory-library [data-action="close"]').click();
+        await page.evaluate(() => { window.saveData = async () => {}; openMemoryLibrary(); });
+        await page.getByRole('button', { name: '编辑并确认总结', exact: true }).click();
+        await page.locator('.memory-library').last().locator('textarea').fill('核对后的去海边看日落约定。');
+        await page.locator('.memory-library').last().getByRole('button', { name: '确认并启用总结', exact: true }).click();
         assert.equal(await page.evaluate(() => getAutoMemoryState(db.characters[0]).covered.size), 1);
         assert.ok(await page.getByText('引用：摘要替代', { exact: true }).count());
         await page.locator('.memory-library-migration > summary').click();
@@ -47,6 +61,6 @@ const { chromium } = require(path.resolve(__dirname, '../../uvu-verification-dep
             const card = await page.locator('.memory-library > .feature-dialog-card').first().boundingBox();
             assert.ok(card.x >= 0 && card.x + card.width <= width + 1, JSON.stringify(card));
         }
-        assert.deepEqual(errors, []); console.log('PASS memory 20-item pagination/search, pending draft edit+approve, all-archive model rebuild preview, 320/390/768 dialog containment.');
+        assert.deepEqual(errors, []); console.log('PASS memory 20-item pagination/search, failed approval warning+pending recovery+reopen+approve, all-archive model rebuild preview, 320/390/768 dialog containment.');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

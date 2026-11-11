@@ -82,3 +82,12 @@ final result: passed for the six requested amendments and implemented sheet layo
 - `npm test`：1125／1125；`memo_review_priority_browser.cjs`、`memo_modal_browser.cjs`、`memo_interaction_browser.cjs`、`approved_sheets_browser.cjs`、`browser/mcp_browser.cjs` 通过。后者修正缺失的当前弹窗样式和旧导航选择器。
 - SDK 1.24.3 JSON／SSE 两项通过；合成向量样本和桌面性能基准已跑，不能替代手机／真实模型质量验收。
 - 未更改原版 CSS、基础提示词、回复流程、音乐 UI、导出 ID Card 或发送卡片。修改范围、基准及待办见 `docs/derived-optimization-progress-2026-11-11.md`。
+
+## 补充：总结恢复与数据隔离 · 2026-11-11
+
+- 本批没有 CSS 修改；记忆管理现有设置中补充保存故障说明，六个脚本缓存版本更新。
+- 修复总结取消后的迟到响应、待审稿初次保存失败丢失、最终确认后取消未持久化恢复；恢复写入再次失败时明确说明不要刷新，未把当前页面的恢复误报为磁盘已保存。
+- 角色设定备份排除私人备忘录，聊天备份保留当前与历史存档记录；相册快照提前捕获。环境资料和 NPC 互动补用户／存档归属，系统通知投递前复查权限。
+- `npm test` 1134／1134；`optimization_memory_browser.cjs`、`memo_modal_browser.cjs`、`approved_sheets_browser.cjs`、`browser_notification_environment_optimizations.cjs` 通过。备份历史存档及分类导入的补充断言 16／16 通过。
+- 查看本次浏览器截图；保持当前弹窗布局、内滚动、全屏酒馆、原生 Token、内嵌语音／备份及音乐像素隔离。没有修改 1900 原版美化、聊天组装与回复流程、音乐 UI、导出 ID Card、发送文件／一起听邀请卡片。
+- 多窗口统一通知去重、字体／媒体／向量跨库原子快照及真实手机／外部账号服务尚未验收。此次修复不能代表完整审查清单全部完成，推送也不代表 Pages／Render 已部署。

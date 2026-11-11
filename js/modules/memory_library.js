@@ -195,6 +195,7 @@ function openMemoryLibrary() {
         tuningInputs[key] = input; wrap.append(input); tuning.append(wrap);
     }
     tuning.append(element('p', '限额仅作用于向量派生内容；原收藏与自动总结注入继续使用原规则。手动续建不受每轮批次限额约束，可随时暂停。', 'feature-help'));
+    tuning.append(element('p', '待审总结可编辑确认、重试或放弃。保存报错时先检查存储，不要直接刷新；待审稿可能仅保留在当前页面，原文继续保留。', 'feature-help'));
     tuning.append(button('保存记忆选项', async () => {
         try {
             assertCurrent(); const before = chat.autoMemorySettings;

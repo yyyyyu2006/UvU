@@ -178,7 +178,7 @@ async function showSystemMessageNotification(title, body, icon, chatId, chatType
     const current = () => grouped ? systemChatNotificationSequences.get(key) === sequence : sequence === systemNotificationSequence;
     try {
         const registration = await getMessageNotificationRegistration();
-        if (!current() || !systemNotificationsEnabled || document.visibilityState !== 'hidden' || !shouldShowMessageNotification(chatId,chatType)) return;
+        if (!current() || !systemNotificationsEnabled || Notification.permission !== 'granted' || document.visibilityState !== 'hidden' || !shouldShowMessageNotification(chatId,chatType)) return;
         const display=getMessageNotificationPresentation(title,body,icon,chatId,chatType);
         await registration.showNotification(display.title, { body:display.body, icon:display.icon, tag: grouped ? messageNotificationTag(chatId,chatType) : 'uvu-incoming-message',
             data: { chatId, chatType }, timestamp: Date.now() });

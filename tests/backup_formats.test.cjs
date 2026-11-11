@@ -35,6 +35,31 @@ test('JSON export needs no compression API and contains only selected categories
     assert.equal(data.modules.apiSettings, undefined);
 });
 
+test('contact-only backup excludes private memo evidence while chat backup preserves it', async () => {
+    const f=fixture();f.element('storage-export-format').value='json';
+    f.c.db.characters[0].characterMemos={notes:[{id:'memo',fact:'private habit',sources:[{quote:'private evidence'}]}]};
+    f.c.db.characters[0].archives=[{id:'old',data:{characterMemos:{notes:[{id:'archived-memo',fact:'archived private habit'}]}}}];
+    await f.c.handleExport();const contacts=JSON.parse(await f.blobs[0].text());
+    assert.equal(contacts.modules.characters[0].characterMemos,undefined);
+    assert.equal(contacts.modules.characters[0].archives,undefined);
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "chats");',f.c);
+    await f.c.handleExport();const chats=JSON.parse(await f.blobs[1].text());
+    assert.equal(chats.modules.characters[0].characterMemos.notes[0].fact,'private habit');
+    assert.equal(chats.modules.characters[0].archives[0].data.characterMemos.notes[0].fact,'archived private habit');
+    const imported=f.c.storagePrepareImport({contacts:true},{characters:[{id:'c',persona:'updated',characterMemos:{notes:[{fact:'unselected import'}]}}]});
+    assert.equal(imported.characters[0].persona,'updated');assert.equal(imported.characters[0].characterMemos.notes[0].fact,'private habit');
+    assert.equal(imported.characters[0].archives[0].data.characterMemos.notes[0].fact,'archived private habit');
+    assert.equal(f.c.db.characters[0].characterMemos.notes[0].sources[0].quote,'private evidence');
+});
+
+test('selected media galleries are frozen before asynchronous vector materialization', async () => {
+    const f=fixture();f.element('storage-export-format').value='json';f.c.db.characters[0].gallery=[{url:'before'}];
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = ["chats","other"].includes(key));',f.c);
+    f.c.VectorMemoryTools={portableExport:async()=>{f.c.db.characters[0].gallery=[{url:'after'}];}};
+    await f.c.handleExport();const data=JSON.parse(await f.blobs[0].text());
+    assert.equal(data.modules.mediaCache.characters[0].gallery[0].url,'before');
+});
+
 test('chat export materializes independent vector cache only when chat and index export selected', async () => {
     const f = fixture(); let calls = 0;
     f.c.VectorMemoryTools = { portableExport: async modules => { calls++; modules.characters[0].memoryVectorIndex = { fromCache: true }; } };

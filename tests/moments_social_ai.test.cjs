@@ -18,3 +18,10 @@ test('summary is a preview, not an automatic memory injection',async()=>{const {
 test('opening a new normal reply cannot schedule interactions for old posts',async()=>{const {api,chat,calls}=await enable(fixture());api.afterReply(chat,new Set(['p']));await new Promise(setImmediate);assert.equal(calls.length,0);});
 test('archive switch during the initial attempt save cannot launch an old trigger in the new archive',async()=>{const {api,c,chat,calls}=await enable(fixture());let release;c.saveData=()=>new Promise(resolve=>release=resolve);const job=api.generate(chat,'p',{triggerId:'old-trigger'});assert.equal(typeof release,'function');chat.activeArchiveId='b';chat.history=[];chat.moments=[{id:'p',author:'角色',content:'另一个存档',comments:[],likes:[]}];release();await assert.rejects(job,/变化|取消/);assert.equal(calls.length,0);assert.equal(chat.moments[0].comments.length,0);assert.equal(chat.moments[0].socialBatches,undefined);});
 test('persona or target changes during the initial save also cancel before any request',async()=>{for(const change of [chat=>chat.persona='已修改的人设',chat=>chat.moments[0].content='修改后的正文']){const {api,c,chat,calls}=await enable(fixture());let release;c.saveData=()=>new Promise(resolve=>release=resolve);const job=api.generate(chat,'p');change(chat);c.saveData=async()=>{};release();await assert.rejects(job,/变化|取消/);assert.equal(calls.length,0);}});
+
+test('changing the user persona while NPC comments are generating discards the old interaction',async()=>{
+ const {api,c,chat}=await enable(fixture());let finish;c.fetchAiResponse=()=>new Promise(resolve=>finish=resolve);
+ const task=api.generate(chat,'p');for(let i=0;!finish&&i<10;i++)await new Promise(setImmediate);
+ chat.myPersona='另一位用户的人设';finish(JSON.stringify({action:'comment',content:'旧身份下的回复',replyToCommentId:null}));
+ await assert.rejects(task,/变化|取消/);assert.equal(chat.moments[0].comments.length,0);
+});
