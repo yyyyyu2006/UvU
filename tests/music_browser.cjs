@@ -122,6 +122,19 @@ const server = http.createServer((req,res) => {
         // Captured private-chat destination, music card and explicit invitation acceptance.
         await page.evaluate(()=>{openChatRoom('music-char','private'); document.getElementById('share-music-btn').click();});
         await page.getByRole('button',{name:'展开播放器',exact:true}).click();await page.getByRole('button',{name:'一起听',exact:true}).click();
+        await page.evaluate(()=>{window.originalMusicLyrics=UvUMusic.lyrics;UvUMusic.lyrics=async()=>{throw Error('公共音乐源连接失败，请检查网络或切换账号源');};});
+        await page.getByRole('button',{name:'读取歌词',exact:true}).click();
+        await page.getByText('歌词读取失败，可重试或直接发送邀请',{exact:true}).waitFor();
+        assert.equal(await page.getByRole('button',{name:'重试读取歌词',exact:true}).isEnabled(),true);
+        assert.equal(await page.getByRole('button',{name:'发送邀请',exact:true}).isEnabled(),true,'lyric failure never blocks invitation');
+        await page.getByRole('textbox',{name:'分享歌词片段',exact:true}).fill('手动填写的歌词');
+        await page.evaluate(()=>{UvUMusic.lyrics=()=>new Promise(resolve=>window.resolveShareLyrics=resolve);});
+        await page.getByRole('button',{name:'重试读取歌词',exact:true}).click();
+        await page.getByRole('textbox',{name:'分享歌词片段',exact:true}).fill('读取时仍可编辑');
+        await page.evaluate(()=>window.resolveShareLyrics({lyric:'[00:00]返回的歌词'}));
+        await page.getByText('已保留手动填写的歌词',{exact:true}).waitFor();
+        assert.equal(await page.getByRole('textbox',{name:'分享歌词片段',exact:true}).inputValue(),'读取时仍可编辑');
+        await page.evaluate(()=>{UvUMusic.lyrics=window.originalMusicLyrics;delete window.originalMusicLyrics;delete window.resolveShareLyrics;});
         await page.getByRole('button',{name:'读取歌词',exact:true}).click();await page.getByRole('button',{name:'发送邀请',exact:true}).click();
         await page.waitForFunction(()=>db.characters[0].history.some(m=>m.music?.invitation));
         assert.equal(await page.locator('.uvu-music-card .uvu-music-transport button').count(),5,'shared music has five compact transport controls');

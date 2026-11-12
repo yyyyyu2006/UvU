@@ -77,7 +77,24 @@
             const preview = el('div', undefined, 'um-track'), info = el('div', undefined, 'um-track-info'); info.append(el('strong', track.title), el('small', track.artists.join(' / '))); preview.append(cover(track), info); body.append(preview);
             const lyrics = el('textarea'); lyrics.rows = 4; lyrics.maxLength = 2000; lyrics.placeholder = '附上歌词片段（可选）'; lyrics.setAttribute('aria-label', '分享歌词片段');
             const status = el('p', '', 'um-muted'); status.setAttribute('aria-live', 'polite');
-            if (track.provider !== 'local') body.append(button('读取歌词', async () => { status.textContent = '正在读取…'; try { const data = await M.lyrics(track, controller.signal); if (alive) { lyrics.value = root.UvUMusicLyrics.format(data.lyric).slice(0, 2000); status.textContent = lyrics.value ? '可删改后发送' : '暂无歌词'; } } catch (e) { if (alive) status.textContent = e.message; } }));
+            if (track.provider !== 'local') {
+                const read = button('读取歌词', async () => {
+                    const draft = lyrics.value; status.textContent = '正在读取…'; status.removeAttribute('title');
+                    try {
+                        const data = await M.lyrics(track, controller.signal);
+                        if (!alive) return;
+                        if (lyrics.value === draft) { lyrics.value = root.UvUMusicLyrics.format(data.lyric).slice(0, 2000); status.textContent = lyrics.value ? '可删改后发送' : '暂无歌词'; }
+                        else status.textContent = '已保留手动填写的歌词';
+                        read.textContent = '读取歌词'; read.setAttribute('aria-label', '读取歌词'); read.title = '读取歌词';
+                    } catch (error) {
+                        if (!alive) return;
+                        status.textContent = invite ? '歌词读取失败，可重试或直接发送邀请' : '歌词读取失败，可重试或直接分享';
+                        status.title = error.message;
+                        read.textContent = '重试读取歌词'; read.setAttribute('aria-label', '重试读取歌词'); read.title = '重试读取歌词';
+                    }
+                });
+                body.append(read);
+            }
             body.append(lyrics, status, button(invite ? '发送邀请' : '发送', async () => {
                 const sent = await root.UvUMusicChat.share(track, { invite, lyrics: lyrics.value.trim(), ...(capturedTarget ? { target: capturedTarget } : {}) });
                 if (sent && alive) { closeSheet(); toast(invite ? '已发送一起听邀请' : '已分享音乐'); if (capturedTarget && typeof isChatSendTargetValid === 'function' && isChatSendTargetValid(capturedTarget) && typeof openChatRoom === 'function') openChatRoom(capturedTarget.chatId, 'private'); }

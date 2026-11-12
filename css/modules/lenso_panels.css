@@ -420,10 +420,11 @@
 .uvu-lenso-panel.uvu-mono-panel .fusion-memory-options > details > summary { min-height:48px;padding:14px 0 !important;font-size:14px;line-height:20px; }
 .uvu-lenso-panel.uvu-mono-panel .fusion-memory-options > details[open] { padding-bottom:16px !important; }
 .uvu-lenso-panel.shared-document-dialog .mono-page-nav > .fusion-file-help { order:3;margin-left:auto !important; }
-#minimax-tts-settings .minimax-speech-group { padding:0 16px;border:1px solid var(--border-color,#e5e5ea);border-radius:18px;background:transparent; }
+#api-settings-screen #minimax-tts-settings { background-color:#fff;border:0;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.04); }
+#minimax-tts-settings .minimax-speech-group { padding:0 16px;border:0;border-radius:16px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.04); }
 #minimax-tts-settings .minimax-speech-group > details { padding:0 !important;margin:0 !important;border:0 !important;border-radius:0 !important;background:transparent !important;box-shadow:none !important; }
 #minimax-tts-settings .minimax-speech-group > details + details { border-top:1px solid var(--border-color,#e5e5ea) !important; }
-#minimax-tts-settings .minimax-speech-group > details > summary { min-height:48px;padding:14px 0 !important;font-size:14px;line-height:20px; }
+#minimax-tts-settings .minimax-speech-group > details > summary { min-height:48px;padding:14px 0 !important;font-size:14px;line-height:20px;color:#666;font-weight:400; }
 #minimax-tts-settings .minimax-speech-group > details[open] { padding-bottom:16px !important; }
 #minimax-tts-settings.uvu-fusion-inline { --fusion-blue:#d4e5ef;--fusion-ink:#334f65;background:transparent; }
 #minimax-tts-settings.uvu-fusion-inline :is(.draft-voice-workspace,.draft-scroll,.minimax-director-settings,.minimax-settings-section) { background:transparent;border-radius:0;box-shadow:none; }

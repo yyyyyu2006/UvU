@@ -207,7 +207,11 @@ const server = http.createServer((req, res) => {
         const voice=page.locator('#minimax-tts-settings');await voice.scrollIntoViewIfNeeded();
         assert.equal(await voice.evaluate(el=>el.classList.contains('uvu-fusion-inline')),true);
         assert.equal(await voice.evaluate(el=>el.classList.contains('mono-page')),false,'MiniMax remains in the native API page');
-        assert.equal(await voice.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+        const nativeStyle=await page.locator('#api-settings-screen .kkt-group').filter({hasNot:page.locator('#minimax-tts-settings')}).first().evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};});
+        const voiceStyle=await voice.evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};});
+        assert.deepEqual(voiceStyle,nativeStyle,'MiniMax matches native API group surface and corners');
+        assert.deepEqual(await page.locator('.minimax-speech-group').evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};}),nativeStyle,'speech group uses native card finish');
+        for(const style of await page.locator('.minimax-speech-group > details > summary').evaluateAll(items=>items.map(el=>({color:getComputedStyle(el).color,weight:getComputedStyle(el).fontWeight}))))assert.deepEqual(style,{color:'rgb(102, 102, 102)',weight:'400'},'speech summaries are regular gray');
         assert.equal(await page.locator('#minimax-speech-advanced > .minimax-speech-group > details').count(),4,'four MiniMax sections share one group');
         const voiceRows=await page.locator('.minimax-speech-group > details > summary').evaluateAll(items=>items.map(el=>el.getBoundingClientRect().height));for(const h of voiceRows)assert(h<=52,'compact MiniMax rows');
         await page.screenshot({path:path.join(out,'voice-inline.png')});

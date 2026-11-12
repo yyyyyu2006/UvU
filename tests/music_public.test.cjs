@@ -103,6 +103,23 @@ test('lyrics decode the published escaped newlines and stay plain bounded text',
     assert.equal(result.lyric,'[00:00]one\n[00:01]two'); assert.equal(result.translation,'译文');
     await h.api.lyrics({provider:'gd-netease',id:row.id}); assert.equal(h.calls.length,1);
 });
+test('lyrics retry one transient failure, cache success, and never retry rate limits or invalid data', async () => {
+    const h=fixture();let attempt=0;
+    h.reply=async()=>{if(++attempt===1)throw new TypeError('Failed to fetch');return {ok:true,status:200,headers:{get:()=>null},text:async()=>JSON.stringify({lyric:'[00:00]recovered'})};};
+    assert.equal((await h.api.lyrics({provider:'gd-netease',id:row.id})).lyric,'[00:00]recovered');
+    await h.api.lyrics({provider:'gd-netease',id:row.id});assert.equal(h.calls.length,2);
+    const down=fixture();down.status=503;await assert.rejects(down.api.lyrics({provider:'gd-netease',id:row.id}),/503/);assert.equal(down.calls.length,2);
+    const limited=fixture();limited.status=429;await assert.rejects(limited.api.lyrics({provider:'gd-netease',id:row.id}),/频繁/);assert.equal(limited.calls.length,1);
+    const invalid=fixture();invalid.body=[];await assert.rejects(invalid.api.lyrics({provider:'gd-netease',id:row.id}),/格式/);assert.equal(invalid.calls.length,1);
+});
+
+test('closing during lyric retry cancels the wait without another request', async () => {
+    const h=fixture(),controller=new AbortController();h.reply=async()=>{throw new TypeError('network');};
+    const result=h.api.lyrics({provider:'gd-netease',id:row.id},controller.signal);
+    await new Promise(resolve=>setTimeout(resolve,20));controller.abort();
+    await assert.rejects(result,{name:'AbortError'});assert.equal(h.calls.length,1);
+});
+
 test('rate limits are bounded locally and upstream 429 is explained without retry storms', async () => {
     const h=fixture(); h.body=[row];
     for(let n=0;n<45;n++) await h.api.search('gd-netease','query'+n,1);

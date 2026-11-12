@@ -54,16 +54,16 @@
             const response = await fetch(key, {signal:controller.signal, credentials:'omit', referrerPolicy:'no-referrer', redirect:'error', headers:{Accept:'application/json'}});
             check(signal);
             if (response.status === 429) { blockedUntil = Date.now() + WINDOW; writeBudget(); throw new Error('公共源请求过于频繁，请稍后重试或切换账号源'); }
-            if (!response.ok) throw new Error('公共音乐源暂时不可用（HTTP ' + response.status + '）');
+            if (!response.ok) throw Object.assign(new Error('公共音乐源暂时不可用（HTTP ' + response.status + '）'), { retryable: response.status >= 500 && response.status <= 599 });
             const value = await read(response); check(signal);
             if (timedOut) throw new Error('公共音乐源请求超时，请稍后重试');
             if (ttl) { if (cache.size >= 100) cache.delete(cache.keys().next().value); cache.set(key,{value,until:Date.now()+ttl}); }
             return value;
         } catch (error) {
             if (signal?.aborted) throw abort();
-            if (timedOut) throw new Error('公共音乐源请求超时，请稍后重试');
+            if (timedOut) throw Object.assign(new Error('公共音乐源请求超时，请稍后重试'), { retryable: true });
             if (/^公共/.test(error.message || '')) throw error;
-            throw new Error('公共音乐源连接失败，请检查网络或切换账号源');
+            throw Object.assign(new Error('公共音乐源连接失败，请检查网络或切换账号源'), { retryable: true });
         } finally { clearTimeout(timer); signal?.removeEventListener('abort',cancel); }
     }
     async function search(provider, query, page = 1, signal) {
@@ -148,7 +148,19 @@
     }
     async function lyrics(track,signal) {
         source(track.provider);
-        const raw = await get({types:'lyric',id:id(track.id)},signal,600000);
+        const params = {types:'lyric',id:id(track.id)};
+        let raw;
+        try { raw = await get(params,signal,600000); }
+        catch (error) {
+            check(signal);
+            if (!error.retryable) throw error;
+            await new Promise((resolve, reject) => {
+                const cancel = () => { clearTimeout(timer); reject(abort()); };
+                const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve(); }, 350);
+                signal?.addEventListener('abort', cancel, {once:true});
+            });
+            check(signal); raw = await get(params,signal,600000);
+        }
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('公共源歌词格式无效');
         return {lyric:clean(raw.lyric,100000).replace(/\\r\\n|\\n/g,'\n'),translation:clean(raw.tlyric,100000).replace(/\\r\\n|\\n/g,'\n')};
     }
