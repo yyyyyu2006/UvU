@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
 const root = path.resolve(__dirname, '..');
-const out = path.resolve(root, '../../outputs/fusion-production-20261112');
+const out = path.resolve(root, '../../outputs/fusion-detail-fixes-20261112');
 fs.mkdirSync(out, { recursive: true });
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
@@ -94,11 +94,18 @@ const server = http.createServer((req, res) => {
         await page.evaluate(async()=>{db.characters=db.characters.filter(c=>c.id!=='artwork-other');await saveData();});
         await page.getByRole('button',{name:'备忘录设置',exact:true}).click();await page.screenshot({path:path.join(out,'memo-settings.png')});
         await page.getByRole('switch',{name:'启用备忘录',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.enabled);
-        assert.equal(await page.getByRole('switch',{name:'启用备忘录',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(52, 199, 89)');
+        assert.equal(await page.getByRole('switch',{name:'启用备忘录',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(201, 234, 248)');
         await capture('summary','#auto-memory-modal .uvu-lenso-panel',()=>page.evaluate(()=>document.getElementById('auto-memory-settings-btn').click()));
         await capture('vector','#auto-memory-modal .uvu-lenso-panel',()=>page.evaluate(()=>document.getElementById('vector-memory-settings-btn').click()));
         await capture('mcp','#mcp-services .uvu-lenso-panel',()=>page.evaluate(()=>openMcpSettings()));
+        await page.evaluate(()=>document.querySelector('#mcp-services .uvu-lenso-panel').monoNavigate('tools'));
+        const closeBounds=await page.locator('#mcp-services .sheet-close').boundingBox(),backBounds=await page.locator('#mcp-services .sheet-back').boundingBox();
+        assert(backBounds.x-closeBounds.x-closeBounds.width>=10&&backBounds.x-closeBounds.x-closeBounds.width<=14,'back sits beside close with a 12px gap');
+        await page.screenshot({path:path.join(out,'mcp-authorization.png')});
+        await page.locator('#mcp-services .sheet-back').click();
+        assert.equal(await page.locator('#mcp-services .uvu-lenso-panel').getAttribute('data-mono-view'),'main');
         await capture('files','#shared-document-dialog .uvu-lenso-panel',()=>page.evaluate(()=>openSharedDocumentDialog()));
+        assert((await page.locator('#shared-document-dialog .uvu-lenso-panel').boundingBox()).height<520,'empty send form follows its contents');
         assert.equal(await page.locator('.fusion-file-recipient strong').innerText(),'沈砚');
         assert.equal(await page.getByRole('button',{name:'取消',exact:true}).isVisible(),true);
         await page.locator('#shared-document-dialog input[type=file]').setInputFiles({name:'周末计划.md',mimeType:'text/markdown',buffer:Buffer.from(`周末计划
@@ -110,8 +117,21 @@ const server = http.createServer((req, res) => {
         await page.locator('[data-lenso-file-ready=true]').waitFor();
         assert.match(await page.locator('.lenso-file-preview').innerText(),/周六先去街角书店/);
         await page.screenshot({path:path.join(out,'file-ready.png')});
+        await page.setViewportSize({width:390,height:420});
+        await page.locator('.lenso-file-preview p').first().evaluate(el=>el.textContent='长文件正文用于检查短屏内部滚动。'.repeat(300));
+        await page.locator('#shared-document-dialog .shared-document-actions button:visible').first().scrollIntoViewIfNeeded();
+        const fileBounds=await page.locator('#shared-document-dialog .uvu-lenso-panel').boundingBox();
+        assert(fileBounds.y>=0&&fileBounds.y+fileBounds.height<=420,'long file stays inside short viewport');
+        assert(await page.locator('.shared-document-body').evaluate(el=>el.scrollHeight>el.clientHeight),'long file scrolls internally');
+        await page.setViewportSize({width:390,height:844});
         await page.getByRole('button',{name:'编辑副本',exact:true}).click();await page.locator('#expanded-text-editor').waitFor();await page.locator('#expanded-text-editor [data-action=keepDraft]').click();
         await capture('calendar','.uvu-calendar.uvu-lenso-panel',()=>page.evaluate(()=>openEnvironmentCalendar()));
+        assert.equal(await page.locator('.calendar-day.is-selected').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(212, 229, 239)');
+        await page.locator('.calendar-tabs [data-mode=schedule]').click();
+        assert.equal(await page.locator('.draft-calendar-week [aria-pressed=true]').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(212, 229, 239)');
+        await page.locator('.draft-calendar-owner select').selectOption({label:'沈砚 的日历'});
+        assert.equal(await page.locator('.draft-calendar-generate').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(212, 229, 239)');
+        await page.screenshot({path:path.join(out,'calendar-agenda.png')});
         await capture('environment','#environment-settings .uvu-lenso-panel',()=>page.evaluate(()=>openEnvironmentSettings(true)));
         assert.equal(await page.locator('#environment-settings .draft-form-scroll').evaluate(el=>el.firstElementChild.classList.contains('lenso-title')),true,'environment title precedes its controls after repeated decoration');
         await capture('social','.ms-dialog.uvu-lenso-panel',()=>page.evaluate(()=>UvUMomentsUI.settings(db.characters[0])));
@@ -119,6 +139,27 @@ const server = http.createServer((req, res) => {
         await capture('relationship','.relationship-dialog.uvu-lenso-panel',()=>page.evaluate(()=>openRelationshipDialog()));
         await capture('export','.cc-export-dialog.uvu-lenso-panel',()=>page.evaluate(()=>UvUCharacterCardUI.open(db.characters[0])));
         await capture('memory','.memory-library > .uvu-lenso-panel',()=>page.evaluate(()=>openMemoryLibrary()));
+        await page.evaluate(()=>{const c=db.characters[0];c.memoryJournals.push({id:'long-layout',source:'manual',title:'记忆 · 2026年11月12日 · 周末书店的约定与很长的标题'.repeat(2),content:'这是一段较长的记忆，检查分隔线不会穿过正文和按钮。'.repeat(30),createdAt:Date.now()});});
+        await capture('memory-long','.memory-library > .uvu-lenso-panel',()=>page.evaluate(()=>openMemoryLibrary()));
+        for(const [width,height]of [[320,568],[390,844]]){
+            await page.setViewportSize({width,height});
+            const layout=await page.locator('.memory-library > .uvu-lenso-panel').evaluate(panel=>{
+                const cards=[...panel.querySelectorAll('.memory-library-list > .memory-library-card')];
+                return {cards:cards.map(card=>{const r=card.getBoundingClientRect(),line=r.left+parseFloat(getComputedStyle(card,'::after').left);return{line,title:card.querySelector('.memory-library-pick').getBoundingClientRect().left,text:card.querySelector('pre').getBoundingClientRect().left,date:card.querySelector('.draft-memory-date')?.getBoundingClientRect().left,card:r.left};}),nav:[...panel.querySelectorAll('.draft-memory-nav > button')].map(b=>({height:b.getBoundingClientRect().height,overflow:b.scrollWidth-b.clientWidth,whiteSpace:getComputedStyle(b).whiteSpace}))};
+            });
+            for(const card of layout.cards){assert(card.title>card.line&&card.text>card.line,'timeline stays in its own gutter');if(card.date!==undefined)assert(card.date>=card.card,'date stays inside card');}
+            for(const b of layout.nav){assert(b.height<=34&&b.overflow<=1&&b.whiteSpace==='nowrap','compact nav labels fit on one line');}
+            await page.locator('.memory-library .mono-memory-body').evaluate(el=>el.scrollTop=el.scrollHeight);
+            await page.screenshot({path:path.join(out,'memory-long-'+width+'.png')});
+            await page.locator('.memory-library-card[data-memory-id=long-layout]').scrollIntoViewIfNeeded();
+            await page.screenshot({path:path.join(out,'memory-content-'+width+'.png')});
+        }
+        await page.setViewportSize({width:390,height:844});
+        await page.getByRole('button',{name:'选择记忆',exact:true}).click();
+        await page.locator('.memory-library-card[data-memory-id=long-layout] input[type=checkbox]').check();
+        assert(await page.locator('.memory-library-card[data-memory-id=long-layout] input[type=checkbox]').isChecked());
+        const expand=page.locator('.memory-library-card[data-memory-id=long-layout] button[aria-expanded]');
+        await expand.click();assert.equal(await expand.getAttribute('aria-expanded'),'true');await expand.click();
         await capture('archives','#chat-archive-overlay .uvu-lenso-panel',()=>page.evaluate(()=>openArchiveManager()));
         await page.locator('#close-chat-archives').click();
         await capture('css-import','#global-css-import-preview .uvu-lenso-panel',()=>page.evaluate(()=>{window.lensoCssReview=previewGlobalCssImport('body {color:black}','body {color:navy}');}));
@@ -127,6 +168,14 @@ const server = http.createServer((req, res) => {
         await page.locator('#message-forward-picker .sheet-close').click();await page.evaluate(()=>exitMultiSelectMode());
         await capture('resources','.resource-health.uvu-lenso-panel',()=>page.evaluate(()=>UvUResourceHealth.open()));
         await capture('sticker-settings','#sticker-description-settings .uvu-lenso-panel',()=>page.evaluate(()=>openStickerDescriptionSettings()));
+        assert((await page.locator('#sticker-description-settings .uvu-lenso-panel').boundingBox()).height<560,'short sticker form does not reserve a full-page height');
+        await page.setViewportSize({width:390,height:420});
+        await page.locator('#sticker-description-settings [data-preview]').evaluate(el=>el.textContent=Array(300).fill('表情说明预览。').join(String.fromCharCode(10)));
+        await page.locator('#sticker-description-settings [data-action=save]').scrollIntoViewIfNeeded();
+        const saveBounds=await page.locator('#sticker-description-settings [data-action=save]').boundingBox();
+        assert(saveBounds.y>=0&&saveBounds.y+saveBounds.height<=420,'sticker save remains reachable on short screens');
+        assert(await page.locator('#sticker-description-settings [data-preview]').evaluate(el=>el.scrollHeight>el.clientHeight),'long sticker preview scrolls internally');
+        await page.setViewportSize({width:390,height:844});
         await capture('notifications','#uvu-notification-preferences .uvu-lenso-panel',()=>page.evaluate(()=>{switchScreen('api-settings-screen');document.getElementById('uvu-notification-preferences').open=true;}));
         await capture('home-presets','.draft-preset-workspace.uvu-lenso-panel',()=>page.evaluate(()=>{switchScreen('customize-screen');document.querySelector('.home-preset-card > button').click();}));
         await page.locator('.draft-preset-workspace .sheet-close').click();
@@ -165,6 +214,6 @@ const server = http.createServer((req, res) => {
             await page.evaluate(()=>document.querySelector('link[href*=lenso_panels]').disabled=false);
             assert.ok(before.equals(after),id+' renders identically with the new stylesheet enabled or disabled');
         }
-        assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify({checks,errors},null,2));console.log('PASS Lenso production panels, green switch, file preview/edit, scoped protection and responsive bounds');
+        assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify({checks,errors},null,2));console.log('PASS Lenso production panels, light-blue switch, file preview/edit, scoped protection and responsive bounds');
     } finally { await browser.close(); server.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

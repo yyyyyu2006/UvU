@@ -3,7 +3,7 @@
 .uvu-lenso-panel.uvu-mono-panel {
     --draft-ink:#1c1c1e;--draft-muted:#6e6e76;--draft-line:#e8e8ed;
     --draft-canvas:#fff;--draft-paper:#fff;--draft-soft:#f2f2f7;
-    --lenso-blue:#d4e5ef;--lenso-blue-ink:#435f75;--lenso-action-ink:#334f65;--lenso-green:#34c759;
+    --lenso-blue:#d4e5ef;--lenso-blue-ink:#435f75;--lenso-action-ink:#334f65;--lenso-switch:#c9eaf8;
     color:var(--draft-ink);font-size:var(--uvu-derived-body-size,14px);
     font-family:var(--font-family,-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif);line-height:1.6;letter-spacing:normal;
 }
@@ -85,7 +85,7 @@
     content:'';position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;
     background:#fff;box-shadow:0 2px 4px #00000014;transform:translateX(0);transition:transform 160ms ease;
 }
-.uvu-lenso-panel.uvu-mono-panel .panel-switch:checked { background:var(--lenso-green) !important; }
+.uvu-lenso-panel.uvu-mono-panel .panel-switch:checked { background:var(--lenso-switch) !important; }
 .uvu-lenso-panel.uvu-mono-panel .panel-switch:checked::before { transform:translateX(16px); }
 .uvu-lenso-panel :is(input[type=checkbox],input[type=radio],input[type=range]) { accent-color:var(--lenso-blue-ink); }
 .uvu-lenso-panel :is(.panel-switch-row,.memo-switch-row) { min-height:52px;gap:12px; }
@@ -243,7 +243,21 @@
 .uvu-lenso-panel .calendar-day.is-selected { background:var(--lenso-blue);color:var(--lenso-action-ink); }
 .uvu-lenso-panel .model-picker-list > button[aria-selected=true] { background:#e5f2ff;color:var(--lenso-blue-ink); }
 .uvu-lenso-panel .model-picker-list > button[aria-selected=true]::before { background:var(--lenso-blue);border-color:var(--lenso-blue-ink); }
-.uvu-lenso-panel .mono-memory-body .memory-library-card { background:var(--draft-paper);border-radius:20px;border:0;padding:18px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card {
+    display:grid;grid-template-columns:44px minmax(0,1fr);column-gap:16px;
+    background:var(--draft-paper);border-radius:0;border:0;padding:0 0 20px;
+}
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card > * { grid-column:2;min-width:0; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card > .draft-memory-date { grid-column:1 / -1;margin:0 0 12px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card > .draft-memory-clock { grid-column:1;grid-row:2;position:static;align-self:start;padding-top:3px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card::after { left:51px;top:38px;bottom:20px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-pick { min-width:0;overflow-wrap:anywhere; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card > pre { white-space:pre-wrap;overflow-wrap:anywhere; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .memory-library-card > :is(button,.draft-memory-source) { justify-self:start;max-width:100%; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .mono-page-footer:has(> .draft-memory-nav) { flex-wrap:nowrap;gap:8px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .mono-page-footer > button { flex:0 0 auto;font-size:12px;padding:6px 12px;min-height:36px;white-space:nowrap; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .draft-memory-nav { flex:1 1 0;min-width:0;width:auto;max-width:216px;min-height:40px;padding:4px;gap:2px;border-radius:24px; }
+.memory-library > .uvu-lenso-panel.uvu-mono-panel .draft-memory-nav > button { min-width:0;min-height:32px;padding:6px 8px;line-height:20px;white-space:nowrap; }
 .uvu-lenso-panel .panel-editor-actions { flex-wrap:wrap; }
 .uvu-lenso-panel [hidden] { display:none !important; }
 :root[data-uvu-derived-color=theme] .uvu-lenso-panel { --draft-canvas:var(--secondary-bg,#fff);--draft-paper:var(--primary-bg,#fff);--draft-ink:var(--text-color,#171719); }
@@ -257,6 +271,17 @@
     .uvu-lenso-panel.uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mcp-actions) { flex-wrap:wrap; }
 }
 @media(prefers-reduced-motion:reduce) { .uvu-lenso-panel * { transition:none !important;animation:none !important; } }
+/* Short forms follow their contents; long forms keep an internal scroll area. */
+.uvu-lenso-panel.uvu-sheet-v2.uvu-mono-panel.mono-page.sticker-description-card,
+.uvu-lenso-panel.uvu-sheet-v2.uvu-mono-panel.mono-page.shared-document-dialog[data-document-mode=send] {
+    width:min(366px,calc(100% - 24px)) !important;
+    height:auto !important;
+    max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+}
+.uvu-lenso-panel.uvu-mono-panel.mono-page.sticker-description-card > .draft-scroll,
+.uvu-lenso-panel.uvu-mono-panel.mono-page.shared-document-dialog[data-document-mode=send] > .shared-document-body { flex:0 1 auto;padding-bottom:16px !important;gap:16px; }
+.uvu-lenso-panel.uvu-mono-panel.sticker-description-card .sticker-description-options { padding:12px !important; }
+.uvu-lenso-panel.shared-document-dialog[data-document-mode=send] .shared-document-upload { padding:16px !important;gap:12px; }
 :root[data-uvu-derived-motion=false] .uvu-lenso-panel * { transition:none !important;animation:none !important; }
 /* Explicit owned roots win over older monochrome ID rules. */
 #auto-memory-modal.uvu-mono-panel .uvu-lenso-panel .draft-index-build.lenso-task {
@@ -275,6 +300,8 @@
 #mcp-services .uvu-lenso-panel .lenso-service-controls .draft-service-actions { padding:8px 0; }
 .uvu-lenso-panel.uvu-mono-panel .ms-dialog-foot .ms-primary { background:var(--lenso-blue) !important;color:var(--lenso-action-ink) !important; }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel[data-calendar-view=calendar] .calendar-day.is-selected { background:var(--lenso-blue) !important; }
+.uvu-calendar.uvu-mono-panel.uvu-lenso-panel .draft-calendar-week > button[aria-pressed=true],
+.uvu-calendar.uvu-mono-panel.uvu-lenso-panel[data-calendar-view=agenda] .draft-calendar-generate { background:var(--lenso-blue) !important;color:var(--lenso-action-ink) !important; }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel .calendar-day.is-selected .calendar-disc { background:transparent; }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel[data-calendar-view=calendar] .calendar-day.is-selected .calendar-day-number { color:var(--lenso-action-ink); }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel[data-calendar-view=mood] .calendar-day.is-selected .calendar-day-number { color:var(--draft-ink); }
@@ -382,6 +409,8 @@
 #uvu-story-bridge-screen.uvu-lenso-panel .panel-artwork { order:-1; }
 .uvu-lenso-panel.uvu-mono-panel .mono-page-nav > .lenso-nav-space { display:none !important; }
 .uvu-lenso-panel.uvu-mono-panel .mono-page-nav > .sheet-close { order:-3;margin-right:auto !important; }
+.uvu-lenso-panel.uvu-mono-panel.lenso-has-back .mono-page-nav > .sheet-close,
+#character-memos-dialog .uvu-lenso-panel.lenso-has-back .mono-page-nav > .sheet-close { margin-right:0 !important; }
 .uvu-lenso-panel.uvu-mono-panel .mono-page-nav > .sheet-aux { order:2; }
 /* Native API section stays inline and inherits its host surface. */
 #minimax-tts-settings.uvu-fusion-inline { --fusion-blue:#d4e5ef;--fusion-ink:#334f65;background:transparent; }
