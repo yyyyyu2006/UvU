@@ -25,17 +25,11 @@
         };
         function update() {
             const s = root.UvUMusicChat?.session();
-            const visible = Boolean(s);
-            // Music sheets live outside the phone's stacking context. Keep the same
-            // controls above their scrolling body, then return them when the sheet closes.
-            const card = visible ? document.querySelector('.uvu-music-sheet .um-sheet-card') : null;
-            const host = card || phone;
-            if (bar.parentElement !== host) host.insertBefore(bar, card?.querySelector('.um-sheet-body') || null);
-            bar.classList.toggle('um-together-on-sheet', Boolean(card));
-            if (card) bar.style.removeProperty('top');
-            else {
-                const screen = phone.querySelector('.screen.active');
-                const top = screen?.querySelector('header:not([hidden])');
+            // Navigation only hides the indicator; playback and the together session
+            // remain independent so returning to chat restores the current song.
+            const visible = Boolean(s) && room.classList.contains('active') && !document.querySelector('.uvu-music-sheet');
+            if (visible) {
+                const top = room.querySelector('header:not([hidden])');
                 const y = top?.getBoundingClientRect().bottom - phone.getBoundingClientRect().top;
                 bar.style.top = Math.max(8, Number.isFinite(y) && y > 0 ? y + 8 : 8) + 'px';
             }

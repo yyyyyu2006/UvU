@@ -158,31 +158,40 @@ const server = http.createServer((req,res) => {
             const view=await page.locator('.um-together-float').evaluate(bar=>{const r=bar.getBoundingClientRect(),at=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return{hidden:bar.hidden,inViewport:r.width>0&&r.top>=0&&r.bottom<=innerHeight,onTop:!!at&&bar.contains(at)};});
             assert.deepEqual(view,{hidden:false,inViewport:true,onTop:true},label);
         };
+        const togetherHidden = async label => {
+            await page.waitForFunction(()=>document.querySelector('.um-together-float').hidden);
+            assert.equal(await page.locator('.um-together-float').isVisible(),false,label);
+        };
         const togetherId=await page.evaluate(()=>UvUMusicChat.session().id);
         await page.locator('.um-together-float [aria-label="打开一起听播放器"]').click();await page.waitForSelector('.um-player-sheet');
         await page.locator('.um-player-sheet [aria-label="下一首"]').click();await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='2'&&UvUMusic.player.snapshot().playing);
-        await togetherVisible('changing songs in the full player keeps the room visible and reachable');
+        await togetherHidden('full player does not display the chat-only indicator');
         for(const width of [320,390,768]){
-            await page.setViewportSize({width,height:844});await togetherVisible('together controls remain reachable in player at '+width);
-            assert.ok(await page.locator('.um-player-sheet').evaluate(sheet=>sheet.querySelector('.um-sheet-body').getBoundingClientRect().top>=sheet.querySelector('.um-together-float').getBoundingClientRect().bottom-1),'indicator does not cover the player contents');
+            await page.setViewportSize({width,height:844});await togetherHidden('no indicator in player at '+width);
+            assert.equal(await page.locator('.um-player-sheet .um-together-float').count(),0,'indicator stays outside the player');
         }
         await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'together-player-390.png')});
         assert.equal(await page.evaluate(()=>UvUMusicChat.session().id),togetherId);
-        assert.match(await page.locator('.um-together-float').innerText(),/已暂停/,'single-song room does not attribute unrelated playback to char');
-        await page.locator('.um-together-float [aria-label="继续一起听"]').click();await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='1'&&UvUMusic.player.snapshot().playing);
         await page.locator('.um-player-sheet [aria-label="播放队列"]').click();await page.waitForSelector('[role="dialog"][aria-label="播放队列"]');
-        await togetherVisible('replacing a music sheet preserves the same together controls');
-        await page.getByRole('button',{name:'关闭',exact:true}).click();await togetherVisible('closing a sheet returns the float to the phone');
+        await togetherHidden('replacing a music sheet keeps the indicator hidden');
+        await page.getByRole('button',{name:'关闭',exact:true}).click();await togetherVisible('closing a sheet restores the indicator in chat');
+        assert.match(await page.locator('.um-together-float').innerText(),/已暂停/,'single-song room does not attribute unrelated playback to char');
         assert.equal(await page.locator('.um-together-float').evaluate(n=>n.parentElement.classList.contains('phone-screen')),true);
         assert.equal(await page.locator('.um-together-open').evaluate(n=>document.activeElement===n),true,'closing the music sheet restores focus to the together opener');
+        await page.locator('.um-together-float [aria-label="继续一起听"]').click();await page.waitForFunction(()=>UvUMusic.player.snapshot().track?.id==='1'&&UvUMusic.player.snapshot().playing);
         await page.locator('.uvu-music-continuous').click();assert.equal(await page.evaluate(()=>UvUMusicChat.session().continuous),true);
         await page.evaluate(()=>UvUMusic.player.next());await page.waitForFunction(()=>UvUMusicChat.session()?.track.id==='2');
         await togetherVisible('manual next keeps continuous room visible');
         assert.equal(await page.locator('.uvu-music-title').first().innerText(),'秋日来信 1','historical card keeps the invited song');
         await page.evaluate(()=>UvUMusic.player.previous());await page.waitForFunction(()=>UvUMusicChat.session()?.track.id==='1');
+        await page.evaluate(()=>switchScreen('home-screen'));await togetherHidden('home hides the indicator without ending together playback');
         await page.evaluate(()=>{UvUMusic.player.setMode('list');UvUMusic.player.seek(9.9);});
         await page.waitForFunction(()=>UvUMusicChat.session()?.track.id==='2'&&UvUMusicChat.session()?.localPlayback);
+        assert.equal(await page.evaluate(()=>UvUMusicChat.session().id),togetherId,'background auto-next preserves the together session');
+        await togetherHidden('auto-next does not restore the indicator outside chat');
+        await page.evaluate(()=>openChatRoom('music-char','private'));
         await togetherVisible('native ended advances songs without hiding the float');
+        assert.match(await page.locator('.um-together-info').innerText(),/暮色/,'returning to chat shows the current song');
         await page.evaluate(()=>UvUMusic.player.previous());await page.waitForFunction(()=>UvUMusicChat.session()?.track.id==='1');
         await page.locator('.uvu-music-continuous').click();
         await page.waitForTimeout(650);await page.screenshot({path:path.join(out,'together-white-390.png')});
@@ -195,8 +204,11 @@ const server = http.createServer((req,res) => {
         await page.locator('.um-together-float [aria-label="打开一起听播放器"]').click();await page.waitForSelector('.um-artwork');await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.evaluate(()=>{currentChatId='different-char';document.getElementById('chat-room-title').textContent='别的角色';});
         await page.waitForSelector('.um-together-float:not([hidden])');
-        await page.evaluate(()=>switchScreen('home-screen'));await page.waitForSelector('.um-together-float:not([hidden])');
-        assert.ok(await page.locator('.um-together-float').evaluate(n=>n.parentElement.classList.contains('phone-screen')),'float survives navigation outside chat');
+        for(const screen of ['home-screen','api-settings-screen','chat-list-screen']) {
+            await page.evaluate(id=>switchScreen(id),screen);await togetherHidden(screen+' hides the indicator');
+            assert.equal(await page.evaluate(()=>UvUMusicChat.session().id),togetherId,'navigation preserves the together session');
+            assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().playing),true,'navigation does not pause audio');
+        }
         await page.evaluate(()=>openChatRoom('music-char','private'));await page.waitForSelector('.um-together-float:not([hidden])');
         await page.evaluate(()=>document.getElementById('chat-room-screen').classList.add('multi-select-active'));await page.waitForSelector('.um-together-float:not([hidden])');
         await page.evaluate(()=>document.getElementById('chat-room-screen').classList.remove('multi-select-active'));await page.waitForSelector('.um-together-float:not([hidden])');
@@ -206,6 +218,9 @@ const server = http.createServer((req,res) => {
         await page.evaluate(async()=>{const chat=db.characters[0];chat.activeArchiveId=window.musicTestArchive;const message=chat.history.find(m=>m.music?.invitation);await UvUMusicChat.listen(message.music.track,{chat,message});});
         await page.waitForSelector('.um-together-float:not([hidden])');
         await page.evaluate(()=>UvUMusicUI.open());await page.locator('#uvu-music-screen [data-um-tab="home"]').click();
+        await togetherHidden('music home hides the chat indicator');
+        await page.locator('#uvu-music-screen [data-um-tab="library"]').click();await togetherHidden('music library hides the chat indicator');
+        await page.locator('#uvu-music-screen [data-um-tab="home"]').click();
         assert.match(await page.locator('.um-main').innerText(),/与林间一起听/);
         const beforeMenu = await page.evaluate(()=>UvUMusic.player.snapshot().track.id);
         assert.ok(await page.locator('.um-artwork-shelf [aria-label="更多 · 秋日来信 1"]').count(),'recent artwork keeps its song menu');
