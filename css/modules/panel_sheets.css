@@ -53,6 +53,29 @@ body:has(#uvu-notification-preferences[open],.worldbook-advanced[open]) { overfl
 .uvu-sheet-v2.uvu-mono-panel :where(button:not(.sheet-close,.sheet-aux,.sheet-back,.calendar-day,.calendar-home,.model-picker-list > button)) {
     min-height:40px;border-radius:22px;padding:8px 18px;font-size:13px;font-weight:400;
 }
+/* Expanded editor only: long field titles and import actions stay compact. */
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 > .mono-page-nav {
+    min-height:56px;padding:16px 20px 12px !important;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-title {
+    font-size:16px !important;font-weight:600 !important;line-height:1.4;letter-spacing:normal;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .mono-page-nav > .sheet-close {
+    flex-basis:32px;width:32px !important;height:32px !important;
+    min-width:32px !important;min-height:32px !important;padding:7px !important;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 :is(.draft-editor-toolbar,.editor-import-options) button {
+    min-height:32px;padding:5px 12px;font-size:12px;line-height:20px;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-import-options {
+    font-size:12px;gap:8px;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .panel-editor-actions {
+    justify-content:flex-end;gap:12px;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .panel-editor-actions > button {
+    flex:0 1 auto;min-width:88px;min-height:36px !important;padding:7px 20px !important;font-size:13px;line-height:20px;
+}
 .uvu-sheet-v2.uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mcp-actions,.panel-editor-actions),
 #auto-memory-modal.uvu-mono-panel .uvu-sheet-v2 .draft-fixed-actions {
     padding:16px 24px 24px !important;gap:12px;background:#fff;border-top:1px solid #f2f2f3;
