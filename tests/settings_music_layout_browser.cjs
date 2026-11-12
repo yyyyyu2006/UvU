@@ -13,7 +13,7 @@ const tools=page.locator('#setting-my-persona + .document-edit-tools');
 const buttons=await tools.locator('button').evaluateAll(bs=>bs.map(b=>({label:b.getAttribute('aria-label'),width:b.offsetWidth,height:b.offsetHeight,icons:b.querySelectorAll('svg').length})));
 verify(buttons.length===2&&buttons.every(b=>b.width===32&&b.height===32&&b.icons===1),'expand/import must be equal 32px Lucide buttons: '+JSON.stringify(buttons));
 if(buttons.every(b=>b.label)){
- await tools.getByRole('button',{name:'展开',exact:true}).click();await page.getByRole('textbox',{name:'展开编辑内容',exact:true}).fill('仅草稿，不写入人设');await page.getByRole('button',{name:'暂存关闭',exact:true}).click();
+ await tools.getByRole('button',{name:'展开',exact:true}).click();await page.getByRole('textbox',{name:'展开编辑内容',exact:true}).fill('仅草稿，不写入人设');await page.locator('#expanded-text-editor [data-action=keepDraft]').click();
  verify(await page.locator('#setting-my-persona').inputValue()==='用户人设','draft close must preserve original persona');
  const chooser=page.waitForEvent('filechooser');await tools.getByRole('button',{name:'导入',exact:true}).click();verify((await chooser).isMultiple()===false,'import icon must still open the file picker');
 }
@@ -35,7 +35,7 @@ assert.deepEqual(await page.evaluate(()=>reviewSaved),{ids:['netease:one','','',
 await page.evaluate(()=>{UvUMusicUI.close();switchScreen('api-settings-screen');});
 for(const width of [320,390,768]){
  await page.setViewportSize({width,height:844});
- verify(await page.evaluate(()=>getComputedStyle(document.getElementById('minimax-tts-settings')).backgroundColor===getComputedStyle(document.querySelector('#api-settings-screen .kkt-group')).backgroundColor),'MiniMax must match original API card background at '+width);
+ verify(await page.evaluate(()=>getComputedStyle(document.getElementById('minimax-tts-settings')).backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(document.getElementById('minimax-tts-settings')).boxShadow==='none'),'MiniMax inherits the API page background without an independent card at '+width);
  verify(await page.locator('#minimax-tts-settings').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'MiniMax fields must fit at '+width);
 }
 await page.setViewportSize({width:390,height:844});await page.locator('#minimax-tts-settings .kkt-item-title').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'minimax-api-390.png')});assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('PASS 320/390/768px: long playlist title/version containment and vertical scroll, manual selection/save, equal Lucide toolbar buttons with working draft/file-picker actions, original API background, chat-data isolation. No paid API calls.');

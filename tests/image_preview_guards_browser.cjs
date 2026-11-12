@@ -23,7 +23,7 @@ const server=http.createServer((req,res)=>{const f=path.resolve(root,'.'+(req.ur
    window.executeImageGeneration=async()=>{imagePurchases++;const canvas=document.createElement('canvas');canvas.width=canvas.height=16;const ctx=canvas.getContext('2d');ctx.fillStyle='#ddd';ctx.fillRect(0,0,16,16);return{imageData:canvas.toDataURL('image/png')};};
   });
   await page.locator('#toggle-expansion-btn').click();await page.locator('#photo-video-btn').click();await page.locator('#pv-mode-ai').check();
-  await page.locator('.draft-image-options > summary').click();
+  assert.equal(await page.locator('#pv-confirm-preview').isVisible(),true,'preview controls remain directly available in the native AI panel');
   await page.locator('#pv-confirm-preview').check();await page.locator('#pv-text-input').fill('窗边的一杯咖啡');
   await page.locator('#pv-send-btn').click();await page.locator('#pv-generated-preview').waitFor({state:'visible'});
   await page.waitForFunction(()=>!document.getElementById('pv-generated-confirm').disabled);

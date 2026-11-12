@@ -1,12 +1,12 @@
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || '../node_modules/playwright');
+const {chromium} = require(process.env.PLAYWRIGHT_MODULE || '../../uvu-verification-deps/node_modules/playwright');
 const root = path.join(__dirname, '..');
 (async () => {
     const browser = await chromium.launch({headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
     try {
         const page = await browser.newPage({viewport: {width: 320, height: 844}, isMobile: true, hasTouch: true});
         const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
+        page.setDefaultTimeout(8000);page.on('pageerror', error => errors.push(error.message));
         await page.route('https://floor-review.test/**', route => route.fulfill({contentType: 'text/html', body: '<meta name="viewport" content="width=device-width,initial-scale=1">'}));
         await page.goto('https://floor-review.test/');
         const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -22,15 +22,16 @@ const root = path.join(__dirname, '..');
                         {id: 'f1', text: '第一段。\n\n第二段。', selected: false, floor: {number: 8, speaker: '角色', createdAt: 1793836800000, extraction: 'tagged', bodyTag: 'content'}},
                         {id: 'f2', text: 'User 的回答。', selected: false, floor: {number: 9, speaker: 'User', createdAt: 1793836800000, extraction: 'plain', bodyTag: ''}}
                     ]}
-            }]}], uvuStoryBridgeSettings: {}};
+            }]}], uvuStoryBridgeSettings: {handoffCharacterId:'c'}};
             window.saveData = async () => {window.saved = structuredClone(window.db);};
         });
         await page.addScriptTag({content: fs.readFileSync(path.join(root, 'js/modules/bridge_text.js'), 'utf8')});
+        await page.addScriptTag({content: fs.readFileSync(path.join(root, 'js/modules/bridge_summary.js'), 'utf8')});
         await page.addScriptTag({content: fs.readFileSync(path.join(root, 'js/modules/story_bridge.js'), 'utf8')});
         await page.evaluate(() => UvUStoryBridge.renderReview(true));
         await page.locator('#uvu-bridge-review-list > details > summary').click();
         const all = page.getByRole('checkbox', {name: '全选本场剧情', exact: true});
-        assert.equal(await all.count(), 1);
+        await all.waitFor({state:'visible'});assert.equal(await all.count(), 1);
         await all.check();
         const picks = page.getByRole('checkbox', {name: '允许这条剧情加入上下文', exact: true});
         assert.equal(await picks.count(), 2); assert.equal(await picks.nth(0).isChecked(), true);
@@ -52,6 +53,9 @@ const root = path.join(__dirname, '..');
         assert.equal(result.allowed, true); assert.equal(result.journal.category, '酒馆线下剧情');
         assert.match(result.journal.content, /审核后修改的完整一层/); assert.doesNotMatch(result.journal.content, /User 的回答/);
         await page.evaluate(() => {db = structuredClone(saved); UvUStoryBridge.renderReview(true);});
+        await page.getByLabel('仅待审核',{exact:true}).uncheck();
+        await page.locator('#uvu-bridge-review-list > details > summary').click();
+        await page.locator('.uvu-bridge-review-floor summary').first().click();
         assert.equal(await page.locator('.uvu-bridge-review-floor textarea').first().inputValue(), '审核后修改的完整一层。');
         await page.evaluate(() => {
             const legacy = {id: 'legacy', source: 'sillytavern', externalSceneId: 'old', title: '旧待审', content: '旧正文', isFavorited: false,
@@ -63,6 +67,7 @@ const root = path.join(__dirname, '..');
         page.on('dialog', dialog => dialog.accept());
         await page.getByRole('button', {name: '按旧原文重新整理楼层', exact: true}).click();
         assert.equal(await page.locator('.uvu-bridge-review-floor').count(), 1);
+        await page.locator('.uvu-bridge-review-floor summary').click();
         assert.equal(await page.locator('.uvu-bridge-review-floor textarea').inputValue(), '第一段。\n\n第二段。');
         await page.getByRole('checkbox', {name: '全选本场剧情', exact: true}).check();
         await page.getByRole('button', {name: '原文直接加入记忆', exact: true}).click();

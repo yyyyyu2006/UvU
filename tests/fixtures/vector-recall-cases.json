@@ -1,18 +1,229 @@
 {
   "description": "Synthetic source-safe recall regressions. Fixed vectors are not measured provider quality.",
   "documents": [
-    { "id": "promise", "title": "旧约定", "content": "借来的书约定周五归还。", "vector": [1, 0, 0, 0, 0] },
-    { "id": "storm", "title": "雷雨", "content": "小雨害怕雷声，希望有人陪伴。", "vector": [0, 1, 0, 0, 0] },
-    { "id": "old-date", "title": "旧行程", "content": "旧安排：周六出发。此计划已取消。", "vector": [0, 0, 0.8, 0.6, 0] },
-    { "id": "new-date", "title": "最新行程", "content": "2026-11-09 最新改期：周日出发。", "vector": [0, 0, 1, 0, 0] },
-    { "id": "npc-nurse", "title": "护士小明", "content": "护士小明在星河医院工作。", "vector": [0, 0, 0, 1, 0] },
-    { "id": "npc-teacher", "title": "老师小明", "content": "老师小明在青山学校工作。", "vector": [0, 0, 0, 0.7, 0.7] }
+    {
+      "id": "promise",
+      "title": "旧约定",
+      "content": "借来的书约定周五归还。",
+      "vector": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "storm",
+      "title": "雷雨",
+      "content": "小雨害怕雷声，希望有人陪伴。",
+      "vector": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "old-date",
+      "title": "旧行程",
+      "content": "旧安排：周六出发。此计划已取消。",
+      "vector": [
+        0,
+        0,
+        0.8,
+        0.6,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "new-date",
+      "title": "最新行程",
+      "content": "2026-11-09 最新改期：周日出发。",
+      "vector": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "npc-nurse",
+      "title": "护士小明",
+      "content": "护士小明在星河医院工作。",
+      "vector": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "npc-teacher",
+      "title": "老师小明",
+      "content": "老师小明在青山学校工作。",
+      "vector": [
+        0,
+        0,
+        0,
+        0.7,
+        0.7,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "negative-peanut",
+      "title": "饮食禁忌",
+      "content": "用户明确说不吃花生，做点心时不要加入花生。",
+      "vector": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "mixed-decaf",
+      "title": "晚间饮品",
+      "content": "晚上只喝 decaf coffee，不喝普通咖啡。",
+      "vector": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    }
   ],
   "queries": [
-    { "kind": "old-promise", "text": "借书要在哪天还？", "expected": ["promise"], "vector": [1, 0, 0, 0, 0] },
-    { "kind": "paraphrase", "text": "打雷的时候她需要什么？", "expected": ["storm"], "vector": [0, 1, 0, 0, 0] },
-    { "kind": "time-change", "text": "最新安排是哪天出发？", "expected": ["new-date"], "vector": [0, 0, 1, 0, 0] },
-    { "kind": "same-name-npc", "text": "护士小明在哪里工作？", "expected": ["npc-nurse"], "vector": [0, 0, 0, 1, 0] },
-    { "kind": "irrelevant", "text": "火星的卫星叫什么？", "expected": [], "vector": [0, 0, 0, 0, 1] }
+    {
+      "kind": "old-promise",
+      "text": "借书要在哪天还？",
+      "expected": [
+        "promise"
+      ],
+      "vector": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "paraphrase",
+      "text": "打雷的时候她需要什么？",
+      "expected": [
+        "storm"
+      ],
+      "vector": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "time-change",
+      "text": "最新安排是哪天出发？",
+      "expected": [
+        "new-date"
+      ],
+      "vector": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "same-name-npc",
+      "text": "护士小明在哪里工作？",
+      "expected": [
+        "npc-nurse"
+      ],
+      "vector": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "irrelevant",
+      "text": "火星的卫星叫什么？",
+      "expected": [],
+      "vector": [
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "kind": "negation",
+      "text": "做点心时不要加入什么？",
+      "expected": [
+        "negative-peanut"
+      ],
+      "vector": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "kind": "mixed-language",
+      "text": "晚上 coffee 要选什么类型？",
+      "expected": [
+        "mixed-decaf"
+      ],
+      "vector": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    }
   ]
 }

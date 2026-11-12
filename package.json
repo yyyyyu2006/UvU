@@ -2,7 +2,8 @@
   "name": "uvu-regression-checks",
   "private": true,
   "scripts": {
-    "test": "node --test --test-isolation=none tests/*.test.cjs"
+    "test": "node --test --test-isolation=none tests/*.test.cjs",
+    "test:browser": "node tests/run_browser_checks.cjs"
   },
   "devDependencies": {
     "dexie": "3.2.4",

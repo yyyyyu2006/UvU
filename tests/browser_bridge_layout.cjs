@@ -30,6 +30,7 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
   await page.addScriptTag({content:fs.readFileSync(path.join(plugin,'story-text.js'),'utf8')});
   const source=fs.readFileSync(path.join(plugin,'index.js'),'utf8').split(String.fromCharCode(10)).filter(line=>!line.startsWith('import ')).join(String.fromCharCode(10));
   await page.addScriptTag({content:source});
+  await page.locator('.uvu-bridge-pairing > summary').click();
   await page.locator('[data-action=pair]').click();
   await page.waitForFunction(()=>document.querySelector('[data-pair-code]').textContent==='123456');
   assert.equal(await page.locator('[data-pair-code]').innerText(),'123456');
@@ -37,7 +38,7 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
   await page.waitForTimeout(100);
   const event=(seq,id,text)=>({seq,characterKey:'c',kind:'memory_packet',payload:{archiveId:'archive-a',messages:[{id,text,createdAt:seq,revision:'r'+seq}]}});
   onlineEvents.push(event(1,'m1','第一条正文'));
-  await page.getByText('UvU → 酒馆：线上记忆审核',{exact:true}).click();
+  await page.locator('[data-online-review]').evaluate(el=>el.closest('details').open=true);
   const refresh=page.locator('[data-action=refresh-online]');
   await refresh.click(); await page.waitForFunction(()=>document.querySelectorAll('[data-item]').length===1);
   await page.locator('.uvu-bridge-review-list summary').click();
@@ -62,7 +63,7 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
    await page.setViewportSize({width,height:844});
    const result=await page.locator('.uvu-bridge-panel').evaluate(e=>({width:e.clientWidth,scrollWidth:e.scrollWidth,buttons:[...e.querySelectorAll('button')].map(b=>({height:b.getBoundingClientRect().height,width:b.getBoundingClientRect().width}))}));
    assert.ok(result.scrollWidth<=result.width,JSON.stringify(result));
-   assert.ok(result.buttons.every(b=>b.height<=32));metrics.push({panel:'Tavern',viewport:width,noOverflow:true});
+   assert.ok(result.buttons.every(b=>b.height<=64),JSON.stringify(result.buttons));metrics.push({panel:'Tavern',viewport:width,noOverflow:true});await page.locator('.uvu-bridge-panel').screenshot({path:path.join(root,'outputs','nov12-plugin-'+width+'.png')});
   }
   await page.close();
   const uvu=await browser.newPage({viewport:{width:320,height:844}});

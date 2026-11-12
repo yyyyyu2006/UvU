@@ -508,6 +508,10 @@ function storageValidateModules(modules) {
     const optional = (value, path, type) => {
         if (value !== undefined && (typeof value !== type || (type === 'number' && !Number.isFinite(value)))) fail(path, type === 'string' ? '文本' : type === 'number' ? '有效数字' : '布尔值');
     };
+    const timestamp = (value, path) => {
+        if (value === undefined || value === null) return;
+        if (typeof value !== 'number' || !Number.isFinite(new Date(value).getTime())) fail(path, '有效时间戳');
+    };
     const environmentLocation = (value, path) => {
         if (value === undefined || value === null) return;
         object(value, path);
@@ -555,6 +559,82 @@ function storageValidateModules(modules) {
     const gallery = (value, path) => list(value, path, (photo, location) => {
         for (const key of ['id', 'name', 'url']) optional(photo[key], location + '.' + key, 'string');
     });
+    // Factual memos are optional; absent fields and v1 records keep their existing defaults.
+    const memoState = (state, path) => {
+        object(state, path);
+        if (state.version !== undefined && ![1, 2].includes(state.version)) fail(path + '.version', '支持的备忘录版本');
+        const bounded = (value, location, max, validate, ids = false) => {
+            if (value !== undefined && (!Array.isArray(value) || value.length > max)) fail(location, `最多 ${max} 项的列表`);
+            list(value, location, validate, ids);
+        };
+        const strings = (value, location, max) => {
+            if (value !== undefined && (!Array.isArray(value) || value.length > max || value.some(x => typeof x !== 'string'))) fail(location, '有界文本列表');
+        };
+        const revision = (value, location) => {
+            for (const key of ['fact', 'content', 'status']) optional(value[key], location + '.' + key, 'string');
+            for (const key of ['useContext', 'localOnly']) optional(value[key], location + '.' + key, 'boolean');
+            for (const key of ['at', 'expiresAt', 'validFrom', 'validTo']) timestamp(value[key], location + '.' + key);
+        };
+        const source = (value, location) => {
+            for (const key of ['id', 'fingerprint', 'quote']) optional(value[key], location + '.' + key, 'string');
+            timestamp(value.timestamp, location + '.timestamp');
+        };
+        const note = (value, location) => {
+            object(value, location);
+            for (const key of ['id', 'owner', 'fact']) if (typeof value[key] !== 'string' || !value[key].trim()) fail(location + '.' + key, '非空文本');
+            for (const key of ['content', 'subject', 'category', 'status', 'entityId', 'attribute', 'value', 'polarity', 'assertionType', 'reviewReason']) optional(value[key], location + '.' + key, 'string');
+            if (value.replacesId !== null) optional(value.replacesId, location + '.replacesId', 'string');
+            if (value.subject !== undefined && !['user', 'char'].includes(value.subject)) fail(location + '.subject', 'user 或 char');
+            if (value.status !== undefined && !['pending', 'approved', 'done', 'superseded'].includes(value.status)) fail(location + '.status', '有效备忘录状态');
+            for (const key of ['manual', 'userEdited', 'locked', 'useContext', 'pinned', 'localOnly']) optional(value[key], location + '.' + key, 'boolean');
+            for (const key of ['createdAt', 'updatedAt', 'recordedAt', 'expiresAt', 'validFrom', 'validTo']) timestamp(value[key], location + '.' + key);
+            if (value.validFrom != null && value.validTo != null && value.validTo <= value.validFrom) fail(location + '.validTo', '晚于生效时间的时间戳');
+            bounded(value.sources, location + '.sources', 30, source, true);
+            bounded(value.revisions, location + '.revisions', 10, revision);
+            for (const key of ['topics', 'relatedPeople']) strings(value[key], location + '.' + key, 12);
+            if (value.external !== undefined) {
+                object(value.external, location + '.external');
+                for (const key of ['serviceId', 'toolName']) optional(value.external[key], location + '.external.' + key, 'string');
+                timestamp(value.external.at, location + '.external.at');
+            }
+            if (value.conflictReview !== undefined) { object(value.conflictReview, location + '.conflictReview'); revision(value.conflictReview, location + '.conflictReview'); }
+        };
+        if (state.settings !== undefined) {
+            object(state.settings, path + '.settings');
+            for (const key of ['enabled', 'automatic', 'useContext', 'semanticHints', 'semanticRecall', 'diversity']) optional(state.settings[key], path + '.settings.' + key, 'boolean');
+            for (const key of ['threshold', 'budget']) optional(state.settings[key], path + '.settings.' + key, 'number');
+            for (const key of ['mode', 'apiSource', 'ranking']) optional(state.settings[key], path + '.settings.' + key, 'string');
+            strings(state.settings.excludedTopics, path + '.settings.excludedTopics', 30);
+        }
+        bounded(state.notes, path + '.notes', 500, note, true);
+        const block = (value, location) => {
+            for (const key of ['id', 'owner', 'fact', 'factHash', 'evidence']) optional(value[key], location + '.' + key, 'string');
+            strings(value.sourceIds, location + '.sourceIds', 30);
+        };
+        list(state.blocked, path + '.blocked', block);
+        bounded(state.trash, path + '.trash', 50, (entry, location) => {
+            note(entry.note, location + '.note'); timestamp(entry.deletedAt, location + '.deletedAt');
+            if (entry.block != null) { object(entry.block, location + '.block'); block(entry.block, location + '.block'); }
+        });
+        bounded(state.feedback, path + '.feedback', 100, (entry, location) => {
+            for (const key of ['id', 'owner', 'value', 'reason']) optional(entry[key], location + '.' + key, 'string');
+            timestamp(entry.at, location + '.at'); strings(entry.selected, location + '.selected', 6);
+        });
+        if (state.processed !== undefined) {
+            object(state.processed, path + '.processed');
+            for (const [owner, records] of Object.entries(state.processed)) {
+                object(records, path + '.processed.' + owner);
+                for (const [id, hash] of Object.entries(records)) optional(hash, path + '.processed.' + owner + '.' + id, 'string');
+            }
+        }
+        if (state.task != null) {
+            object(state.task, path + '.task');
+            for (const key of ['id', 'owner', 'status']) optional(state.task[key], path + '.task.' + key, 'string');
+            for (const key of ['startedAt', 'completedAt']) timestamp(state.task[key], path + '.task.' + key);
+            bounded(state.task.inputs, path + '.task.inputs', 30, source, true);
+        }
+        timestamp(state.lastRun, path + '.lastRun'); optional(state.lastError, path + '.lastError', 'string');
+    };
     const message = (item, path) => {
         // Legacy records may omit metadata, but renderers and group sessions
         // always consume content as text, including 1900 image messages.
@@ -589,6 +669,7 @@ function storageValidateModules(modules) {
         }
     };
     const runtime = (item, path) => {
+        if (item.characterMemos !== undefined) memoState(item.characterMemos, path + '.characterMemos');
         list(item.history, path + '.history', message);
         list(item.callHistory, path + '.callHistory', (call, location) => {
             optional(call.summary, location + '.summary', 'string');
@@ -596,7 +677,7 @@ function storageValidateModules(modules) {
         });
         list(item.memoryJournals, path + '.memoryJournals', (journal, location) => {
             for (const key of ['id', 'title', 'content', 'timeline', 'category', 'vectorSupersededBy']) optional(journal[key], location + '.' + key, 'string');
-            optional(journal.createdAt, location + '.createdAt', 'number');
+            timestamp(journal.createdAt, location + '.createdAt');
             optional(journal.isFavorited, location + '.isFavorited', 'boolean');
             if (journal.range !== undefined) {
                 object(journal.range, location + '.range');

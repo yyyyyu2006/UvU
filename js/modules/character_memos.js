@@ -19,10 +19,20 @@ function characterMemoSettings(chat) {
         mode: ['auto','review','manual'].includes(s.mode) ? s.mode : 'review', threshold: Math.max(2, Math.min(60, Number(s.threshold) || 10)),
         budget: Math.max(200, Math.min(2400, Number(s.budget) || 1000)), apiSource: ['primary','secondary','memory','journal'].includes(s.apiSource) ? s.apiSource : 'journal' };
 }
+function characterMemoRecordValid(note) {
+    return !!note && typeof note === 'object' && ['id','owner','fact'].every(key=>typeof note[key]==='string'&&note[key].trim()) &&
+        (note.content===undefined||typeof note.content==='string') &&
+        ['sources','revisions'].every(key=>note[key]===undefined||Array.isArray(note[key])&&note[key].every(item=>item&&typeof item==='object')) &&
+        ['topics','relatedPeople'].every(key=>note[key]===undefined||Array.isArray(note[key])&&note[key].every(item=>typeof item==='string')) &&
+        ['createdAt','recordedAt','expiresAt','validFrom','validTo'].every(key=>note[key]==null||typeof note[key]==='number'&&Number.isFinite(new Date(note[key]).getTime()));
+}
+function characterMemoRecords(chat) {
+    return Array.isArray(chat.characterMemos?.notes)?chat.characterMemos.notes.filter(characterMemoRecordValid):[];
+}
 function characterMemoState(chat) {
     const s = chat.characterMemos || {};
     const state = { version: 2, settings: characterMemoSettings(chat), notes: Array.isArray(s.notes) ? s.notes : [],
-        trash:Array.isArray(s.trash)?s.trash.filter(x=>x.deletedAt>Date.now()-30*86400000).slice(-50):[],
+        trash:Array.isArray(s.trash)?s.trash.filter(x=>x&&characterMemoRecordValid(x.note)&&x.deletedAt>Date.now()-30*86400000).slice(-50):[],
         feedback:Array.isArray(s.feedback)?s.feedback.slice(-100):[], task:s.task || null,
         processed: s.processed || {}, blocked: Array.isArray(s.blocked) ? s.blocked : [], lastRun: s.lastRun || 0, lastError: s.lastError || '' };
     characterMemoDrafts.set(state, { chat, base: JSON.stringify(chat.characterMemos) });
@@ -62,6 +72,9 @@ function saveCharacterMemoState(owner, next) {
     const chat = owner.chat, draft = characterMemoDrafts.get(next);
     const commit = async () => {
         if (!characterMemoCurrent(owner)) throw new Error('角色、存档或用户身份已改变，请重新打开备忘录');
+        // Preserve corrupt originals for recovery instead of committing a filtered copy.
+        if (chat.characterMemos && typeof storageValidateModules==='function') storageValidateModules({characters:[{id:String(chat.id),characterMemos:chat.characterMemos}]});
+        if (typeof storageValidateModules==='function') storageValidateModules({characters:[{id:String(chat.id),characterMemos:next}]});
         if (!draft || draft.chat !== chat || draft.base !== JSON.stringify(chat.characterMemos)) throw new Error('备忘录已更新，请重新读取后重试');
         const before = chat.characterMemos;
         chat.characterMemos = next;
@@ -99,7 +112,7 @@ function characterMemoPrivacyAllowed(chat,text) {
     return !characterMemoSecret(text) && !characterMemoSettings(chat).excludedTopics.some(topic=>String(text).toLocaleLowerCase().includes(topic.toLocaleLowerCase()));
 }
 function characterMemoMessageAllowed(chat,message) {
-    return characterMemoEligible(message)&&characterMemoPrivacyAllowed(chat,message.content)&&!(chat.characterMemos?.notes||[]).some(n=>n.owner===characterMemoIdentity(chat)&&n.localOnly&&n.sources?.some(s=>s.id===message.id));
+    return characterMemoEligible(message)&&characterMemoPrivacyAllowed(chat,message.content)&&!characterMemoRecords(chat).some(n=>n.owner===characterMemoIdentity(chat)&&n.localOnly&&n.sources?.some(s=>s.id===message.id));
 }
 function characterMemoAt(note,at=Date.now()) {
     return (!note.expiresAt||note.expiresAt>at)&&(!note.validFrom||note.validFrom<=at)&&(!note.validTo||note.validTo>at);
@@ -143,7 +156,7 @@ function characterMemoImpact(chat,id) {
 function characterMemoBatchPreview(chat,ids) {
     const owner=characterMemoIdentity(chat),chosen=new Set(ids);
     if(!chosen.size||chosen.size>100)throw new Error('请选择1至100条记录');
-    const notes=(chat.characterMemos?.notes||[]).filter(n=>chosen.has(n.id)&&n.owner===owner);
+    const notes=characterMemoRecords(chat).filter(n=>chosen.has(n.id)&&n.owner===owner);
     if(notes.length!==chosen.size)throw new Error('记录已变化');
     return {owner,archive:chat.activeArchiveId,items:notes.map(n=>({id:n.id,snapshot:JSON.stringify(n)})),conflicts:notes.filter(n=>n.replacesId).length};
 }
@@ -174,7 +187,7 @@ async function retryCharacterMemoTask(chat) {
 }
 function queryCharacterMemoRecords(chat,{query='',topic='',person='',at,status=''}={}) {
     const term=String(query).toLocaleLowerCase();
-    return (chat.characterMemos?.notes||[]).filter(n=>n.owner===characterMemoIdentity(chat)&&(!status||n.status===status)&&
+    return characterMemoRecords(chat).filter(n=>n.owner===characterMemoIdentity(chat)&&(!status||n.status===status)&&
         (!term||(n.fact+' '+n.content+' '+(n.topics||[]).join(' ')).toLocaleLowerCase().includes(term))&&
         (!topic||n.category===topic||(n.topics||[]).includes(topic))&&(!person||n.subject===person||(n.relatedPeople||[]).includes(person))&&
         (at===undefined||characterMemoAt(n,Number(at))));
@@ -382,13 +395,13 @@ async function addManualCharacterMemo(chat, fields) {
     next.notes=[...next.notes,note];await saveCharacterMemoState(owner,next);return note;
 }
 function characterMemoJournalAllowed(chat, journal) {
-    const note=(chat.characterMemos?.notes || []).find(n=>n.id===journal.characterMemoId);
+    const note=characterMemoRecords(chat).find(n=>n.id===journal.characterMemoId);
     if(!note || note.status!=='approved' || note.useContext===false || note.localOnly || !characterMemoAt(note) || !characterMemoPrivacyAllowed(chat,note.fact+' '+(note.content||'')) || !characterMemoSourceValid(chat,note))return false;
     const reference=journal.characterMemoReference;
     return reference ? reference.version===1 && reference.owner===note.owner && reference.factHash===characterMemoHash(note.fact) : journal.content===note.fact;
 }
 function characterMemoToJournal(chat, note) {
-    if(!(chat.characterMemos?.notes || []).includes(note) || note.status!=='approved' || note.localOnly || !characterMemoAt(note) || !characterMemoSourceValid(chat,note))throw new Error('请先选择已确认、未到期且来源有效的记录');
+    if(!characterMemoRecords(chat).includes(note) || note.status!=='approved' || note.localOnly || !characterMemoAt(note) || !characterMemoSourceValid(chat,note))throw new Error('请先选择已确认、未到期且来源有效的记录');
     return {id:characterMemoId(),title:note.category+' · 备忘录',content:note.fact,source:'character-memo',characterMemoId:note.id,
         characterMemoReference:{version:1,owner:note.owner,factHash:characterMemoHash(note.fact)},isFavorited:false,createdAt:Date.now()};
 }
@@ -402,15 +415,19 @@ async function deleteCharacterMemo(chat,id,suppress=false) {
     await saveCharacterMemoState(owner,next);return note;
 }
 function characterMemoTokens(text) { const s=String(text||'').toLowerCase();return new Set([...(s.match(/[a-z0-9]{2,}/g)||[]),...(s.match(/[\u3400-\u9fff]{2,}/g)||[]).flatMap(w=>Array.from({length:w.length-1},(_,i)=>w.slice(i,i+2)))]); }
+function characterMemoContextJournals(chat) {
+    // Reuse the established eligibility rules without changing journal injection.
+    return typeof getContextMemoryJournals==='function'?getContextMemoryJournals(chat):[];
+}
 function selectCharacterMemos(chat, existingContext = '') {
     const settings=characterMemoSettings(chat);if(!settings.enabled||!settings.useContext)return [];
     const query=characterMemoTokens((chat.history||[]).filter(m=>m.role==='user'&&characterMemoEligible(m)).slice(-3).map(m=>m.content).join('\n'));
-    let candidates=characterMemoState(chat).notes.filter(n=>n.status==='approved'&&characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||''))&&!n.localOnly&&n.useContext!==false&&characterMemoAt(n)&&characterMemoSourceValid(chat,n))
+    let candidates=characterMemoRecords(chat).filter(n=>n.status==='approved'&&characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||''))&&!n.localOnly&&n.useContext!==false&&characterMemoAt(n)&&characterMemoSourceValid(chat,n))
         .map(n=>({note:n,score:(n.pinned?100:0)+[...characterMemoTokens(n.fact)].filter(t=>query.has(t)).length,semantic:characterMemoCachedScore(chat,n)})).filter(n=>n.score>0||n.semantic>=.82).sort((a,b)=>b.score-a.score||b.semantic-a.semantic);
     if(settings.ranking==='rrf')candidates=characterMemoRRF(candidates);
-    let used=0;const selected=[];
+    let used=0;const selected=[],journals=characterMemoContextJournals(chat);
     for(const {note}of candidates){if(existingContext.includes(note.fact))continue;if(settings.diversity&&selected.some(n=>characterMemoSameFact(n,note)))continue;const size=JSON.stringify({subject:note.subject,fact:note.fact}).length;if(used+size>settings.budget)continue;
-        if((chat.memoryJournals||[]).some(j=>j.isFavorited&&String(j.content||'').includes(note.fact)))continue;
+        if(journals.some(j=>String(j.content||'').includes(note.fact)))continue;
         selected.push(note);used+=size;if(selected.length===6)break;}
     return selected;
 }
@@ -421,7 +438,7 @@ function getCharacterMemoContext(chat, existingContext = '') {
 
 // On-demand explanation only; the established selector above remains the source of truth.
 function inspectCharacterMemos(chat, existingContext = '') {
-    const settings = characterMemoSettings(chat), notes = chat.characterMemos?.notes || [], now = Date.now();
+    const settings = characterMemoSettings(chat), notes = characterMemoRecords(chat), now = Date.now(), journals=characterMemoContextJournals(chat);
     const selected = new Set(selectCharacterMemos(chat, existingContext));
     const owner = characterMemoIdentity(chat), query = characterMemoTokens((chat.history || []).filter(m => m.role === 'user' && characterMemoEligible(m)).slice(-3).map(m => m.content).join('\n'));
     const rows = notes.filter(n => n.owner === owner).map(note => {
@@ -436,21 +453,21 @@ function inspectCharacterMemos(chat, existingContext = '') {
         else if(!characterMemoAt(note)){code='time';reason='不在事实有效期内';}
         else if (!characterMemoSourceValid(chat, note)) { const source = characterMemoSourceStatus(chat, note); code = source.code; reason = source.message; }
         else if (selected.has(note)) { code = 'selected'; reason = note.pinned ? '置顶入选' : '与最近用户消息相关'; }
-        else if (existingContext.includes(note.fact) || (chat.memoryJournals || []).some(j => j.isFavorited && String(j.content || '').includes(note.fact))) { code = 'duplicate'; reason = '已在现有上下文或收藏日记中'; }
+        else if (existingContext.includes(note.fact) || journals.some(j => String(j.content || '').includes(note.fact))) { code = 'duplicate'; reason = '已在现有上下文或可用日记中'; }
         else {
             if (!note.pinned && ![...characterMemoTokens(note.fact)].some(t => query.has(t))) { code = 'unrelated'; reason = '与最近用户消息无匹配'; }
         }
         return { id: note.id, fact: note.localOnly?'[仅本地查看]':note.fact, code, reason };
     });
     const memoChars=[...selected].reduce((n,item)=>n+JSON.stringify({subject:item.subject,fact:item.fact}).length,0);
-    return { enabled: settings.enabled, total: notes.length, current: rows.length, limit: 500, remaining: Math.max(0, 500 - notes.length), selected: selected.size, budget: settings.budget, rows,
+    return { enabled: settings.enabled, total: notes.length, invalid: Array.isArray(chat.characterMemos?.notes)?chat.characterMemos.notes.length-notes.length:chat.characterMemos?.notes==null?0:1, current: rows.length, limit: 500, remaining: Math.max(0, 500 - notes.length), selected: selected.size, budget: settings.budget, rows,
         preview:{memoChars,existingChars:existingContext.length,estimatedTokens:Math.ceil(memoChars/2),estimateOnly:true,selectedIds:[...selected].map(n=>n.id),
             weightedOrder:selectCharacterMemos(chat,existingContext).map(n=>n.id),scope:'仅新增备忘录资料，不截短原版历史或提示词'} };
 }
 
 // Lexical hints are deliberately manual and never alter memories or request a model.
 function findSimilarCharacterMemos(chat) {
-    const owner = characterMemoIdentity(chat), entries = (chat.characterMemos?.notes || []).filter(n => n.owner === owner && !['done','superseded'].includes(n.status) && !characterMemoSecret(n.fact))
+    const owner = characterMemoIdentity(chat), entries = characterMemoRecords(chat).filter(n => n.owner === owner && !['done','superseded'].includes(n.status) && !characterMemoSecret(n.fact))
         .slice(0, 500).map(note => ({ note, tokens: characterMemoTokens(String(note.fact || '').slice(0, 500)), text: characterMemoNormalize(note.fact) }));
     const result = [];
     for (let i = 0; i < entries.length; i++) for (let j = i + 1; j < entries.length; j++) {
@@ -476,7 +493,7 @@ async function findSemanticCharacterMemos(chat, { ids, signal, onProgress } = {}
     if (!config.url || !config.key || !config.embeddingModel) throw new Error('请先在 API 设置中配置向量 API 和嵌入模型');
     if (ids !== undefined && (!Array.isArray(ids) || new Set(ids).size > 50)) throw new Error('一次最多选择50条记录');
     const chosen = ids === undefined ? null : new Set(ids);
-    const eligible = (chat.characterMemos?.notes || []).filter(n => n.owner === owner.persona && !n.localOnly && characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||'')) && ['approved', 'pending'].includes(n.status) &&
+    const eligible = characterMemoRecords(chat).filter(n => n.owner === owner.persona && !n.localOnly && characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||'')) && ['approved', 'pending'].includes(n.status) &&
         ['user', 'char'].includes(n.subject) && typeof n.fact === 'string' && n.fact.trim() && n.fact.length <= 500 && !characterMemoSecret(n.fact) &&
         (!n.expiresAt || n.expiresAt > Date.now()) && characterMemoSourceValid(chat, n) && (!chosen || chosen.has(n.id)));
     const notes = eligible.slice(-50).map(n => ({ id: n.id, fact: n.fact, subject: n.subject }));
@@ -484,7 +501,7 @@ async function findSemanticCharacterMemos(chat, { ids, signal, onProgress } = {}
     const controller = new AbortController(), cancel = () => controller.abort();
     const guard = () => {
         if (controller.signal.aborted || !characterMemoCurrent(owner) || JSON.stringify(chat.characterMemos) !== stateStamp || JSON.stringify(resolveVectorMemoryApi()) !== configStamp ||
-            notes.some(n => !characterMemoSourceValid(chat, chat.characterMemos.notes.find(live => live.id === n.id) || {}))) throw cancelled();
+            notes.some(n => !characterMemoSourceValid(chat, characterMemoRecords(chat).find(live => live.id === n.id) || {}))) throw cancelled();
     };
     if (signal?.aborted) cancel(); signal?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(cancel, 45000); characterMemoSimilarityJobs.set(chat, controller);

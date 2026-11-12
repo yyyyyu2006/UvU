@@ -223,7 +223,7 @@ function getMemoryUsageExplanation(chat, journal) {
             seen.add(item);
             if (item.source === 'sillytavern' && !memoryJournalSourcesAllowed(chat, item)) issues.push(`${item.title || item.id} · ${(item.bridgeReview?.channel || 'st').toUpperCase()} · 存档 ${item.bridgeReview?.archiveId || 'default'}`);
             if (item.source === 'character-memo' && !memoryJournalSourcesAllowed(chat, item)) {
-                const note=(chat.characterMemos?.notes || []).find(n=>n.id===item.characterMemoId);
+                const note=(typeof characterMemoRecords==='function'?characterMemoRecords(chat):[]).find(n=>n.id===item.characterMemoId);
                 const reason=note&&typeof characterMemoSourceStatus==='function'?characterMemoSourceStatus(chat,note):null;
                 issues.push('备忘录 · '+(!note?'原记录已移除':reason&&!reason.valid?reason.message:note.status!=='approved'?'原记录未确认或已更正':note.expiresAt&&note.expiresAt<=Date.now()?'原记录已到期':'原记录事实已变化'));
             }

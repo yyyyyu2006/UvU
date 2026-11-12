@@ -1,4 +1,10 @@
 // Character-scoped memo manager; all user text is rendered as text nodes.
+function characterMemoLocalInput(timestamp) {
+    if(timestamp==null)return '';
+    const date=new Date(timestamp),pad=value=>String(value).padStart(2,'0');
+    if(!Number.isFinite(date.getTime()))return '';
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 function openCharacterMemos(target) {
     const chat=target || (typeof currentChatType!=='undefined'&&currentChatType==='private' ? db.characters.find(c=>c.id===currentChatId) : null);
     if(!chat)return showToast('请先打开角色私聊');
@@ -40,7 +46,7 @@ function openCharacterMemos(target) {
         tab.onclick=()=>{filter.value=value;selection.clear();render();};tabs.append(tab);
     }
     tools.append(tabs);
-    const selected=()=>characterMemoState(chat).notes.filter(n=>selection.has(n.id)&&n.owner===owner.persona);
+    const selected=()=>characterMemoRecords(chat).filter(n=>selection.has(n.id)&&n.owner===owner.persona);
     actions.append(button('导出所选',()=>{const notes=selected();if(!notes.length)throw new Error('请先选择记录');const blob=new Blob([JSON.stringify({version:1,character:chat.remarkName||chat.realName,notes},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='备忘录.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}),button('加入日记',async()=>{
         const notes=selected().filter(n=>n.status==='approved'&&(!n.expiresAt||n.expiresAt>Date.now())&&characterMemoSourceValid(chat,n));if(!notes.length)throw new Error('请先选择已确认、未到期且来源有效的记录');
         const previous=chat.memoryJournals||[],journals=notes.filter(n=>!previous.some(j=>j.characterMemoId===n.id&&characterMemoJournalAllowed(chat,j))).map(n=>characterMemoToJournal(chat,n));
@@ -81,7 +87,7 @@ function openCharacterMemos(target) {
             guard();if(!d.panel.isConnected)return;
             semanticStatus.textContent=`已检查${report.scanned}条${report.scope==='selected'?'所选':'最近'}有效记录 · ${report.pairs.length}组相近提示`;
             for(const hint of report.pairs){const row=node('section');row.append(node('p','',hint.first.fact+'\n'+hint.second.fact),node('p','',hint.polarityDiffers?'含肯定与否定差异，可能表达相反含义':'请核对人物、时间与原话，相近不代表同一事实'));
-                for(const [label,item]of [['查看第一条',hint.first],['查看第二条',hint.second]])row.append(button(label,()=>{const live=characterMemoState(chat).notes.find(n=>n.id===item.id);if(!live||live.fact!==item.fact)throw new Error('记录已变化，请重新检查');view(live);}));semanticList.append(row);}
+                for(const [label,item]of [['查看第一条',hint.first],['查看第二条',hint.second]])row.append(button(label,()=>{const live=characterMemoRecords(chat).find(n=>n.id===item.id);if(!live||live.fact!==item.fact)throw new Error('记录已变化，请重新检查');view(live);}));semanticList.append(row);}
         }catch(error){if(d.panel.isConnected)semanticStatus.textContent=error.name==='AbortError'?'检查已取消或来源、配置已变化':error.message;}
         finally{if(semanticController===controller)semanticController=null;semanticRun.disabled=false;semanticCancel.hidden=true;}
     };
@@ -109,8 +115,10 @@ function openCharacterMemos(target) {
         ignored.querySelectorAll(':scope > div').forEach(el=>el.remove());
         for(const block of characterMemoState(chat).blocked.filter(b=>b.owner===owner.persona)){const row=node('div','memo-ignored-row');row.append(node('span','',block.fact||'已清除正文的屏蔽规则'),button('允许重新记录',async()=>{const next=characterMemoState(chat);next.blocked=next.blocked.filter(b=>b!==block);const processed={...(next.processed[owner.persona]||{})};for(const id of block.sourceIds||[])delete processed[id];next.processed={...next.processed,[owner.persona]:processed};await saveCharacterMemoState(owner,next);}));ignored.append(row);}
         ignored.hidden=!characterMemoState(chat).blocked.some(b=>b.owner===owner.persona);
-        const notes=characterMemoState(chat).notes.filter(n=>n.owner===owner.persona),term=search.value.trim().toLowerCase(),value=filter.value;
+        const notes=characterMemoRecords(chat).filter(n=>n.owner===owner.persona),term=search.value.trim().toLowerCase(),value=filter.value;
         list.replaceChildren();
+        const invalid=inspectCharacterMemos(chat).invalid;
+        if(invalid){const warning=node('p','memo-data-warning',`已隔离 ${invalid} 条异常记录，请先导出完整备份后修复。`);warning.setAttribute('role','status');list.append(warning);}
         for(const tab of tabs.children){tab.setAttribute('aria-pressed',String(value===tab.dataset.memoFilter));if(tab.dataset.memoFilter==='pending'){const count=notes.filter(n=>n.status==='pending').length;tab.textContent='待审核'+(count?' '+count:'');}}
         const visible=notes.filter(n=>(!term||(n.fact+' '+n.content).toLowerCase().includes(term))&&(value==='active'?!['done','superseded'].includes(n.status):value==='pinned'?n.pinned&&n.status==='approved':value==='expired'?n.expiresAt&&n.expiresAt<=Date.now():['pending','approved','done','superseded'].includes(value)?n.status===value:n.category===value));
         if(!visible.length)list.append(node('p','memo-empty',notes.length?'没有匹配的记录':'还没有记下的事情'));
@@ -128,7 +136,7 @@ function openCharacterMemos(target) {
             menu.append(button('删除',()=>remove(false)),button('不再记这件事',()=>remove(true)));card.append(buttons);
             const sources=node('details','memo-sources');sources.append(node('summary','','来源'));for(const source of note.sources||[]){const m=chat.history.find(m=>m.id===source.id);sources.append(node('p','',`${m?.role==='user'?'你':'角色'} · ${source.timestamp?new Date(source.timestamp).toLocaleString():'原消息'}\n${source.quote}`));}if(note.manual)sources.append(node('p','','手动记录'));menu.append(sources);list.append(card);
         }
-        const report=inspectCharacterMemos(chat);capacity.textContent=`当前身份 ${report.current} 条 · 本存档 ${report.total}/${report.limit} 条`+(report.remaining<=50?' · 可导出后整理已完成或到期记录':'');
+        const report=inspectCharacterMemos(chat);capacity.textContent=`当前身份 ${report.current} 条 · 本存档 ${report.total}/${report.limit} 条`+(report.invalid?` · 已隔离 ${report.invalid} 条异常记录，请先导出完整备份后修复`:report.remaining<=50?' · 可导出后整理已完成或到期记录':'');
         const vector=typeof getVectorMemoryDiagnostics==='function'?getVectorMemoryDiagnostics(chat):{};
         const vectorChars=(vector.selected||[]).reduce((count,item)=>count+String(item.content||'').length,0);
         diagnosticText.textContent=`按当前消息预览：${report.selected} 条 · 上限 ${report.budget} 字符；实际请求还会扣除其他上下文中的重复内容。\n备忘录 ${report.preview.memoChars} 字符，约 ${report.preview.estimatedTokens} Token（本机估算）；上次向量候选 ${vectorChars} 字符。两者统计时点不同，不代表最终请求。仅约束新增资料，不截短原版历史。\n`+report.rows.map(n=>n.fact+'：'+n.reason).join('\n');
@@ -140,7 +148,7 @@ function openCharacterMemos(target) {
         const sourceStatus=characterMemoSourceStatus(chat,note);
         if(typeof appendCharacterMemoDetails==='function')appendCharacterMemoDetails(chat,note,{node,content,button});
         if(!sourceStatus.valid)content.append(node('p','memo-status',sourceStatus.message));
-        const old=note.replacesId&&characterMemoState(chat).notes.find(n=>n.id===note.replacesId&&n.owner===owner.persona);
+        const old=note.replacesId&&characterMemoRecords(chat).find(n=>n.id===note.replacesId&&n.owner===owner.persona);
         if(note.replacesId){const conflict=node('section','memo-detail-source memo-conflict');conflict.append(node('h3','','原记录'),node('p','',old?.fact||'原记录已移除'));if(old?.locked)conflict.append(node('small','','已锁定'));content.append(conflict);}
         const source=node('section','memo-detail-source');source.append(node('h3','','原话'));
         for(const evidence of note.sources||[]){source.append(node('p','',evidence.quote));const original=chat.history.find(m=>m.id===evidence.id);if(original){const preview=node('details');preview.append(node('summary','','查看原消息'),node('p','',original.content));source.append(preview);}}
@@ -153,14 +161,14 @@ function openCharacterMemos(target) {
             let reviewing=false;
             const review=async(action)=>{
                 if(reviewing)return;reviewing=true;error.textContent='';controls.forEach(([b])=>b.disabled=true);v.setBusy(true);
-                try{guard();if(JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.id))!==snapshot)throw new Error('记录已变化，请重新打开后审核');await action();guard();render();v.setBusy(false);v.dismiss();}
+                try{guard();if(JSON.stringify(characterMemoRecords(chat).find(n=>n.id===note.id))!==snapshot)throw new Error('记录已变化，请重新打开后审核');await action();guard();render();v.setBusy(false);v.dismiss();}
                 catch(reason){error.textContent=reason.message;}
                 finally{reviewing=false;v.setBusy(false);controls.forEach(([b,value])=>b.disabled=value);}
             };
             const remove=async(suppress)=>{if(!impactConfirm(note,suppress?'忽略':'删除'))throw new Error('已取消');const removed=await deleteCharacterMemo(chat,note.id,suppress);if(removed)undo={note:removed,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
             const removeButton=node('button','','删除');removeButton.type='button';controls.push([removeButton,false]);removeButton.onclick=()=>review(()=>remove(false));footer.append(removeButton);
             const approve=(label,decision)=>{const action=node('button',decision==='keep-both'?'':'panel-primary',label);action.type='button';action.disabled=!sourceStatus.valid||Boolean(note.expiresAt&&note.expiresAt<=Date.now())||decision==='replace'&&(!old||old.locked||old.status!=='approved');const disabled=action.disabled;controls.push([action,disabled]);
-                action.onclick=()=>review(async()=>{if(decision==='replace'&&JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.replacesId))!==originalSnapshot)throw new Error('原记录已变化，请重新打开后审核');await changeCharacterMemo(chat,note.id,{status:'approved',conflictResolution:decision});});footer.append(action);};
+                action.onclick=()=>review(async()=>{if(decision==='replace'&&JSON.stringify(characterMemoRecords(chat).find(n=>n.id===note.replacesId))!==originalSnapshot)throw new Error('原记录已变化，请重新打开后审核');await changeCharacterMemo(chat,note.id,{status:'approved',conflictResolution:decision});});footer.append(action);};
             if(note.replacesId){approve('替换旧记录','replace');approve('两条都保留','keep-both');const ignore=node('button','','忽略');ignore.type='button';controls.push([ignore,false]);ignore.onclick=()=>review(()=>remove(true));footer.append(ignore);}
             else approve('确认记忆');
         }
@@ -169,13 +177,15 @@ function openCharacterMemos(target) {
     function edit(note,seed){
         guard();const e=createMessageForwardDialog(note?'编辑备忘录':'添加备忘录','character-memo-editor');e.panel.classList.add('derived-settings');const content=node('div','derived-body'),footer=node('footer'),error=node('p','memo-feedback');error.setAttribute('aria-live','polite');
         const field=(label,value,multiline=false)=>{const row=node('label','memo-editor-field',label),input=node(multiline?'textarea':'input');input.value=value||'';input.maxLength=multiline?600:400;input.setAttribute('aria-label',label);row.append(input);content.append(row);return input;};
-        const initial=note||seed;const fact=field('记住的事情',initial?.fact),text=field('角色的便签',initial?.content,true),expires=field('到期时间',initial?.expiresAt?new Date(initial.expiresAt-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'');expires.type='datetime-local';
+        const initial=note||seed;const fact=field('记住的事情',initial?.fact),text=field('角色的便签',initial?.content,true),expires=field('到期时间',characterMemoLocalInput(initial?.expiresAt));expires.type='datetime-local';
         const extra=node('details','memo-options');extra.append(node('summary','','事实与隐私'));content.append(extra);
-        const metadata={};for(const [key,label]of [['attribute','属性'],['value','取值'],['topics','主题'],['relatedPeople','关联人物'],['validFrom','生效时间'],['validTo','失效时间']]){const row=node('label','memo-editor-field',label),input=node('input');input.setAttribute('aria-label',label);input.value=Array.isArray(initial?.[key])?initial[key].join('、'):key.startsWith('valid')&&initial?.[key]?new Date(initial[key]-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):initial?.[key]||'';if(key.startsWith('valid'))input.type='datetime-local';row.append(input);extra.append(row);metadata[key]=input;}
+        const metadata={};for(const [key,label]of [['attribute','属性'],['value','取值'],['topics','主题'],['relatedPeople','关联人物'],['validFrom','生效时间'],['validTo','失效时间']]){const row=node('label','memo-editor-field',label),input=node('input');input.setAttribute('aria-label',label);input.value=Array.isArray(initial?.[key])?initial[key].join('、'):key.startsWith('valid')?characterMemoLocalInput(initial?.[key]):initial?.[key]||'';if(key.startsWith('valid'))input.type='datetime-local';row.append(input);extra.append(row);metadata[key]=input;}
         const localOnly=node('input');localOnly.type='checkbox';localOnly.checked=initial?.localOnly===true;localOnly.setAttribute('aria-label','仅本地查看');const localRow=node('label','memo-switch-row');localRow.append(node('span','','仅本地查看'),localOnly);extra.append(localRow);
         const polarity=node('select');polarity.setAttribute('aria-label','肯定或否定');for(const [value,label]of [['unknown','未标注'],['positive','肯定'],['negative','否定']]){const option=node('option','',label);option.value=value;polarity.append(option);}polarity.value=initial?.polarity||'unknown';extra.append(polarity);
-        const save=node('button','panel-primary','保存');save.type='button';save.onclick=async()=>{save.disabled=true;e.setBusy(true);try{guard();if(!fact.value.trim())throw new Error('请填写记住的事情');if(characterMemoSecret(fact.value+text.value))throw new Error('请勿记录密钥、密码或验证码');const expiry=expires.value?Date.parse(expires.value):null;if(expires.value&&!Number.isFinite(expiry))throw new Error('到期时间无效');
-            const fields={fact:fact.value.trim(),content:text.value.trim(),userEdited:true,locked:true,expiresAt:expiry,localOnly:localOnly.checked,polarity:polarity.value};for(const [key,input]of Object.entries(metadata))fields[key]=key.startsWith('valid')?input.value?Date.parse(input.value):null:['topics','relatedPeople'].includes(key)?input.value.split(/[、,，\n]/):input.value.trim();
+        // Preserve unchanged absolute times, including seconds and the repeated DST hour.
+        const parseTime=(value,key)=>value===characterMemoLocalInput(initial?.[key])?(initial?.[key]??null):value?Date.parse(value):null;
+        const save=node('button','panel-primary','保存');save.type='button';save.onclick=async()=>{save.disabled=true;e.setBusy(true);try{guard();if(!fact.value.trim())throw new Error('请填写记住的事情');if(characterMemoSecret(fact.value+text.value))throw new Error('请勿记录密钥、密码或验证码');const expiry=parseTime(expires.value,'expiresAt');if(expires.value&&!Number.isFinite(expiry))throw new Error('到期时间无效');
+            const fields={fact:fact.value.trim(),content:text.value.trim(),userEdited:true,locked:true,expiresAt:expiry,localOnly:localOnly.checked,polarity:polarity.value};for(const [key,input]of Object.entries(metadata))fields[key]=key.startsWith('valid')?parseTime(input.value,key):['topics','relatedPeople'].includes(key)?input.value.split(/[、,，\n]/):input.value.trim();
             if(note)await changeCharacterMemo(chat,note.id,fields);
             else await addManualCharacterMemo(chat,{...fields,subject:seed?.subject,category:seed?.category});
             e.setBusy(false);e.dismiss();if(characterMemoCurrent(owner))render();

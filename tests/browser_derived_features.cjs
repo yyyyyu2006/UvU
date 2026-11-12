@@ -113,10 +113,11 @@ const root = path.join(__dirname, '..');
         await page.locator('[data-service] summary').click();
         await page.locator('[name=service]').selectOption('mcp');
         // Unsaved character controls must not be persisted by the location shortcut.
+        await page.locator('.draft-environment-remote > summary').click();
         await page.locator('[name=remoteEnabled]').check();
         await page.locator('[name=aiEnabled]').check();
         await page.locator('[data-locate]').click();
-        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('无需再点保存'));
+        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('无需再点保存'),null,{timeout:5000}).catch(async e=>{console.log('LOCATION STATUS',await page.locator('#environment-settings .derived-status').textContent());throw e;});
         const saved = await page.evaluate(() => ({ settings: db.environmentSettings, profile: db.characters[0].environmentProfile }));
         assert.equal(saved.settings.enabled, true); assert.equal(saved.settings.service, 'public');
         assert.equal(saved.settings.userLocation.name, '上海'); assert.equal(saved.profile.aiEnabled, false);

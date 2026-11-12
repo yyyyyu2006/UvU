@@ -79,13 +79,19 @@ async function saveLibraryMemory(chat, fields, { existing = null, sources = [], 
     return journal;
 }
 
+function memoryLibraryLocalDay(timestamp) {
+    if (timestamp == null || timestamp === '') return '';
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return '';
+    return [String(date.getFullYear()).padStart(4,'0'), String(date.getMonth()+1).padStart(2,'0'), String(date.getDate()).padStart(2,'0')].join('-');
+}
 function queryMemoryLibrary(journals, { query = '', category = '', source = '', status = '', from = '', to = '', page = 0, pageSize = 20, states = new Map() } = {}) {
     const terms = String(query).toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
     const day = value => { const match = String(value || '').match(/\d{4}-\d{2}-\d{2}/); return match ? match[0] : ''; };
     const matches = journals.filter(journal => {
         const actualSource = journal.source === 'sillytavern' ? 'sillytavern' : journal.source === 'character-memo' ? 'character-memo' : journal.autoMemory ? 'summary' : 'manual';
         const actualStatus = journal.qualityReview?.status === 'pending' ? 'review' : journal.vectorSupersededBy ? 'superseded' : states.get(journal.id) || 'pending';
-        const stamp = day(journal.timeline) || (Number(journal.createdAt) > 0 ? new Date(journal.createdAt).toISOString().slice(0, 10) : '');
+        const stamp = day(journal.timeline) || memoryLibraryLocalDay(journal.createdAt);
         const text = `${journal.title || ''}\n${journal.content || ''}\n${journal.timeline || ''}`.toLocaleLowerCase();
         return (!category || (journal.category || '未分类') === category) && (!source || source === actualSource) && (!status || status === actualStatus) &&
             (!from || stamp && stamp >= from) && (!to || stamp && stamp <= to) && terms.every(term => text.includes(term));
@@ -93,6 +99,25 @@ function queryMemoryLibrary(journals, { query = '', category = '', source = '', 
     pageSize = Math.max(1, Math.min(100, Math.floor(Number(pageSize) || 20)));
     const pages = Math.max(1, Math.ceil(matches.length / pageSize)); page = Math.max(0, Math.min(pages - 1, Math.floor(Number(page) || 0)));
     return { items: matches.slice(page * pageSize, (page + 1) * pageSize), total: matches.length, pages, page };
+}
+function memoryLibraryMemoState(chat, note) {
+    const settings=characterMemoSettings(chat);
+    if(note.status==='pending')return 'review';
+    if(note.status==='superseded'||note.status==='done')return note.status;
+    if(note.localOnly)return 'local-only';
+    if(!characterMemoSourceValid(chat,note))return 'source-invalid';
+    if(!characterMemoPrivacyAllowed(chat,note.fact+' '+(note.content||'')))return 'private';
+    if(!characterMemoAt(note))return note.validFrom>Date.now()?'future':'expired';
+    if(!settings.enabled||!settings.useContext||note.useContext===false)return 'paused';
+    return note.status==='approved'?'valid':'review';
+}
+function queryMemoryLibraryMemos(chat, options={}) {
+    const notes=queryCharacterMemoRecords(chat),states=new Map(notes.map(note=>[note.id,memoryLibraryMemoState(chat,note)]));
+    const byId=new Map(notes.map(note=>[note.id,note]));
+    const result=queryMemoryLibrary(notes.map(note=>({id:note.id,source:'character-memo',title:note.fact,
+        content:[note.content,...(note.topics||[])].filter(Boolean).join('\n'),category:note.category,
+        createdAt:note.recordedAt??note.createdAt})),{...options,source:'character-memo',states});
+    return {...result,items:result.items.map(item=>byId.get(item.id))};
 }
 function inspectMemoryMerge(sources) {
     const warnings = [], texts = new Map(), titles = new Map();
@@ -182,6 +207,7 @@ function openMemoryLibrary() {
     const selection = new Set();
     let page = 0, indexJob = null;
     const stateLabels = { valid: '有效', pending: '待建立 / 续建', changed: '来源或模型改变', missing: '来源已移除', dimension: '维度不匹配', superseded: '已合并', review: '待质量审阅' };
+    const memoStateLabels={valid:'可用于对话',review:'待审核',paused:'已暂停',expired:'已到期',future:'尚未生效','local-only':'仅本地查看','source-invalid':'原话不可用',private:'隐私排除',done:'已完成',superseded:'已更正'};
     const assertCurrent = () => { if (closed || !isCurrent()) throw new Error('存档或记忆已变化，请重新打开记忆管理'); };
     const element = (tag, text, className) => { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; };
     const button = (text, callback) => { const el = element('button', text); el.type = 'button'; el.onclick = callback; return el; };
@@ -335,31 +361,35 @@ function openMemoryLibrary() {
     };
     const refresh = () => {
         list.replaceChildren();
-        if(sourceFilter.value==='character-memo'&&typeof queryCharacterMemoRecords==='function'){
-            const memoDay=n=>{const value=new Date(n.recordedAt||n.createdAt||0);return Number.isFinite(value.getTime())?value.toISOString().slice(0,10):'';};
-            const settings=characterMemoSettings(chat),available=n=>settings.enabled&&settings.useContext&&n.status==='approved'&&n.useContext!==false&&!n.localOnly&&characterMemoAt(n)&&characterMemoSourceValid(chat,n)&&characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||''));
-            const rows=queryCharacterMemoRecords(chat,{query:search.value}).filter(n=>(!filter.value||n.category===filter.value)&&(!from.value||memoDay(n)>=from.value)&&(!to.value||memoDay(n)<=to.value)&&(!stateFilter.value||(stateFilter.value==='review'||stateFilter.value==='pending'?n.status==='pending':stateFilter.value==='valid'?available(n):!available(n))));
-            const previous=filter.value;filter.replaceChildren(new Option('全部分类',''));for(const category of [...new Set(queryCharacterMemoRecords(chat).map(n=>n.category||'未分类'))])filter.add(new Option(category,category));filter.value=previous;
-            const count=rows.length;page=Math.max(0,Math.min(page,Math.max(0,Math.ceil(count/20)-1)));
-            pagination.replaceChildren(button('上一页',()=>{page--;refresh();}),element('span',`第 ${page+1}/${Math.max(1,Math.ceil(count/20))} 页 · 匹配 ${count} 条`),button('下一页',()=>{page++;refresh();}));
-            pagination.firstChild.disabled=page===0;pagination.lastChild.disabled=(page+1)*20>=count;
-            for(const note of rows.slice(page*20,(page+1)*20)){
+        const all=chat.memoryJournals||[],memoSource=sourceFilter.value==='character-memo'&&typeof queryCharacterMemoRecords==='function';
+        const memoRecords=typeof queryCharacterMemoRecords==='function'?queryCharacterMemoRecords(chat):[];
+        // Normalize controls before computing rows, so changing source takes effect once.
+        const previousFilter=filter.value, categories=memoSource?memoRecords:sourceFilter.value?all:[...all,...memoRecords];
+        filter.replaceChildren(new Option('全部分类',''));
+        for(const category of [...new Set(categories.map(item=>item.category||'未分类'))].sort())filter.add(new Option(category,category));
+        filter.value=[...filter.options].some(option=>option.value===previousFilter)?previousFilter:'';
+        const previousState=stateFilter.value,labels=memoSource?memoStateLabels:stateLabels;
+        stateFilter.replaceChildren(new Option('全部状态',''));
+        for(const [value,label]of Object.entries(labels))stateFilter.add(new Option(label,value));
+        stateFilter.value=Object.hasOwn(labels,previousState)?previousState:'';
+        const options={category:filter.value,query:search.value,from:from.value,to:to.value,status:stateFilter.value,page,pageSize:20};
+        if(memoSource){
+            const result=queryMemoryLibraryMemos(chat,options);page=result.page;
+            pagination.replaceChildren(button('上一页',()=>{page--;refresh();}),element('span',`第 ${page+1}/${result.pages} 页 · 匹配 ${result.total} 条`),button('下一页',()=>{page++;refresh();}));
+            pagination.firstChild.disabled=page===0;pagination.lastChild.disabled=page+1>=result.pages;
+            for(const note of result.items){
                 const card=element('section',undefined,'memory-library-card'),heading=element('div',undefined,'memory-library-pick');
                 card.dataset.memorySource='character-memo';card.dataset.memoryCreatedAt=String(note.recordedAt||note.createdAt||0);
-                heading.append(element('strong',note.fact));card.append(heading,element('p',note.status==='pending'?'待审':available(note)?'可用':'已停用','memo-status'),element('pre',note.content||note.fact));
+                heading.append(element('strong',note.fact));card.append(heading,element('p',memoStateLabels[memoryLibraryMemoState(chat,note)],'memo-status'),element('pre',note.content||note.fact));
                 card.append(button('管理备忘录',()=>{assertCurrent();openCharacterMemos(chat);}));list.append(card);
             }
-            if(!count)list.append(element('p','没有匹配的备忘录'));return;
+            status.textContent=`备忘录 ${result.total} 条`;
+            if(!result.total)list.append(element('p','没有匹配的备忘录'));return;
         }
         if(!sourceFilter.value&&search.value.trim()&&typeof queryCharacterMemoRecords==='function'){
-            const memos=queryCharacterMemoRecords(chat,{query:search.value}).filter(n=>!(chat.memoryJournals||[]).some(j=>j.characterMemoId===n.id));
+            const memos=queryMemoryLibraryMemos(chat,{...options,page:0,pageSize:100}).items.filter(n=>!all.some(j=>j.characterMemoId===n.id));
             if(memos.length){const matches=element('section',undefined,'memo-search-results');matches.append(element('strong',`备忘录 ${memos.length}`));for(const note of memos.slice(0,5))matches.append(element('p',note.fact));matches.append(button('查看全部备忘录',()=>{assertCurrent();openCharacterMemos(chat);}));list.append(matches);}
         }
-        const all = chat.memoryJournals || [];
-        const previousFilter = filter.value;
-        filter.replaceChildren(new Option('全部分类', ''));
-        for (const category of [...new Set(all.map(journal => journal.category || '未分类'))].sort()) filter.add(new Option(category, category));
-        if ([...filter.options].some(option => option.value === previousFilter)) filter.value = previousFilter;
         const valid = getAutoMemoryState(chat).validIds;
         const sourceStates = getVectorMemorySourceStates(chat);
         const states = new Map(sourceStates.map(item => [item.id, item.status]));

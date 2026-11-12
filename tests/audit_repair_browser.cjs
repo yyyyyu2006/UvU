@@ -45,6 +45,7 @@ const server = http.createServer((req, res) => {
             await VectorIndexStore.commit(JSON.stringify(['character', 'other', 'old', 'old-model']), index, 'other');
             openMemoryLibrary();
         });
+        await page.locator('.draft-memory-nav').getByRole('button',{name:'设置',exact:true}).click();
         await page.locator('.memory-library-cache > summary').click();
         await page.waitForFunction(() => document.querySelectorAll('.memory-library-cache-row').length === 2);
         assert.equal(await page.locator('.memory-library-cache-row button:disabled').textContent(), '使用中');

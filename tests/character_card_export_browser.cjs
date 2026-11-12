@@ -12,6 +12,9 @@ const server=http.createServer((req,res)=>{const p=path.resolve(root,'.'+(req.ur
  assert.equal(await page.locator('#chat-settings-screen>.app-header #export-character-card-btn').count(),1);
  const headerButton=await page.locator('#export-character-card-btn').boundingBox(),headerBox=await page.locator('#chat-settings-screen>.app-header').boundingBox();assert.ok(headerButton.x>headerBox.x+headerBox.width/2);assert.ok(headerButton.x+headerButton.width<=headerBox.x+headerBox.width);
  await page.screenshot({path:path.join(out,'settings-header.png')});
+ // Real characters have migrated archives. Without this, a background save can
+ // migrate the synthetic character after the export captures its target.
+ await page.evaluate(async()=>{ensureChatArchives(db.characters[0]);await saveData();});
  await page.getByRole('button',{name:'导出角色卡',exact:true}).click();await page.locator('.cc-export-dialog').waitFor();
  assert.equal(await page.locator('.cc-persona>summary svg').count(),1);
  assert.equal(await page.locator('.cc-export-dialog').getByText('谢濯',{exact:true}).count(),1);assert.equal(await page.locator('.cc-export-dialog [data-entry]:checked').count(),2);
@@ -21,7 +24,7 @@ const server=http.createServer((req,res)=>{const p=path.resolve(root,'.'+(req.ur
  await page.getByLabel('选择 校园设定',{exact:true}).check();assert.equal(await page.locator('[data-entry]:checked').count(),1);
  await page.getByRole('button',{name:'完成选择',exact:true}).click();await page.getByRole('button',{name:'更多卡面资料',exact:true}).click();await page.getByLabel('生日',{exact:true}).fill('06.18');await page.getByLabel('身份',{exact:true}).fill('画家');await page.getByLabel('国籍',{exact:true}).fill('虚构地区');await page.getByRole('button',{name:'完成选择',exact:true}).click();
  for(const width of [320,390,768]){await page.setViewportSize({width,height:844});await page.locator('.cc-export-overlay').evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});await page.screenshot({path:path.join(out,'panel-'+width+'.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);}
- const download=page.waitForEvent('download');await page.getByRole('button',{name:'导出 PNG',exact:true}).click();const saved=await download;await saved.saveAs(path.join(out,'谢濯.png'));
+ await page.bringToFront();const download=page.waitForEvent('download',{timeout:30000}).catch(async error=>{console.log('EXPORT FAILURE',await page.locator('.cc-export-dialog').innerText());console.log('PAGE ERRORS',errors);throw error;});await page.getByRole('button',{name:'导出 PNG',exact:true}).click();const saved=await download;await saved.saveAs(path.join(out,'谢濯.png'));
  const bytes=fs.readFileSync(path.join(out,'谢濯.png'));let card;for(let offset=8;offset<bytes.length;){const length=bytes.readUInt32BE(offset);if(bytes.toString('ascii',offset+4,offset+8)==='tEXt'){const raw=bytes.subarray(offset+8,offset+8+length),zero=raw.indexOf(0);if(raw.toString('ascii',0,zero)==='chara')card=JSON.parse(Buffer.from(raw.subarray(zero+1).toString(),'base64').toString('utf8'));}offset+=length+12;}
  assert.equal(card.data.creator,'作者小雨');
  assert.equal(card.data.description,'中文🙂\n{{char}} 认识 {{user}}');assert.equal(card.data.character_book.entries.length,1);assert.equal(card.data.character_book.entries[0].content,'已选择的世界书');assert.ok(!JSON.stringify(card).includes('PRIVATE'));assert.ok(!JSON.stringify(card).includes('不应导出'));assert.ok(!JSON.stringify(card).includes('FOREIGN'));

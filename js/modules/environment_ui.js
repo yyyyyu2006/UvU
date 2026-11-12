@@ -90,13 +90,13 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         finally { if (valid()) form.querySelectorAll('button').forEach(button => button.disabled = false); }
     }
     function renderPlace(who) {
-        const label = form.querySelector(`[data-place="${who}"] [data-current]`), place = places[who];
+        const label = form.querySelector(`[data-current="${who}"]`), place = places[who];
         label.textContent = place ? `${place.name} · ${place.countryCode} · ${place.timezone}` : '尚未选择城市';
         const input = form.querySelector(`[data-place="${who}"] [data-subdivision]`); input.value = place?.subdivision || '';
     }
     for (const who of ['user', 'char']) {
         const section = form.querySelector(`[data-place="${who}"]`);
-        const current = environmentNode('p', '', 'derived-help'); current.dataset.current = '';
+        const current = environmentNode('p', '', 'derived-help'); current.dataset.current = who;
         const row = environmentNode('div', undefined, 'derived-search');
         const input = environmentNode('input'); input.placeholder = '搜索城市，例如 上海 / Tokyo'; input.setAttribute('aria-label', who === 'user' ? '我的城市' : '角色城市');
         const button = environmentNode('button', '搜索'); button.type = 'button'; row.append(input, button);

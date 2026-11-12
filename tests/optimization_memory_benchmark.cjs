@@ -6,7 +6,7 @@ for (const name of ['vector_memory_tools', 'auto_memory']) vm.runInContext(fs.re
 const tools = vm.runInContext('VectorMemoryTools', c), p95 = values => +values.sort((a, b) => a - b)[Math.ceil(values.length * .95) - 1].toFixed(2);
 (async () => {
     const query = Array.from({ length: 128 }, (_, i) => Math.sin(i + 1));
-    for (const count of [1000, 10000, 25000]) {
+    for (const count of [1000, 10000, 25000, 50000]) {
         global.gc?.(); const initial = process.memoryUsage().heapUsed;
         const chat = { id: 'bench', activeArchiveId: 'a', history: [], memoryJournals: [], autoMemorySettings: { vectorChunkSize: 1200 } };
         const rows = Array.from({ length: count }, (_, index) => ({ text: `<content>来源${index}：小明约定2026-11-09归还图书。</content><status>无关状态</status>`,
