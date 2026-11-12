@@ -10,6 +10,13 @@ function fixture() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/memory_library.js'), 'utf8'), c);
     return { chat, c };
 }
+test('linked memo journals have a distinct source and summary fidelity retains missing commitments',()=>{
+    const {c,chat}=fixture();const journals=[{id:'memo',source:'character-memo',content:'怕冷'},{id:'plain',content:'手动'}];
+    assert.deepEqual(Array.from(c.queryMemoryLibrary(journals,{source:'character-memo'}).items,x=>x.id),['memo']);
+    chat.history=[{id:'u',role:'user',content:'答应2026-11-14去看小李。还没买票。'}];
+    const r=c.memorySummaryFidelity(chat,{content:'约好出去。',autoMemory:{sources:[{id:'u'}]}});
+    assert.ok(r.warnings.some(x=>x.includes('2026-11-14')));assert.equal(r.rawCount,1);assert.equal(r.verified,false);
+});
 test('summary sentence lookup links only literal fragments in its own source floors',()=>{
     const {chat,c}=fixture();chat.history=[{id:'one',role:'user',content:'我不吃花生。约好周六见。'},{id:'two',role:'assistant',content:'周六见。'},{id:'foreign',role:'user',content:'火星旅行。'}];
     const journal={content:'我不吃花生。火星旅行。周六见。',autoMemory:{sources:[{id:'one'},{id:'two'}]}};

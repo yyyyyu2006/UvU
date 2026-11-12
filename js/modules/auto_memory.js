@@ -927,6 +927,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     }
     const hitLimit = settings.vectorTopK * (settings.vectorRerankEnabled ? 3 : 1);
     const byJournal = new Map(), scoreByJournal = new Map();
+    const rankingComparisonRows=new Map();
     const scores = await scoreVectorMemoryChunks(queryVector, chunkHits, assertCurrent, signal);
     for (const vector of queryVectors.slice(1)) {
         const more = await scoreVectorMemoryChunks(vector, chunkHits, assertCurrent, signal);
@@ -936,6 +937,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         const item = chunkHits[i];
         const lexical = settings.vectorHybridEnabled && tools ? tools.lexical(rawQuery, item.journal.title + '\n' + item.journal.content.slice(item.chunk.start, item.chunk.end)) : 0;
         const hit = { ...item, vectorScore: scores[i], lexical, score: settings.vectorHybridEnabled ? 0.4 * scores[i] + 0.6 * lexical : scores[i] };
+        if(settings.vectorHybridEnabled){const prior=rankingComparisonRows.get(item.journal.id);rankingComparisonRows.set(item.journal.id,{id:item.journal.id,vector:Math.max(prior?.vector??-1,scores[i]),lexical:Math.max(prior?.lexical??0,lexical)});}
         scoreByJournal.set(hit.journal.id, Math.max(scoreByJournal.get(hit.journal.id) ?? -Infinity, hit.score));
         if (hit.vectorScore < settings.vectorThreshold && (!settings.vectorHybridEnabled || hit.lexical < 0.6)) continue;
         if (!byJournal.has(hit.journal.id)) byJournal.set(hit.journal.id, []);
@@ -1007,7 +1009,8 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     }
     updateVectorMemoryDiagnostics(chat, { beforeRerank, afterRerank, scores: [...scoreByJournal].map(([id, score]) => ({ id, score })), selected: ranked.map(item => ({ id: item.journal.id, title: item.journal.title, score: item.score,
         timeline: item.journal.timeline || '', createdAt: item.journal.createdAt, content: item.journal.content })), excluded,
-        ranking: settings.vectorRerankEnabled && !warning ? '重排' : settings.vectorHybridEnabled ? '关键词与向量融合' : '余弦相似度', warning, resultCacheHit: false });
+        ranking: settings.vectorRerankEnabled && !warning ? '重排' : settings.vectorHybridEnabled ? '关键词与向量融合' : '余弦相似度', warning, resultCacheHit: false,
+        rankingComparison:settings.vectorHybridEnabled&&typeof compareCharacterMemoryRanking==='function'?compareCharacterMemoryRanking([...rankingComparisonRows.values()]):null });
     recordVectorMemoryStatus(chat, warning || `已索引 ${Object.keys(nextIndex).length} 篇，命中 ${ranked.length} 篇相关记忆${pendingCount ? `；剩余 ${pendingCount} 个分块待续建，本轮使用已有有效记忆` : ''}`, Boolean(warning));
     if (!ranked.length) return '';
     const context = header + ranked.map(format).join('\n\n');

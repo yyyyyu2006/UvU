@@ -331,6 +331,7 @@
         if (!queueItems.includes(result)) queueItems.push(result);
         if (queueItems.length > 20) queueItems.shift();
     }
+    function reviewable(result,s) {return valid(s)&&minted.has(result)&&eligible(result,s);}
     function eligible(item, s) { return item.scope?.chat === s.chat && item.scope?.archive === s.archive && item.scope?.history === s.history && item.stamp === stamp() && Date.now() - item.at <= 600000 && granted(s, item.serviceId, item.toolName) && settings().enabled; }
     function pending(s) { return valid(s) ? queueItems.filter(item => eligible(item, s)).length : 0; }
     function context(items, limit = settings().planner.maxContextChars) {
@@ -374,6 +375,6 @@
         return context(items);
     }
     window.MCPServices = Object.freeze({ normalize, settings, save, service, vault, discover, browse, preview, call, authorized, scope, valid, policy, stamp,
-        queue, pending, lease, take, context, health, clearRuntime, diagnostics, logs: () => copy(logItems), log,
+        queue, pending, lease, take, context, health, clearRuntime, diagnostics, reviewable, logs: () => copy(logItems), log,
         pool, exportConfig: () => ({ kind: 'uvu-mcp-config', ...normalize(settings(), true) }) });
 }());

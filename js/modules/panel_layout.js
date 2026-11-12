@@ -220,7 +220,7 @@
                 const stamp=Number(card.dataset.memoryCreatedAt),date=stamp?new Date(stamp):null;
                 if(date)body.append(make('small','',date.toLocaleString([],{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})));
                 body.append(make('h2','draft-memory-reader-title',title?.textContent||'记忆'));
-                const sourceLabels={manual:'手动记录',summary:'自动总结',sillytavern:'酒馆',moments:'动态'},source=card.dataset.memorySource;
+                const sourceLabels={manual:'手动记录',summary:'自动总结',sillytavern:'酒馆',moments:'动态','character-memo':'备忘录'},source=card.dataset.memorySource;
                 body.append(make('span','draft-tag',sourceLabels[source]||'记忆'),make('p','draft-memory-reader-content',text.textContent));
                 const sources=make('section','draft-card draft-memory-provenance');const owner=root.querySelector('.draft-identity');if(owner){const row=make('div','draft-setting-row');row.append(make('span','','所属角色'),make('small','',q(owner,'strong')?.textContent||''));sources.append(row);}
                 const provenance=card.memoryPresentation;
@@ -250,7 +250,7 @@
             };text.after(read);
             const heading=q(card,'.memory-library-pick strong');if(heading){read.classList.add('draft-memory-title');heading.after(read);read.textContent=heading.textContent;read.setAttribute('aria-label','阅读记忆');heading.hidden=true;}
             const dateValue=Number(card.dataset.memoryCreatedAt);if(dateValue){const date=new Date(dateValue),day=make('time','draft-memory-date',date.toLocaleDateString([],{month:'long',day:'numeric'})),clock=make('time','draft-memory-clock',date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}));day.dateTime=clock.dateTime=date.toISOString();card.prepend(day,clock);}
-            card.append(make('span','draft-tag draft-memory-source',({manual:'手动记录',summary:'自动总结',sillytavern:'酒馆',moments:'动态'})[card.dataset.memorySource]||'记忆'));
+            card.append(make('span','draft-tag draft-memory-source',({manual:'手动记录',summary:'自动总结',sillytavern:'酒馆',moments:'动态','character-memo':'备忘录'})[card.dataset.memorySource]||'记忆'));
             const metadata = [...card.children].filter(el => el.matches('.feature-help,details'));
             if (metadata.length) { const details = make('details', 'draft-memory-metadata'); details.append(make('summary', '', '来源与引用'), ...metadata); card.append(details); }
             for (const button of card.querySelectorAll(':scope > button')) if (/编辑内容/.test(button.textContent)) label(button, '编辑');
@@ -1233,7 +1233,7 @@
                 q(root,'.mono-page-nav .mono-nav-spacer')?.replaceWith(selection);
             }
             const filter = [...root.querySelectorAll('.memory-library-filters select')].find(el => [...el.options].some(o => o.value === 'sillytavern'));
-            if (filter) { filter.setAttribute('aria-label', '记忆来源'); segment(filter, { '': '全部', sillytavern: '酒馆', summary: '自动总结', manual: '手动' }); const choices = filter.closest('label').nextElementSibling; const search = q(body, '.panel-library-search'); if (search && choices) search.after(choices); }
+            if (filter) { filter.setAttribute('aria-label', '记忆来源'); segment(filter, { '': '全部', sillytavern: '酒馆', summary: '总结', manual: '手动', 'character-memo':'备忘录' }); const choices = filter.closest('label').nextElementSibling; const search = q(body, '.panel-library-search'); if (search && choices) search.after(choices); }
             if (body && typeof db !== 'undefined') { const chat = (currentChatType === 'private' ? db.characters : db.groups).find(c => c.id === currentChatId); if (chat) body.prepend(identityRow(chat)); }
             if (body && !q(body, '.memory-library-list')) { const footer = q(root, '.mono-page-footer'), actions = q(body, '.memory-library-toolbar'); if (footer && actions) { footer.append(actions); [...actions.querySelectorAll('button')].at(-1)?.classList.add('panel-primary'); } }
             if (q(body, '.memory-library-list')) {
@@ -1500,22 +1500,18 @@
         try { if (typeof dexieDB === 'undefined' || !dexieDB?.workshopHistory) throw new Error(); records = await dexieDB.workshopHistory.orderBy('timestamp').reverse().toArray(); if (!body.isConnected) return; render(); } catch { status.textContent = '工坊记录暂不可用，请稍后重试。'; }
     }
     function imageWorkspace() {
-        const overlay = document.getElementById('send-pv-modal'), form = document.getElementById('send-pv-form'), ai = document.getElementById('pv-mode-ai');
-        const panel = overlay && q(overlay, '.modal-window'); if (!panel || !form || !ai) return;
-        const nav = make('header', 'mono-page-nav draft-ai-nav'), back = make('button', 'mono-nav-back'), title = make('h2', 'mono-page-title', 'AI 生图'); back.type = 'button'; back.setAttribute('aria-label', '关闭生图'); navIcon(back, 'chevron-left'); back.onclick = () => { ChatImageGeneration.cancel(); overlay.classList.remove('visible'); };
-        nav.append(back, title, make('span', 'mono-nav-spacer')); panel.prepend(nav);
-        const sync = () => { const active = ai.checked; panel.classList.toggle('uvu-mono-panel', active); panel.classList.toggle('mono-page', active); panel.classList.toggle('draft-image-page', active); overlay.classList.toggle('mono-page-overlay', active); nav.hidden = !active; if(active)sheetLayout(panel);panel.classList.toggle('uvu-sheet-v2',active); };
-        form.addEventListener('change', sync); form.addEventListener('reset', () => queueMicrotask(sync)); sync();
-        const description=q(form,'#pv-text-input'),field=description?.closest('.form-group'),modes=q(form,'.pv-send-modes');
-        const identity=make('div','draft-image-identity'),options=make('details','draft-image-options'),optionsTitle=make('summary','','生成选项');options.append(optionsTitle);
+        const overlay=document.getElementById('send-pv-modal'),form=document.getElementById('send-pv-form'),ai=document.getElementById('pv-mode-ai');
+        if(!overlay || !form || !ai)return;
+        // Keep the original photo form and theme. Drawing controls are an optional extension.
+        const options=make('div','pv-ai-options'),actions=make('div','pv-send-actions');
+        options.hidden=true;
+        const settings=make('button','btn btn-secondary','设置'),history=make('button','btn btn-secondary','记录');
+        settings.type=history.type='button';settings.onclick=openImageSettings;history.onclick=openImageHistory;actions.append(settings,history);
         const hint=q(form,'#pv-generation-hint'),previewChoice=q(form,'label:has(#pv-confirm-preview)');
-        if(modes){form.prepend(identity);modes.after(field);}
-        if(hint)options.append(hint);if(previewChoice)options.append(previewChoice);if(field)field.after(options);
-        const caption=field&&q(field,'label');if(caption)caption.classList.add('draft-image-caption');
-        const actions=make('div','draft-image-settings-actions'),ratio=make('span','draft-tag'),apiTag=make('span','draft-tag','当前绘图 API'),settings=make('button','','设置'),history=make('button','','记录');settings.type=history.type='button';settings.onclick=openImageSettings;history.onclick=openImageHistory;actions.append(ratio,apiTag,settings,history);field?.after(actions);
-        const updateRatio=()=>{const config=typeof db!=='undefined'&&db.workshopSettings||{};ratio.textContent=config.provider==='gpt'?(config.gptAspectRatio||'1024×1024'):(config.aspectRatio||'3:4');};
-        const refreshIdentity=()=>{identity.replaceChildren();const chat=typeof db!=='undefined'&&(currentChatType==='private'?db.characters:db.groups).find(c=>c.id===currentChatId);if(chat)identity.append(identityRow(chat,'生成后发送至当前聊天'));};
-        new MutationObserver(()=>{refreshIdentity();updateRatio();}).observe(overlay,{attributes:true,attributeFilter:['class']});refreshIdentity();updateRatio();
+        options.append(actions);if(hint)options.append(hint);if(previewChoice)options.append(previewChoice);
+        q(form,'.form-group')?.after(options);
+        const sync=()=>{options.hidden=!ai.checked;};
+        form.addEventListener('change',sync);form.addEventListener('reset',()=>queueMicrotask(sync));sync();
     }
     function openAppearanceWorkspace() {
         const d=createMessageForwardDialog('二改界面','draft-appearance-workspace');d.panel.classList.add('derived-settings');

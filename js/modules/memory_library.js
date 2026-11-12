@@ -16,6 +16,16 @@ function memorySummarySentenceLinks(chat, journal) {
         return { sentence, matches: text.length < 4 ? [] : sources.filter(item => item.text.includes(text)).slice(0,5).map(({message,floor}) => ({id:message.id,floor})) };
     });
 }
+function memorySummaryFidelity(chat,journal) {
+    const ids=new Set(journal.autoMemory?.sources?.map(s=>s.id)||[]),range=journal.range||{};
+    const sources=journal.manualMergeSources?.length?journal.manualMergeSources:(chat.history||[]).filter((m,i)=>(ids.size?ids.has(m.id):range.start>0&&i>=range.start-1&&i<range.end)&&['user','assistant'].includes(m.role)&&!m.isHidden&&!m.isWithdrawn&&!m.isContextDisabled).slice(0,200);
+    const warnings=[],summary=String(journal.content||''),seen=new Set();
+    for(const source of sources){const raw=String(source.content||'').slice(0,12000),dates=raw.match(/\d{4}[-年/]\d{1,2}[-月/]\d{1,2}日?/g)||[];
+        for(const date of dates)if(!summary.includes(date)&&!seen.has(date)){warnings.push('日期未逐字保留：'+date);seen.add(date);}
+        for(const sentence of raw.split(/(?<=[。！？\n])/).filter(x=>/答应|约定|承诺|未完成|还没|改期|取消/.test(x)).slice(0,20))if(!summary.includes(sentence.trim()))warnings.push('请核对约定／待办：'+sentence.trim().slice(0,120));
+    }
+    return {rawCount:sources.length,warnings:warnings.slice(0,30),verified:false,layer:journal.source==='character-memo'?'稳定事实':/临时|计划|约定/.test(journal.category||'')?'临时状态／计划':'事件摘要'};
+}
 function memoryLibraryGroups(journals, size = 6) {
     const categories = new Map();
     for (const journal of journals) {
@@ -73,7 +83,7 @@ function queryMemoryLibrary(journals, { query = '', category = '', source = '', 
     const terms = String(query).toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
     const day = value => { const match = String(value || '').match(/\d{4}-\d{2}-\d{2}/); return match ? match[0] : ''; };
     const matches = journals.filter(journal => {
-        const actualSource = journal.source === 'sillytavern' ? 'sillytavern' : journal.autoMemory ? 'summary' : 'manual';
+        const actualSource = journal.source === 'sillytavern' ? 'sillytavern' : journal.source === 'character-memo' ? 'character-memo' : journal.autoMemory ? 'summary' : 'manual';
         const actualStatus = journal.qualityReview?.status === 'pending' ? 'review' : journal.vectorSupersededBy ? 'superseded' : states.get(journal.id) || 'pending';
         const stamp = day(journal.timeline) || (Number(journal.createdAt) > 0 ? new Date(journal.createdAt).toISOString().slice(0, 10) : '');
         const text = `${journal.title || ''}\n${journal.content || ''}\n${journal.timeline || ''}`.toLocaleLowerCase();
@@ -184,9 +194,10 @@ function openMemoryLibrary() {
     const addInput = (label, type) => { const wrap = element('label', label), input = element('input'); input.type = type; wrap.append(input); filters.append(wrap); return input; };
     const search = addInput('搜索标题 / 正文 / 时间线', 'search'), from = addInput('开始日期', 'date'), to = addInput('结束日期', 'date');
     const addSelect = (label, entries) => { const wrap = element('label', label), select = element('select');
+        select.setAttribute('aria-label',label);
         for (const [value, text] of entries) { const option = element('option', text); option.value = value; select.append(option); }
         wrap.append(select); filters.append(wrap); return select; };
-    const sourceFilter = addSelect('来源', [['', '全部来源'], ['manual', '手动记忆'], ['summary', '自动总结'], ['sillytavern', '酒馆导入']]);
+    const sourceFilter = addSelect('来源', [['', '全部来源'], ['manual', '手动记忆'], ['summary', '自动总结'], ['sillytavern', '酒馆导入'], ['character-memo','备忘录']]);
     const stateFilter = addSelect('索引状态', [['', '全部状态'], ...Object.entries(stateLabels)]);
     const filterDisclosure = element('details', undefined, 'memory-library-filter-disclosure');
     filterDisclosure.append(element('summary', '筛选'), filters);
@@ -279,6 +290,8 @@ function openMemoryLibrary() {
         details.addEventListener('toggle', () => {
             if (!details.open || details.dataset.loaded) return;
             details.dataset.loaded = 'true';
+            const fidelity=memorySummaryFidelity(chat,journal),audit=element('details');audit.append(element('summary','总结保真对照'),element('p',fidelity.layer+' · '+fidelity.rawCount+' 个来源；文字检查不能证明事实正确。'));
+            for(const warning of fidelity.warnings)audit.append(element('p',warning));details.append(audit);
             if (journal.manualMergeSources?.length) {
                 for (const source of journal.manualMergeSources) details.append(element('pre', `${source.title}\n${describe(source)}\n${source.content}`));
             }
@@ -322,6 +335,26 @@ function openMemoryLibrary() {
     };
     const refresh = () => {
         list.replaceChildren();
+        if(sourceFilter.value==='character-memo'&&typeof queryCharacterMemoRecords==='function'){
+            const memoDay=n=>{const value=new Date(n.recordedAt||n.createdAt||0);return Number.isFinite(value.getTime())?value.toISOString().slice(0,10):'';};
+            const settings=characterMemoSettings(chat),available=n=>settings.enabled&&settings.useContext&&n.status==='approved'&&n.useContext!==false&&!n.localOnly&&characterMemoAt(n)&&characterMemoSourceValid(chat,n)&&characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||''));
+            const rows=queryCharacterMemoRecords(chat,{query:search.value}).filter(n=>(!filter.value||n.category===filter.value)&&(!from.value||memoDay(n)>=from.value)&&(!to.value||memoDay(n)<=to.value)&&(!stateFilter.value||(stateFilter.value==='review'||stateFilter.value==='pending'?n.status==='pending':stateFilter.value==='valid'?available(n):!available(n))));
+            const previous=filter.value;filter.replaceChildren(new Option('全部分类',''));for(const category of [...new Set(queryCharacterMemoRecords(chat).map(n=>n.category||'未分类'))])filter.add(new Option(category,category));filter.value=previous;
+            const count=rows.length;page=Math.max(0,Math.min(page,Math.max(0,Math.ceil(count/20)-1)));
+            pagination.replaceChildren(button('上一页',()=>{page--;refresh();}),element('span',`第 ${page+1}/${Math.max(1,Math.ceil(count/20))} 页 · 匹配 ${count} 条`),button('下一页',()=>{page++;refresh();}));
+            pagination.firstChild.disabled=page===0;pagination.lastChild.disabled=(page+1)*20>=count;
+            for(const note of rows.slice(page*20,(page+1)*20)){
+                const card=element('section',undefined,'memory-library-card'),heading=element('div',undefined,'memory-library-pick');
+                card.dataset.memorySource='character-memo';card.dataset.memoryCreatedAt=String(note.recordedAt||note.createdAt||0);
+                heading.append(element('strong',note.fact));card.append(heading,element('p',note.status==='pending'?'待审':available(note)?'可用':'已停用','memo-status'),element('pre',note.content||note.fact));
+                card.append(button('管理备忘录',()=>{assertCurrent();openCharacterMemos(chat);}));list.append(card);
+            }
+            if(!count)list.append(element('p','没有匹配的备忘录'));return;
+        }
+        if(!sourceFilter.value&&search.value.trim()&&typeof queryCharacterMemoRecords==='function'){
+            const memos=queryCharacterMemoRecords(chat,{query:search.value}).filter(n=>!(chat.memoryJournals||[]).some(j=>j.characterMemoId===n.id));
+            if(memos.length){const matches=element('section',undefined,'memo-search-results');matches.append(element('strong',`备忘录 ${memos.length}`));for(const note of memos.slice(0,5))matches.append(element('p',note.fact));matches.append(button('查看全部备忘录',()=>{assertCurrent();openCharacterMemos(chat);}));list.append(matches);}
+        }
         const all = chat.memoryJournals || [];
         const previousFilter = filter.value;
         filter.replaceChildren(new Option('全部分类', ''));
@@ -339,6 +372,7 @@ function openMemoryLibrary() {
         const diag = getVectorMemoryDiagnostics(chat);
         const indexPreview = getVectorMemoryIndexPreview(chat, sourceStates);
         diagnosticText.textContent = [diag.cleaningWarning || '', diag.query ? `查询：${diag.query}` : '尚无本轮查询',
+            diag.rankingComparison?`排序对照（不改变本轮结果）：加权 ${(diag.rankingComparison.weighted||[]).join(' → ')}；RRF ${(diag.rankingComparison.rrf||[]).join(' → ')}`:'',
             `续建预览：待嵌入 ${indexPreview.newChunks} 块；复用 ${indexPreview.reusedChunks} 块；更新 ${indexPreview.updatedSources} 个来源；移除 ${indexPreview.deletedChunks} 块。至少 ${indexPreview.minimumBatches} 批嵌入（Token 分批可能增加；不估算费用）。`,
             indexPreview.batchLimit !== null ? `回复前预算 ${indexPreview.batchLimit} 批 / ${indexPreview.timeBudgetMs} ms；手动续建可暂停。` : '',
             `分块：${diag.totalChunks || 0}；待续建：${diag.pendingChunks || 0}；本次完成 ${diag.completedBatches || 0} 批`,

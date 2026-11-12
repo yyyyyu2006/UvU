@@ -144,6 +144,15 @@
             catch (error) { d.status.textContent = error.message; }
         }); supply.disabled = true;
         const actions = node('div', undefined, 'mcp-row');
+        if(target?.type==='private'&&typeof importExternalCharacterMemo==='function')actions.append(button('存为待审备忘录',()=>d.run(async()=>{
+            if(!result||!scope||!m().reviewable(result,scope))throw new Error('请在原角色当前存档重新调用工具');
+            const chat=target.chat,editor=dialog('审核外部事实','mcp-memory-review'),text=node('textarea');text.value=String(result.text||'').slice(0,400);text.maxLength=400;text.setAttribute('aria-label','外部事实');
+            const captured=result,owner=characterMemoOwner(chat);let imported=false;editor.body.append(text,button('加入待审',()=>editor.run(async()=>{
+                if(imported)throw new Error('该结果已加入待审');
+                if(!m().reviewable(captured,scope)||!characterMemoCurrent(owner))throw new Error('角色、存档或授权已变化');
+                await importExternalCharacterMemo(chat,{...captured,text:text.value});imported=true;editor.status.textContent='已加入备忘录待审，确认后才可用于对话';
+            })));
+        })));
         actions.append(button('调用', () => d.run(async signal => {
             result = null;
             let args; try { args = JSON.parse(raw.value); } catch (_) { throw new Error('请填写有效 JSON 参数'); }

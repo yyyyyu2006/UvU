@@ -58,7 +58,7 @@ try{
  await page.evaluate(()=>{switchScreen('api-settings-screen');document.getElementById('uvu-notification-preferences').open=true;});await inspect('notifications','#uvu-notification-preferences .draft-inline-workspace');await page.locator('#uvu-notification-preferences .sheet-close').click();
  await page.evaluate(()=>switchScreen('customize-screen'));await page.getByRole('button',{name:'管理主页预设',exact:true}).click();await inspect('home-presets','.draft-preset-workspace');await page.locator('.draft-preset-workspace .sheet-close').click();
  await page.evaluate(()=>{switchScreen(document.getElementById('edit-world-book-form').closest('.screen').id);document.querySelector('.worldbook-advanced').open=true;});await inspect('worldbook-rules','.worldbook-advanced .draft-inline-workspace');await page.locator('.worldbook-advanced .sheet-close').click();
- await page.evaluate(()=>{switchScreen('chat-room-screen');document.getElementById('photo-video-btn').click();document.getElementById('pv-mode-ai').click();});await inspect('image-generation','#send-pv-modal .modal-window');await page.locator('#send-pv-modal .sheet-close').click();
+ await page.evaluate(()=>{switchScreen('chat-room-screen');document.getElementById('photo-video-btn').click();document.getElementById('pv-mode-ai').click();});assert.equal(await page.locator('#send-pv-modal .modal-window').evaluate(el=>el.classList.contains('uvu-sheet-v2')),false);await page.evaluate(()=>document.getElementById('send-pv-modal').classList.remove('visible'));
  // Inline settings stay in their original pages and do not acquire modal chrome.
  await page.evaluate(()=>switchScreen('api-settings-screen'));
  assert.equal(await page.locator('#minimax-tts-settings .draft-workspace-overlay').count(),0);

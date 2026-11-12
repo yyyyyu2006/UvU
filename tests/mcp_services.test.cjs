@@ -20,6 +20,12 @@ async function enabled(f) {
     const list=await f.api.discover('s'); const next=f.api.settings(); next.services[0].tools.weather={enabled:true,readOnly:true,signature:list[0].signature,cacheSeconds:30};
     next.policies=[{chatId:'a',type:'private',enabled:true,auto:false,grants:[{serviceId:'s',toolName:'weather'}]}]; await f.api.save(next); return list;
 }
+test('external-memory review accepts only genuine current granted results and does not stage context',async()=>{
+    const f=fixture();await enabled(f);const scope=f.api.scope(f.chat),result=await f.api.call('s','weather',{city:'上海'},{scope});
+    assert.equal(f.api.reviewable(result,scope),true);assert.equal(f.api.pending(scope),0);
+    assert.equal(f.api.reviewable({...result},scope),false);f.chat.activeArchiveId='other';assert.equal(f.api.reviewable(result,scope),false);
+    f.chat.activeArchiveId='one';const next=f.api.settings();next.policies[0].enabled=false;await f.api.save(next);assert.equal(f.api.reviewable(result,scope),false);
+});
 
 test('cancelled write records an unknown remote outcome and is never retried',async()=>{
     const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].tools.weather.readOnly=false;await f.api.save(next);

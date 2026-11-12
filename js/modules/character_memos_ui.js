@@ -8,6 +8,7 @@ function openCharacterMemos(target) {
     const node=(tag,cls,text)=>messageForwardNode(tag,cls,text);
     const body=node('div','derived-body'), feedback=node('p','memo-feedback');feedback.setAttribute('aria-live','polite');
     const guard=()=>{if(!characterMemoCurrent(owner))throw new Error('当前角色、存档或用户已改变，请重新打开备忘录');};
+    const impactConfirm=(note,action)=>{const impact=characterMemoImpact(chat,note.id);return !impact.linked||confirm(`${action}将同时停用 ${impact.linked} 篇关联日记／合并记忆的召回。聊天原文保留，是否继续？`);};
     let busy=false,undo=null;
     const execute=async(action)=>{if(busy)return;busy=true;d.setBusy(true);feedback.textContent='';try{guard();await action();if(characterMemoCurrent(owner)&&d.panel.isConnected)render();}catch(error){feedback.textContent=error.name==='AbortError'?'记录请求超时，请重试':error.message;}finally{busy=false;d.setBusy(false);}};
     const button=(text,action,cls='')=>{const b=node('button',cls,text);b.type='button';b.onclick=()=>execute(action);return b;};
@@ -22,7 +23,8 @@ function openCharacterMemos(target) {
     const ignored=node('details','memo-ignored');ignored.append(node('summary','','已忽略的事情'));advanced.append(ignored);
     const help=node('details','memo-guide');help.append(node('summary','','使用说明'),node('p','','自主记录在回复完成后后台运行；默认每10条新消息整理一次，最多读取最近60条。自动保存只接受有用户原文依据的明确事实，冲突和不确定内容留待审核。用于对话只选相关或置顶记录，并受字数上限限制。更换角色、存档或用户人设会隔离记录。'));
     help.append(node('p','','审核通过可单独加入日记。旧版模拟便签不会自动变成真实记忆；酒馆、文件和动态不自动采集。来源删除或修改后，该条暂停用于对话。临时记录可设到期时间；锁定或手改内容不会被自动替换。备份包含备忘录，PNG角色卡不包含这些私人记录。整理使用所选API，失败不阻止聊天；独立记忆API请在API设置内配置。'));
-    help.append(node('p','','待审核详情可直接删除，返回列表后可撤销最近一次删除；删除只移除本条，不删除原话，也不禁止以后再次记录。冲突记录可替换旧记录、保留两条或忽略；锁定记录需先解锁才能替换。来源失效时可查看原消息，核对后另存为手动记录。加入日记及合并后的记忆也会检查原备忘录是否有效。保存时若提示记录已更新，请重新读取后再操作。'));
+    help.append(node('p','','待审核详情可直接删除，返回列表后可撤销最近一次删除；重新打开后可在设置的回收站恢复，保留最近50条、最长30天，随备份保存。删除不删除原话，也不禁止以后再次记录；“忽略”会阻止再次提取。暂停、仅本地查看、到期或更正后，关联日记及合并结果也停止使用。独立复制和旧备份不随之清除。'));
+    help.append(node('p','','编辑 → 事实与隐私，可修改属性、取值、肯否、主题、关联人物与有效时间；仅本地查看项不送整理、向量或MCP。设置 → 整理与隐私，可排除不希望记录的主题。新规则不删除原聊天，也不阻止原版聊天发送历史。整理中断后由你手动重试，不会刷新后自动重跑接口。'));
     help.append(node('p','','设置页可查看存档容量和每条记录的入选原因。接近500条时，可先在批量管理中导出，再手动整理。“相近记录”仅按文字匹配列出最多10组，需逐条核对，不自动合并，也不额外调用API。'));
     help.append(node('p','','排查实际注入：在本设置页展开“实际请求诊断”，打开“记录实际请求诊断”，关闭面板并正常发送一轮聊天，再回来点“刷新诊断”。可核对备忘录、向量、日记、世界书及其他附加资料是否匹配最终请求。仅本页临时记录字段、来源名称和字符数，不保存正文；清除或关闭后无法恢复，刷新页面也会清空。“本轮可用记忆”仍是当前条件预览，不能代替实际请求记录。'));
     advanced.append(help);settings.append(advanced);
@@ -44,7 +46,7 @@ function openCharacterMemos(target) {
         const previous=chat.memoryJournals||[],journals=notes.filter(n=>!previous.some(j=>j.characterMemoId===n.id&&characterMemoJournalAllowed(chat,j))).map(n=>characterMemoToJournal(chat,n));
         const next=[...previous,...journals];chat.memoryJournals=next;try{await saveData();}catch(error){if(chat.activeArchiveId===owner.archive&&(chat.memoryJournals===next||JSON.stringify(chat.memoryJournals)===JSON.stringify(next)))chat.memoryJournals=previous;const archive=chat.archives?.find(a=>a.id===owner.archive);if(archive?.data?.memoryJournals?.some(j=>journals.some(n=>j.id===n.id)))archive.data.memoryJournals=previous;throw error;}feedback.textContent=`已加入 ${journals.length} 条日记，是否用于对话请在记忆面板设置`;
     }));
-    const undoButton=button('撤销删除',async()=>{if(!undo)return;const next=characterMemoState(chat);if(next.notes.length>=500)throw new Error('备忘录已达到500条');if(!next.notes.some(n=>n.id===undo.note.id))next.notes=[...next.notes,undo.note];if(undo.block)next.blocked=next.blocked.filter(b=>b!==undo.block);await saveCharacterMemoState(owner,next);undo=null;});undoButton.hidden=true;actions.append(undoButton);
+    const undoButton=button('撤销删除',async()=>{if(!undo)return;await restoreCharacterMemo(chat,undo.note.id);undo=null;});undoButton.hidden=true;actions.append(undoButton);
     const diagnostic=node('details','memo-diagnostics');diagnostic.append(node('summary','','本轮可用记忆'));const diagnosticText=node('p');diagnostic.append(diagnosticText);
     const actualDiagnostic=node('details','memo-diagnostics');actualDiagnostic.append(node('summary','','实际请求诊断'));
     const requestToggle=node('input','panel-switch');requestToggle.type='checkbox';requestToggle.setAttribute('role','switch');requestToggle.setAttribute('aria-label','记录实际请求诊断');requestToggle.checked=globalThis.UvURequestDiagnostics?.isEnabled()===true;
@@ -90,6 +92,7 @@ function openCharacterMemos(target) {
     // Undo stays reachable after deleting a review item, without expanding batch tools.
     const main=node('section','memo-main');main.append(identity,tools,undoButton,list,batch);
     const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,actualDiagnostic,similar,semantic,legacy);
+    const renderTools=typeof mountCharacterMemoTools==='function'?mountCharacterMemoTools(chat,{owner,node,button,execute,guard,settingsPage,actions,list,selection,feedback,refresh:()=>render(),view}):()=>{};
     const footer=node('footer','memo-footer'),done=node('button','panel-primary','完成');done.type='button';done.hidden=true;
     run.textContent='整理聊天';add.classList.add('panel-primary');footer.append(run,add,done);
     const head=d.panel.querySelector('.message-forward-header,header'),heading=head?.querySelector('strong,h2'),settingsButton=node('button','sheet-aux');settingsButton.type='button';settingsButton.setAttribute('aria-label','备忘录设置');
@@ -99,11 +102,12 @@ function openCharacterMemos(target) {
     done.onclick=()=>{try{showSettings(false);}catch(error){feedback.textContent=error.message;}};
     head?.append(settingsButton);body.append(feedback,main,settingsPage);d.panel.append(body,footer);
     function render(){
+        renderTools();
         const s=characterMemoSettings(chat);enabled.checked=s.enabled;auto.checked=s.automatic;context.checked=s.useContext;semanticToggle.checked=s.semanticHints;mode.value=s.mode;api.value=s.apiSource;run.disabled=!s.enabled;auto.disabled=s.mode==='manual';
         const failure=characterMemoFailures.get(JSON.stringify([chat.id,owner.archive,owner.persona]));if(failure&&!feedback.textContent)feedback.textContent=failure.message;
         undoButton.hidden=!undo;
         ignored.querySelectorAll(':scope > div').forEach(el=>el.remove());
-        for(const block of characterMemoState(chat).blocked.filter(b=>b.owner===owner.persona)){const row=node('div','memo-ignored-row');row.append(node('span','',block.fact),button('允许重新记录',async()=>{const next=characterMemoState(chat);next.blocked=next.blocked.filter(b=>b!==block);const processed={...(next.processed[owner.persona]||{})};for(const id of block.sourceIds||[])delete processed[id];next.processed={...next.processed,[owner.persona]:processed};await saveCharacterMemoState(owner,next);}));ignored.append(row);}
+        for(const block of characterMemoState(chat).blocked.filter(b=>b.owner===owner.persona)){const row=node('div','memo-ignored-row');row.append(node('span','',block.fact||'已清除正文的屏蔽规则'),button('允许重新记录',async()=>{const next=characterMemoState(chat);next.blocked=next.blocked.filter(b=>b!==block);const processed={...(next.processed[owner.persona]||{})};for(const id of block.sourceIds||[])delete processed[id];next.processed={...next.processed,[owner.persona]:processed};await saveCharacterMemoState(owner,next);}));ignored.append(row);}
         ignored.hidden=!characterMemoState(chat).blocked.some(b=>b.owner===owner.persona);
         const notes=characterMemoState(chat).notes.filter(n=>n.owner===owner.persona),term=search.value.trim().toLowerCase(),value=filter.value;
         list.replaceChildren();
@@ -120,18 +124,21 @@ function openCharacterMemos(target) {
             const recorded=new Date(note.createdAt||Date.now()),buttons=node('div','memo-card-actions'),date=node('time','',recorded.toDateString()===new Date().toDateString()?'今天':recorded.toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}));buttons.append(date,button(note.status==='pending'?'审核':'查看',()=>view(note)));
             const more=node('details','memo-more'),menu=node('div'),caption=node('summary','','更多');caption.setAttribute('aria-label','更多操作');const moreIcon=node('img');moreIcon.src='assets/icons/lucide-ellipsis.svg';moreIcon.alt='';caption.replaceChildren(moreIcon);more.append(caption,menu);top.append(more);menu.append(button('编辑',()=>edit(note)));
             if(note.status==='approved')menu.append(button(note.pinned?'取消置顶':'置顶',()=>changeCharacterMemo(chat,note.id,{pinned:!note.pinned})),button(note.locked?'解锁':'锁定',()=>changeCharacterMemo(chat,note.id,{locked:!note.locked})),button(note.useContext===false?'用于对话':'暂停使用',()=>changeCharacterMemo(chat,note.id,{useContext:note.useContext===false})),button('完成',()=>changeCharacterMemo(chat,note.id,{status:'done'})));
-            const remove=async(suppress)=>{const n=await deleteCharacterMemo(chat,note.id,suppress);if(n)undo={note:n,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
+            const remove=async(suppress)=>{if(!impactConfirm(note,suppress?'不再记录':'删除'))return;const n=await deleteCharacterMemo(chat,note.id,suppress);if(n)undo={note:n,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
             menu.append(button('删除',()=>remove(false)),button('不再记这件事',()=>remove(true)));card.append(buttons);
             const sources=node('details','memo-sources');sources.append(node('summary','','来源'));for(const source of note.sources||[]){const m=chat.history.find(m=>m.id===source.id);sources.append(node('p','',`${m?.role==='user'?'你':'角色'} · ${source.timestamp?new Date(source.timestamp).toLocaleString():'原消息'}\n${source.quote}`));}if(note.manual)sources.append(node('p','','手动记录'));menu.append(sources);list.append(card);
         }
         const report=inspectCharacterMemos(chat);capacity.textContent=`当前身份 ${report.current} 条 · 本存档 ${report.total}/${report.limit} 条`+(report.remaining<=50?' · 可导出后整理已完成或到期记录':'');
-        diagnosticText.textContent=`按当前消息预览：${report.selected} 条 · 上限 ${report.budget} 字符；实际请求还会扣除其他上下文中的重复内容。\n`+report.rows.map(n=>n.fact+'：'+n.reason).join('\n');
+        const vector=typeof getVectorMemoryDiagnostics==='function'?getVectorMemoryDiagnostics(chat):{};
+        const vectorChars=(vector.selected||[]).reduce((count,item)=>count+String(item.content||'').length,0);
+        diagnosticText.textContent=`按当前消息预览：${report.selected} 条 · 上限 ${report.budget} 字符；实际请求还会扣除其他上下文中的重复内容。\n备忘录 ${report.preview.memoChars} 字符，约 ${report.preview.estimatedTokens} Token（本机估算）；上次向量候选 ${vectorChars} 字符。两者统计时点不同，不代表最终请求。仅约束新增资料，不截短原版历史。\n`+report.rows.map(n=>n.fact+'：'+n.reason).join('\n');
     }
     function view(note){
         guard();const v=createMessageForwardDialog('记住的事情','character-memo-detail');v.panel.classList.add('derived-settings');
         const content=node('div','derived-body'),footer=node('footer');content.append(node('small','',note.category),node('h3','',note.fact));
         if(note.content)content.append(node('p','memo-detail-note',note.content));
         const sourceStatus=characterMemoSourceStatus(chat,note);
+        if(typeof appendCharacterMemoDetails==='function')appendCharacterMemoDetails(chat,note,{node,content,button});
         if(!sourceStatus.valid)content.append(node('p','memo-status',sourceStatus.message));
         const old=note.replacesId&&characterMemoState(chat).notes.find(n=>n.id===note.replacesId&&n.owner===owner.persona);
         if(note.replacesId){const conflict=node('section','memo-detail-source memo-conflict');conflict.append(node('h3','','原记录'),node('p','',old?.fact||'原记录已移除'));if(old?.locked)conflict.append(node('small','','已锁定'));content.append(conflict);}
@@ -150,7 +157,7 @@ function openCharacterMemos(target) {
                 catch(reason){error.textContent=reason.message;}
                 finally{reviewing=false;v.setBusy(false);controls.forEach(([b,value])=>b.disabled=value);}
             };
-            const remove=async(suppress)=>{const removed=await deleteCharacterMemo(chat,note.id,suppress);if(removed)undo={note:removed,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
+            const remove=async(suppress)=>{if(!impactConfirm(note,suppress?'忽略':'删除'))throw new Error('已取消');const removed=await deleteCharacterMemo(chat,note.id,suppress);if(removed)undo={note:removed,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
             const removeButton=node('button','','删除');removeButton.type='button';controls.push([removeButton,false]);removeButton.onclick=()=>review(()=>remove(false));footer.append(removeButton);
             const approve=(label,decision)=>{const action=node('button',decision==='keep-both'?'':'panel-primary',label);action.type='button';action.disabled=!sourceStatus.valid||Boolean(note.expiresAt&&note.expiresAt<=Date.now())||decision==='replace'&&(!old||old.locked||old.status!=='approved');const disabled=action.disabled;controls.push([action,disabled]);
                 action.onclick=()=>review(async()=>{if(decision==='replace'&&JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.replacesId))!==originalSnapshot)throw new Error('原记录已变化，请重新打开后审核');await changeCharacterMemo(chat,note.id,{status:'approved',conflictResolution:decision});});footer.append(action);};
@@ -163,9 +170,14 @@ function openCharacterMemos(target) {
         guard();const e=createMessageForwardDialog(note?'编辑备忘录':'添加备忘录','character-memo-editor');e.panel.classList.add('derived-settings');const content=node('div','derived-body'),footer=node('footer'),error=node('p','memo-feedback');error.setAttribute('aria-live','polite');
         const field=(label,value,multiline=false)=>{const row=node('label','memo-editor-field',label),input=node(multiline?'textarea':'input');input.value=value||'';input.maxLength=multiline?600:400;input.setAttribute('aria-label',label);row.append(input);content.append(row);return input;};
         const initial=note||seed;const fact=field('记住的事情',initial?.fact),text=field('角色的便签',initial?.content,true),expires=field('到期时间',initial?.expiresAt?new Date(initial.expiresAt-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):'');expires.type='datetime-local';
+        const extra=node('details','memo-options');extra.append(node('summary','','事实与隐私'));content.append(extra);
+        const metadata={};for(const [key,label]of [['attribute','属性'],['value','取值'],['topics','主题'],['relatedPeople','关联人物'],['validFrom','生效时间'],['validTo','失效时间']]){const row=node('label','memo-editor-field',label),input=node('input');input.setAttribute('aria-label',label);input.value=Array.isArray(initial?.[key])?initial[key].join('、'):key.startsWith('valid')&&initial?.[key]?new Date(initial[key]-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):initial?.[key]||'';if(key.startsWith('valid'))input.type='datetime-local';row.append(input);extra.append(row);metadata[key]=input;}
+        const localOnly=node('input');localOnly.type='checkbox';localOnly.checked=initial?.localOnly===true;localOnly.setAttribute('aria-label','仅本地查看');const localRow=node('label','memo-switch-row');localRow.append(node('span','','仅本地查看'),localOnly);extra.append(localRow);
+        const polarity=node('select');polarity.setAttribute('aria-label','肯定或否定');for(const [value,label]of [['unknown','未标注'],['positive','肯定'],['negative','否定']]){const option=node('option','',label);option.value=value;polarity.append(option);}polarity.value=initial?.polarity||'unknown';extra.append(polarity);
         const save=node('button','panel-primary','保存');save.type='button';save.onclick=async()=>{save.disabled=true;e.setBusy(true);try{guard();if(!fact.value.trim())throw new Error('请填写记住的事情');if(characterMemoSecret(fact.value+text.value))throw new Error('请勿记录密钥、密码或验证码');const expiry=expires.value?Date.parse(expires.value):null;if(expires.value&&!Number.isFinite(expiry))throw new Error('到期时间无效');
-            if(note)await changeCharacterMemo(chat,note.id,{fact:fact.value.trim(),content:text.value.trim(),userEdited:true,locked:true,expiresAt:expiry});
-            else await addManualCharacterMemo(chat,{fact:fact.value.trim(),content:text.value.trim(),expiresAt:expiry,subject:seed?.subject,category:seed?.category});
+            const fields={fact:fact.value.trim(),content:text.value.trim(),userEdited:true,locked:true,expiresAt:expiry,localOnly:localOnly.checked,polarity:polarity.value};for(const [key,input]of Object.entries(metadata))fields[key]=key.startsWith('valid')?input.value?Date.parse(input.value):null:['topics','relatedPeople'].includes(key)?input.value.split(/[、,，\n]/):input.value.trim();
+            if(note)await changeCharacterMemo(chat,note.id,fields);
+            else await addManualCharacterMemo(chat,{...fields,subject:seed?.subject,category:seed?.category});
             e.setBusy(false);e.dismiss();if(characterMemoCurrent(owner))render();
         }catch(reason){error.textContent=reason.message;}finally{save.disabled=false;e.setBusy(false);}};content.append(error);footer.append(save);e.panel.append(content,footer);
     }
