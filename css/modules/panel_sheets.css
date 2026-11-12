@@ -62,19 +62,39 @@ body:has(#uvu-notification-preferences[open],.worldbook-advanced[open]) { overfl
 }
 #expanded-text-editor .text-editor-card.uvu-sheet-v2 .mono-page-nav > .sheet-close {
     flex-basis:32px;width:32px !important;height:32px !important;
-    min-width:32px !important;min-height:32px !important;padding:7px !important;
+    min-width:32px !important;min-height:32px !important;padding:7px !important;margin:0 !important;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .draft-editor-toolbar {
+    justify-content:flex-end;gap:8px;padding:8px 20px 0;
 }
 #expanded-text-editor .text-editor-card.uvu-sheet-v2 :is(.draft-editor-toolbar,.editor-import-options) button {
-    min-height:32px;padding:5px 12px;font-size:12px;line-height:20px;
+    flex:0 0 96px;box-sizing:border-box;width:96px;min-height:32px;padding:5px 12px;font-size:12px;line-height:20px;
+    display:inline-flex;align-items:center;justify-content:center;margin:0;
 }
 #expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-import-options {
-    font-size:12px;gap:8px;
+    display:grid;grid-template-columns:minmax(0,1fr) repeat(2,96px);font-size:12px;gap:8px;margin:0 20px;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-import-options[hidden] {
+    display:none;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-import-options > span {
+    grid-column:1 / -1;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-import-options > button:first-of-type {
+    grid-column:2;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 .editor-draft {
+    width:calc(100% - 40px) !important;margin:8px 20px 16px;
+}
+#expanded-text-editor .text-editor-card.uvu-sheet-v2 > footer {
+    padding-inline:20px !important;
 }
 #expanded-text-editor .text-editor-card.uvu-sheet-v2 .panel-editor-actions {
-    justify-content:flex-end;gap:12px;
+    justify-content:flex-end;gap:8px;padding-inline:20px !important;
 }
 #expanded-text-editor .text-editor-card.uvu-sheet-v2 .panel-editor-actions > button {
-    flex:0 1 auto;min-width:88px;min-height:36px !important;padding:7px 20px !important;font-size:13px;line-height:20px;
+    flex:0 0 96px;box-sizing:border-box;width:96px;min-width:0;min-height:36px !important;
+    padding:7px 12px !important;font-size:13px;line-height:20px;margin:0;
 }
 .uvu-sheet-v2.uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mcp-actions,.panel-editor-actions),
 #auto-memory-modal.uvu-mono-panel .uvu-sheet-v2 .draft-fixed-actions {
