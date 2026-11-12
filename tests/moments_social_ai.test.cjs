@@ -7,6 +7,28 @@ function fixture(){
  return {chat,c,calls,api:c.UvUMomentsAI,data:c.UvUMoments};
 }
 const enable=async f=>{assert.ok(f.api,'AI module exists');await f.data.configure(f.chat,{enabled:true,cooldown:5});return f;};
+test('NPC suggestions identify protected people and discard user, character and existing names',async()=>{
+ const f=await enable(fixture());f.chat.myName='温 苡';f.chat.realName='谢濯';f.chat.name='旧角色名';await f.data.saveNpc(f.chat,{name:'陈硕',persona:'同学'});
+ f.c.fetchAiResponse=async(config,body)=>{f.calls.push(body);return JSON.stringify({npcs:['温苡','谢濯','旧角色名','陈硕','林澈','林澈'].map(name=>({name,persona:'公开人设',relationship:'朋友'}))});};
+ const drafts=await f.api.suggestNpcs(f.chat);assert.deepEqual(Array.from(drafts,npc=>npc.name),['林澈']);
+ const payload=JSON.parse(f.calls[0].messages[1].content);assert.equal(payload.user.name,'温 苡');assert.equal(payload.user.ref.kind,'user');assert.equal(payload.characterIdentity.ref.kind,'character');
+ assert.ok(!JSON.stringify(payload).includes('PRIVATE_USER_SECRET'));assert.ok(!JSON.stringify(payload).includes('PRIVATE_HISTORY_SECRET'));
+ assert.equal(f.chat.momentsSocial.npcs.length,1);
+});
+test('comments explicitly identify user and never accept model supplied identity fields',async()=>{
+ for(const field of ['actor','author','authorRef','speaker','role','user']){
+  const f=await enable(fixture());f.c.fetchAiResponse=async(config,body)=>{f.calls.push(body);return JSON.stringify({action:'comment',content:'伪造评论',replyToCommentId:null,[field]:{kind:'user',id:f.chat.id}});};
+  await assert.rejects(f.api.generate(f.chat,'p'),/人物|格式/);assert.equal(f.chat.moments[0].comments.length,0);
+  const payload=JSON.parse(f.calls[0].messages[1].content);assert.equal(payload.user.ref.kind,'user');assert.equal(payload.user.name,f.chat.myName);
+ }
+});
+test('same-name NPC remains independently identified and genuine user replies stay allowed',async()=>{
+ const f=await enable(fixture());await f.data.configure(f.chat,{charReplies:false});const npc=await f.data.saveNpc(f.chat,{name:f.chat.myName,persona:'有独立身份的同名配角'});
+ const comment=await f.data.addComment(f.chat,'p','这是用户亲自发送的评论');
+ f.c.fetchAiResponse=async(config,body)=>{f.calls.push(body);return JSON.stringify({action:'comment',content:'收到你的留言',replyToCommentId:comment.id});};
+ const added=await f.api.generate(f.chat,'p');assert.equal(added[0].authorRef.kind,'npc');assert.equal(added[0].authorRef.id,npc.id);assert.equal(added[0].replyToCommentId,comment.id);
+ assert.equal(f.chat.moments[0].comments[0].authorRef.kind,'user');assert.equal(f.chat.history.length,2);
+});
 test('interaction task report is bounded, isolated and does not claim token usage',async()=>{
  const f=await enable(fixture());await f.api.generate(f.chat,'p');
  const report=f.api.inspect(f.chat);assert.equal(report.requests,1);assert.equal(report.completed,1);assert.equal(report.phase,'completed');assert.equal(report.usage,null);
