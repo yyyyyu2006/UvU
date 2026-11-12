@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
 const root = path.resolve(__dirname, '..');
-const out = path.resolve(root, '../../outputs/lenso-production-20261112');
+const out = path.resolve(root, '../../outputs/fusion-production-20261112');
 fs.mkdirSync(out, { recursive: true });
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
@@ -51,6 +51,47 @@ const server = http.createServer((req, res) => {
             await page.screenshot({path:path.join(out,id+'.png')});checks.push({id,geometry});
         }
         await capture('memos','#character-memos-dialog .uvu-lenso-panel',()=>page.evaluate(()=>openCharacterMemos(db.characters[0])));
+        assert.equal(await page.locator('.memo-footer .panel-primary:visible').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(212, 229, 239)');
+        await page.getByRole('button',{name:'更换面板头像',exact:true}).click();
+        await page.locator('#uvu-panel-artwork .uvu-lenso-panel').waitFor();
+        await page.locator('#uvu-panel-artwork input[type=file]').setInputFiles(path.join(root,'assets/panels/tavern.webp'));
+        await page.waitForFunction(()=>document.querySelector('.panel-artwork-preview-avatar')?.src.startsWith('data:')&&!document.querySelector('#uvu-panel-artwork .panel-primary').disabled);
+        const chosenAvatar=await page.locator('.panel-artwork-preview-avatar').getAttribute('src');
+        await page.locator('#uvu-panel-artwork .panel-primary').click();await page.locator('#uvu-panel-artwork').waitFor({state:'detached'});
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-avatar img').getAttribute('src'),chosenAvatar);
+        assert.equal(await page.evaluate(()=>db.characters[0].avatar),'','panel avatar must not replace chat avatar');
+        assert.equal(await page.evaluate(()=>captureArchiveData(db.characters[0]).derivedPanelAppearance),undefined,'panel appearance is character metadata');
+        await page.getByRole('button',{name:'更换面板头像',exact:true}).click();
+        await page.getByRole('button',{name:'恢复默认',exact:true}).click();
+        await page.evaluate(()=>{window.artworkRealTransaction=dexieDB.transaction;dexieDB.transaction=async()=>{throw Error('fixture quota');};});
+        await page.locator('#uvu-panel-artwork .panel-primary').click();
+        await page.getByRole('status').filter({hasText:'图片保存失败，请重试'}).waitFor();
+        assert.equal(await page.evaluate(()=>db.characters[0].derivedPanelAppearance.avatar),chosenAvatar,'failed save rolls back character metadata');
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-avatar img').getAttribute('src'),chosenAvatar,'failed save leaves visible artwork intact');
+        await page.evaluate(()=>{dexieDB.transaction=artworkRealTransaction;delete window.artworkRealTransaction;});await page.keyboard.press('Escape');
+        await page.getByRole('button',{name:'更换面板背景',exact:true}).click();
+        await page.locator('#uvu-panel-artwork input[type=file]').setInputFiles(path.join(root,'assets/panels/tavern.webp'));
+        await page.waitForFunction(()=>document.querySelector('.panel-artwork-preview-cover')?.src.startsWith('data:')&&!document.querySelector('#uvu-panel-artwork .panel-primary').disabled);
+        await page.locator('#uvu-panel-artwork .panel-primary').click();await page.locator('#uvu-panel-artwork').waitFor({state:'detached'});
+        const chosenBackground=await page.locator('#character-memos-dialog .panel-artwork-cover img').getAttribute('src');
+        await page.getByRole('button',{name:'更换面板背景',exact:true}).click();
+        await page.getByRole('button',{name:'恢复默认',exact:true}).click();await page.keyboard.press('Escape');
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-cover img').getAttribute('src'),chosenBackground,'cancel leaves saved artwork intact');
+        await page.reload();await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
+        await page.evaluate(()=>openChatRoom('draft-char','private'));await page.evaluate(()=>openCharacterMemos(db.characters[0]));
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-avatar img').getAttribute('src'),chosenAvatar,'avatar survives reload');
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-cover img').getAttribute('src'),chosenBackground,'background survives reload');
+        await page.evaluate(async()=>{db.characters.push({...db.characters[0],id:'artwork-other',realName:'另一位',remarkName:'另一位',archives:[],activeArchiveId:undefined,derivedPanelAppearance:undefined});await saveData();});
+        await reset();await page.evaluate(()=>openCharacterMemos(db.characters.find(c=>c.id==='artwork-other')));
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-avatar img').getAttribute('src'),'assets/panels/avatar.webp','characters do not share overrides');
+        await reset();await page.evaluate(()=>openCharacterMemos(db.characters[0]));
+        await page.getByRole('button',{name:'更换面板背景',exact:true}).click();
+        for(const [width,height]of [[320,568],[390,420]]){await page.setViewportSize({width,height});const b=await page.locator('#uvu-panel-artwork .uvu-lenso-panel').boundingBox();assert(b.x>=0&&b.y>=0&&b.x+b.width<=width+1&&b.y+b.height<=height+1);await page.locator('#uvu-panel-artwork .panel-primary').scrollIntoViewIfNeeded();assert(await page.locator('#uvu-panel-artwork .panel-primary').isVisible());}
+        await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'appearance.png')});
+        await page.getByRole('button',{name:'恢复默认',exact:true}).click();await page.locator('#uvu-panel-artwork .panel-primary').click();await page.locator('#uvu-panel-artwork').waitFor({state:'detached'});
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-avatar img').getAttribute('src'),'assets/panels/avatar.webp');
+        assert.equal(await page.locator('#character-memos-dialog .panel-artwork-cover img').getAttribute('src'),'assets/panels/memos.webp');
+        await page.evaluate(async()=>{db.characters=db.characters.filter(c=>c.id!=='artwork-other');await saveData();});
         await page.getByRole('button',{name:'备忘录设置',exact:true}).click();await page.screenshot({path:path.join(out,'memo-settings.png')});
         await page.getByRole('switch',{name:'启用备忘录',exact:true}).check();await page.waitForFunction(()=>db.characters[0].characterMemos.settings.enabled);
         assert.equal(await page.getByRole('switch',{name:'启用备忘录',exact:true}).evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(52, 199, 89)');
@@ -58,6 +99,8 @@ const server = http.createServer((req, res) => {
         await capture('vector','#auto-memory-modal .uvu-lenso-panel',()=>page.evaluate(()=>document.getElementById('vector-memory-settings-btn').click()));
         await capture('mcp','#mcp-services .uvu-lenso-panel',()=>page.evaluate(()=>openMcpSettings()));
         await capture('files','#shared-document-dialog .uvu-lenso-panel',()=>page.evaluate(()=>openSharedDocumentDialog()));
+        assert.equal(await page.locator('.fusion-file-recipient strong').innerText(),'沈砚');
+        assert.equal(await page.getByRole('button',{name:'取消',exact:true}).isVisible(),true);
         await page.locator('#shared-document-dialog input[type=file]').setInputFiles({name:'周末计划.md',mimeType:'text/markdown',buffer:Buffer.from(`周末计划
 
 周六先去街角书店。
@@ -88,8 +131,26 @@ const server = http.createServer((req, res) => {
         await capture('home-presets','.draft-preset-workspace.uvu-lenso-panel',()=>page.evaluate(()=>{switchScreen('customize-screen');document.querySelector('.home-preset-card > button').click();}));
         await page.locator('.draft-preset-workspace .sheet-close').click();
         await capture('tavern','#uvu-story-bridge-screen.uvu-lenso-panel',()=>page.evaluate(()=>switchScreen('uvu-story-bridge-screen')));
+        assert.equal(await page.locator('#uvu-story-bridge-screen .panel-artwork-cover img').getAttribute('src'),'assets/panels/tavern.webp','memo background does not replace Tavern background');
+        await page.getByRole('button',{name:'更换面板背景',exact:true}).click();
+        await page.evaluate(()=>{const s=document.getElementById('uvu-bridge-handoff-character');s.value='';s.dispatchEvent(new Event('change',{bubbles:true}));});
+        await page.locator('#uvu-panel-artwork .panel-primary').click();
+        await page.getByRole('status').filter({hasText:'角色已改变，请重新打开外观设置'}).waitFor();
+        await page.keyboard.press('Escape');
+        await page.evaluate(()=>{const s=document.getElementById('uvu-bridge-handoff-character');s.value='draft-char';s.dispatchEvent(new Event('change',{bubbles:true}));});
         await page.getByRole('button',{name:'绑定',exact:true}).click();await page.screenshot({path:path.join(out,'tavern-binding.png')});
         await page.evaluate(()=>document.querySelector('#uvu-story-bridge-screen').monoNavigate('online'));await page.screenshot({path:path.join(out,'handoff.png')});
+        await reset();
+        await page.evaluate(()=>switchScreen('api-settings-screen'));
+        const voice=page.locator('#minimax-tts-settings');await voice.scrollIntoViewIfNeeded();
+        assert.equal(await voice.evaluate(el=>el.classList.contains('uvu-fusion-inline')),true);
+        assert.equal(await voice.evaluate(el=>el.classList.contains('mono-page')),false,'MiniMax remains in the native API page');
+        assert.equal(await voice.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+        await page.screenshot({path:path.join(out,'voice-inline.png')});
+        await page.evaluate(()=>switchScreen('storage-analysis-screen'));await page.locator('#storage-import-label').scrollIntoViewIfNeeded();
+        assert.equal(await page.locator('#storage-import-label').isVisible(),true);
+        assert.equal(await page.locator('#storage-backup-options').evaluate(el=>!!el.closest('#storage-analysis-screen')),true,'backup stays in the native data page');
+        await page.screenshot({path:path.join(out,'backup-inline.png')});
         await reset();
         const cover=await page.evaluate(()=>{const canvas=document.createElement('canvas'),data={name:'沈砚',description:'旧书店',creator:'作者'};UvUCardCover.draw(canvas,data,{});const before=canvas.toDataURL();document.querySelector('link[href*=lenso_panels]').disabled=true;UvUCardCover.draw(canvas,data,{});const equal=before===canvas.toDataURL()&&canvas.getContext('2d').getImageData(0,0,1,1).data[3]===0;document.querySelector('link[href*=lenso_panels]').disabled=false;return equal;});assert.equal(cover,true,'export artwork and transparent corners remain identical');
         const flags=await page.evaluate(()=>({music:!!document.querySelector('#uvu-music-screen.uvu-lenso-panel'),status:!!document.querySelector('#char-status-overlay .uvu-lenso-panel'),sent:!!document.querySelector('.message-bubble.uvu-lenso-panel')}));assert.deepEqual(flags,{music:false,status:false,sent:false});

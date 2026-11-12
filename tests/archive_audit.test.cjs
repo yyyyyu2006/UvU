@@ -30,6 +30,18 @@ function fixture() {
     return { c, chat, first, opened, toasts };
 }
 
+test('panel artwork stays with the character across archive switches and branches', async () => {
+    const { c, chat } = fixture();
+    const appearance={avatar:'data:image/webp;base64,avatar',memos:'data:image/webp;base64,memo'};
+    chat.derivedPanelAppearance=appearance;
+    assert.equal(c.captureArchiveData(chat).derivedPanelAppearance,undefined);
+    assert.equal(await c.switchChatArchive('second'),true);
+    assert.deepEqual(plain(chat.derivedPanelAppearance),appearance);
+    await c.createBlankArchive();
+    assert.deepEqual(plain(chat.derivedPanelAppearance),appearance);
+    assert.equal(chat.archives.some(a=>a.data.derivedPanelAppearance),false);
+});
+
 test('blank archive clears derived runtime without changing persona or relationship policy', async () => {
     const { c, chat } = fixture(); await c.createBlankArchive();
     assert.equal(chat.persona, 'persona'); assert.equal(chat.history.length, 0);

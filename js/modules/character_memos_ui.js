@@ -11,6 +11,7 @@ function openCharacterMemos(target) {
     let semanticController;
     const owner=characterMemoOwner(chat), d=createMessageForwardDialog('他的备忘录','character-memos-dialog',()=>semanticController?.abort());
     d.panel.classList.add('derived-settings','character-memos-panel');
+    d.panel.dataset.panelCharacterId=String(chat.id);
     const node=(tag,cls,text)=>messageForwardNode(tag,cls,text);
     const body=node('div','derived-body'), feedback=node('p','memo-feedback');feedback.setAttribute('aria-live','polite');
     const guard=()=>{if(!characterMemoCurrent(owner))throw new Error('当前角色、存档或用户已改变，请重新打开备忘录');};

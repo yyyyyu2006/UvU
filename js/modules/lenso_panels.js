@@ -60,7 +60,8 @@
             const caption = q(advanced,'summary'); if (caption) caption.textContent = '使用说明';
             settings.after(recording,advanced);
         }
-        const back = q(panel, '.sheet-close'); if (back) back.replaceChildren(icon('chevron-left'));
+        const back = q(panel, '.sheet-close'); if (back) back.replaceChildren(icon('x'));
+        window.UvUPanelArtwork?.attach(panel, q(panel,'.memo-identity'), 'memos', () => typeof db !== 'undefined' ? db.characters.find(c => String(c.id) === panel.dataset.panelCharacterId) : null);
     }
     function summary(root, panel) {
         if (root.id !== 'auto-memory-modal' || panel.dataset.lensoMemory) return;
@@ -115,13 +116,20 @@
             if (!entries.length) journals.append(make('p', 'lenso-empty', '审核通过的剧情会保存在这里'));
         };
         root.addEventListener('mono-view-change',render); q(root,'#uvu-bridge-handoff-character')?.addEventListener('change',render); render();
+        const identity=q(root,'.draft-bridge-identity'),bindingRoute=q(identity,'.mono-route');
+        if(bindingRoute){identity.after(bindingRoute);bindingRoute.classList.add('fusion-binding-route');}
+        window.UvUPanelArtwork?.attach(root, identity, 'tavern', () => typeof db !== 'undefined' ? db.characters.find(c => String(c.id) === q(root,'#uvu-bridge-handoff-character')?.value) : null);
     }
     function files(panel) {
         if (!panel.classList.contains('shared-document-dialog') || panel.dataset.lensoFile) return; panel.dataset.lensoFile = 'true';
         const body = q(panel,'.shared-document-body'), text = q(body,'.shared-document-editor textarea'); if (!body || !text || text.readOnly) return;
         const upload = q(panel,'.shared-document-upload'), editor = q(panel,'.shared-document-editor'), file = q(panel,'.shared-document-file-header'), shortcuts = q(panel,'.mono-file-shortcuts');
-        const intro = make('div','lenso-file-intro'); intro.append(icon('upload'),make('h3','','把文件带进对话'),make('p','','文档、表格与文字'));
+        const intro = make('div','lenso-file-intro'); intro.append(icon('upload'),make('h3','','带一份文件进对话'),make('p','','文档、表格与文字'));
         if (upload) { upload.prepend(intro); q(upload,'small')?.remove(); }
+        const recipient=q(panel,'.shared-document-context'),caption=make('h3','lenso-section-title','当前私聊');
+        if(recipient){upload?.after(caption,recipient);recipient.classList.add('fusion-file-recipient');}
+        const footer=q(panel,'.shared-document-actions');
+        if(footer){const cancel=make('button','fusion-file-cancel','取消');cancel.type='button';cancel.onclick=()=>q(panel,'.sheet-close')?.click();footer.append(cancel);}
         const reader = make('article','lenso-file-preview'); reader.setAttribute('aria-label','发送前正文预览');
         const paragraphs = () => {
             reader.replaceChildren(); const value = text.value;
@@ -131,6 +139,7 @@
         text.addEventListener('input',paragraphs); text.addEventListener('change',paragraphs); if (file) file.after(reader);
         const sync = () => {
             const ready = !editor.hidden; panel.dataset.lensoFileReady = String(ready); reader.hidden = !ready;
+            if(recipient){recipient.hidden=caption.hidden=ready;}footer?.classList.toggle('fusion-file-empty',!ready);
             if (upload) upload.hidden = ready; if (ready) { paragraphs(); if (shortcuts) reader.after(shortcuts); }
             const title = q(panel,'.lenso-title'); if (title) title.textContent = ready ? '准备发送' : '分享文件';
         };
@@ -161,6 +170,7 @@
     }
     function decorate(root) {
         if (!root?.isConnected || root.matches('.regenerate-guidance-card,.pv-send-modes,#pv-generated-preview') || root.closest('#uvu-music-screen,.uvu-music-sheet,[id^=music-],.music-app,.music-dialog,.together-listening-dialog,#char-status-overlay')) return;
+        if (root.id === 'minimax-tts-settings') root.classList.add('uvu-fusion-inline');
         const panel = root.id === 'auto-memory-modal' ? q(root,'.auto-memory-dialog') : root; if (!panel?.matches('.mono-page')) return;
         shell(panel); if (!panel.classList.contains('uvu-lenso-panel')) return;
         const title = q(panel,'.lenso-title'), scroll = q(panel,':scope > .derived-body > .draft-form-scroll');
@@ -186,10 +196,13 @@
     }
     const extraSelector = '.chat-archive-panel,#message-forward-picker > .message-forward-dialog,#global-css-import-preview > .feature-dialog-card';
     function start() {
+        document.getElementById('minimax-tts-settings')?.classList.add('uvu-fusion-inline');
         document.querySelectorAll(extraSelector).forEach(additional);
         new MutationObserver(records => {
             for (const record of records) for (const node of record.addedNodes) {
                 if (node.nodeType !== 1) continue;
+                if(node.id==='minimax-tts-settings')node.classList.add('uvu-fusion-inline');
+                node.querySelector('#minimax-tts-settings')?.classList.add('uvu-fusion-inline');
                 if (node.matches(extraSelector)) additional(node);
                 node.querySelectorAll(extraSelector).forEach(additional);
             }
