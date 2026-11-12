@@ -182,13 +182,49 @@
             if (reference) void read();
         }, () => { alive = false; controller.abort(); });
     }
-    function openPlaylist(item, cloudProvider) {
-        let page = 0, tracks = [], pending = false, alive = true, editing=false, unsubscribe;
+    function returnToPlaylist(id, editing = false) {
+        const current = M.library().playlists.find(value => value.id === id);
+        if (current) openPlaylist(current, undefined, editing);
+    }
+    function renamePlaylistPanel(item) {
+        const id = item.id;
+        let alive = true;
+        modal('修改歌单名称', (body, overlay) => {
+            const input = el('input'), actions = el('div', undefined, 'um-actions');
+            input.value = M.library().playlists.find(value => value.id === id)?.name || item.name;
+            input.maxLength = 160; input.required = true; input.setAttribute('aria-label', '歌单名称');
+            const save = button('保存', async () => {
+                input.setCustomValidity(input.value.trim() ? '' : '请输入歌单名称');
+                if (!input.reportValidity()) return;
+                await M.renamePlaylist(id, input.value.trim());
+                render();
+                if (alive) { closeSheet(); returnToPlaylist(id); }
+            });
+            input.oninput = () => input.setCustomValidity('');
+            input.onkeydown = event => {
+                if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); save.click(); }
+            };
+            const cancel = () => { closeSheet(); returnToPlaylist(id); };
+            actions.append(button('取消', cancel), save); body.append(input, actions);
+            const dismiss = overlay.querySelector('.um-sheet-head button');
+            dismiss.setAttribute('aria-label', '取消修改'); dismiss.onclick = cancel;
+            queueMicrotask(() => { if (alive) { input.focus(); input.select(); } });
+        }, () => { alive = false; });
+    }
+    function playlistOptions(item) {
+        modal('歌单选项', (body, overlay) => {
+            body.append(button('修改歌单名称', () => renamePlaylistPanel(item), undefined, 'um-wide'),
+                button('管理歌曲', () => returnToPlaylist(item.id, true), undefined, 'um-wide'));
+            overlay.querySelector('.um-sheet-head button').onclick = () => { closeSheet(); returnToPlaylist(item.id); };
+        });
+    }
+    function openPlaylist(item, cloudProvider, startEditing = false) {
+        let page = 0, tracks = [], pending = false, alive = true, editing=startEditing, unsubscribe;
         const selected=new Set(), controller = new AbortController(), managed=!cloudProvider&&!item.kind;
         modal(item.name, (body, overlay) => {
             overlay.classList.add('um-collection-sheet');
             const head=overlay.querySelector('.um-sheet-head');head.querySelector('h2').textContent='';head.querySelector('button img').src='assets/music/icons/chevron-left.svg';
-            const top=el('div',undefined,'um-collection-top');top.append(button('添加歌曲',()=>{closeSheet();selectTab('search');},'plus'),button('歌单选项',()=>{if(managed){editing=!editing;draw();}else queuePanel();},'ellipsis'));head.append(top);
+            const top=el('div',undefined,'um-collection-top');top.append(button('添加歌曲',()=>{closeSheet();selectTab('search');},'plus'),button('歌单选项',()=>{if(managed)playlistOptions(item);else queuePanel();},'ellipsis'));head.append(top);
             const hero=el('div',undefined,'um-collection-art');
             if(item.kind==='favorites')hero.append(icon('star-solid'));else hero.append(cover(item.cover?{cover:item.cover}:item.tracks?.[0]));
             const heading=el('div',undefined,'um-collection-name'),count=el('small');heading.append(el('h1',item.name),count);
@@ -216,7 +252,7 @@
                     if (!alive || controller.signal.aborted) return;page = nextPage;const keys=new Set(tracks.map(M.key));for(const t of data.tracks){const id=M.key(t);if(!keys.has(id)){keys.add(id);tracks.push(t);}}draw();footer.replaceChildren();
                     if (data.hasMore) footer.append(button('加载更多', load));
                     if (cloudProvider) footer.append(button('导入到资料库', () => importPlaylistPanel({ provider: cloudProvider, id: item.id, name: item.name })));
-                    if (managed) footer.append(button('重命名',()=>modal('歌单名称',box=>{const input=el('input');input.value=item.name;input.maxLength=160;input.setAttribute('aria-label','歌单名称');box.append(input,button('保存',async()=>{await M.renamePlaylist(item.id,input.value);closeSheet();render();}));})),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); closeSheet(); render(); }));
+                    if (managed) footer.append(button('重命名',()=>renamePlaylistPanel(item)),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); closeSheet(); render(); }));
                 } catch (e) { if (alive) { toast(e); if (!page) { footer.replaceChildren(); footer.append(button('重试读取', load)); } } } finally { pending = false; }
             }; void load();
         }, () => { alive = false; controller.abort();unsubscribe?.(); });
