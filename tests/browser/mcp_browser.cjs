@@ -52,6 +52,14 @@ const server = http.createServer(async (req, res) => {
         await back();
         assert.equal(calls,0);await panel.getByLabel('启用 MCP 服务（默认关闭）',{exact:true}).check();
         await panel.getByRole('button',{name:'添加',exact:true}).click();const editor=page.locator('#mcp-service-editor');
+        await editor.getByLabel('服务模板').selectOption('exa-search');
+        assert.equal(await editor.getByLabel('名称',{exact:true}).inputValue(),'Exa 网页搜索');
+        assert.equal(await editor.getByLabel('服务接口地址',{exact:true}).inputValue(),'https://mcp.exa.ai/mcp');
+        assert.equal(await editor.getByLabel('MCP 协议版本',{exact:true}).inputValue(),'2025-03-26');
+        assert.equal(await editor.getByLabel('启用此服务',{exact:true}).isChecked(),false,'search preset does not enable remote requests');
+        assert.equal(calls,0,'selecting a search preset does not contact the remote service');
+        await editor.getByRole('button',{name:'关闭',exact:true}).click();
+        await panel.getByRole('button',{name:'添加',exact:true}).click();
         await editor.getByLabel('名称',{exact:true}).fill('测试服务');await editor.getByLabel('服务接口地址',{exact:true}).fill(toolUrl);
         await editor.getByRole('group',{name:'认证',exact:true}).getByRole('button',{name:'Bearer',exact:true}).click();await editor.getByLabel('令牌（独立存储，不进入 MCP 导出或整机备份）',{exact:true}).fill('fixture-only');await editor.getByLabel('启用此服务',{exact:true}).check();
         await editor.getByRole('button',{name:'保存',exact:true}).click();await editor.waitFor({state:'detached'});

@@ -66,7 +66,7 @@ const chatRoomHtml = `
                         <img src="https://i.postimg.cc/prRC31Gk/retouch-2025110902080890.png" alt="表情">
                     </button>
                 </div>
-                <button id="get-reply-btn" class="icon-btn">
+                <button id="get-reply-btn" type="button" class="icon-btn" title="AI 回复" aria-label="AI 回复">
                     <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="12" cy="12" r="12" fill="#F0F0F0"/>
                         <g fill="#191919">
@@ -80,9 +80,6 @@ const chatRoomHtml = `
                 </button>
                 <button id="send-message-btn" class="icon-btn send-btn circle-bg" style="display: none;">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
-                <button id="stop-ai-btn" type="button" class="icon-btn circle-bg" title="停止 AI 回复" aria-label="停止 AI 回复" hidden>
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                 </button>
             </div>
         </div>

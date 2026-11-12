@@ -43,8 +43,15 @@
         const name = field(d.body, '名称', 'input', 'text', previous?.name || ''); name.maxLength = 128;
         const url = field(d.body, '服务接口地址', 'input', 'url', previous?.url || ''); url.placeholder = 'https://你的服务/mcp';
         if (!previous) {
-            const template = select(d.body, '用途模板（仍需填写真实服务地址）', [['自定义服务', 'custom'], ['天气与日历', 'environment'], ['只读资料检索', 'lookup'], ['外部笔记', 'notes']], 'custom');
+            const template = select(d.body, '服务模板', [['自定义服务', 'custom'], ['Exa 网页搜索', 'exa-search'], ['天气与日历', 'environment'], ['只读资料检索', 'lookup'], ['外部笔记', 'notes']], 'custom');
             template.onchange = () => {
+                if (template.value === 'exa-search') {
+                    name.value = 'Exa 网页搜索'; url.value = 'https://mcp.exa.ai/mcp';
+                    protocol.value = '2025-03-26'; auth.value = 'none';
+                    url.dispatchEvent(new Event('input')); auth.dispatchEvent(new Event('change'));
+                    d.status.textContent = '匿名搜索有次数限制；保存后测试连接、授权搜索工具，再为角色开启自动判断。搜索词会发给 Exa。';
+                    return;
+                }
                 if (!name.value.trim()) name.value = {environment:'天气与日历',lookup:'资料检索',notes:'外部笔记'}[template.value] || '';
                 d.status.textContent = '模板仅填写用途说明；不会提供虚构地址、自动授权或自动执行工具。请向服务提供者取得接口地址。';
             };
@@ -195,6 +202,7 @@
     function tutorial() {
         const el = node('details', undefined, 'mcp-tutorial'); el.append(node('summary', '使用教程与支持范围'));
         for (const [title, content] of [
+            ['网页搜索', '添加服务时选“Exa 网页搜索”可自动填写接口，无需自建服务器。匿名使用受服务限流与网络影响；需要更高额度时在认证中选择 Bearer，填写自己的 Exa 密钥。保存后测试连接，只授权 web_search_exa、web_fetch_exa 等已核实的只读工具；还需为指定角色开启外部资料和自动判断，并配置独立工具判断 API。关闭时不会联网搜索。'],
             ['1 · 添加服务', '打开 API 设置 → MCP 服务 → 添加。填写服务提供者给出的 HTTPS /mcp 地址。认证选择无需令牌、Bearer 或 OAuth。OAuth 先填写服务登记的公开客户端 ID，把“登记回调地址”交给服务提供者登记；保存后点“连接 OAuth”，在新窗口登录并同意授权。无需客户端密钥。服务必须允许浏览器跨域访问；没有公开客户端登记或 CORS 支持时，请改用服务提供的 Bearer 方式。'],
             ['2 · 测试并授权工具', '保存后选中服务，点击“测试 / 刷新工具”。确认工具用途后，勾选“启用工具”并保存。只有你确认不会修改外部数据的工具才可勾选“已核实为只读”；服务自行声明只读不等于已授权。工具定义变化后需重新核对。开启服务和总开关后才能调用。'],
             ['3 · 手动查询', '在角色／群聊中选择接收目标和当前存档。在工具卡片点击“参数 / 调用”，填写必填字段或 JSON，再调用。写入或未知工具会显示具体服务、工具和参数，须确认后执行。取消或超时不保证外部服务尚未执行，请先核实再重试。'],

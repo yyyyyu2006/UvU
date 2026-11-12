@@ -245,10 +245,6 @@ function setupChatRoom() {
     messageInput = document.getElementById('message-input');
     getReplyBtn = document.getElementById('get-reply-btn');
     regenerateBtn = document.getElementById('regenerate-btn');
-    const stopAiButton = document.getElementById('stop-ai-btn');
-    if (stopAiButton) stopAiButton.addEventListener('click', () => {
-        if (typeof stopAiReply === 'function' && stopAiReply()) showToast('已请求停止 AI 回复');
-    });
 
     const memoryJournalBtn = document.getElementById('memory-journal-btn');
     const deleteHistoryBtn = document.getElementById('delete-history-btn');
@@ -570,7 +566,7 @@ function setupChatRoom() {
     const updateSendButton = () => {
         const hasText = Boolean(messageInput.value.trim());
         document.getElementById('send-message-btn').style.display = hasText ? 'inline-flex' : 'none';
-        getReplyBtn.style.display = hasText ? 'none' : 'inline-flex';
+        getReplyBtn.style.display = hasText && !getChatGeneration() ? 'none' : 'inline-flex';
     };
     messageInput.addEventListener('input', updateSendButton);
     updateSendButton();
@@ -588,7 +584,7 @@ function setupChatRoom() {
         }
     });
 
-    getReplyBtn.addEventListener('click', () => getAiReply(currentChatId, currentChatType));
+    getReplyBtn.addEventListener('click', handleAiReplyButton);
     regenerateBtn.addEventListener('click', handleRegenerate);
     
     messageArea.addEventListener('click', (e) => {

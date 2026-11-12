@@ -13,10 +13,12 @@ function getChatGeneration(chatId = currentChatId, chatType = currentChatType) {
 function refreshChatGenerationUI() {
     const request = getChatGeneration();
     isGenerating = Boolean(request);
-    getReplyBtn.disabled = isGenerating;
+    getReplyBtn.disabled = false;
     regenerateBtn.disabled = isGenerating;
-    const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
-    if (stopButton) stopButton.hidden = !request;
+    getReplyBtn.setAttribute?.('data-generating', String(isGenerating));
+    getReplyBtn.setAttribute?.('aria-label', request ? '停止 AI 回复' : 'AI 回复');
+    getReplyBtn.setAttribute?.('title', request ? '停止 AI 回复' : 'AI 回复');
+    if (getReplyBtn.style) getReplyBtn.style.display = request || !messageInput.value.trim() ? 'inline-flex' : 'none';
     typingIndicator.style.display = request ? 'block' : 'none';
     if (request) {
         const name = request.chatType === 'private' ? request.chat.remarkName : request.chat.name;
@@ -40,6 +42,10 @@ function stopAiReply() {
     if (!request?.controller) return false;
     request.controller.abort();
     return true;
+}
+function handleAiReplyButton() {
+    if (getChatGeneration()) return stopAiReply();
+    return getAiReply(currentChatId, currentChatType);
 }
 
 function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
@@ -182,14 +188,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     const generationRequest = { chat, chatType, archiveId: chat.activeArchiveId, history: chat.history, controller: generationController };
     chatGenerationRequests.add(generationRequest);
     if (!isBackground) {
-        isGenerating = true;
-        getReplyBtn.disabled = true;
-        regenerateBtn.disabled = true;
-        const stopButton = typeof document !== 'undefined' && typeof document.getElementById === 'function' ? document.getElementById('stop-ai-btn') : null;
-        if (stopButton) stopButton.hidden = false;
-        const typingName = chatType === 'private' ? chat.remarkName : chat.name;
-        typingIndicator.textContent = `“${typingName}”正在输入中...`;
-        typingIndicator.style.display = 'block';
+        refreshChatGenerationUI();
         messageArea.scrollTop = messageArea.scrollHeight;
     }
 

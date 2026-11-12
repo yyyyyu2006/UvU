@@ -16,7 +16,7 @@ function fixture() {
         currentChatId: "a", currentChatType: "private", currentQuoteInfo: null, currentTransferMessageId: null, isGenerating: false, isInMultiSelectMode: false,
         editingMessageId: null, currentPage: 1, longPressTimer: null, selectedMessageIds: new Set(), Event, AbortController, Blob, File, structuredClone,
         setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {},
-        getReplyBtn: {}, regenerateBtn: {}, typingIndicator: { style: {} }, chatRoomTitle: {}, messageArea: { querySelector() { return null; } }, messageInput: { value: "", dispatchEvent() {}, focus() {} },
+        getReplyBtn: element('get-reply-btn'), regenerateBtn: {}, typingIndicator: { style: {} }, chatRoomTitle: {}, messageArea: { querySelector() { return null; } }, messageInput: { value: "", dispatchEvent() {}, focus() {} },
         AudioManager: { unlock() {} }, triggerHapticFeedback() {}, showPanel() {}, renderMessages() {}, renderChatList() {}, saveData: async () => {},
         showToast: text => toasts.push(text), addMessageBubble: (...args) => bubbles.push(args), generatePrivateSystemPrompt: () => "original prompt", filterHistoryForAI: (_, history) => history, showApiError: e => toasts.push(e.message),
     });
@@ -62,12 +62,31 @@ test("independent generations preserve B stop control when A finishes; return re
     const b = f.c.getAiReply("b", "private"); await tick();
     assert.notEqual(signals[0], signals[1]);
     await f.c.getAiReply("b", "private", true); assert.equal(signals.length, 2);
-    f.c.currentChatId = "a"; f.c.refreshChatGenerationUI(); assert.equal(f.c.getReplyBtn.disabled, true);
+    f.c.currentChatId = "a"; f.c.refreshChatGenerationUI(); assert.equal(f.c.getReplyBtn.disabled, false);
     f.c.currentChatId = "b"; f.c.refreshChatGenerationUI();
     const response = { ok: true, json: async () => ({ choices: [{ message: { content: "reply" } }] }) };
-    finishes[0](response); await a; assert.equal(f.c.isGenerating, true); assert.equal(f.element("stop-ai-btn").hidden, false);
+    finishes[0](response); await a; assert.equal(f.c.isGenerating, true); assert.equal(f.c.getReplyBtn.disabled, false);
     assert.equal(f.c.stopAiReply(), true); assert.equal(signals[1].aborted, true); assert.equal(signals[0].aborted, false);
-    finishes[1](response); await b; assert.equal(f.c.isGenerating, false); assert.equal(f.element("stop-ai-btn").hidden, true);
+    finishes[1](response); await b; assert.equal(f.c.isGenerating, false); assert.equal(f.c.getReplyBtn.disabled, false);
+});
+
+test('reply button starts once, stops on the next click, and restores its label and draft layout', async () => {
+    const f = fixture(), attributes = {}, button = f.c.getReplyBtn;
+    button.setAttribute = (name, value) => attributes[name] = value;
+    let calls = 0;
+    f.c.fetch = (_, init) => { calls++; return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(Error('cancelled'), {name:'AbortError'})), {once:true})); };
+    f.c.messageInput.value = '保留的草稿';
+    const pending = f.c.handleAiReplyButton(); await tick();
+    assert.equal(calls, 1); assert.equal(button.disabled, false);
+    assert.equal(attributes['aria-label'], '停止 AI 回复'); assert.equal(attributes['data-generating'], 'true');
+    assert.equal(button.style.display, 'inline-flex', 'stop remains reachable while a new message is being typed');
+    assert.equal(f.c.handleAiReplyButton(), true); await pending;
+    assert.equal(calls, 1, 'second click cancels rather than creating a second request');
+    assert.equal(f.c.isGenerating, false); assert.equal(button.disabled, false);
+    assert.equal(attributes['aria-label'], 'AI 回复'); assert.equal(attributes['data-generating'], 'false');
+    assert.equal(button.style.display, 'none'); assert.equal(f.c.messageInput.value, '保留的草稿');
+    f.c.messageInput.value = ''; f.c.refreshChatGenerationUI();
+    assert.equal(button.style.display, 'inline-flex');
 });
 test("failed text send restores quote, draft, time divider and timestamp without overwriting new draft", async () => {
     for (const newDraft of ["", "new draft"]) {
