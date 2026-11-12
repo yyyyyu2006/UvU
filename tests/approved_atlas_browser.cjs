@@ -43,15 +43,15 @@ const server = http.createServer((req, res) => {
             const state=await panel.evaluate(el=>({html:el.outerHTML.slice(0,160000),overflow:el.scrollWidth-el.clientWidth}));
             fs.writeFileSync(path.join(out,name+'.html'),state.html);
             const geometry=await panel.evaluate(el=>{
-                const nav=el.querySelector('.mono-page-nav'),title=nav?.querySelector('.mono-page-title');
+                const nav=el.querySelector('.mono-page-nav'),title=el.querySelector('.lenso-title')||nav?.querySelector('.mono-page-title');
                 if(!nav||!title)return null;
                 const n=nav.getBoundingClientRect(),t=title.getBoundingClientRect();
                 const body=el.querySelector(':scope > .derived-body,:scope > .draft-scroll,:scope > .mcp-body,:scope > .calendar-body');
                 const first=body&&[...body.children].find(c=>c.getClientRects().length);
-                return {navTop:n.top,navHeight:n.height,titleTop:t.top,titleHeight:t.height,offset:t.top+t.height/2-n.top-n.height/2,font:getComputedStyle(title).font,gridRow:getComputedStyle(title).gridRow,body:body&&{top:body.getBoundingClientRect().top,padding:getComputedStyle(body).padding,gap:getComputedStyle(body).gap,firstTop:first?.getBoundingClientRect().top,firstMargin:first&&getComputedStyle(first).margin}};
+                return {lenso:title.classList.contains('lenso-title'),navTop:n.top,navHeight:n.height,titleTop:t.top,titleHeight:t.height,offset:t.top+t.height/2-n.top-n.height/2,font:getComputedStyle(title).font,gridRow:getComputedStyle(title).gridRow,body:body&&{top:body.getBoundingClientRect().top,padding:getComputedStyle(body).padding,gap:getComputedStyle(body).gap,firstTop:first?.getBoundingClientRect().top,firstMargin:first&&getComputedStyle(first).margin}};
             });
             fs.writeFileSync(path.join(out,name+'-metrics.json'),JSON.stringify(geometry,null,2));
-            if(geometry)assert.ok(geometry.titleTop>=geometry.navTop-1&&geometry.titleTop+geometry.titleHeight<=geometry.navTop+geometry.navHeight+1,name+' title remains contained in current navigation: '+JSON.stringify(geometry));
+            if(geometry)assert.ok(geometry.lenso?geometry.titleTop>=geometry.navTop+geometry.navHeight-1:geometry.titleTop>=geometry.navTop-1&&geometry.titleTop+geometry.titleHeight<=geometry.navTop+geometry.navHeight+1,name+' title follows the approved navigation layout: '+JSON.stringify(geometry));
             console.log('PASS',name);
         }
         await page.setViewportSize({width:402,height:874});
@@ -60,7 +60,7 @@ const server = http.createServer((req, res) => {
         await page.getByLabel('选择分享文件').setInputFiles({name:'旅行计划.docx.txt',mimeType:'text/plain',buffer:Buffer.from('周末旅行\n\n第一天，我们沿着海岸线走到灯塔。\n\n午后找一家安静的咖啡店，整理一路拍下的照片。')});
         await shot('file-send','#shared-document-dialog .shared-document-dialog');
         assert.equal(await page.getByLabel('文件正文',{exact:true}).evaluate(el=>getComputedStyle(el).fontSize),'14px');
-        await page.getByRole('button',{name:'编辑文件',exact:true}).click();
+        await page.getByRole('button',{name:'编辑副本',exact:true}).click();
         await page.locator('#expanded-text-editor textarea').fill('用户校订的旅行计划');
         await page.locator('#expanded-text-editor [data-action=apply]').click();
         await page.locator('.shared-document-actions [data-action=send]').click();
@@ -147,7 +147,7 @@ const server = http.createServer((req, res) => {
         await shot('vector-settings','#auto-memory-modal .auto-memory-dialog');
         await page.locator('#vector-api-panel > summary').click(); await shot('vector-api','#auto-memory-modal .auto-memory-dialog');
         await page.locator('#vector-api-panel > summary').click();
-        await page.getByRole('button',{name:'建立索引',exact:true}).click();
+        await page.getByRole('button',{name:'索引管理',exact:true}).click();
         await page.locator('.memory-library > .feature-dialog-card[data-mono-view=options]').waitFor();
         assert.equal(await page.locator('.memory-library-index-actions').evaluate(el=>el.open),true,'index route exposes the existing index actions without starting an API job');
         await page.locator('.draft-memory-nav').getByRole('button',{name:'记忆',exact:true}).click();
@@ -178,6 +178,7 @@ const server = http.createServer((req, res) => {
         await page.locator('#auto-memory-close').click();
         await page.evaluate(async()=>{const config=MCPServices.settings();config.services=[{id:'draft-service',name:'资料助手',url:'https://fixture.invalid/mcp',auth:'none',protocol:'auto',enabled:false,timeoutMs:20000,tools:{}}];await MCPServices.save(config);openMcpSettings();});
         await shot('mcp','#mcp-services .mcp-settings');
+        await page.locator('#mcp-services .lenso-service-controls > summary').click();
         await page.getByRole('button',{name:'编辑',exact:true}).click();
         await shot('mcp-add','#mcp-service-editor .mcp-settings');
         assert.equal(await page.locator('#mcp-service-editor').getByLabel('名称',{exact:true}).inputValue(),'资料助手');
@@ -256,7 +257,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('#pv-confirm-preview').isVisible(),true,'AI image capability remains in the original send panel');
         await page.evaluate(()=>document.getElementById('send-pv-modal').classList.remove('visible'));
         await page.evaluate(()=>switchScreen('uvu-story-bridge-screen'));await shot('tavern','#uvu-story-bridge-screen');
-        await page.getByRole('button',{name:'去审核',exact:true}).click();await page.locator('.uvu-bridge-review').waitFor({state:'visible'});
+        await page.getByRole('button',{name:'剧情审核',exact:true}).click();await page.locator('.uvu-bridge-review').waitFor({state:'visible'});
         await page.evaluate(()=>document.getElementById('uvu-story-bridge-screen').monoNavigate('guide'));await shot('guide','#uvu-story-bridge-screen');
         await page.evaluate(()=>switchScreen('storage-analysis-screen'));await page.locator('#storage-import-label').waitFor({state:'visible'});
         assert.equal(await page.locator('#storage-export-btn').isVisible(),true,'both backup actions remain available in the original storage page');

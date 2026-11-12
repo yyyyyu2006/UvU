@@ -100,10 +100,10 @@ function openCharacterMemos(target) {
     const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,actualDiagnostic,similar,semantic,legacy);
     const renderTools=typeof mountCharacterMemoTools==='function'?mountCharacterMemoTools(chat,{owner,node,button,execute,guard,settingsPage,actions,list,selection,feedback,refresh:()=>render(),view}):()=>{};
     const footer=node('footer','memo-footer'),done=node('button','panel-primary','完成');done.type='button';done.hidden=true;
-    run.textContent='整理聊天';add.classList.add('panel-primary');footer.append(run,add,done);
+    run.textContent='整理聊天';add.textContent='记一笔';add.setAttribute('aria-label','添加');add.classList.add('panel-primary');footer.append(run,add,done);
     const head=d.panel.querySelector('.message-forward-header,header'),heading=head?.querySelector('strong,h2'),settingsButton=node('button','sheet-aux');settingsButton.type='button';settingsButton.setAttribute('aria-label','备忘录设置');
     settingsButton.innerHTML=window.UvULucide?.['settings-2']||'';
-    const showSettings=active=>{guard();settingsPage.hidden=!active;main.hidden=active;run.hidden=add.hidden=active;done.hidden=!active;settingsButton.setAttribute('aria-pressed',String(active));if(heading)heading.textContent=active?'备忘录设置':'他的备忘录';body.scrollTop=0;};
+    const showSettings=active=>{guard();settingsPage.hidden=!active;main.hidden=active;run.hidden=!active;add.hidden=active;done.hidden=!active;settingsButton.setAttribute('aria-pressed',String(active));if(heading)heading.textContent=active?'备忘录设置':'他的备忘录';body.scrollTop=0;};
     settingsButton.onclick=()=>{try{showSettings(settingsPage.hidden);}catch(error){feedback.textContent=error.message;}};
     done.onclick=()=>{try{showSettings(false);}catch(error){feedback.textContent=error.message;}};
     head?.append(settingsButton);body.append(feedback,main,settingsPage);d.panel.append(body,footer);

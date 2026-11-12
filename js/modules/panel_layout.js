@@ -537,6 +537,7 @@
             input.before(bar); bar.append(icon,input);
         }
         sheetLayout(root);
+        window.UvULensoPanels?.decorate(root);
     }
     function sheetLayout(root) {
         const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
@@ -687,8 +688,8 @@
         if(root.id==='auto-memory-modal') {
             const form=q(root,'#auto-memory-form'),vector=root.dataset.memoryFocus==='vector';
             const heading=q(root,'.mono-page-title');
-            if(heading&&/^向量记忆设置$/.test(heading.textContent))heading.textContent='向量索引';
-            if(heading&&/^自动总结设置$/.test(heading.textContent))heading.textContent='自动记忆';
+            if(heading&&/^向量记忆设置$/.test(heading.textContent))heading.textContent='向量记忆';
+            if(heading&&/^自动总结设置$/.test(heading.textContent))heading.textContent='自动总结';
             if(form&&!root.dataset.atlasSummary){
                 root.dataset.atlasSummary='true';
                 for(const [name,text]of [['batchSize','每批楼层'],['keepRecent','保留最近']])label(form.elements.namedItem(name)?.closest('label'),text);
@@ -1330,6 +1331,7 @@
             const help=[...body.querySelectorAll(':scope > .feature-help')];if(help.length)disclose(help,'生效说明','draft-notice');
         }
         sheetLayout(panel);
+        window.UvULensoPanels?.decorate(panel);
     }
     function openBackupWorkspace() {
         switchScreen('storage-analysis-screen');
@@ -1348,6 +1350,7 @@
         launch.onclick=()=>{overlay.hidden=false;back.focus();};back.onclick=()=>{overlay.hidden=true;launch.focus();};
         overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();back.click();}if(event.key==='Tab'){const list=[...panel.querySelectorAll('button,input,summary')].filter(el=>!el.disabled&&el.getClientRects().length);if(event.shiftKey&&document.activeElement===list[0]){event.preventDefault();list.at(-1)?.focus();}else if(!event.shiftKey&&document.activeElement===list.at(-1)){event.preventDefault();list[0]?.focus();}}});
         sheetLayout(panel);
+        window.UvULensoPanels?.decorate(panel);
     }
     function calendarLayout(root) {
         const header = q(root, '.message-forward-header'), body = q(root, '.calendar-body'), tabs = q(root, '.calendar-tabs'); if (!header || !body || !tabs) return;

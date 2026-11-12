@@ -29,10 +29,12 @@ try{
  await page.getByRole('button',{name:'备忘录设置',exact:true}).tap();await page.getByRole('switch',{name:'启用备忘录',exact:true}).check();await page.getByRole('button',{name:'完成',exact:true}).tap();
  await page.getByRole('button',{name:'添加',exact:true}).tap();await page.getByLabel('记住的事情',{exact:true}).fill('喜欢下雨天');await page.getByRole('button',{name:'保存',exact:true}).tap();await page.locator('#character-memo-editor').waitFor({state:'detached'});
  await page.evaluate(()=>{fetchAiResponse=async()=> '[]';resolveAutoMemoryApi=()=>({provider:'newapi',url:'https://mock.invalid',key:'fake',model:'mock'});});
+ await page.getByRole('button',{name:'备忘录设置',exact:true}).tap();
  await page.getByRole('button',{name:'整理聊天',exact:true}).tap();await page.waitForFunction(()=>document.querySelector('.memo-feedback').textContent.includes('新增 0 条'));
  await page.evaluate(()=>{db.characters[0].history.push({id:'new-after-run',role:'user',content:'我喜欢下雨天'});fetchAiResponse=async()=> '{}';});
  await page.getByRole('button',{name:'整理聊天',exact:true}).tap();await page.waitForFunction(()=>document.querySelector('.memo-feedback').textContent.includes('响应格式错误'));
  // A failed extraction must release the busy/close state and keep editing available.
+ await page.getByRole('button',{name:'完成',exact:true}).tap();
  await page.getByRole('button',{name:'添加',exact:true}).tap();await page.locator('#character-memo-editor .sheet-close').tap();
  await page.screenshot({path:path.join(out,'memo-after-failed-extraction.png')});
  await page.locator('#character-memos-dialog .sheet-close').tap();
