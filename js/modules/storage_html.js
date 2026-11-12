@@ -90,16 +90,16 @@ function injectStorageHTML() {
                     <span id="storage-export-text">导出备份</span>
                 </button>
 
-                <div id="storage-import-control" style="width: 100%;" hidden>
+                <div id="storage-import-control" style="width: 100%;">
                     <input type="file" id="storage-import-file" accept=".json,.ee,.txt,application/octet-stream,application/json" class="storage-hidden-input">
-                    <label for="storage-import-file" class="storage-action-btn storage-import-btn" id="storage-import-label">
+                    <button type="button" class="storage-action-btn storage-import-btn" id="storage-import-label">
                         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="17 8 12 3 7 8"></polyline>
                             <line x1="12" y1="3" x2="12" y2="15"></line>
                         </svg>
                         <span id="storage-import-text">导入备份</span>
-                    </label>
+                    </button>
                 </div>
             </div>
             

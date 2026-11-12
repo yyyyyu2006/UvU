@@ -340,6 +340,13 @@ function renderTutorialContent() {
         tutorialContentArea.appendChild(item);
     });
 
+    const backupMemoHelp = document.createElement('div');
+    backupMemoHelp.className = 'tutorial-item';
+    backupMemoHelp.innerHTML = `<div class="tutorial-header">备份导入与备忘录审核</div><div class="tutorial-content">
+        <p>打开数据管理，底部同时提供“导出备份”和“导入备份”。上方“导出分类／导入分类”分别设置各自范围；点击底部操作时会切换到对应范围。选择 .ee 或 .json 文件后，核对确认窗口中的分类与数量，再决定是否写入；取消不会修改数据。</p>
+        <p>私聊 → ＋ → 备忘录 → 待审核 → 审核，可直接“删除”。返回列表后可“撤销删除”，恢复本次面板内最近删除的一条。删除不影响聊天原文或冲突中的旧记录；“忽略”还会阻止相同事情再被记录，可在设置中恢复允许。</p>
+    </div>`;
+    tutorialContentArea.appendChild(backupMemoHelp);
     const persistenceHelp = document.createElement('div');
     persistenceHelp.className = 'tutorial-item';
     persistenceHelp.innerHTML = `<div class="tutorial-header">多窗口保存与索引冲突</div><div class="tutorial-content">

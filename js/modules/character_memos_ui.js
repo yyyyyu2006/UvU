@@ -22,7 +22,7 @@ function openCharacterMemos(target) {
     const ignored=node('details','memo-ignored');ignored.append(node('summary','','已忽略的事情'));advanced.append(ignored);
     const help=node('details','memo-guide');help.append(node('summary','','使用说明'),node('p','','自主记录在回复完成后后台运行；默认每10条新消息整理一次，最多读取最近60条。自动保存只接受有用户原文依据的明确事实，冲突和不确定内容留待审核。用于对话只选相关或置顶记录，并受字数上限限制。更换角色、存档或用户人设会隔离记录。'));
     help.append(node('p','','审核通过可单独加入日记。旧版模拟便签不会自动变成真实记忆；酒馆、文件和动态不自动采集。来源删除或修改后，该条暂停用于对话。临时记录可设到期时间；锁定或手改内容不会被自动替换。备份包含备忘录，PNG角色卡不包含这些私人记录。整理使用所选API，失败不阻止聊天；独立记忆API请在API设置内配置。'));
-    help.append(node('p','','冲突记录可替换旧记录、保留两条或忽略；锁定记录需先解锁才能替换。来源失效时可查看原消息，核对后另存为手动记录。加入日记及合并后的记忆也会检查原备忘录是否有效。保存时若提示记录已更新，请重新读取后再操作。'));
+    help.append(node('p','','待审核详情可直接删除，返回列表后可撤销最近一次删除；删除只移除本条，不删除原话，也不禁止以后再次记录。冲突记录可替换旧记录、保留两条或忽略；锁定记录需先解锁才能替换。来源失效时可查看原消息，核对后另存为手动记录。加入日记及合并后的记忆也会检查原备忘录是否有效。保存时若提示记录已更新，请重新读取后再操作。'));
     help.append(node('p','','设置页可查看存档容量和每条记录的入选原因。接近500条时，可先在批量管理中导出，再手动整理。“相近记录”仅按文字匹配列出最多10组，需逐条核对，不自动合并，也不额外调用API。'));
     help.append(node('p','','排查实际注入：在本设置页展开“实际请求诊断”，打开“记录实际请求诊断”，关闭面板并正常发送一轮聊天，再回来点“刷新诊断”。可核对备忘录、向量、日记、世界书及其他附加资料是否匹配最终请求。仅本页临时记录字段、来源名称和字符数，不保存正文；清除或关闭后无法恢复，刷新页面也会清空。“本轮可用记忆”仍是当前条件预览，不能代替实际请求记录。'));
     advanced.append(help);settings.append(advanced);
@@ -87,7 +87,8 @@ function openCharacterMemos(target) {
     const identity=node('div','memo-identity'),avatar=node('span','draft-avatar',(chat.remarkName||chat.realName||'角').slice(0,1));
     identity.append(avatar,node('span','',chat.remarkName||chat.realName),node('small','',chat.archives?.find(a=>a.id===owner.archive)?.name||'当前存档'));
     const batch=node('details','memo-batch');batch.append(node('summary','','批量管理'),filter,actions);
-    const main=node('section','memo-main');main.append(identity,tools,list,batch);
+    // Undo stays reachable after deleting a review item, without expanding batch tools.
+    const main=node('section','memo-main');main.append(identity,tools,undoButton,list,batch);
     const settingsPage=node('section','memo-settings-page');settingsPage.hidden=true;settingsPage.append(settings,capacity,diagnostic,actualDiagnostic,similar,semantic,legacy);
     const footer=node('footer','memo-footer'),done=node('button','panel-primary','完成');done.type='button';done.hidden=true;
     run.textContent='整理聊天';add.classList.add('panel-primary');footer.append(run,add,done);
@@ -140,10 +141,20 @@ function openCharacterMemos(target) {
         const editButton=node('button',note.status==='pending'?'':'panel-primary','编辑');editButton.type='button';editButton.onclick=()=>{v.dismiss();edit(note);};footer.append(editButton);
         if(!sourceStatus.valid){const correct=node('button','','另存为手动记录');correct.type='button';correct.onclick=()=>{v.dismiss();edit(null,note);};footer.append(correct);}
         if(note.status==='pending'){
-            const error=node('p','memo-feedback'),controls=[],snapshot=JSON.stringify(note),originalSnapshot=JSON.stringify(old);error.setAttribute('aria-live','polite');content.append(error);
+            footer.classList.add('memo-review-actions');
+            const error=node('p','memo-feedback'),controls=[...footer.children].map(b=>[b,b.disabled]),snapshot=JSON.stringify(note),originalSnapshot=JSON.stringify(old);error.setAttribute('aria-live','polite');content.append(error);
+            let reviewing=false;
+            const review=async(action)=>{
+                if(reviewing)return;reviewing=true;error.textContent='';controls.forEach(([b])=>b.disabled=true);v.setBusy(true);
+                try{guard();if(JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.id))!==snapshot)throw new Error('记录已变化，请重新打开后审核');await action();guard();render();v.setBusy(false);v.dismiss();}
+                catch(reason){error.textContent=reason.message;}
+                finally{reviewing=false;v.setBusy(false);controls.forEach(([b,value])=>b.disabled=value);}
+            };
+            const remove=async(suppress)=>{const removed=await deleteCharacterMemo(chat,note.id,suppress);if(removed)undo={note:removed,block:suppress?characterMemoState(chat).blocked.at(-1):null};selection.delete(note.id);};
+            const removeButton=node('button','','删除');removeButton.type='button';controls.push([removeButton,false]);removeButton.onclick=()=>review(()=>remove(false));footer.append(removeButton);
             const approve=(label,decision)=>{const action=node('button',decision==='keep-both'?'':'panel-primary',label);action.type='button';action.disabled=!sourceStatus.valid||Boolean(note.expiresAt&&note.expiresAt<=Date.now())||decision==='replace'&&(!old||old.locked||old.status!=='approved');const disabled=action.disabled;controls.push([action,disabled]);
-                action.onclick=async()=>{controls.forEach(([b])=>b.disabled=true);v.setBusy(true);try{guard();if(JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.id))!==snapshot)throw new Error('记录已变化，请重新打开后审核');if(decision==='replace'&&JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.replacesId))!==originalSnapshot)throw new Error('原记录已变化，请重新打开后审核');await changeCharacterMemo(chat,note.id,{status:'approved',conflictResolution:decision});guard();render();v.setBusy(false);v.dismiss();}catch(reason){error.textContent=reason.message;}finally{v.setBusy(false);controls.forEach(([b,value])=>b.disabled=value);}};footer.append(action);};
-            if(note.replacesId){footer.classList.add('memo-review-actions');approve('替换旧记录','replace');approve('两条都保留','keep-both');const ignore=node('button','','忽略');ignore.type='button';controls.push([ignore,false]);ignore.onclick=async()=>{controls.forEach(([b])=>b.disabled=true);v.setBusy(true);try{guard();if(JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.id))!==snapshot)throw new Error('记录已变化，请重新打开后审核');await deleteCharacterMemo(chat,note.id,true);render();v.setBusy(false);v.dismiss();}catch(reason){error.textContent=reason.message;}finally{v.setBusy(false);controls.forEach(([b,value])=>b.disabled=value);}};footer.append(ignore);}
+                action.onclick=()=>review(async()=>{if(decision==='replace'&&JSON.stringify(characterMemoState(chat).notes.find(n=>n.id===note.replacesId))!==originalSnapshot)throw new Error('原记录已变化，请重新打开后审核');await changeCharacterMemo(chat,note.id,{status:'approved',conflictResolution:decision});});footer.append(action);};
+            if(note.replacesId){approve('替换旧记录','replace');approve('两条都保留','keep-both');const ignore=node('button','','忽略');ignore.type='button';controls.push([ignore,false]);ignore.onclick=()=>review(()=>remove(true));footer.append(ignore);}
             else approve('确认记忆');
         }
         v.panel.append(content,footer);

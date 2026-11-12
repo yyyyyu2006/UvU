@@ -272,9 +272,10 @@ function renderStorageUI() {
     document.querySelectorAll('[data-backup-mode]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.backupMode === storageBackupMode));
     });
-    document.getElementById('storage-export-btn').hidden = storageBackupMode !== 'export';
+    // Keep both entry points visible even when the category selector is off-screen.
+    document.getElementById('storage-export-btn').hidden = false;
     document.getElementById('storage-export-format-row').hidden = storageBackupMode !== 'export';
-    document.getElementById('storage-import-control').hidden = storageBackupMode !== 'import';
+    document.getElementById('storage-import-control').hidden = false;
     backupOptions.innerHTML = '';
     STORAGE_CATEGORIES.forEach(cat => {
         const size = currentStorageSizes[cat.key] || 0;
@@ -354,13 +355,24 @@ function setupStorageAnalysisScreen() {
     // Export Button
     const exportBtn = document.getElementById('storage-export-btn');
     if (exportBtn) {
-        exportBtn.addEventListener('click', handleExport);
+        exportBtn.addEventListener('click', () => {
+            if (storageBackupBusy) return;
+            storageBackupMode = 'export';
+            renderStorageUI();
+            handleExport();
+        });
     }
 
     // Import Input
     const importInput = document.getElementById('storage-import-file');
     if (importInput) {
         importInput.addEventListener('change', handleImport);
+        document.getElementById('storage-import-label')?.addEventListener('click', () => {
+            if (storageBackupBusy) return;
+            storageBackupMode = 'import';
+            renderStorageUI();
+            importInput.click();
+        });
     }
 
     async function updatePersistenceStatus() {

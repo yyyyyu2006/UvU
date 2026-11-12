@@ -244,8 +244,8 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
-        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, #uvu-story-bridge-screen :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
-            // Dialog controls are ordinary interactions, not background rescue taps.
+        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, :is(#uvu-story-bridge-screen,#storage-analysis-screen) :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
+            // Dialog and derived app controls are ordinary interactions, not background rescue taps.
             globalRescueClickCount = 0;
             globalRescueLastClickTime = 0;
             return;
