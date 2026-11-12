@@ -21,3 +21,16 @@ test('recent additions put newly appended favorites before the twelve-album limi
  const albums=C.albums(C.recentAdded(lib)).slice(0,12);
  assert.equal(albums[0].name,'Album 12');assert.equal(albums[11].name,'Album 1');assert.equal(lib.favorites[0].id,'0');
 });
+test('recommendations use real deduplicated tracks and never mutate the portable library',()=>{
+ const C=catalog(),a=t('a'),b=t('b'),lib={favorites:[a,b],recent:[a],playlists:[{id:'mine',name:'Mine',tracks:[b,a]}]},before=JSON.stringify(lib);
+ const items=C.recommendations(lib,[{name:'Source',tracks:[a,a,b]}],()=>0);
+ assert.equal(items[0].kind,'collection');assert.equal(items[0].tracks.length,2);
+ assert.ok(items.some(item=>item.id==='mine'));assert.equal(JSON.stringify(lib),before);
+ assert.deepEqual(Array.from(C.recommendations({favorites:[],recent:[],playlists:[]})),[]);
+});
+test('recommendation queries stay bounded and use known artists when available',()=>{
+ const C=catalog(),plan=C.recommendationPlan({favorites:[t('a',{artists:['Artist']})],playlists:[],recent:[]},()=>0);
+ assert.equal(plan.length,2);assert.equal(plan[0].query,'Artist');assert.notEqual(plan[0].query,plan[1].query);
+ const noHistory=C.recommendationPlan({favorites:[],recent:[],playlists:[]},()=>0);
+ assert.equal(noHistory.length,2);assert.ok(noHistory.every(item=>item.query));assert.notEqual(noHistory[0].query,noHistory[1].query);
+});

@@ -342,6 +342,9 @@
         const clear = button('清理本机音频', async () => { MiniMaxTTS.clearCache(); status.textContent = await persistent.clear() ? '本机音频已清理' : '本机缓存不可用'; }); playback.append(clear);
         const dictionaryField = field(details(advanced, '默认读音词典'), '一行一个词语/读法', 'textarea', (saved.pronunciation || []).join('\n'));
         const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。点击“导演预览”，可选择试听台词或当前已加载的聊天语音，先分析情绪、语速、停顿和导演用量；分析只调用导演API，不合成声音。试听使用当前表单，聊天使用已保存的角色配置和消息之前的剧情。可取消，或点“普通语音”跳过导演。分析成功后播放会复用相同来源与设置的临时导演方案；刷新或方案被淘汰后需重新分析。合成后的“语音详情 → 分段参数”显示实际参数及用量。接口未提供的用量不估作实际费用。'));
+        const settingsGroup = node('div'); settingsGroup.className = 'minimax-speech-group';
+        const sections = [...advanced.children].filter(el => el.tagName === 'DETAILS');
+        if (sections.length) { sections[0].before(settingsGroup); settingsGroup.append(...sections); }
         formState = { profiles, flush, dictionary: dictionaryField, refreshRoles: () => {
             // Refresh the menu after data loading/import, without reloading a profile's unsaved fields.
             const value = roleSelect.value;

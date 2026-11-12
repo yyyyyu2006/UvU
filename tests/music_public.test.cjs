@@ -13,6 +13,13 @@ function fixture() {
     return Object.assign(h,{api:context.UvUPublicMusic,calls,context});
 }
 const row = {id:'1857979755',name:'LOFi',artist:['WhoYouth'],album:'LOFi',pic_id:'109951166139384942',source:'netease'};
+test('recommendation artwork uses a validated image endpoint and caches covers without audio calls',async()=>{
+ const h=fixture(),track={provider:'gd-netease',id:'123',artworkId:'456'};h.body={url:'https://p3.music.126.net/cover.jpg'};
+ assert.equal(await h.api.artwork(track),'https://p3.music.126.net/cover.jpg');await h.api.artwork(track);assert.equal(h.calls.length,1);
+ const params=new URL(h.calls[0].url).searchParams;assert.equal(params.get('types'),'pic');assert.equal(params.get('size'),'500');
+ assert.equal(await h.api.artwork({...track,artworkId:'bad'}),'');h.body={url:'http://foreign.invalid/image.jpg'};assert.equal(await h.api.artwork({...track,artworkId:'789'}),'');
+ const controller=new AbortController();controller.abort();await assert.rejects(h.api.artwork(track,controller.signal),{name:'AbortError'});
+});
 
 test('explicit public version selection keeps the original identity and can be revoked', async()=>{
     const h=fixture(),track={provider:'qq',id:'qq-original',title:'LOFi',artists:['WhoYouth'],album:''};

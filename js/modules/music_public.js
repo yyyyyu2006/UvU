@@ -129,6 +129,12 @@
         if (matches.size >= 100) matches.delete(matches.keys().next().value);
         matches.set(identity(track), { track: JSON.parse(JSON.stringify(song)), until: Date.now() + 86400000 });
     }
+    async function artwork(track, signal) {
+        source(track.provider);
+        if (!/^\d{1,24}$/.test(track.artworkId || '')) return '';
+        const raw = await get({types:'pic',id:track.artworkId,size:500},signal,3600000);
+        return mediaURL(raw?.url);
+    }
     async function stream(track, signal) {
         source(track.provider); const trackId = id(track.id);
         const raw = await get({types:'url',id:trackId,br:128},signal);
@@ -146,5 +152,5 @@
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('公共源歌词格式无效');
         return {lyric:clean(raw.lyric,100000).replace(/\\r\\n|\\n/g,'\n'),translation:clean(raw.tlyric,100000).replace(/\\r\\n|\\n/g,'\n')};
     }
-    root.UvUPublicMusic = {search,match,stream,lyrics,candidates,chooseMatch,clearMatch:track=>matches.delete(identity(track)),clearCache:()=>{cache.clear();matches.clear();proposals.clear();}};
+    root.UvUPublicMusic = {search,match,stream,artwork,lyrics,candidates,chooseMatch,clearMatch:track=>matches.delete(identity(track)),clearCache:()=>{cache.clear();matches.clear();proposals.clear();}};
 })(typeof window !== 'undefined' ? window : globalThis);

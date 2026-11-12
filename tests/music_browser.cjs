@@ -68,7 +68,7 @@ const server = http.createServer((req,res) => {
         assert.deepEqual(await page.locator('#uvu-music-screen [data-um-tab]').allTextContents(),['主页','新发现','广播','资料库','搜索'],'approved five-tab navigation');
         assert.equal(await page.locator('.um-hero h1').evaluate(n=>getComputedStyle(n).fontSize),'34px');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>getComputedStyle(n).backgroundColor),'rgb(255, 255, 255)','music has a white surface');
-        assert.equal(await page.locator('[data-um-tab=search]').evaluate(n=>n.parentElement.className),'um-nav-wrap','search has its own control beside navigation');
+        assert.equal(await page.locator('[data-um-tab=search]').evaluate(n=>n.parentElement.className),'um-nav','all five tabs share the screenshot navigation pill');
         assert.equal(await page.locator('#uvu-music-screen').evaluate(n=>n.parentElement.className),'phone-screen');
         await page.locator('#uvu-music-screen [data-um-tab="search"]').click();
         await page.getByRole('searchbox',{name:'搜索音乐'}).fill('滚动');await page.getByRole('searchbox',{name:'搜索音乐'}).press('Enter');
@@ -333,6 +333,8 @@ const server = http.createServer((req,res) => {
         assert.ok(await page.locator('.um-playlist-songs .um-track').count()>=2,'artist drilldown contains actual tracks');await page.getByRole('button',{name:'关闭',exact:true}).click();
         await page.locator('[data-um-tab="library"]').click();await page.getByRole('button',{name:'播放列表',exact:true}).click();await page.getByRole('button',{name:'喜爱歌曲',exact:true}).click();
         await page.waitForTimeout(250);await page.screenshot({path:path.join(out,'approved-playlist-390.png')});
+        assert.equal(await page.locator('.um-collection-name h1').evaluate(el=>getComputedStyle(el).color),'rgb(16, 16, 19)','playlist title remains visible on its white surface');
+        assert.equal(await page.locator('.um-play-pill').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(16, 16, 19)','playlist play pill contrasts with its background');
         await page.locator('.um-collection-sheet [aria-label="播放全部"]').click();await page.locator('.um-collection-sheet [aria-label="展开播放器"]').click();
         await page.evaluate(()=>UvUMusic.player.play(window.visualMusic[0],window.visualMusic));
         await page.getByRole('slider',{name:'音量',exact:true}).fill('0.35');assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().volume),.35);

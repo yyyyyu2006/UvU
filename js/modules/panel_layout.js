@@ -552,6 +552,9 @@
             help.remove(); // Notebook instructions live with its recording settings.
         } else if (help && panel.classList.contains('uvu-calendar')) {
             help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux');
+        } else if (help && panel.classList.contains('shared-document-dialog')) {
+            help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux','fusion-file-help');
+            help.setAttribute('aria-label','使用说明'); navIcon(help,'circle-help');
         } else if (help) {
             const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .draft-scroll');
             if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-help'); label(help, '使用说明'); body.append(help); }
@@ -1241,7 +1244,8 @@
                 const options = [...body.children].filter(el => el.matches('.memory-library-tuning,.memory-library-cache,.memory-library-migration,.panel-library-more'));
                 const diagnostics = q(body, '.memory-library-diagnostics');
                 const main = [...body.children].filter(el => !options.includes(el) && el!==diagnostics);
-                root.monoNavigate = subviews(root, body, [{id:'main',title:'记忆',nodes:main},{id:'retrieval',title:'检索诊断',nodes:[diagnostics]},{id:'options',title:'记忆设置',nodes:options}]);
+                const settingsGroup=make('div','fusion-memory-options'); settingsGroup.append(...options);
+                root.monoNavigate = subviews(root, body, [{id:'main',title:'记忆',nodes:main},{id:'retrieval',title:'检索诊断',nodes:[diagnostics]},{id:'options',title:'记忆设置',nodes:[settingsGroup]}]);
                 const footer=q(root,'.mono-page-footer'), tabs=make('nav','draft-bottom-nav draft-memory-nav');tabs.setAttribute('aria-label','记忆导航');
                 for(const [id,text] of [['main','记忆'],['retrieval','检索'],['options','设置']]) {const button=make('button','',text);button.type='button';button.onclick=()=>root.monoNavigate(id);button.dataset.view=id;tabs.append(button);}
                 footer?.append(tabs);root.addEventListener('mono-view-change',()=>{for(const tab of tabs.children) tab.setAttribute('aria-current',String(tab.dataset.view===root.dataset.monoView?'page':'false'));});root.monoNavigate('main',false);

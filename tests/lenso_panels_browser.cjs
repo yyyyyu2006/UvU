@@ -107,6 +107,10 @@ const server = http.createServer((req, res) => {
         await capture('files','#shared-document-dialog .uvu-lenso-panel',()=>page.evaluate(()=>openSharedDocumentDialog()));
         assert((await page.locator('#shared-document-dialog .uvu-lenso-panel').boundingBox()).height<520,'empty send form follows its contents');
         assert.equal(await page.locator('.fusion-file-recipient strong').innerText(),'沈砚');
+        assert.equal(await page.locator('#shared-document-dialog .mono-page-nav .fusion-file-help').count(),1,'file instructions live in the top navigation');
+        assert.equal(await page.locator('#shared-document-dialog .sheet-help').count(),0,'no duplicate bottom help button');
+        const helpBounds=await page.locator('.fusion-file-help').boundingBox(),closeFileBounds=await page.locator('#shared-document-dialog .sheet-close').boundingBox();assert(helpBounds.x>closeFileBounds.x,'help sits at the top right');
+        await page.locator('.fusion-file-help').click();assert.equal(await page.locator('#shared-document-instructions').isVisible(),true,'original help toggle still works');await page.locator('.fusion-file-help').click();
         assert.equal(await page.getByRole('button',{name:'取消',exact:true}).isVisible(),true);
         await page.locator('#shared-document-dialog input[type=file]').setInputFiles({name:'周末计划.md',mimeType:'text/markdown',buffer:Buffer.from(`周末计划
 
@@ -139,6 +143,12 @@ const server = http.createServer((req, res) => {
         await capture('relationship','.relationship-dialog.uvu-lenso-panel',()=>page.evaluate(()=>openRelationshipDialog()));
         await capture('export','.cc-export-dialog.uvu-lenso-panel',()=>page.evaluate(()=>UvUCharacterCardUI.open(db.characters[0])));
         await capture('memory','.memory-library > .uvu-lenso-panel',()=>page.evaluate(()=>openMemoryLibrary()));
+        await page.locator('.draft-memory-nav [data-view=options]').click();
+        const optionRows=await page.locator('.fusion-memory-options > details').evaluateAll(items=>items.map(el=>({h:el.querySelector('summary').getBoundingClientRect().height,margin:getComputedStyle(el).marginTop,radius:getComputedStyle(el).borderRadius})));
+        assert(optionRows.length>=3);for(const row of optionRows){assert(row.h<=52,'compact settings row');assert.equal(row.margin,'0px');assert.equal(row.radius,'0px');}
+        await page.evaluate(()=>Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{}))));
+        await page.screenshot({path:path.join(out,'memory-options.png')});
+        await page.locator('.draft-memory-nav [data-view=main]').click();
         await page.evaluate(()=>{const c=db.characters[0];c.memoryJournals.push({id:'long-layout',source:'manual',title:'记忆 · 2026年11月12日 · 周末书店的约定与很长的标题'.repeat(2),content:'这是一段较长的记忆，检查分隔线不会穿过正文和按钮。'.repeat(30),createdAt:Date.now()});});
         await capture('memory-long','.memory-library > .uvu-lenso-panel',()=>page.evaluate(()=>openMemoryLibrary()));
         for(const [width,height]of [[320,568],[390,844]]){
@@ -177,6 +187,9 @@ const server = http.createServer((req, res) => {
         assert(await page.locator('#sticker-description-settings [data-preview]').evaluate(el=>el.scrollHeight>el.clientHeight),'long sticker preview scrolls internally');
         await page.setViewportSize({width:390,height:844});
         await capture('notifications','#uvu-notification-preferences .uvu-lenso-panel',()=>page.evaluate(()=>{switchScreen('api-settings-screen');document.getElementById('uvu-notification-preferences').open=true;}));
+        const notificationSwitch=page.locator('#uvu-notification-preferences input.panel-switch').first();await notificationSwitch.check();
+        assert.equal(await notificationSwitch.evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(201, 234, 248)','notification switch uses pale blue');
+        await page.screenshot({path:path.join(out,'notifications-enabled.png')});
         await capture('home-presets','.draft-preset-workspace.uvu-lenso-panel',()=>page.evaluate(()=>{switchScreen('customize-screen');document.querySelector('.home-preset-card > button').click();}));
         await page.locator('.draft-preset-workspace .sheet-close').click();
         await capture('tavern','#uvu-story-bridge-screen.uvu-lenso-panel',()=>page.evaluate(()=>switchScreen('uvu-story-bridge-screen')));
@@ -195,6 +208,8 @@ const server = http.createServer((req, res) => {
         assert.equal(await voice.evaluate(el=>el.classList.contains('uvu-fusion-inline')),true);
         assert.equal(await voice.evaluate(el=>el.classList.contains('mono-page')),false,'MiniMax remains in the native API page');
         assert.equal(await voice.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+        assert.equal(await page.locator('#minimax-speech-advanced > .minimax-speech-group > details').count(),4,'four MiniMax sections share one group');
+        const voiceRows=await page.locator('.minimax-speech-group > details > summary').evaluateAll(items=>items.map(el=>el.getBoundingClientRect().height));for(const h of voiceRows)assert(h<=52,'compact MiniMax rows');
         await page.screenshot({path:path.join(out,'voice-inline.png')});
         await page.evaluate(()=>switchScreen('storage-analysis-screen'));await page.locator('#storage-import-label').scrollIntoViewIfNeeded();
         assert.equal(await page.locator('#storage-import-label').isVisible(),true);
