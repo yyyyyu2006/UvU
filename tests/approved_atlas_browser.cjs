@@ -178,7 +178,7 @@ const server = http.createServer((req, res) => {
         await page.locator('#auto-memory-close').click();
         await page.evaluate(async()=>{const config=MCPServices.settings();config.services=[{id:'draft-service',name:'资料助手',url:'https://fixture.invalid/mcp',auth:'none',protocol:'auto',enabled:false,timeoutMs:20000,tools:{}}];await MCPServices.save(config);openMcpSettings();});
         await shot('mcp','#mcp-services .mcp-settings');
-        await page.locator('#mcp-services .lenso-service-controls > summary').click();
+        assert(await page.locator('#mcp-services .draft-service-actions').isVisible(), 'common MCP actions are visible without an extra disclosure');
         await page.getByRole('button',{name:'编辑',exact:true}).click();
         await shot('mcp-add','#mcp-service-editor .mcp-settings');
         assert.equal(await page.locator('#mcp-service-editor').getByLabel('名称',{exact:true}).inputValue(),'资料助手');

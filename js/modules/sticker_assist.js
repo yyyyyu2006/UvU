@@ -162,7 +162,9 @@ function setupStickerAssist() {
     const host = document.getElementById('setting-char-sticker-groups-container');
     if (host && !document.getElementById('sticker-description-settings-open')) {
         const control = document.createElement('button'); control.type = 'button'; control.id = 'sticker-description-settings-open';
-        control.className = 'btn btn-secondary'; control.textContent = '表情说明'; control.setAttribute('aria-label', '表情画面说明注入与预算设置'); control.title = '表情画面说明注入与预算设置'; control.onclick = openStickerDescriptionSettings; host.after(control);
+        control.className = 'btn btn-secondary'; control.textContent = '表情说明'; control.setAttribute('aria-label', '表情画面说明注入与预算设置'); control.title = '表情画面说明注入与预算设置'; control.onclick = openStickerDescriptionSettings;
+        const actions = document.createElement('div'); actions.className = 'sticker-assist-settings-row';
+        host.before(actions); actions.append(host, control);
     }
     const form = document.getElementById('add-sticker-form');
     const fields = document.createElement('div');

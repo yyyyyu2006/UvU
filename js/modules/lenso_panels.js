@@ -162,10 +162,7 @@
         for (const card of panel.querySelectorAll('.mcp-service-item:not([data-lenso-service])')) {
             card.dataset.lensoService = 'true'; card.prepend(icon('link')); const arrow = icon('chevron-right'); arrow.classList.add('lenso-service-arrow'); card.append(arrow);
         }
-        const actions = q(panel,'.draft-service-actions');
-        if (actions && !actions.closest('.lenso-service-controls')) {
-            const details = make('details','lenso-service-controls'); details.append(make('summary','','管理所选服务')); actions.before(details); details.append(actions);
-        }
+        // Connect and edit stay beside the selected service, without another disclosure.
         if (!panel.dataset.lensoServices) { panel.dataset.lensoServices = 'true'; q(panel,'.draft-mcp-scope')?.querySelectorAll(':scope > h3').forEach(el => el.remove()); }
     }
     function decorate(root) {

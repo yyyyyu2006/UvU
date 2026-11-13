@@ -745,12 +745,13 @@
         const edit = q(row, 'button'), remove = edit?.nextElementSibling, connect = remove?.nextElementSibling;
         if (connect) { label(connect, '连接'); connect.classList.add('panel-primary'); actions.append(connect); }
         if (edit) actions.append(edit);
-        const management = disclose([row], '更多服务操作', 'mono-service-management');
+        const management = disclose([row], '服务详情与更多操作', 'mono-service-management');
         management.append(...[...services.children].filter(el => el !== head && el !== management && el !== actions && !el.matches('label,.mcp-service-search,.mcp-service-list')));
         const list=q(services,'.mcp-service-list'),selected=q(list,'.mcp-service-item[aria-pressed=true]');
-        if(list)list.after(head);
+        if(list)list.before(head);
         if(management)services.append(management);
         if(selected&&actions){const card=make('section','draft-card draft-selected-service');selected.before(card);card.append(selected,actions);}
+        if (!selected) for (const button of [connect, edit, remove]) if (button) button.disabled = true;
         const search = q(services, '.mcp-service-search');
         if (search) {
             search.hidden = services.querySelectorAll('.mcp-service-item').length < 2;

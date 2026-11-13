@@ -1,6 +1,9 @@
 /* All new controls are scoped; no original button/avatar/chat selectors. */
-#api-settings-screen #keep-alive-diagnostics { margin: -4px 16px 12px; padding: 0 0 8px 40px; color: #888; font-size: 13px; line-height: 1.5; }
-#api-settings-screen #keep-alive-diagnostics > summary { width: fit-content; padding: 8px 0; cursor: pointer; }
+#api-settings-screen #keep-alive-diagnostics { margin: -4px 16px 12px; padding: 0 0 8px; color: #888; font-size: 13px; line-height: 1.5; }
+#api-settings-screen #keep-alive-diagnostics > summary { display:flex; align-items:center; gap:8px; width: fit-content; padding: 8px 0; cursor: pointer; list-style:none; }
+#api-settings-screen #keep-alive-diagnostics > summary::-webkit-details-marker { display:none; }
+#api-settings-screen #keep-alive-diagnostics > summary::after { content:'›'; display:inline-block; }
+#api-settings-screen #keep-alive-diagnostics[open] > summary::after { transform:rotate(90deg); }
 #api-settings-screen #keep-alive-diagnostics .keep-alive-options { display: grid; gap: 8px; padding-top: 4px; min-width: 0; }
 #api-settings-screen #keep-alive-diagnostics label { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 36px; margin: 0; color: #666; font-size: 13px; }
 #api-settings-screen #keep-alive-diagnostics input[type=checkbox] { flex: 0 0 16px; width: 16px; height: 16px; margin: 0; accent-color: #738f9f; }

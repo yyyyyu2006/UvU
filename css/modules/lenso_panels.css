@@ -1,5 +1,11 @@
 /* Approved fusion draft — owned roots only. Lenso reference MIT.
    Unslop by Damir Sokolovsky, CC BY 4.0. */
+#draft-appearance-workspace.derived-settings .draft-appearance-size select,
+#draft-appearance-workspace .derived-settings .draft-appearance-size select {
+    box-sizing:border-box;width:84px;min-width:84px;max-width:84px;
+    height:36px;min-height:36px;padding:4px 22px 4px 8px;
+    font-size:13px !important;line-height:20px;
+}
 .uvu-lenso-panel.uvu-mono-panel {
     --draft-ink:#1c1c1e;--draft-muted:#6e6e76;--draft-line:#e8e8ed;
     --draft-canvas:#fff;--draft-paper:#fff;--draft-soft:#f2f2f7;
@@ -297,9 +303,6 @@
 #mcp-services .uvu-lenso-panel .mcp-service-item > span:not(.lenso-icon) { display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0; }
 #mcp-services .uvu-lenso-panel .mcp-service-item strong { font-size:15px;font-weight:500; }
 #mcp-services .uvu-lenso-panel .mcp-service-item small { display:block;font-size:11px;line-height:1.6;color:var(--draft-muted);font-weight:400; }
-#mcp-services .uvu-lenso-panel .lenso-service-controls { padding:0 12px;background:transparent;border:0; }
-#mcp-services .uvu-lenso-panel .lenso-service-controls > summary { font-size:12px;color:var(--draft-muted);padding:8px 0;min-height:36px; }
-#mcp-services .uvu-lenso-panel .lenso-service-controls .draft-service-actions { padding:8px 0; }
 .uvu-lenso-panel.uvu-mono-panel .ms-dialog-foot .ms-primary { background:var(--lenso-blue) !important;color:var(--lenso-action-ink) !important; }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel[data-calendar-view=calendar] .calendar-day.is-selected { background:var(--lenso-blue) !important; }
 .uvu-calendar.uvu-mono-panel.uvu-lenso-panel .draft-calendar-week > button[aria-pressed=true],
