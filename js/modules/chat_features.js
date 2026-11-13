@@ -276,6 +276,10 @@ const MiniMaxTTS = (() => {
     }
 
     function releaseMusic(session) {
+        if (session.resumeKeepAlive) {
+            const resume = session.resumeKeepAlive; session.resumeKeepAlive = null;
+            try { resume(); } catch (_) {}
+        }
         if (!session.resumeMusic) return;
         const resume = session.resumeMusic; session.resumeMusic = null;
         try { Promise.resolve(resume()).catch(() => {}); } catch (_) {}
@@ -285,6 +289,7 @@ const MiniMaxTTS = (() => {
         if (activeSession !== session) return;
         if (session.identity && !VoiceDirector.isCurrent(session.identity)) return stop(session);
         session.phase = 'starting';
+        if (!session.resumeKeepAlive) session.resumeKeepAlive = window.KeepAliveManager?.suspendForMedia();
         if (!session.resumeMusic && window.UvUMusic?.player) session.resumeMusic = window.UvUMusic.player.suspendVoice();
         setLoading(session, true);
         try {

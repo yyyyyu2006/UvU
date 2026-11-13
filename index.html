@@ -463,8 +463,7 @@
                             </div>
                             <div class="kkt-item-content">
                                 <div class="kkt-item-title">持续运行增强</div>
-                                <div class="kkt-item-subtitle">提高 iOS/Android 后台存活率，系统仍可能暂停网页</div>
-                                <div class="kkt-item-subtitle" id="keep-alive-status" data-state="off">未开启</div>
+                                <div class="kkt-item-subtitle" id="keep-alive-status" data-state="off" aria-live="polite">未开启</div>
                             </div>
                             <div class="kkt-item-control">
                                 <label class="kkt-switch">
@@ -473,6 +472,15 @@
                                 </label>
                             </div>
                         </div>
+                        <details id="keep-alive-diagnostics" class="keep-alive-details">
+                            <summary>增强选项与状态</summary>
+                            <div class="keep-alive-options">
+                                <label><span>屏幕常亮</span><input id="keep-alive-screen-switch" type="checkbox" checked></label>
+                                <label><span>兼容音频</span><input id="keep-alive-audio-switch" type="checkbox" checked></label>
+                                <p>兼容音频会增加耗电，可能有轻微声音；音乐和语音播放时自动让行。系统仍可能暂停后台网页。</p>
+                                <output id="keep-alive-diagnostic-result" aria-live="polite"></output>
+                            </div>
+                        </details>
                         <div class="kkt-item">
                             <div class="kkt-item-content">
                                 <div class="kkt-item-title">系统消息通知</div>
@@ -2991,7 +2999,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/minimax_speech.js?v=20261112-compact-music-v1"></script>
 <script src="js/modules/voice_director.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/chat_image_generation.js?v=20261111-media-preview-guards"></script>
-<script src="js/modules/chat_features.js?v=20261111-review-recovery-v1"></script>
+<script src="js/modules/chat_features.js?v=20261113-lifecycle-v2"></script>
 <script src="js/modules/chat_ops.js?v=20261108-calendar-life"></script>
 <script src="js/modules/message_forward.js?v=20261111-review-tools-v1"></script>
 <script src="js/modules/character_avatar.js?v=20261111-ui-regressions"></script>
@@ -3009,7 +3017,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/calendar_ai.js?v=20261111-review-recovery-v1"></script>
 <script src="js/modules/calendar_chat.js?v=20261108-calendar-life"></script>
 <script src="js/modules/calendar_ui.js?v=20261111-review-recovery-v1"></script>
-<link rel="stylesheet" href="css/modules/derived_features.css?v=20261112-memory20-v1">
+<link rel="stylesheet" href="css/modules/derived_features.css?v=20261113-lifecycle-v2">
 <script src="js/chat.js?v=20261112-reply-toggle"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
@@ -3019,9 +3027,9 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
 <script src="js/modules/shop_html.js"></script> <!-- 商城HTML注入 -->
 <script src="js/modules/settings_chat.js?v=20261105-audit-repairs"></script> <!-- 聊天设置与管理 -->
-<script src="js/modules/keep_alive.js"></script> <!-- 跨平台持续运行增强 -->
+<script src="js/modules/keep_alive.js?v=20261113-lifecycle-v2"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/model_picker.js?v=20261109-audit-repairs"></script>
-<script src="js/modules/settings_api.js?v=20261107-refinement"></script> <!-- API 设置与预设 -->
+<script src="js/modules/settings_api.js?v=20261113-lifecycle-v2"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261107-music"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js?v=20261111-persistence-vector-v1"></script> <!-- 主页预设导入导出 -->
@@ -3181,7 +3189,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_public.js?v=20261112-lyric-retry-v1"></script>
 <script src="js/modules/music_metadata.js?v=20261107-music-transport"></script>
 <script src="js/modules/music_config.js?v=20261108-render-live"></script>
-<script src="js/modules/music_core.js?v=20261111-persistence-vector-v1"></script>
+<script src="js/modules/music_core.js?v=20261113-lifecycle-v2"></script>
 <script src="js/modules/music_card_ui.js?v=20261108-character-music"></script>
 <script src="js/modules/music_character.js?v=20261108-character-music"></script>
 <script src="js/modules/music_chat.js?v=20261109-music-icons"></script>
@@ -3189,6 +3197,6 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_catalog.js?v=20261112-compact-music-v1"></script>
 <script src="js/modules/music_ui.js?v=20261112-share-lyrics-v1"></script>
 <script src="js/modules/music_together_ui.js?v=20261112-chat-only"></script>
-<script src="js/main.js?v=20261112-memory20-v1"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261113-lifecycle-v2"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

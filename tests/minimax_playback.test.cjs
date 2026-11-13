@@ -102,6 +102,17 @@ test('public stop pauses active audio and releases playback resources', async ()
     assert.equal(resumed, 1, 'repeated stops must not resume music twice');
 });
 
+test('voice releases keepalive hold on pause, permission failure, stop, and completion', async () => {
+    const h = harness(), b = bubble(); let held = 0, released = 0;
+    h.window.KeepAliveManager = { suspendForMedia() { held++; return () => { released++; }; } };
+    await h.tts.play(b, 'one'); assert.equal(held, 1); assert.equal(released, 0);
+    await h.tts.play(b, 'one'); assert.equal(released, 1);
+    h.playHook = () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+    await h.tts.play(b, 'one'); assert.equal(held, 2); assert.equal(released, 2);
+    h.playHook = undefined; await h.tts.play(b, 'one'); h.sounds.at(-1).emit('ended');
+    assert.equal(held, 3); assert.equal(released, 3); h.tts.stop(); assert.equal(released, 3);
+});
+
 test('late events from an old voice cannot stop or mark the new voice', async () => {
     const h = harness(), first = bubble(), second = bubble();
     await h.tts.play(first, 'one');

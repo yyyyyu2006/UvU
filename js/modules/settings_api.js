@@ -14,24 +14,7 @@ function setupApiSettingsApp() {
     if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
     if (db.apiSettings && typeof db.apiSettings.streamEnabled !== 'undefined') { document.getElementById('stream-switch').checked = db.apiSettings.streamEnabled; } else { document.getElementById('stream-switch').checked = true; } 
     
-    const keepAliveSwitch = document.getElementById('keep-alive-switch');
-    if (keepAliveSwitch) {
-        if (db.apiSettings && typeof db.apiSettings.keepAliveEnabled !== 'undefined') {
-            keepAliveSwitch.checked = db.apiSettings.keepAliveEnabled;
-        } else {
-            keepAliveSwitch.checked = false;
-        }
-        keepAliveSwitch.addEventListener('change', async (e) => {
-            const desiredState = e.target.checked;
-            if (window.KeepAliveManager) {
-                await window.KeepAliveManager.setEnabled(desiredState, { userInitiated: true });
-            }
-            db.apiSettings = db.apiSettings || {};
-            db.apiSettings.keepAliveEnabled = desiredState;
-            await saveData();
-            showToast(desiredState ? '持续运行增强已开启' : '持续运行增强已关闭');
-        });
-    }
+    setupKeepAliveSettings();
 
     const tempEnabledSwitch = document.getElementById('temperature-enabled-switch');
     const tempSlider = document.getElementById('temperature-slider');
@@ -175,6 +158,7 @@ function setupApiSettingsApp() {
             timePerceptionEnabled: document.getElementById('time-perception-switch').checked,
             streamEnabled: document.getElementById('stream-switch').checked, 
             keepAliveEnabled: document.getElementById('keep-alive-switch') ? document.getElementById('keep-alive-switch').checked : false,
+            keepAliveOptions: db.apiSettings?.keepAliveOptions || { screenAwake: true, compatibilityAudio: true },
             temperatureEnabled: document.getElementById('temperature-enabled-switch').checked,
             temperature: parseFloat(document.getElementById('temperature-slider').value),
             secondary
@@ -182,6 +166,47 @@ function setupApiSettingsApp() {
         await saveData();
         showToast('API设置已保存！')
     })
+}
+
+function setupKeepAliveSettings() {
+    const toggle = document.getElementById('keep-alive-switch');
+    if (!toggle || toggle.dataset.keepAliveBound) return;
+    toggle.dataset.keepAliveBound = 'true';
+    const screen = document.getElementById('keep-alive-screen-switch');
+    const sound = document.getElementById('keep-alive-audio-switch');
+    const controls = [toggle, screen, sound].filter(Boolean);
+    let busy = false;
+    function restoreFields() {
+        const saved = db.apiSettings || {}, options = saved.keepAliveOptions || {};
+        toggle.checked = Boolean(saved.keepAliveEnabled);
+        if (screen) screen.checked = options.screenAwake !== false;
+        if (sound) sound.checked = options.compatibilityAudio !== false;
+    }
+    restoreFields();
+    const change = async () => {
+        if (busy) return;
+        busy = true; controls.forEach(el => { el.disabled = true; });
+        const previousEnabled = db.apiSettings?.keepAliveEnabled;
+        const previousOptions = db.apiSettings?.keepAliveOptions;
+        const desired = toggle.checked, options = { screenAwake: screen?.checked !== false, compatibilityAudio: sound?.checked !== false };
+        try {
+            if (!window.KeepAliveManager) throw new Error('KeepAliveUnavailable');
+            await window.KeepAliveManager.setEnabled(desired, { ...options, userInitiated: true });
+            db.apiSettings = db.apiSettings || {};
+            db.apiSettings.keepAliveEnabled = desired; db.apiSettings.keepAliveOptions = options;
+            if (await saveData() === false) throw new Error('SaveFailed');
+            const status = window.KeepAliveManager.getDiagnostics();
+            showToast(desired ? status.screenAwake || status.audioPlaying ? '增强设置已保存' : '已保存，保活能力受浏览器限制' : '持续运行增强已关闭');
+        } catch (error) {
+            db.apiSettings = db.apiSettings || {};
+            if (previousEnabled === undefined) delete db.apiSettings.keepAliveEnabled; else db.apiSettings.keepAliveEnabled = previousEnabled;
+            if (previousOptions === undefined) delete db.apiSettings.keepAliveOptions; else db.apiSettings.keepAliveOptions = previousOptions;
+            restoreFields();
+            try { await window.KeepAliveManager?.setEnabled(Boolean(previousEnabled), previousOptions || { screenAwake: true, compatibilityAudio: true }); } catch (_) {}
+            showToast('增强设置保存失败，已恢复原设置');
+        } finally { busy = false; controls.forEach(el => { el.disabled = false; }); }
+    };
+    controls.forEach(el => el.addEventListener('change', change));
 }
 
 function setupMiniMaxTtsSettings() {

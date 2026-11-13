@@ -68,11 +68,15 @@ const init = async () => {
     // 定时任务
     updateClock();
     setInterval(updateClock, 30000);
-    setInterval(checkAutoReply, 60000);
+    const runScheduled = (name, fn) => {
+        if (!window.KeepAliveManager?.isEnabled()) return fn();
+        return window.KeepAliveManager.scheduled(name, fn);
+    };
+    setInterval(() => runScheduled('autoReply', checkAutoReply), 60000);
     
     // 检查备份提醒
-    setTimeout(checkBackupReminder, 5000); // 启动后延迟5秒检查
-    setInterval(checkBackupReminder, 3600000); // 每小时检查一次
+    setTimeout(() => runScheduled('backup', checkBackupReminder), 5000); // 启动后延迟5秒检查
+    setInterval(() => runScheduled('backup', checkBackupReminder), 3600000); // 每小时检查一次
 
     // 应用全局设置
     await loadAllCustomFonts();
@@ -230,7 +234,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setupStickerAssist();
         setupExpandedEditors();
         if (window.KeepAliveManager) {
-            window.KeepAliveManager.init(Boolean(db.apiSettings && db.apiSettings.keepAliveEnabled));
+            window.KeepAliveManager.init(Boolean(db.apiSettings && db.apiSettings.keepAliveEnabled), db.apiSettings?.keepAliveOptions || {})
+                .catch(error => console.warn('[KeepAlive] 初始化失败:', error?.name || 'Error'));
         }
     });
 });

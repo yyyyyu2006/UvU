@@ -556,7 +556,7 @@
     }
     function playAudio(current, generation) {
         if (!current || generation !== intent) return Promise.resolve();
-        state.error = ''; state.errorCode=''; state.phase='loading';
+        state.error = ''; state.errorCode=''; state.phase='loading'; emit();
         let result; try { result = current.play(); } catch (error) { result = Promise.reject(error); }
         return Promise.resolve(result).then(() => {
             if (generation !== intent || audio !== current) { if (audio !== current) current.pause(); return; }
