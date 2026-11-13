@@ -100,10 +100,10 @@ test('holding a name renames once and blocks the release click; a fresh tap stil
     assert.equal(emit('click').prevented, undefined);
 });
 
-test('holding an icon keeps original multi-select and prevents release from deselecting it', () => {
+test('holding an icon renames just like the name, without entering multi-select', () => {
     const { c, icon, emit, hold } = gestureFixture();
     emit('pointerdown', icon); hold();
-    assert.deepEqual(c.selections, ['entry']); assert.deepEqual(c.renames, []);
+    assert.deepEqual(c.selections, []); assert.deepEqual(c.renames, ['entry']);
     assert.equal(emit('click', icon).prevented, true);
 });
 

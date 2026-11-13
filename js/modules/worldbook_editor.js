@@ -2,6 +2,13 @@ function setupWorldBookDocumentTools() {
     const menu = document.getElementById('world-book-new-menu');
     const button = document.createElement('div'); button.className = 'menu-item'; button.id = 'wb-menu-import'; button.textContent = '导入 DOCX / TXT / JSON';
     button.addEventListener('click', () => chooseImportFile('.docx,.txt,.json', importWorldBookDocument)); menu.appendChild(button);
+    const manage = document.createElement('div');
+    manage.className = 'menu-item'; manage.id = 'wb-menu-multi-select'; manage.textContent = '多选管理';
+    manage.addEventListener('click', () => {
+        menu.style.display = 'none';
+        enterWorldBookMultiSelectMode();
+    });
+    menu.appendChild(manage);
     const form = document.getElementById('edit-world-book-form');
     const advanced = document.createElement('details'); advanced.className = 'worldbook-advanced';
     advanced.innerHTML = '<summary>进阶设置：触发 / 概率</summary><label><input id="wb-advanced-enabled" type="checkbox">应用进阶触发规则</label><label><input id="wb-enabled" type="checkbox" checked>启用此条目</label><label>触发方式<select id="wb-strategy"><option value="constant">常驻（无需关键词）</option><option value="keyword">关键词触发</option></select></label><label>主要关键词（逗号分隔，任一匹配）<input id="wb-keys" type="text"></label><label>可选筛选关键词<input id="wb-secondary" type="text"></label><label>筛选逻辑<select id="wb-logic"><option value="0">AND ANY：至少一个匹配</option><option value="3">AND ALL：全部匹配</option><option value="2">NOT ANY：均不匹配</option><option value="1">NOT ALL：不全部匹配</option></select></label><label>扫描最近消息数<input id="wb-scan" type="number" min="0" max="10000" value="20"></label><label>触发概率 %<input id="wb-probability" type="number" min="0" max="100" value="100"></label><label><input id="wb-case" type="checkbox">关键词区分大小写</label><label><input id="wb-whole" type="checkbox">完整单词匹配（中文建议关闭）</label><p class="feature-help">未勾选“应用进阶触发规则”时，按原方式注入所有绑定条目并使用插入深度排序。启用后才应用本条目的常驻/关键词、扫描范围和概率设置。</p>';
@@ -92,7 +99,7 @@ async function requestWorldBookRename(id) {
     }
 }
 
-// Hold the name to rename; keep the legacy multi-select gesture on the icon/card.
+// Use one long-press action for the entire card; bulk management has its own menu entry.
 function setupWorldBookLongPress(container) {
     if (container.dataset.longPressBound) return;
     container.dataset.longPressBound = 'true';
@@ -108,15 +115,14 @@ function setupWorldBookLongPress(container) {
         const card = event.target.closest('.wb-item-card');
         if (!card || isWorldBookMultiSelectMode) return;
         const gesture = { card, id: card.dataset.id, pointerId: event.pointerId,
-            x: event.clientX, y: event.clientY, rename: !!event.target.closest('.wb-item-name') };
+            x: event.clientX, y: event.clientY };
         pending = gesture;
         gesture.timer = setTimeout(() => {
             pending = null;
             if (!card.isConnected || document.hidden || isWorldBookMultiSelectMode ||
                 !document.getElementById('world-book-screen')?.classList.contains('active')) return;
             blockedClick = { id: gesture.id, until: Infinity };
-            if (gesture.rename) requestWorldBookRename(gesture.id);
-            else enterWorldBookMultiSelectMode(gesture.id);
+            requestWorldBookRename(gesture.id);
         }, 600);
     });
     container.addEventListener('pointermove', event => {

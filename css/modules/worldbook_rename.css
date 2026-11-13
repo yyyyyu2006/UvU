@@ -1,4 +1,4 @@
-/* Reserve long press for rename/selection without changing the original layout. */
+/* Reserve long press for rename without changing the original layout. */
 #world-book-screen .wb-item-card {
     -webkit-touch-callout: none;
     -webkit-user-select: none;
