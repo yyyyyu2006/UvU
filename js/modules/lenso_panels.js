@@ -176,6 +176,19 @@
         const title = q(panel,'.lenso-title'), scroll = q(panel,':scope > .derived-body > .draft-form-scroll');
         if (title && scroll && title.parentElement === scroll && scroll.firstElementChild !== title) scroll.prepend(title);
         memos(panel); summary(root,panel); tavern(root); files(panel); services(panel);
+        if(panel.matches('.memory-library > .feature-dialog-card')&&!panel.dataset.compositionArtwork){
+            const type=currentChatType,id=currentChatId;
+            window.UvUPanelArtwork?.composition(panel,'memory',()=>typeof db!=='undefined'?(type==='group'?db.groups:db.characters).find(c=>c.id===id):null);
+        }
+        if(panel.matches('.uvu-calendar')&&!panel.dataset.compositionArtwork){
+            const mine={realName:'我的日历',derivedPanelAppearance:db.calendarData?.prefs?.panelAppearance};
+            mine.panelArtworkSave=async(next,guard)=>{await window.UvUCalendar.mutate(s=>{s.prefs.panelAppearance=next;},{guard,undo:false});};
+            window.UvUPanelArtwork?.composition(panel,'calendar',()=>{
+                const selected=q(panel,'select[aria-label="日历所属位置"]')?.value;
+                if(selected==='user'){mine.derivedPanelAppearance=db.calendarData?.prefs?.panelAppearance;return mine;}
+                return db.characters.find(c=>'character:'+c.id===selected)||null;
+            });
+        }
     }
     function additional(root) {
         const archive = root.matches('.chat-archive-panel'), forward = root.matches('#message-forward-picker > .message-forward-dialog'), css = root.matches('#global-css-import-preview > .feature-dialog-card');

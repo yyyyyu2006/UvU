@@ -453,6 +453,40 @@
 .uvu-lenso-panel.panel-artwork-dialog.uvu-mono-panel.mono-page > footer { justify-content:space-between !important; }
 .uvu-lenso-panel.shared-document-dialog.uvu-mono-panel .fusion-file-recipient:not([hidden]) { display:flex !important;align-items:center;gap:12px;padding:14px 0;border-block:1px solid var(--draft-line);background:transparent;border-radius:0; }
 .uvu-lenso-panel.shared-document-dialog .fusion-file-recipient img { width:36px;height:36px;border-radius:50%;object-fit:cover; }
+
+/* Approved mixed artwork: memory uses four circles; calendar uses square covers.
+   Only these two derived panels own these selectors. */
+.uvu-lenso-panel.uvu-mono-panel .panel-composition { display:block;position:relative;flex:0 0 auto;min-width:0;padding:0 !important;border:0 !important;border-radius:0;background:transparent;box-shadow:none; }
+.uvu-lenso-panel .panel-composition[hidden] { display:none !important; }
+.uvu-lenso-panel .panel-composition-memory { min-height:0; }
+.uvu-lenso-panel .panel-composition-gallery { display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0; }
+.uvu-lenso-panel.uvu-mono-panel .panel-composition .panel-composition-photo { display:block;position:relative;flex:0 1 76px;aspect-ratio:1;width:76px;height:auto;min-width:0;min-height:0;padding:4px !important;border:1px solid #dce4e9;border-radius:50%;overflow:hidden;background:var(--draft-paper);box-shadow:none; }
+.uvu-lenso-panel .panel-composition-photo > img { display:block;width:100%;height:100%;aspect-ratio:1;object-fit:cover;border-radius:inherit; }
+.uvu-lenso-panel .panel-composition-memory .panel-photo-avatar { border-color:#bdceda; }
+.uvu-lenso-panel .panel-composition-memory .panel-photo-avatar img { object-position:50% 30%; }
+.uvu-lenso-panel .panel-composition-memory .panel-photo-memory3 img:not([src^="data:"]) { transform:scale(2.6);transform-origin:100% 0%; }
+.uvu-lenso-panel .panel-composition-name { display:block;max-width:calc(100% - 44px);margin-top:16px;color:var(--draft-ink);font-size:15px;line-height:32px;font-weight:500;overflow-wrap:anywhere; }
+.uvu-lenso-panel.uvu-mono-panel .panel-composition-more { display:flex;position:absolute;bottom:0;right:0;align-items:center;justify-content:center;width:32px;height:32px;min-width:32px;min-height:32px;padding:0 !important;border:0;background:transparent;color:var(--draft-muted);border-radius:50%; }
+.uvu-lenso-panel .panel-composition-more svg { width:18px;height:18px; }
+.uvu-lenso-panel .panel-composition :is(button:focus-visible) { outline:2px solid #88a9bd;outline-offset:3px; }
+.uvu-lenso-panel .panel-composition button:disabled { opacity:1;cursor:default; }
+.uvu-calendar.uvu-lenso-panel .panel-composition-calendar { position:relative;min-height:176px;margin:0; }
+.uvu-calendar.uvu-lenso-panel .panel-composition-calendar > .lenso-title { max-width:calc(100% - 170px);margin:20px 0 0 !important;order:0; }
+.uvu-calendar.uvu-lenso-panel .panel-composition-calendar .calendar-home { font-size:inherit;font-weight:inherit;padding:0;min-height:0;background:transparent;text-align:left; }
+.uvu-calendar.uvu-lenso-panel .panel-composition-calendar .panel-composition-gallery { position:absolute;inset:8px 0 0;display:block;pointer-events:none; }
+.uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-composition-photo { pointer-events:auto;position:absolute;padding:0 !important;border:0;box-shadow:none; }
+.uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-photo-calendar { top:0;right:0;width:144px;height:144px;border-radius:22px; }
+.uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-photo-calendarDetail { top:96px;right:110px;width:64px;height:64px;border:4px solid var(--draft-paper);border-radius:17px; }
+.uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-photo-avatar { left:0;top:112px;width:36px;height:36px;border-radius:50%; }
+.uvu-calendar.uvu-lenso-panel .panel-composition-calendar .panel-composition-name { position:absolute;top:120px;left:46px;max-width:calc(100% - 220px);margin:0;line-height:36px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-composition-more { top:64px;left:0;bottom:auto;right:auto;background:var(--draft-soft); }
+@media(max-width:360px) {
+ .uvu-lenso-panel .panel-composition-gallery { gap:8px; }
+ .uvu-calendar.uvu-lenso-panel .panel-composition-calendar > .lenso-title { max-width:calc(100% - 136px); }
+ .uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-photo-calendar { width:120px;height:120px; }
+ .uvu-calendar.uvu-lenso-panel.uvu-mono-panel .panel-composition-calendar .panel-photo-calendarDetail { right:92px;top:84px;width:52px;height:52px;border-radius:15px; }
+ .uvu-calendar.uvu-lenso-panel .panel-composition-calendar .panel-composition-name { max-width:calc(100% - 190px); }
+}
 .uvu-lenso-panel.shared-document-dialog .fusion-file-recipient img[src=""] { display:none; }
 .uvu-lenso-panel.shared-document-dialog .fusion-file-recipient strong { font-size:14px;color:var(--draft-ink); }
 .uvu-lenso-panel.shared-document-dialog .fusion-file-recipient small { display:none; }
