@@ -62,3 +62,78 @@ test('pending rename prevents a second write to the same item and never targets 
     assert.equal(folder.name, '正在保存');
     assert.equal(vm.runInContext('wbPathStack.at(-1).name', c), '另一个文件夹');
 });
+
+function gestureFixture() {
+    const { c } = fixture();
+    const listeners = new Map(), timers = new Map(); let serial = 0;
+    const surface = name => ({ dataset: {}, addEventListener(type, fn, capture) {
+        const key = name + ':' + type;
+        const values = listeners.get(key) || []; values.push({ fn, capture }); listeners.set(key, values);
+    } });
+    const container = surface('list'), doc = surface('document'), win = surface('window');
+    const card = { dataset: { id: 'entry' }, isConnected: true };
+    const name = { closest: selector => selector === '.wb-item-card' ? card : selector === '.wb-item-name' ? name : null };
+    const icon = { closest: selector => selector === '.wb-item-card' ? card : null };
+    doc.getElementById = () => ({ classList: { contains: () => true } });
+    Object.assign(c, { document: doc, window: win, isWorldBookMultiSelectMode: false,
+        setTimeout: fn => { timers.set(++serial, fn); return serial; }, clearTimeout: id => timers.delete(id),
+        renames: [], selections: [], requestWorldBookRename: id => c.renames.push(id),
+        enterWorldBookMultiSelectMode: id => c.selections.push(id) });
+    c.setupWorldBookLongPress(container);
+    const emit = (type, target = name, options = {}, source = 'list') => {
+        const event = { target, pointerId: 1, isPrimary: true, button: 0, clientX: 20, clientY: 30,
+            preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...options };
+        for (const { fn } of listeners.get(source + ':' + type) || []) { fn(event); if (event.stopped) break; }
+        return event;
+    };
+    const hold = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); };
+    return { c, container, card, name, icon, emit, hold, timers };
+}
+
+test('holding a name renames once and blocks the release click; a fresh tap still opens normally', () => {
+    const { c, emit, hold } = gestureFixture();
+    emit('pointerdown'); hold();
+    assert.deepEqual(c.renames, ['entry']); assert.deepEqual(c.selections, []);
+    emit('pointerup', undefined, {}, 'document');
+    assert.equal(emit('click').prevented, true);
+    emit('pointerdown'); emit('pointerup', undefined, {}, 'document');
+    assert.equal(emit('click').prevented, undefined);
+});
+
+test('holding an icon keeps original multi-select and prevents release from deselecting it', () => {
+    const { c, icon, emit, hold } = gestureFixture();
+    emit('pointerdown', icon); hold();
+    assert.deepEqual(c.selections, ['entry']); assert.deepEqual(c.renames, []);
+    assert.equal(emit('click', icon).prevented, true);
+});
+
+test('scroll, pointer cancellation, leaving the list, hidden page and a removed card cancel pending holds', () => {
+    for (const action of ['move', 'cancel', 'leave', 'scroll', 'hidden', 'removed', 'release', 'blur']) {
+        const { c, card, emit, hold } = gestureFixture(); emit('pointerdown');
+        if (action === 'move') emit('pointermove', undefined, { clientX: 40 });
+        if (action === 'cancel') emit('pointercancel', undefined, {}, 'document');
+        if (action === 'leave') emit('pointerleave');
+        if (action === 'scroll') emit('scroll', undefined, {}, 'document');
+        if (action === 'hidden') { c.document.hidden = true; emit('visibilitychange', undefined, {}, 'document'); }
+        if (action === 'removed') card.isConnected = false;
+        if (action === 'release') emit('pointerup', undefined, {}, 'document');
+        if (action === 'blur') emit('blur', undefined, {}, 'window');
+        hold(); assert.deepEqual(c.renames, [], action); assert.deepEqual(c.selections, [], action);
+    }
+});
+
+test('multi-select mode, additional pointers and a secondary mouse button never open rename', () => {
+    const { c, emit, hold } = gestureFixture();
+    c.isWorldBookMultiSelectMode = true; emit('pointerdown'); hold();
+    c.isWorldBookMultiSelectMode = false;
+    emit('pointerdown', undefined, { button: 2 }); hold();
+    emit('pointerdown'); emit('pointerdown', undefined, { isPrimary: false, pointerId: 2 }); hold();
+    assert.deepEqual(c.renames, []); assert.deepEqual(c.selections, []);
+});
+
+test('F2 offers keyboard rename while long-press context menus are suppressed only on cards', () => {
+    const { c, emit } = gestureFixture();
+    assert.equal(emit('keydown', undefined, { key: 'F2' }).prevented, true);
+    assert.deepEqual(c.renames, ['entry']);
+    emit('pointerdown'); assert.equal(emit('contextmenu').prevented, true);
+});

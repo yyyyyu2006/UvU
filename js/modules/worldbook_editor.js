@@ -45,7 +45,6 @@ function setupWorldBookDocumentTools() {
         form.worldBookRules = rules;
     }, true);
     fill();
-    decorateWorldBookRenameButtons();
 }
 
 const pendingWorldBookRenames = new Set();
@@ -75,44 +74,79 @@ async function renameWorldBookItem(id, value) {
     return true;
 }
 
-// Keep the legacy card layout and editing action; only the new pencil opens rename.
-function decorateWorldBookRenameButtons() {
-    const container = document.getElementById('world-book-list-container');
-    if (!container || isWorldBookMultiSelectMode) return;
-    for (const card of container.querySelectorAll('.wb-item-card')) {
-        if (card.querySelector('.wb-rename-button')) continue;
-        const item = db.worldBooks.find(book => book.id === card.dataset.id);
-        if (!item) continue;
-        const button = document.createElement('button');
-        button.type = 'button'; button.className = 'wb-rename-button';
-        const label = '重命名' + (item.type === 'folder' ? '文件夹' : '条目');
-        button.title = label; button.setAttribute('aria-label', label + '：' + item.name);
-        if (window.UvULucide?.pencil) {
-            button.innerHTML = window.UvULucide.pencil;
-            button.querySelector('svg').setAttribute('aria-hidden', 'true');
-        } else button.textContent = '改名';
-        button.addEventListener('touchstart', event => event.stopPropagation(), { passive: true });
-        button.addEventListener('click', async event => {
-            event.preventDefault(); event.stopPropagation();
-            if (button.disabled) return;
-            const value = prompt(label, item.name);
-            if (value === null) return;
-            button.disabled = true;
-            try {
-                const changed = await renameWorldBookItem(item.id, value);
-                renderWorldBookList();
-                if (document.getElementById('world-book-selection-modal')?.classList.contains('visible')) renderWorldBookSelectorList();
-                const renamedCard = [...container.querySelectorAll('.wb-item-card')].find(node => node.dataset.id === item.id);
-                renamedCard?.querySelector('.wb-rename-button')?.focus({ preventScroll: true });
-                if (changed) showToast('名称已更新');
-            } catch (error) {
-                showToast('改名失败：' + (error.message || '请重试'));
-            } finally {
-                button.disabled = false;
-            }
-        });
-        card.appendChild(button);
+async function requestWorldBookRename(id) {
+    const item = db.worldBooks.find(book => book.id === id);
+    if (!item || pendingWorldBookRenames.has(id)) return;
+    const value = prompt('重命名' + (item.type === 'folder' ? '文件夹' : '条目'), item.name);
+    if (value === null) return;
+    try {
+        const changed = await renameWorldBookItem(id, value);
+        renderWorldBookList();
+        if (document.getElementById('world-book-selection-modal')?.classList.contains('visible')) renderWorldBookSelectorList();
+        const container = document.getElementById('world-book-list-container');
+        const card = [...container.querySelectorAll('.wb-item-card')].find(node => node.dataset.id === id);
+        card?.querySelector('.wb-item-name')?.focus({ preventScroll: true });
+        if (changed) showToast('名称已更新');
+    } catch (error) {
+        showToast('改名失败：' + (error.message || '请重试'));
     }
+}
+
+// Hold the name to rename; keep the legacy multi-select gesture on the icon/card.
+function setupWorldBookLongPress(container) {
+    if (container.dataset.longPressBound) return;
+    container.dataset.longPressBound = 'true';
+    let pending = null, blockedClick = null;
+    const cancel = () => {
+        if (pending) clearTimeout(pending.timer);
+        pending = null;
+    };
+    container.addEventListener('pointerdown', event => {
+        cancel();
+        if (event.isPrimary === false || event.button !== 0) return;
+        blockedClick = null;
+        const card = event.target.closest('.wb-item-card');
+        if (!card || isWorldBookMultiSelectMode) return;
+        const gesture = { card, id: card.dataset.id, pointerId: event.pointerId,
+            x: event.clientX, y: event.clientY, rename: !!event.target.closest('.wb-item-name') };
+        pending = gesture;
+        gesture.timer = setTimeout(() => {
+            pending = null;
+            if (!card.isConnected || document.hidden || isWorldBookMultiSelectMode ||
+                !document.getElementById('world-book-screen')?.classList.contains('active')) return;
+            blockedClick = { id: gesture.id, until: Infinity };
+            if (gesture.rename) requestWorldBookRename(gesture.id);
+            else enterWorldBookMultiSelectMode(gesture.id);
+        }, 600);
+    });
+    container.addEventListener('pointermove', event => {
+        if (pending && (event.pointerId !== pending.pointerId ||
+            Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > 10)) cancel();
+    }, { passive: true });
+    container.addEventListener('pointerleave', cancel);
+    document.addEventListener('pointerup', () => {
+        cancel();
+        if (blockedClick) blockedClick.until = Date.now() + 1000;
+    }, true);
+    document.addEventListener('pointercancel', cancel, true);
+    document.addEventListener('scroll', cancel, true);
+    document.addEventListener('visibilitychange', cancel);
+    window.addEventListener('blur', cancel);
+    container.addEventListener('contextmenu', event => {
+        if (event.target.closest('.wb-item-card') && (pending || blockedClick?.until > Date.now())) event.preventDefault();
+    });
+    container.addEventListener('click', event => {
+        if (blockedClick?.until > Date.now() && event.target.closest('.wb-item-card')?.dataset.id === blockedClick.id) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            blockedClick = null;
+        }
+    }, true);
+    container.addEventListener('keydown', event => {
+        const card = event.target.closest('.wb-item-card');
+        if (event.key !== 'F2' || !card || isWorldBookMultiSelectMode) return;
+        event.preventDefault();
+        requestWorldBookRename(card.dataset.id);
+    });
 }
 
 async function importWorldBookDocument(file) {

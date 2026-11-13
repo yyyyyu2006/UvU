@@ -375,17 +375,7 @@ async function setupWorldBookApp() {
         }
     });
 
-    // 长按进入多选
-    let wbLongPressTimer;
-    worldBookListContainer.addEventListener('touchstart', (e) => {
-        const item = e.target.closest('.wb-item-card');
-        if (!item) return;
-        wbLongPressTimer = setTimeout(() => {
-            enterWorldBookMultiSelectMode(item.dataset.id);
-        }, 600);
-    });
-    worldBookListContainer.addEventListener('touchend', () => clearTimeout(wbLongPressTimer));
-    worldBookListContainer.addEventListener('touchmove', () => clearTimeout(wbLongPressTimer));
+    setupWorldBookLongPress(worldBookListContainer);
 
     document.getElementById('delete-selected-world-books-btn').addEventListener('click', deleteSelectedWorldBooks);
     document.getElementById('move-selected-world-books-btn').addEventListener('click', moveSelectedWorldBooksToCurrent);
@@ -429,10 +419,11 @@ function renderWorldBookList() {
             <div class="wb-item-name"></div>
         `;
         card.querySelector('.wb-item-name').textContent = item.name;
+        card.querySelector('.wb-item-name').tabIndex = 0;
+        card.querySelector('.wb-item-name').title = '长按修改名称（键盘 F2）';
         
         container.appendChild(card);
     });
-    if (typeof decorateWorldBookRenameButtons === 'function') decorateWorldBookRenameButtons();
 }
 
 function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix) {

@@ -1,25 +1,6 @@
-/* Only the added rename control; preserve the original worldbook theme. */
-#world-book-screen .wb-item-card:has(> .wb-rename-button) { position: relative; }
-#world-book-screen .wb-rename-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 32px;
-    width: 32px;
-    height: 32px;
-    padding: 8px;
-    border: 1px solid #e8ebee;
-    border-radius: 50%;
-    color: #79838c;
-    background: var(--panel-bg, #fff);
-    cursor: pointer;
-    font: inherit;
-    font-size: 10px;
-    line-height: 1;
-    touch-action: manipulation;
+/* Reserve long press for rename/selection without changing the original layout. */
+#world-book-screen .wb-item-card {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
-#world-book-screen .grid-view .wb-rename-button { position: absolute; top: 0; right: 0; }
-#world-book-screen .list-view .wb-rename-button { margin-left: auto; }
-#world-book-screen .wb-rename-button svg { width: 16px; height: 16px; flex-shrink: 0; }
-#world-book-screen .wb-rename-button:focus-visible { outline: 2px solid #a7c5d8; outline-offset: 2px; }
-#world-book-screen .wb-rename-button:disabled { opacity: .5; cursor: wait; }
