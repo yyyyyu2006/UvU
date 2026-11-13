@@ -14,7 +14,9 @@ test('branch retains merged memory without weakening foreign archive isolation',
  assert.equal(c.getContextMemoryJournals(chat).length,1);await c.createBranchArchiveAtMessage('a1');
  assert.deepEqual(Array.from(c.getContextMemoryJournals(chat),j=>j.content),['合并事实']);
  const merged=chat.memoryJournals.find(j=>j.manualMergeSources);merged.manualMergeSources[0].memorySourceTarget.archiveId='foreign';
- assert.equal(c.getContextMemoryJournals(chat).length,0);
+ assert.deepEqual(Array.from(c.getContextMemoryJournals(chat),j=>j.content),['one'],'invalid merge restores only the independently eligible original favorite');
+ chat.memoryJournals.find(j=>j.id==='s').memorySourceTarget={chatId:chat.id,archiveId:'foreign'};
+ assert.equal(c.getContextMemoryJournals(chat).length,0,'foreign original remains excluded');
 });
 test('branch cannot recall manual or external facts recorded after its history cutoff',async()=>{
  const {c,chat}=branchFixture();chat.characterMemos={settings:{enabled:true,useContext:true},notes:['manual','external'].map((kind,i)=>({id:kind,owner:c.characterMemoIdentity(chat),fact:'未来事实'+i,subject:'user',status:'approved',pinned:true,createdAt:20,recordedAt:20,[kind]:true}))};

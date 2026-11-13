@@ -28,6 +28,34 @@ function fixture(count = 12, settings = {}) {
 }
 const ids = items => Array.from(items, item => item.id);
 
+test('manual favorites survive dormant replacement markers unless the replacement is injected', () => {
+    const { context: c, chat } = fixture(2, { enabled: false, useMemory: false, vectorSearchEnabled: false });
+    const source = { id: 'source', content: '手动收藏', isFavorited: true, vectorSupersededBy: 'replacement' };
+    const replacement = { id: 'replacement', content: '整理结果', isFavorited: false };
+    chat.memoryJournals = [source, replacement];
+    assert.deepEqual(ids(c.getContextMemoryJournals(chat)), ['source']);
+    assert.equal(c.getMemoryUsageExplanation(chat, source).status, '收藏引用');
+    chat.autoMemorySettings.vectorSearchEnabled = true;
+    assert.deepEqual(ids(c.getContextMemoryJournals(chat)), ['source'], 'enabling retrieval alone does not prove a hit');
+    replacement.isFavorited = true;
+    assert.deepEqual(ids(c.getContextMemoryJournals(chat)), ['replacement']);
+    replacement.memorySourceTarget = { chatId: 'other', archiveId: 'a1' };
+    assert.deepEqual(ids(c.getContextMemoryJournals(chat)), ['source'], 'unauthorized replacement cannot hide a manual favorite');
+    source.memorySourceTarget = { chatId: 'other', archiveId: 'a1' };
+    assert.deepEqual(ids(c.getContextMemoryJournals(chat)), [], 'fallback still checks source permissions');
+});
+
+test('a vector-selected replacement hides a manual favorite only within the actual prompt build', async()=>{
+    const {context:c,chat}=fixture(0,{enabled:false,useMemory:false,vectorSearchEnabled:true,vectorThreshold:0});
+    chat.memoryJournals=[{id:'source',content:'原收藏正文',isFavorited:true,vectorSupersededBy:'replacement'},
+        {id:'replacement',title:'整理',content:'整理后的事实',isFavorited:false}];
+    c.db.vectorMemoryApiSettings={provider:'newapi',url:'https://vectors.test/v1',key:'test',embeddingModel:'embed'};
+    c.fetch=async()=>({ok:true,json:async()=>({data:[{embedding:[1,0]}]})});
+    const retrieved=await c.getVectorMemoryContext(chat,'话题');assert.match(retrieved,/整理后的事实/);
+    const prompt=c.buildPromptWithVectorMemory(chat,()=>{assert.deepEqual(ids(c.getContextMemoryJournals(chat)),[]);return 'base';},retrieved);
+    assert.doesNotMatch(prompt,/原收藏正文/);assert.deepEqual(ids(c.getContextMemoryJournals(chat)),['source']);
+});
+
 test('default and custom memory inputs include quoted facts without changing original messages', () => {
     const f = fixture(1); f.chat.history[0].content = '[我的消息：就按这个地址办]';
     f.chat.history[0].quote = { senderName: '晴', content: '地址是星河路77号', messageId: 'outside-batch' };

@@ -7,11 +7,12 @@ function fixture() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/sticker_assist.js'), 'utf8'), c);
     return c;
 }
-test('description injection preserves legacy absent settings, allows explicit off and bounds relevant subset', () => {
+test('description injection requires explicit opt-in and bounds the enabled relevant subset', () => {
     const c = fixture(), chat = { stickerGroups: '猫', history: [{ role: 'user', content: '开心' }] };
     c.db.myStickers = [{ id: 'a', group: '猫', name: '开心', keywords: ['高兴'], description: '开心的猫', data: 'https://image/a' },
         { id: 'b', group: '猫', name: '难过', description: '难过的猫', data: 'https://image/b' }];
-    assert.match(c.getStickerDescriptionContext(chat), /开心的猫/); assert.match(c.getStickerDescriptionContext(chat), /难过的猫/);
+    assert.equal(c.getStickerDescriptionContext(chat), '');
+    chat.stickerDescriptionSettings = { maxItems: 12 }; assert.equal(c.getStickerDescriptionContext(chat), '');
     chat.stickerDescriptionSettings = { enabled: false }; assert.equal(c.getStickerDescriptionContext(chat), '');
     chat.stickerDescriptionSettings = { enabled: true, relevantOnly: true, maxChars: 200, maxItems: 1 };
     const context = c.getStickerDescriptionContext(chat); assert.match(context, /开心的猫/); assert.doesNotMatch(context, /难过的猫/); assert.ok(context.length <= 200);

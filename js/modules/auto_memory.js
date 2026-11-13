@@ -234,9 +234,9 @@ function getMemoryUsageExplanation(chat, journal) {
         trace(journal);
         return { status: '来源停用', reason: (issues.length ? '请核对来源：' + [...new Set(issues)].join('；') + '。' : '') + '来源通道、角色、存档或审核资格不满足；合并不会解除来源权限。' };
     }
-    if (journal.vectorSupersededBy) return { status: '已由合并结果替代', reason: '替代记忆：' + journal.vectorSupersededBy + '；停用或删除替代结果后，相关聊天原文恢复。' };
     if (journal.qualityReview?.status === 'pending') return { status: '待审核', reason: '原始聊天继续保留，确认后才替代。' };
     if (getContextMemoryJournals(chat).some(item => item.id === journal.id)) return { status: journal.autoMemory ? '摘要替代' : '收藏引用', reason: '按当前权限直接进入上下文。' };
+    if (journal.vectorSupersededBy) return { status: '已由合并结果替代', reason: '替代记忆：' + journal.vectorSupersededBy + '；停用或删除替代结果后，相关聊天原文恢复。' };
     const diagnostics = getVectorMemoryDiagnostics(chat);
     if (diagnostics.injectedIds?.includes(journal.id)) return { status: '上轮向量引用', reason: '最近一次实际注入的向量片段；下轮须重新检索判断。' };
     return { status: getAutoMemorySettings(chat).vectorSearchEnabled ? '向量候选' : '未启用引用', reason: '候选不等于实际命中；此预览不会请求 API。' };
@@ -263,9 +263,22 @@ function getEffectiveAutoMemoryCoverage(chat, state = getAutoMemoryState(chat)) 
 function getContextMemoryJournals(chat) {
     const settings = getAutoMemorySettings(chat);
     const replaced = vectorMemoryPromptChats.get(chat) || new Set();
-    const active = settings.useMemory ? getAutoMemoryState(chat).active.filter(journal => !replaced.has(journal.id) && memoryJournalSourcesAllowed(chat, journal)) : [];
+    const active = settings.useMemory ? getAutoMemoryState(chat).active.filter(journal => !journal.vectorSupersededBy && !replaced.has(journal.id) && memoryJournalSourcesAllowed(chat, journal)) : [];
     // 自动记忆的下层摘要即使被收藏也不重复注入；暂停记忆时恢复全部原楼层。
-    return [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && memoryJournalSourcesAllowed(chat, journal)), ...active].filter(journal => !journal.vectorSupersededBy);
+    const selected = [...(chat.memoryJournals || []).filter(journal => !journal.autoMemory && journal.isFavorited && memoryJournalSourcesAllowed(chat, journal)), ...active];
+    const injectedIds = new Set([...selected.map(journal => journal.id), ...replaced]);
+    const byId = new Map((chat.memoryJournals || []).map(journal => [journal.id, journal]));
+    return selected.filter(journal => {
+        // 只有替代结果本轮确实被引用时，才隐藏原手动收藏；残留标记不能丢掉收藏。
+        let replacement = journal;
+        const seen = new Set([journal.id]);
+        while (replacement?.vectorSupersededBy) {
+            replacement = byId.get(replacement.vectorSupersededBy);
+            if (!replacement || seen.has(replacement.id) || !memoryJournalSourcesAllowed(chat, replacement)) return true;
+            seen.add(replacement.id);
+        }
+        return replacement === journal || !injectedIds.has(replacement.id);
+    });
 }
 function getAutoMemoryContextHistory(chat, limit = chat.maxMemory) {
     const settings = getAutoMemorySettings(chat);

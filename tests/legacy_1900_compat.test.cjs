@@ -24,9 +24,89 @@ function fixture(root, provider, version, type) {
     if (root === current) for (const file of ['modules/chat_documents.js', 'modules/vector_index_store.js', 'modules/vector_memory_tools.js', 'modules/auto_memory.js', 'modules/character_memos.js', 'modules/worldbook_rules.js', 'modules/minimax_speech.js', 'modules/voice_director.js', 'modules/mcp_transport.js', 'modules/mcp_oauth.js', 'modules/mcp_forms.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     if (root === current) vm.runInContext(fs.readFileSync(path.join(root,'js/modules/music_chat.js'),'utf8'),c);
     for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
+    vm.runInContext(fs.readFileSync(path.join(root, 'js/utils.js'), 'utf8'), c);
+    c.showApiError = error => errors.push(error.message);
+    c.console.error = (label, error) => { if (label === 'Background Auto-Reply Error:') errors.push(error.message); };
+    if (root === current) for (const file of ['sticker_assist.js', 'environment.js', 'calendar_core.js'])
+        vm.runInContext(fs.readFileSync(path.join(root, 'js/modules', file), 'utf8'), c);
     c.handleAiReplyContent=async()=>{};
     return { c,chat,requests,errors };
 }
+
+test('144 real-filter request combinations retain 1900 ordering, CoT and original Gemini bug fixes', {skip:!available}, async()=>{
+    let equal=0,originalFailures=0;
+    for(const provider of ['newapi','gemini'])for(const version of ['uwu','tt'])for(const type of ['private','group'])
+    for(const background of [false,true])for(const cot of ['off','prefill','no-prefill'])for(const history of ['normal','hidden','assistant']){
+        const a=fixture(baseline,provider,version,type),b=fixture(current,provider,version,type);
+        const label=[provider,version,type,background,cot,history].join('/');
+        for(const f of [a,b]){
+            f.c.db.cotSettings={promptVersion:version,enabled:cot!=='off',prefillEnabled:cot==='prefill',activePresetId:'default'};
+            f.c.db.cotPresets=[{id:'default',items:[{enabled:true,content:'COT_TEST_RULE'},{enabled:false,content:'DISABLED_COT_RULE'}]}];
+            if(history==='hidden')f.chat.history.splice(1,0,{id:'h',role:'assistant',content:'THINKING',isThinking:true},
+                {id:'d',role:'user',content:'EXCLUDED',isContextDisabled:true});
+            if(history==='assistant')f.chat.history.push({id:'last',role:'assistant',content:'[晴的消息：last]',timestamp:1700000002000});
+            await f.c.getAiReply('c',type,background);
+        }
+        assert.deepEqual(b.errors,[],label);assert.equal(b.requests.length,1,label);
+        if(provider==='gemini'&&version==='tt'&&type==='private'){
+            assert.equal(a.requests.length,0,label);assert.deepEqual(a.errors,['Assignment to constant variable.'],label);originalFailures++;
+        }else{
+            assert.deepEqual(a.errors,[],label);assert.deepEqual(b.requests,a.requests,label);equal++;
+        }
+        assert.doesNotMatch(JSON.stringify(b.requests),/DISABLED_COT_RULE/);
+    }
+    assert.equal(equal,126);assert.equal(originalFailures,18);
+});
+
+for(const provider of ['newapi','gemini'])test('quote and regeneration guidance affect only their current message/request: '+provider,async()=>{
+    const f=fixture(current,provider,'uwu','private');
+    vm.runInContext(fs.readFileSync(path.join(current,'js/modules/chat_ops.js'),'utf8'),f.c);
+    await f.c.getAiReply('c','private');const ordinary=f.requests.at(-1),before=JSON.stringify(f.chat);
+    await f.c.getAiReply('c','private',false,'GUIDANCE_SENTINEL');
+    assert.match(JSON.stringify(f.requests.at(-1)),/GUIDANCE_SENTINEL/);assert.equal(JSON.stringify(f.chat),before);
+    await f.c.getAiReply('c','private');assert.deepEqual(f.requests.at(-1),ordinary);
+    f.chat.history.at(-1).quote={content:'QUOTED_SENTINEL',senderName:'晴'};
+    const quotedBefore=JSON.stringify(f.chat.history);await f.c.getAiReply('c','private');const quoted=f.requests.at(-1);
+    assert.deepEqual(f.errors,[]);assert.equal(JSON.stringify(f.chat.history),quotedBefore);
+    const rows=provider==='gemini'?'contents':'messages';
+    assert.deepEqual(quoted[rows].slice(0,-1),ordinary[rows].slice(0,-1));
+    assert.match(JSON.stringify(quoted[rows].at(-1)),/QUOTED_SENTINEL/);
+});
+
+for (const provider of ['newapi', 'gemini']) test('1900 request survives dormant sticker descriptions and stale favorite replacement: '+provider, {skip:!available}, async()=>{
+    const a=fixture(baseline,provider,'uwu','private'), b=fixture(current,provider,'uwu','private');
+    for(const f of [a,b]){
+        f.chat.stickerGroups='猫';f.c.db.myStickers=[{id:'s',name:'开心',group:'猫',description:'STICKER_SENTINEL'}];
+        f.chat.memoryJournals[0].vectorSupersededBy='missing';
+        f.chat.environmentProfile={aiEnabled:true};f.c.db.environmentSettings={enabled:false};
+        f.chat.characterMemos={settings:{enabled:false,useContext:true},notes:[]};
+        f.chat.history.splice(1,0,{id:'thinking',role:'assistant',content:'SECRET_REASONING',isThinking:true},
+            {id:'excluded',role:'user',content:'EXCLUDED_MESSAGE',isContextDisabled:true});
+    }
+    await a.c.getAiReply('c','private');await b.c.getAiReply('c','private');
+    assert.deepEqual(a.errors,[]);assert.deepEqual(b.errors,[]);assert.equal(b.requests.length,1);
+    assert.deepEqual(b.requests,a.requests);assert.doesNotMatch(JSON.stringify(b.requests),/STICKER_SENTINEL|SECRET_REASONING|EXCLUDED_MESSAGE/);
+});
+
+test('custom diary style keeps 1900 depth order until each advanced rule is explicitly enabled', {skip:!available}, ()=>{
+    const a=fixture(baseline,'newapi','uwu','private'),b=fixture(current,'newapi','uwu','private');
+    for(const [f,root]of [[a,baseline],[b,current]])vm.runInContext(fs.readFileSync(path.join(root,'js/modules/journal.js'),'utf8'),f.c);
+    const original=fs.readFileSync(path.join(baseline,'js/modules/journal.js'),'utf8');
+    const start=original.indexOf("        let worldBooksContent = ''",original.indexOf('async function generateJournal('));
+    const end=original.indexOf('        const apiConfig =',start);
+    assert.ok(start>=0&&end>start);
+    vm.runInContext('function legacySummary(chat,messagesToSummarize,includeFavorited){'+original.slice(start,end)+'return summaryPrompt;}',a.c);
+    for(const f of [a,b]){
+        f.chat.journalStyleSettings={mode:'custom',customWorldBookIds:['before1','before2']};
+        f.c.db.worldBooks.find(w=>w.id==='before1').rules={advancedEnabled:false,order:1};
+        f.c.db.worldBooks.find(w=>w.id==='before2').rules={advancedEnabled:false,order:2};
+    }
+    const legacy=a.c.legacySummary(a.chat,a.chat.history,false);
+    assert.equal(b.c.buildJournalSummaryPrompt(b.chat,'private',b.chat.history,false),legacy);
+    b.c.db.worldBooks.forEach(w=>{if(w.rules)w.rules.advancedEnabled=true;});
+    const enabled=b.c.buildJournalSummaryPrompt(b.chat,'private',b.chat.history,false);
+    assert.notEqual(enabled,legacy);assert.match(enabled,/BEFORE_2\n\nBEFORE_1/);
+});
 for (const version of ['uwu','tt']) for (const type of ['private','group']) {
     test('1900 prompt equality with additions off: '+version+'/'+type,{skip:!available},()=>{
         const a=fixture(baseline,'newapi',version,type), b=fixture(current,'newapi',version,type);

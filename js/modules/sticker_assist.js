@@ -8,13 +8,12 @@ function getStickerKeywords(sticker) {
     return words;
 }
 function getStickerDescriptionPlan(chat, queryText) {
+    const saved = chat.stickerDescriptionSettings;
+    if (saved?.enabled !== true) return { context: '', entries: [], legacy: false, reason: '说明注入已关闭' };
     const groups = (chat.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
     const described = db.myStickers.filter(s => groups.includes(s.group) && s.description?.trim());
-    const saved = chat.stickerDescriptionSettings;
     const header = '\n【可用表情包画面说明】\n';
     const format = sticker => JSON.stringify({ 名称: sticker.name, 画面与含义: sticker.description.slice(0, 1500), 关键词: worldBookKeys(sticker.keywords) });
-    if (!saved) return { context: described.length ? header + described.map(format).join('\n') + '\n' : '', entries: described, legacy: true };
-    if (saved.enabled !== true) return { context: '', entries: [], legacy: false, reason: '说明注入已关闭' };
     const budget = Math.max(200, Math.min(30000, Number(saved.maxChars) || 3000));
     const maxItems = Math.max(1, Math.min(100, Number(saved.maxItems) || 12));
     if (queryText === undefined) queryText = (chat.history || []).slice(-3).filter(message => ['user', 'assistant'].includes(message.role) &&
@@ -68,7 +67,7 @@ function openStickerDescriptionSettings() {
     const isCurrent = () => chat.activeArchiveId === archive && currentChatId === id && currentChatType === type;
     const overlay = document.createElement('div'); overlay.className = 'feature-dialog'; overlay.id = 'sticker-description-settings';
     overlay.innerHTML = '<div class="feature-dialog-card sticker-description-card"><header><strong>表情画面说明</strong><button type="button" data-action="close">关闭</button></header><p class="feature-help">控制本轮发送给模型的表情说明。</p><div class="sticker-description-options"><label class="sticker-description-toggle"><input type="checkbox" name="enabled"><span>注入画面说明</span></label><label class="sticker-description-toggle"><input type="checkbox" name="relevantOnly"><span>仅注入相关表情</span></label><label class="sticker-description-limit">最多条数<input type="number" name="maxItems" min="1" max="100"></label><label class="sticker-description-limit">字数上限<input type="number" name="maxChars" min="200" max="30000"></label></div><button type="button" data-action="save">保存</button><p class="feature-help" data-status></p><pre data-preview></pre></div>';
-    const values = { enabled: true, relevantOnly: true, maxItems: 12, maxChars: 3000, ...chat.stickerDescriptionSettings };
+    const values = { enabled: false, relevantOnly: true, maxItems: 12, maxChars: 3000, ...chat.stickerDescriptionSettings };
     for (const [name, value] of Object.entries(values)) { const input = overlay.querySelector(`[name="${name}"]`); if (!input) continue; if (input.type === 'checkbox') input.checked = value; else input.value = value; }
     const preview = () => { const plan = getStickerDescriptionPlan(chat); overlay.querySelector('[data-status]').textContent = `${plan.legacy ? '旧规则' : '当前设置'} · ${plan.entries.length} 条 / ${plan.context.length} 字${plan.reason ? ` · ${plan.reason}` : ''}`; overlay.querySelector('[data-preview]').textContent = plan.context || '本轮未注入表情说明。'; };
     overlay.querySelector('[data-action="close"]').onclick = () => overlay.remove();
@@ -111,7 +110,7 @@ function openStickerDescriptionEditor() {
         const items = matches(); if (!items.length || !canLeave()) return;
         load(items[(items.indexOf(selected) + 1) % items.length]); choices.value = selected.id;
     }); actions.append(auto, next);
-    const settings = make('section', 'draft-card'), row = make('label'), read = make('input'); read.type = 'checkbox'; read.checked = chat.stickerDescriptionSettings?.enabled !== false;
+    const settings = make('section', 'draft-card'), row = make('label'), read = make('input'); read.type = 'checkbox'; read.checked = chat.stickerDescriptionSettings?.enabled === true;
     read.setAttribute('aria-label', '让角色读取描述'); row.append(make('span', '', '让角色读取描述'), read); settings.append(row);
     const budgets = button('注入设置', openStickerDescriptionSettings), status = make('p', 'panel-operation-status'); status.setAttribute('role', 'status');
     const note = make('small', '', '描述用于帮助理解，不作为聊天正文。');
@@ -120,7 +119,7 @@ function openStickerDescriptionEditor() {
         if (!valid() || !db.myStickers.includes(selected)) { status.textContent = '角色、存档或表情已变化，请重新打开'; return; }
         if (!name.value.trim()) { name.focus(); status.textContent = '请填写名称'; return; }
         const target = selected, draftName = name.value, draftDescription = description.value, before = { name: target.name, description: target.description, settings: chat.stickerDescriptionSettings };
-        const updated = read.checked === (before.settings?.enabled !== false) ? before.settings :
+        const updated = read.checked === (before.settings?.enabled === true) ? before.settings :
             { ...(before.settings || { relevantOnly: false, maxItems: 12, maxChars: 3000 }), enabled: read.checked };
         busy = true; save.disabled = true; target.name = name.value.trim(); target.description = description.value.trim(); chat.stickerDescriptionSettings = updated;
         try {

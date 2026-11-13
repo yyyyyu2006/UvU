@@ -53,9 +53,9 @@ test('B03 only journals qualified for this request can suppress an approved memo
     chat.characterMemos={settings:{enabled:true,useContext:true},notes:[]};
     const note=await c.addManualCharacterMemo(chat,{fact:'喜欢喝茶'});note.pinned=true;
     chat.memoryJournals=[{id:'old',isFavorited:true,content:note.fact,vectorSupersededBy:'merged'}, {id:'merged',isFavorited:false,content:'其他事情'}];
-    assert.equal(c.getContextMemoryJournals(chat).length,0);
-    assert.equal(c.selectCharacterMemos(chat).length,1);
-    assert.equal(c.inspectCharacterMemos(chat).rows[0].code,'selected');
+    assert.equal(c.getContextMemoryJournals(chat).length,1,'inactive replacement restores the eligible manual favorite');
+    assert.equal(c.selectCharacterMemos(chat).length,0);
+    assert.equal(c.inspectCharacterMemos(chat).rows[0].code,'duplicate');
     chat.memoryJournals=[{id:'active',isFavorited:true,content:note.fact}];
     assert.equal(c.selectCharacterMemos(chat).length,0);
     assert.equal(c.inspectCharacterMemos(chat).rows[0].code,'duplicate');
