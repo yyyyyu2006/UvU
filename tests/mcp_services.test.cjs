@@ -15,6 +15,24 @@ function fixture() {
     return { c, api:c.window.MCPServices, chat, local, session, calls };
 }
 const config = () => ({ enabled:true, services:[{ id:'s', name:'天气', url:'https://tools.test/mcp', enabled:true, auth:'bearer', tools:{} }], policies:[] });
+test('MCP last discovery survives permission saves and reload without retaining executable tools', async()=>{
+    const f=fixture();await f.api.save(config());f.api.vault.set(f.api.service('s'),'token');await f.api.discover('s');
+    const at=f.api.health('s').checkedAt;await f.api.save(f.api.settings());
+    assert.equal(f.api.health('s').tools,1);assert.equal(f.api.health('s').checkedAt,at);assert.equal(f.api.health('s').connectionReady,false);
+    vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/mcp_services.js'),'utf8'),f.c);
+    assert.equal(f.c.window.MCPServices.health('s').tools,1);assert.equal(f.c.window.MCPServices.cachedTools('s').length,0);
+    const next=f.api.settings();next.services[0].url='https://other.test/mcp';await f.api.save(next);assert.equal(f.api.health('s').checkedAt,null);
+});
+test('MCP discovery history distinguishes empty, unknown, revoked and unavailable local storage',async()=>{
+ const f=fixture();await f.api.save(config());assert.equal(f.api.health('s').tools,null);f.api.vault.set(f.api.service('s'),'token');
+ f.c.window.MCPTransport.create=()=>({version:'2025-03-26',listTools:async()=>[]});await f.api.discover('s');await f.api.save(f.api.settings());assert.equal(f.api.health('s').tools,0);assert.ok(f.api.health('s').checkedAt);
+ f.api.vault.clear(f.api.service('s'));assert.equal(f.api.health('s').tools,null);f.api.vault.set(f.api.service('s'),'new');
+ f.local.setItem=()=>{throw Error('quota');};assert.deepEqual(Array.from(await f.api.discover('s')),[]);assert.equal(f.api.health('s').historySaved,false);assert.equal(f.api.health('s').connectionReady,true);
+});
+test('MCP restored configuration cannot reuse a previous endpoint tool list',async()=>{
+ const f=fixture();await f.api.save(config());f.api.vault.set(f.api.service('s'),'token');await f.api.discover('s');assert.equal(f.api.cachedTools('s').length,1);
+ f.c.db.mcpSettings.services[0].url='https://restored.test/mcp';assert.equal(f.api.cachedTools('s').length,0);assert.equal(f.api.health('s').checkedAt,null);assert.equal(f.api.health('s').tools,null);
+});
 async function enabled(f) {
     await f.api.save(config()); f.api.vault.set(f.api.settings().services[0],'private-token',false);
     const list=await f.api.discover('s'); const next=f.api.settings(); next.services[0].tools.weather={enabled:true,readOnly:true,signature:list[0].signature,cacheSeconds:30};

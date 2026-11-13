@@ -51,6 +51,16 @@
     const stamp = () => JSON.stringify(settings()) + ':' + secretEpoch;
     const service = id => { const found = settings().services.find(s => s.id === id); if (!found) throw new Error('MCP 服务已删除'); return found; };
     const vaultKey = s => 'uvu.mcp.secret.v1:' + encodeURIComponent(s.id + '|' + s.url + '|' + s.auth);
+    // Display-only history: no credentials, schemas, results or grants are persisted here.
+    const discoveryKey = s => 'uvu.mcp.discovery.v1:' + encodeURIComponent(s.id);
+    const discoveryIdentity = s => JSON.stringify([s.url,s.auth,s.protocol,s.oauth || null]);
+    function lastDiscovery(s) {
+        try { const value=JSON.parse(localStorage.getItem(discoveryKey(s)) || 'null');
+            return value?.identity===discoveryIdentity(s) && Number.isSafeInteger(value.at) && value.at>0 && value.at<=Date.now() && Number.isInteger(value.count) && value.count>=0 && value.count<=200 ? value : null;
+        } catch { return null; }
+    }
+    function currentConnection(s) { const entry=runtime.get(s.id);return entry?.fingerprint===JSON.stringify(s)+':'+secretEpoch+':'+(connectionEpochs.get(s.id)||0)?entry:null; }
+    function cachedTools(id) { return currentConnection(service(id))?.tools || []; }
     const vault = {
         get(s) { const key = vaultKey(s); try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; } catch (_) { return ''; } },
         remembered(s) { try { return !!localStorage.getItem(vaultKey(s)); } catch (_) { return false; } },
@@ -67,6 +77,7 @@
                 throw new Error('凭据保存失败，请检查浏览器存储空间或隐私模式');
             }
             connectionEpochs.set(s.id, (connectionEpochs.get(s.id) || 0) + 1);
+            if (!rotation) { try { localStorage.removeItem(discoveryKey(s)); } catch {} }
             if (rotation) { runtime.delete(s.id); cache.clear(); }
             else { secretEpoch++; clearRuntime(); }
             // Also notify other pages for session-only logout, where removing a nonexistent
@@ -212,14 +223,16 @@
         }
         if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
         if (stamp() !== start || (connectionEpochs.get(id) || 0) !== connectionEpoch) throw new Error('MCP 配置或凭据已变更，连接结果失效，请重新测试');
-        runtime.set(id, { client, tools, fingerprint, at: Date.now() }); return tools;
+        const at=Date.now(); runtime.set(id, { client, tools, fingerprint, at });
+        try { localStorage.setItem(discoveryKey(svc),JSON.stringify({identity:discoveryIdentity(svc),at,count:tools.length})); } catch { /* A successful live connection must still work in storage-restricted browsers. */ }
+        return tools;
     }
     function health(id) {
-        const svc = service(id), state = runtime.get(id);
+        const svc = service(id), state = currentConnection(svc), last=lastDiscovery(svc);
         return { enabled: svc.enabled, host: new URL(svc.url).host,
             credentialsPresent: svc.auth === 'none' || !!vault.get(svc),
-            checkedAt: state?.at || null, protocol: state?.client.version || svc.protocol,
-            tools: state?.tools.length ?? 0, capabilities: state?.client.capabilities || null,
+            checkedAt: state?.at || last?.at || null, protocol: state?.client.version || svc.protocol,
+            tools: state?.tools.length ?? last?.count ?? null, connectionReady:!!state, historySaved:!!last, capabilities: state?.client.capabilities || null,
             roles: settings().policies.filter(p => p.enabled && p.grants.some(g => g.serviceId === id)).length };
     }
     function log(entry) { logItems.unshift({ at: Date.now(), ...entry }); if (logItems.length > 40) logItems.pop(); }
@@ -374,7 +387,7 @@
         for (let i = queueItems.length - 1; i >= 0; i--) if (queueItems[i].scope?.chat === s.chat) queueItems.splice(i, 1);
         return context(items);
     }
-    window.MCPServices = Object.freeze({ normalize, settings, save, service, vault, discover, browse, preview, call, authorized, scope, valid, policy, stamp,
+    window.MCPServices = Object.freeze({ normalize, settings, save, service, vault, discover, cachedTools, browse, preview, call, authorized, scope, valid, policy, stamp,
         queue, pending, lease, take, context, health, clearRuntime, diagnostics, reviewable, logs: () => copy(logItems), log,
         pool, exportConfig: () => ({ kind: 'uvu-mcp-config', ...normalize(settings(), true) }) });
 }());

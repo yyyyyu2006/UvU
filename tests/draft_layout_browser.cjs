@@ -98,7 +98,7 @@ const server = http.createServer((req, res) => {
         await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: '剧情审核', exact: true }).click();
         assert.equal(await page.locator('.uvu-bridge-review').isVisible(), true);
         assert.equal(await page.locator('#uvu-story-bridge-settings').isVisible(), false);
-        await page.locator('#uvu-bridge-review-list > details > summary').first().click();
+        await page.locator('#uvu-bridge-review-list > details[data-draft-scene] > summary').first().click();
         assert.equal(await page.locator('.uvu-bridge-review-row').count(), 2);
         assert.equal(await page.locator('.uvu-bridge-review-row input[type=checkbox]').first().isChecked(), false, 'Layout does not approve received scenes');
         await page.locator('.uvu-bridge-page').evaluate(el => el.scrollTop = 0);

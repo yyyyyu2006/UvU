@@ -196,6 +196,8 @@
         if(status){const compact=()=>status.classList.toggle('draft-memory-count-only',/^共 \d+ 篇记忆；历史剧情索引 \d+ 组。$/.test(status.textContent));new MutationObserver(compact).observe(status,{childList:true,characterData:true,subtree:true});compact();}
         const integrate = q(toolbar, '[data-action=integrate]'), index = q(toolbar, '.memory-library-index-actions');
         const more = disclose([integrate, index], '索引与管理', 'panel-library-more');
+        if(index){index.open=true;index.classList.add('panel-index-inline');const summary=q(index,':scope > summary');if(summary)summary.hidden=true;const row=make('div','panel-index-buttons');row.append(...[integrate,...index.querySelectorAll(':scope > button')].filter(Boolean));index.append(row);}
+        if(more){const content=make('div','panel-index-content');content.append(...[...more.children].filter(el=>el.tagName!=='SUMMARY'));more.append(content);}
         const category = q(toolbar, 'label'), filters = q(root, '.memory-library-filters');
         if (category && filters) filters.prepend(category);
         if (more) root.append(more);
@@ -395,19 +397,22 @@
         if (root.closest('#mcp-services')) {
             const services = q(body, '.mcp-services-area'), tools = q(body, '.mcp-tools-area'), roles = q(body, '.mcp-roles-area');
             if (services && tools && roles) {
+                const tutorial=q(settings,'.mcp-tutorial');
                 const routes = make('section', 'draft-mcp-scope'); services.after(routes);
                 root.monoNavigate = subviews(root, body, [
                     { id: 'main', title: 'MCP', nodes: [q(body, '.panel-mcp-global'), services, routes] },
                     { id: 'tools', title: '工具授权', nodes: [tools] },
                     { id: 'roles', title: '角色可用服务', nodes: [roles] },
                     { id: 'options', title: '服务设置', nodes: [settings] },
-                    { id: 'logs', title: '调用记录', nodes: [logs] }
+                    { id: 'logs', title: '调用记录', nodes: [logs] },
+                    { id: 'guide', title: '使用说明', nodes: [tutorial] }
                 ]);
-                const scope=make('section','mono-route-list'),record=make('section','mono-route-list');
+                root.monoHelp=()=>{root.monoNavigate('guide');if(tutorial)tutorial.open=true;};
+                const scope=make('section','mono-route-list');
                 for (const [id, title] of [['tools', '工具授权'], ['roles', '角色可用服务']]) scope.append(routeButton(title, () => root.monoNavigate(id)));
-                record.append(routeButton('查看调用记录',()=>root.monoNavigate('logs')));
-                const help=routeButton('连接帮助与设置',()=>root.monoNavigate('options'));help.classList.add('draft-mcp-help');
-                routes.append(make('h3','','使用范围'),scope,make('h3','','调用记录'),record,help);
+                scope.append(routeButton('查看调用记录',()=>root.monoNavigate('logs')));
+                const help=routeButton('连接与调用设置',()=>root.monoNavigate('options'));help.classList.add('draft-mcp-help');
+                scope.append(help);routes.append(scope);
                 if(logs)logs.open=true;
                 const footer=q(root,'.mcp-actions'),tabs=make('nav','draft-bottom-nav');tabs.setAttribute('aria-label','MCP 导航');
                 for(const [id,text]of [['main','服务'],['tools','授权'],['logs','记录']]){const b=make('button','',text);b.type='button';b.dataset.view=id;b.onclick=()=>root.monoNavigate(id);tabs.append(b);}
@@ -557,7 +562,7 @@
             help.setAttribute('aria-label','使用说明'); navIcon(help,'circle-help');
         } else if (help) {
             const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .draft-scroll');
-            if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-help'); label(help, '使用说明'); body.append(help); }
+            if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux','sheet-guide'); help.setAttribute('aria-label','使用说明'); navIcon(help,'circle-help'); head.append(help); }
         }
         if (close) {
             close.classList.remove('mono-nav-back'); close.classList.add('sheet-close');
@@ -578,13 +583,13 @@
             let primary = q(footer, '.draft-review-primary');
             if (!primary) { primary = make('div', 'draft-review-primary'); footer.prepend(primary); }
             const injection = q(review, '#uvu-bridge-inject-scenes')?.closest('label');
-            if (injection && !injection.closest('details')) { const settings = disclose([injection, q(review, '.panel-review-help')], '记忆设置与说明', 'draft-review-options'); review.append(settings); }
+            if (injection && !injection.closest('details')) { const settings = disclose([injection], '记忆设置', 'draft-review-options'); review.append(settings); }
             const filters = [...host.querySelectorAll(':scope > .uvu-bridge-review-toolbar')].find(el=>q(el,'input[type=search]'));
             if (filters && !filters.dataset.draftFilters) {
                 filters.dataset.draftFilters = 'true';
                 const choices = make('div', 'draft-segment'), check = q(filters, 'input[type=checkbox]');
                 if (check) for (const [text,value] of [['待审核',true],['全部',false]]) { const button = make('button', '', text); button.type='button'; button.setAttribute('aria-pressed', String(check.checked===value)); button.onclick=()=>{check.checked=value;check.dispatchEvent(new Event('change',{bubbles:true}));}; choices.append(button); }
-                const filterDetails=disclose([filters], '搜索与筛选', 'draft-review-filters'); host.prepend(choices);host.append(filterDetails);
+                const filterDetails=disclose([filters], '搜索与筛选', 'draft-review-filters'); host.prepend(choices,filterDetails);
             }
             const pageBar = [...host.children].find(el => el.matches('.uvu-bridge-review-toolbar')&&!q(el,'input'));
             if (pageBar && [...pageBar.querySelectorAll('button')].every(button=>button.disabled)) pageBar.hidden = true;
@@ -786,6 +791,7 @@
         head.append(make('h2', 'mono-page-title', '酒馆'));
         const help = make('button', 'mono-nav-help'); help.type = 'button'; help.setAttribute('aria-label', '使用教程'); navIcon(help, 'circle-help'); head.append(help);
         const connection = q(body, '.kkt-settings-container'), handoff = q(body, '.uvu-bridge-handoff'), review = q(body, '.uvu-bridge-review'), guide = q(body, '.uvu-bridge-guide');
+        const reviewHelp=q(review,'.panel-review-help');if(reviewHelp)guide.append(reviewHelp);
         const channel = q(connection, '.panel-segment'), config = q(connection, '.panel-bridge-config'), enabled = q(root, '#uvu-bridge-enabled').closest('label');
         const intro = q(connection, '.panel-bridge-intro'); if (intro) guide.append(intro);
         const url = q(connection, '#uvu-bridge-url').closest('label'); config.prepend(url); config.open = true;
@@ -870,7 +876,7 @@
             { id: 'guide', title: '使用教程', nodes: [guide] }
         ]); root.monoNavigate = navigate;
         identity.append(routeButton('角色与存档', () => navigate('binding')));
-        links.append(routeButton('使用教程', () => navigate('guide'))); help.onclick = () => navigate('guide');
+        help.onclick = () => navigate('guide');
         onlineEntry.onclick = () => navigate('online'); reviewEntry.onclick = () => navigate('review');
         const ttEntry = routeButton('TT 文件交接', () => navigate('tt')); links.prepend(ttEntry);
         const save = q(root, '#uvu-bridge-save-character'), send = q(root, '#uvu-bridge-handoff'), exportFile = q(root, '#uvu-bridge-export-file');
@@ -985,7 +991,7 @@
             const guides = [...root.querySelectorAll('details')].filter(el => /说明|教程|帮助/.test(el.firstElementChild?.textContent || ''));
             if (guides.length) {
                 const show = make('button', 'mono-nav-help'); show.type = 'button'; show.setAttribute('aria-label', '帮助'); navIcon(show, 'circle-help');
-                show.addEventListener('click', () => { const guide = guides.find(el => !el.closest('[hidden]')) || guides[0]; if (!guide.closest('[hidden]')) { guide.open = true; guide.scrollIntoView({ block: 'start', behavior: 'smooth' }); } else if (root.monoNavigate) root.monoNavigate('options'); }); head.append(show);
+                show.addEventListener('click', () => { if(root.monoHelp){root.monoHelp();return;} const guide = guides.find(el => !el.closest('[hidden]')) || guides[0]; if (!guide.closest('[hidden]')) { guide.open = true; guide.scrollIntoView({ block: 'start', behavior: 'smooth' }); } else if (root.monoNavigate) root.monoNavigate('options'); }); head.append(show);
             } else head.append(make('span', 'mono-nav-spacer'));
         }
         if (root.monoNavigate) root.monoNavigate('main', false);

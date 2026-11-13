@@ -127,7 +127,7 @@ function calendarDayWatcher(readDay, changed) {
         const actions = node('div', undefined, 'calendar-inline-actions'); d.fields.append(actions);
         actions.append(button('天气与位置', () => settingsAction()), button('导出记录', () => exportRecords(false)), button('导出含经期', () => { if (confirm('导出将包含经期等私人记录，确定继续？')) exportRecords(true); }));
         const upload = node('input'); upload.type = 'file'; upload.accept = '.json'; upload.hidden = true; d.fields.append(upload);
-        actions.append(button('导入记录', () => upload.click())); upload.onchange = async () => { try { const f = upload.files[0]; if (!f || f.size > 8 * 1024 * 1024) throw new Error('请选择8MB以内的日历 JSON'); const data = C().validate(JSON.parse(await f.text())); if (confirm('用此文件替换全部日历记录？可在保存后撤销。')) { await C().mutate(s => Object.assign(s, data)); d.dismiss(); } } catch (e) { d.status.textContent = e.message; } };
+        actions.append(button('导入记录', () => upload.click())); upload.onchange = async () => { try { const f = upload.files[0]; if (!f || f.size > 8 * 1024 * 1024) throw new Error('请选择8MB以内的日历 JSON'); const data = C().validate(JSON.parse(await f.text())); if (confirm('用此文件替换全部日历记录？可在保存后撤销。')) { await C().mutate(s => Object.assign(s, data, {observations:data.observations || []})); d.dismiss(); } } catch (e) { d.status.textContent = e.message; } };
         const tutorial = node('details'); tutorial.append(node('summary', '使用说明'));
         tutorial.append(node('p', '需要核对自动安排时，先选择角色，打开右上角日历设置，开启“自动安排先审核”。生成后从“更多操作 → 审核安排”核对新增、修改、删除，取消不需要的条目再保存；心情需单独勾选。忽略本次不会改原记录。同一标签页刷新后可恢复24小时内的待审安排；关闭标签页不保证保留。对话、人设、日历或存档变化后草稿失效，需重新生成。浏览器临时存储不可用时会提示仅本页保留。', 'calendar-muted'));
         for (const text of ['点日期查看当天；点“选择范围”再点起止日期，或长按日期后拖动。选区预览不会自动写入记录。', '日程支持重复、锁定和撤销。选择角色后可生成行程，预览核对后保存；自动安排需在本页开启。', '心情模式用表情显示每天最近一次记录；点击日期可查看或修改当天全部记录。经期实色为记录，虚线为预测。', '日历分享卡片会进入选定私聊；持续参考需单独授权。记录只保存在本机，设置备份包含日历与经期，分享备份前请核对。', '网页关闭后不会继续调用 AI，也不保证后台定时提醒。预测不用于避孕或诊断。']) tutorial.append(node('p', text, 'calendar-muted'));
@@ -137,7 +137,19 @@ function calendarDayWatcher(readDay, changed) {
             await C().mutate(s => { s.prefs = { ...s.prefs, cycleDays: Number(cycle.value), periodDays: Number(length.value), predictionEnabled: predictionEnabled.checked, ovulationEnabled: ovulationEnabled.checked }; if (who) { const p = { ...profile, routine: routine.value, ...Object.fromEntries(Object.entries(controls).map(([flag, el]) => [flag, el.checked])) }; const index = s.profiles.findIndex(p => p.owner === key); if (index >= 0) s.profiles[index] = p; else s.profiles.push(p); } }, { expected: s.revision, guard: () => !who || C().resolve(key) === who });
         }); };
     }
-    function exportRecords(health) { const value = C().state(); if (!health) { value.periods = []; value.profiles.forEach(p => p.shareHealth = false); } const a = node('a'), url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); a.href = url; a.download = 'uvu-calendar' + (health ? '-private' : '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    function editObservation(day, original) {
+        const d=editor(original?'编辑观测':'记录观测','calendar-observation'),o=original || {};
+        const date=field(d.fields,'日期','date',o.date || day);date.max=C().today(C().timezone());
+        const kind=select(d.fields,'观测类型',[['lh','LH 试纸'],['bbt','基础体温'],['note','身体观测']],o.kind || 'lh');
+        const result=select(d.fields,'检测结果',[['uncertain','不确定'],['positive','阳性'],['negative','阴性']],o.result || 'uncertain');
+        const temperature=field(d.fields,'基础体温（°C）','number',o.temperature ?? '');temperature.step='0.01';temperature.min='34';temperature.max='42';
+        const disturbed=check(d.fields,'本次观测受干扰',o.disturbed || false),note=field(d.fields,'备注','textarea',o.note || '');note.maxLength=500;note.rows=2;
+        const sync=()=>{result.parentElement.hidden=kind.value!=='lh';temperature.parentElement.hidden=kind.value!=='bbt';temperature.required=kind.value==='bbt';};kind.onchange=sync;sync();
+        d.fields.append(node('p','LH 阳性不代表已排卵；体温不自动判读。','calendar-muted'));
+        if(original)d.footer.prepend(button('删除',()=>d.run(()=>C().removeRecord('observations',original.id,original))));
+        d.form.onsubmit=e=>{e.preventDefault();d.run(()=>C().saveObservation({id:original?.id,date:date.value,kind:kind.value,result:result.value,temperature:temperature.value===''?null:Number(temperature.value),disturbed:disturbed.checked,note:note.value},original));};
+    }
+    function exportRecords(health) { const value = C().state(); if (!health) { value.periods = []; value.observations = []; value.profiles.forEach(p => p.shareHealth = false); } const a = node('a'), url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); a.href = url; a.download = 'uvu-calendar' + (health ? '-private' : '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
     function open() {
         const life = new AbortController(); let weatherController, clockTimer, rangeTimer, edgeTimer, drag = null, suppressClickUntil = 0, paintId = 0;
         let view; try { view = JSON.parse(localStorage.getItem('uvu-calendar-view.v1') || '{}'); } catch (_) { view = {}; }
@@ -241,15 +253,26 @@ function calendarDayWatcher(readDay, changed) {
                 });
                 if (chat) actions.append(button('分享我的心情', () => { const m = s.moods.filter(m => m.owner === 'user' && m.date === selected).at(-1); if (!m) { feedback.textContent = '请先记录我的心情'; return; } share(chat, '心情', C().moods[m.mood] + (m.note ? ' · ' + m.note : '')); }));
             } else {
+                actions.append(button('记录观测',()=>editObservation(selected)));
                 const p = C().predict(); if (p) { const summary = node('div', undefined, 'calendar-prediction'); summary.append(node('strong', '预计 ' + p.expected), node('p', p.earliest + '—' + p.latest), node('small', p.basis + ' · ' + p.samples + '个有效周期 / ' + p.records + '次开始记录 · ' + p.cycleDays + '天 · 已按当前记录更新' + (p.overdue ? ' · 已超过预计日，等待实际记录' : '') + (p.ongoing ? ' · 当前记录尚未结束' : ''))); section.append(summary); }
                 else section.append(node('p', s.prefs.predictionEnabled === false ? '经期预测已关闭。' : '记录开始日期后，显示预计范围。', 'calendar-muted'));
                 if (p) {
                     const legend = node('div', undefined, 'calendar-period-legend');
                     for (const [cls,label] of [['actual','已记录'],['period','经期估计'],['fertile','可能易孕'],['ovulation','排卵估计']]) { if ((cls === 'fertile' || cls === 'ovulation') && !p.ovulation) continue; const item = node('span', label); item.dataset.phase = cls; legend.append(item); } section.append(legend);
-                    if (p.ovulation) section.append(node('p', '排卵估计 ' + p.ovulation.earliest + '—' + p.ovulation.latest + ' · 可能易孕 ' + p.fertile.start + '—' + p.fertile.end, 'calendar-muted'));
-                    else section.append(node('p', s.prefs.ovulationEnabled === false ? '排卵估计已关闭' : p.irregular ? '周期波动较大，暂不估计排卵范围' : p.ongoing || p.overdue ? '请更新实际记录后查看排卵估计' : '至少记录3次经期开始日期后，再估计排卵范围', 'calendar-muted'));
+                    if (p.ovulation) section.append(node('p', '日历估计 · 排卵范围 ' + p.ovulation.earliest + '—' + p.ovulation.latest + ' · 可能易孕 ' + p.fertile.start + '—' + p.fertile.end, 'calendar-muted'));
+                    else section.append(node('p', s.prefs.ovulationEnabled === false ? '日历排卵估计已关闭' : '日历排卵范围未知', 'calendar-muted'));
                     section.append(node('p', '日期推算不能确认排卵，不用于避孕。', 'calendar-muted'));
                 }
+                const evidence=C().cycleEvidence(),labels={insufficient:'观测不足',conflicting:'同日检测结果矛盾',interference:'存在受干扰的观测',unconfirmed:'现有观测不能确认排卵'};
+                const evidenceBox=node('section',undefined,'calendar-evidence');evidenceBox.append(node('h4','实际检测'),node('p','排卵状态未知 · '+labels[evidence.reason],'calendar-muted'));
+                const observationLabel=o=>o.kind==='lh'?'LH · '+({positive:'阳性',negative:'阴性',uncertain:'不确定'}[o.result]):o.kind==='bbt'?'基础体温 · '+o.temperature.toFixed(2)+'°C':'身体观测';
+                const renderObservation=o=>{const row=button('',()=>editObservation(o.date,o),'calendar-observation-record');row.append(node('strong',observationLabel(o)),node('span',o.date+(o.disturbed?' · 受干扰':'')+(o.note?' · '+o.note:'')));return row;};
+                if(!evidence.tests.length)evidenceBox.append(node('p','未记录 LH 检测','calendar-muted'));
+                evidence.tests.slice(0,8).forEach(o=>evidenceBox.append(renderObservation(o)));
+                evidenceBox.append(node('h4','观测提示'));if(!evidence.observations.length)evidenceBox.append(node('p','未记录体温或身体观测','calendar-muted'));
+                evidence.observations.slice(0,8).forEach(o=>evidenceBox.append(renderObservation(o)));
+                const history=node('details');history.append(node('summary','全部观测记录'));
+                s.observations.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(o=>history.append(renderObservation(o)));evidenceBox.append(history);section.append(evidenceBox);
                 s.periods.slice().sort((a, b) => b.start.localeCompare(a.start)).forEach(p => { const b = button('', () => editPeriod(span, p), 'calendar-period-record'); b.dataset.start = p.start; b.dataset.end = p.end || ''; b.append(node('strong', p.start + '—' + (p.end || '进行中')), node('span', p.note || p.symptoms)); section.append(b); });
                 const shareTarget = node('select'); shareTarget.setAttribute('aria-label', '经期分享给角色'); shareTarget.append(new Option('选择分享角色', '')); db.characters.forEach(c => shareTarget.append(new Option(c.remarkName || c.realName, c.id))); actions.append(shareTarget, button('分享状态', () => { const c = db.characters.find(c => c.id === shareTarget.value); if (!c) { feedback.textContent = '请选择分享角色'; return; } const actual = s.periods.find(p => p.start <= selected && (!p.end || p.end >= selected)); share(c, '经期', (actual ? '已记录经期：' + actual.start + '—' + (actual.end || '进行中') : '该日未记录经期') + (p ? '\n预计下次：' + p.earliest + '—' + p.latest + '（估计）' : '')); }));
             }

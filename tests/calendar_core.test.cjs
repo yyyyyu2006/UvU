@@ -4,6 +4,27 @@ function fixture(){const c=vm.createContext({console,Date,Intl,structuredClone,c
  c.dexieDB={globalSettings:{put:async row=>{if(c.fail)throw new Error('quota');c.saved.push(structuredClone(row));}},transaction:async(...args)=>args.at(-1)()};c.runDataPersistence=fn=>fn();
  const file=path.join(__dirname,'../js/modules/calendar_core.js');if(fs.existsSync(file))vm.runInContext(fs.readFileSync(file,'utf8'),c);return c;}
 const event=(patch={})=>({owner:'user',title:'散步',start:'2026-11-07',end:'2026-11-07',time:'09:00',endTime:'10:00',...patch});
+test('cycle evidence separates calendar estimates, test results and observations without confirming ovulation',async()=>{
+ const C=fixture().UvUCalendar;for(const start of ['2026-08-01','2026-08-29','2026-09-27','2026-10-25'])await C.savePeriod({start,end:C.addDays(start,4)});
+ assert.equal(C.cycleEvidence('2026-11-07').status,'unknown');assert.ok(C.cycleEvidence('2026-11-07').calendar);
+ const lh=await C.saveObservation({date:'2026-11-06',kind:'lh',result:'positive'});
+ await C.saveObservation({date:'2026-11-06',kind:'bbt',temperature:36.5});
+ let e=C.cycleEvidence('2026-11-07');assert.equal(e.tests.length,1);assert.equal(e.observations.length,1);assert.equal(e.status,'unknown');
+ const negative=await C.saveObservation({date:'2026-11-06',kind:'lh',result:'negative'});e=C.cycleEvidence('2026-11-07');assert.equal(e.reason,'conflicting');assert.equal(e.calendar,null);
+ assert.equal(C.predict('2026-11-07').ovulation,null);await C.removeRecord('observations',negative.id,negative);assert.ok(C.predict('2026-11-07').ovulation);
+ await C.removeRecord('observations',lh.id,lh);assert.equal(C.cycleEvidence('2026-11-07').tests.length,0);
+ await assert.rejects(C.saveObservation({date:C.addDays(C.today(),1),kind:'lh',result:'positive'}),/未来/);
+ await assert.rejects(C.saveObservation({date:'2026-11-06',kind:'bbt',temperature:99}),/体温/);
+});
+test('cycle observations keep old backups compatible and isolate interrupted or old-cycle records',async()=>{
+ const c=fixture(),C=c.UvUCalendar,legacy=C.state();delete legacy.observations;c.db.calendarData=legacy;assert.doesNotThrow(()=>C.validate(legacy));assert.deepEqual(Array.from(C.state().observations),[]);
+ for(const start of ['2026-08-01','2026-08-29','2026-09-27','2026-10-25'])await C.savePeriod({start,end:C.addDays(start,4)});
+ await C.saveObservation({date:'2026-09-28',kind:'lh',result:'positive'});await C.saveObservation({date:'2026-09-28',kind:'lh',result:'negative'});assert.ok(C.predict('2026-11-07').ovulation);assert.equal(C.cycleEvidence('2026-11-07').tests.length,0);
+ const disturbed=await C.saveObservation({date:'2026-11-06',kind:'bbt',temperature:36.8,disturbed:true});assert.equal(C.cycleEvidence('2026-11-07').reason,'interference');assert.equal(C.predict('2026-11-07').ovulation,null);
+ await C.saveObservation({...disturbed,disturbed:false},disturbed);await assert.rejects(C.saveObservation({...disturbed,note:'stale'},disturbed),/更新/);
+ c.db.characters=[{id:'a',activeArchiveId:'one'}];await C.saveProfile(C.owner(c.db.characters[0]),{shareHealth:true});assert.doesNotMatch(C.context(c.db.characters[0]),/36[.]8|temperature|positive/);assert.match(C.context(c.db.characters[0]),/ovulationStatus.*unknown/);
+ c.fail=true;await assert.rejects(C.saveObservation({date:'2026-11-06',kind:'note',note:'private'}),/quota/);assert.equal(C.state().observations.length,3);
+});
 test('calendar civil dates reject overflow and range counts include both ends',()=>{const C=fixture().UvUCalendar;assert.ok(C,'calendar service loaded');assert.throws(()=>C.date('2026-02-29'));assert.equal(C.addDays('2024-02-28',2),'2024-03-01');assert.deepEqual(JSON.parse(JSON.stringify(C.range('2026-12-31','2026-12-29'))),{start:'2026-12-29',end:'2026-12-31',days:3});});
 test('calendar recurrence skips missing month days and respects exclusions',async()=>{const c=fixture(),C=c.UvUCalendar;assert.ok(C);await C.saveEvent(event({start:'2026-01-31',end:'2026-01-31',repeat:'monthly',until:'2026-04-30'}));assert.deepEqual(Array.from(C.events('user','2026-02-01','2026-03-31'),e=>e.date),['2026-03-31']);const r=await C.saveEvent(event({repeat:'weekly',except:['2026-11-14']}));assert.deepEqual(Array.from(C.events('user','2026-11-07','2026-11-21').filter(e=>e.id===r.id),e=>e.date),['2026-11-07','2026-11-21']);});
 test('calendar targeted writes roll back quota failures and serialize edits',async()=>{const c=fixture(),C=c.UvUCalendar;assert.ok(C);await Promise.all([C.saveEvent(event()),C.saveMood({owner:'user',date:'2026-11-07',mood:'happy',color:'#121212',note:'轻松'})]);assert.equal(c.saved.length,2);assert.equal(C.state().events.length,1);assert.equal(C.state().moods.length,1);c.fail=true;await assert.rejects(C.saveEvent(event({title:'未保存'})),/quota/);assert.equal(C.state().events.length,1);assert.ok(c.saved.every(row=>row.key==='calendarData'));});

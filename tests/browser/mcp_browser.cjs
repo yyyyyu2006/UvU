@@ -103,7 +103,7 @@ const server = http.createServer(async (req, res) => {
         await panel.getByRole('button',{name:'提示模板',exact:true}).click();await preview.getByLabel('topic *',{exact:true}).fill('example');await preview.getByRole('button',{name:'预览',exact:true}).click();await preview.locator('.mcp-result').filter({hasText:'UNTRUSTED TEMPLATE example'}).waitFor();await preview.getByRole('button',{name:'关闭',exact:true}).click();
         await route('工具授权');
         const nested=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^t2$/})});await nested.locator('.draft-tool-details').evaluate(el=>el.open=true);await nested.getByRole('button',{name:'参数 / 调用',exact:true}).click();await caller.getByLabel('location.latitude *',{exact:true}).fill('200');assert.match(await caller.locator('[role=status]').textContent(),/location.latitude.*90/);await caller.getByLabel('location.latitude *',{exact:true}).fill('31');await caller.getByLabel('tags（可选）',{exact:true}).fill('["a"]');assert.deepEqual(JSON.parse(await caller.getByLabel('最终 JSON 参数（可直接编辑；以此处为准）').inputValue()),{location:{latitude:31},tags:['a']});await caller.getByRole('button',{name:'关闭',exact:true}).click();
-        await route('连接帮助与设置');
+        await route('连接与调用设置');
         const downloadEvent=page.waitForEvent('download');await panel.getByRole('button',{name:'导出配置',exact:true}).click();const dl=await downloadEvent;const exported=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));assert.equal(exported.enabled,false);assert.ok(!JSON.stringify(exported).includes('fixture-only'));assert.equal(exported.policies.length,0);
         await route('角色可用服务');
         await panel.getByRole('checkbox',{name:'允许独立 API 自动判断（会增加模型调用）',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
@@ -123,7 +123,7 @@ const server = http.createServer(async (req, res) => {
         holdWrites=false;
         await caller.getByRole('button',{name:'关闭',exact:true}).click();
         await page.evaluate(()=>{window.saveData=()=>new Promise(resolve=>window.releaseImportSave=resolve);});
-        await route('连接帮助与设置');
+        await route('连接与调用设置');
         await panel.locator('input[type=file]').setInputFiles({name:'mcp.json',mimeType:'application/json',buffer:Buffer.from('{}')});
         await page.locator('#mcp-confirm').getByRole('button',{name:'确认执行',exact:true}).click();
         await page.waitForFunction(()=>typeof window.releaseImportSave==='function');await back();await panel.getByRole('button',{name:'关闭',exact:true}).click();

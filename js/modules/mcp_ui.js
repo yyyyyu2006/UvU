@@ -84,9 +84,11 @@
             if (sameEndpoint) normalized.tools = previous.tools;
             next.services = next.services.filter(s => s.id !== normalized.id); next.services.push(normalized);
             const oldToken = m().vault.get(normalized), oldRemember = m().vault.remembered(normalized);
-            if (normalized.auth !== 'oauth' || !sameEndpoint) m().vault.set(normalized, normalized.auth === 'bearer' ? token.value.trim() : '', remember.checked);
+            const nextToken=normalized.auth==='bearer'?token.value.trim():'';
+            const secretChanged=(!sameEndpoint || normalized.auth!=='oauth') && (!sameEndpoint || nextToken!==oldToken || (normalized.auth==='bearer' && remember.checked!==oldRemember));
+            if (secretChanged) m().vault.set(normalized,nextToken,remember.checked);
             try { await m().save(next); }
-            catch (error) { m().vault.set(normalized, oldToken, oldRemember); throw error; }
+            catch (error) { if(secretChanged)m().vault.set(normalized, oldToken, oldRemember); throw error; }
             if (previous && !sameEndpoint) { if (previous.auth === 'oauth' && window.MCPOAuth) window.MCPOAuth.disconnect(previous); else if (previous.url !== normalized.url || previous.auth !== normalized.auth) m().vault.clear(previous); }
             onSaved(normalized.id); d.dismiss();
         })));
@@ -232,18 +234,19 @@
         const roleContent = node('div', undefined, 'mcp-role-content'); roleArea.append(node('strong', '角色授权'), targetLabel, roleContent);
         d.body.append(serviceArea, toolsArea, roleArea, permissionArea, plannerArea, logsArea);
         let serviceId = m().settings().services[0]?.id || '', tools = [], page = 0;
+        if (serviceId) tools = m().cachedTools?.(serviceId) || [];
         function renderServices() {
             serviceArea.replaceChildren(node('strong', '远程服务'));
             const picker = select(serviceArea, '当前服务', m().settings().services.length ? m().settings().services.map(s => [s.name + (s.enabled ? ' · 开启' : ' · 关闭'), s.id]) : [['暂无服务', '']], serviceId);
             picker.parentElement.hidden = true;
-            picker.onchange = () => { serviceId = picker.value; tools = []; page = 0; renderServices(); renderTools(); };
+            picker.onchange = () => { serviceId = picker.value; tools = m().cachedTools?.(serviceId) || []; page = 0; renderServices(); renderTools(); };
             const search = node('input', undefined, 'mcp-service-search'), serviceList = node('div', undefined, 'mcp-service-list');
             search.type = 'search'; search.placeholder = '搜索服务'; search.setAttribute('aria-label', '搜索 MCP 服务');
             for (const svc of m().settings().services) {
                 const health = m().health(svc.id), entry = button('', () => { picker.value = svc.id; picker.dispatchEvent(new Event('change', { bubbles: true })); });
                 entry.classList.add('mcp-service-item'); entry.setAttribute('aria-pressed', String(serviceId === svc.id)); entry.setAttribute('aria-label', '选择服务 ' + svc.name);
                 const copy = node('span'), state = node('span'); state.dataset.serviceState = '';
-                copy.append(node('strong', svc.name), node('small', health.tools + ' 个工具 · ' + health.host));
+                copy.append(node('strong', svc.name), node('small', (health.tools === null ? '工具数未知' : health.tools + ' 个工具') + ' · ' + health.host));
                 state.textContent = !svc.enabled ? '已停用' : health.checkedAt ? '曾检查' : '未检查';
                 state.title = health.checkedAt ? '上次检查 ' + new Date(health.checkedAt).toLocaleString() + '；不代表此刻在线' : '尚未测试连接';
                 entry.append(copy, state); entry.dataset.serviceSearch = svc.name.toLocaleLowerCase(); serviceList.append(entry);
@@ -276,7 +279,7 @@
                 }
                 extras.append(button('资源', () => previewBrowser(serviceId, 'resources')), button('提示模板', () => previewBrowser(serviceId, 'prompts')),
                     button('日历与天气', () => { if (typeof openEnvironmentSettings === 'function') openEnvironmentSettings(false); else d.status.textContent = '请打开日历与环境设置 → 高级 → MCP，选择本服务并填写工具映射'; }));
-                serviceArea.append(node('p', `${health.enabled ? '已开启' : '已关闭'} · ${health.credentialsPresent ? '凭据就绪' : '未授权'} · ${health.tools} 个工具`, 'mcp-help'), extras);
+                serviceArea.append(node('p', `${health.enabled ? '已开启' : '已关闭'} · ${health.credentialsPresent ? '凭据就绪' : '未授权'} · ${health.tools === null ? '工具数未知' : health.tools + ' 个工具'}`, 'mcp-help'), extras);
                 const detail = node('details'); detail.append(node('summary', '连接详情 / 能力与数据范围'), node('p', health.host + '\n协议 ' + health.protocol + '\n' + (health.checkedAt ? '上次检查 ' + new Date(health.checkedAt).toLocaleString() : '尚未检查') + '\n已授权对象 ' + health.roles + '\n列表为上次检查结果，不代表此刻在线。', 'mcp-help'));
                 const capabilityTable = node('table'); capabilityTable.setAttribute('aria-label', 'MCP 支持能力');
                 const header = node('tr'); for (const value of ['能力', '服务声明', '当前行为']) header.append(node('th', value)); capabilityTable.append(header);
@@ -308,7 +311,7 @@
         }
         function renderTools() {
             toolsArea.replaceChildren(node('strong', '工具列表'));
-            if (!tools.length) { toolsArea.append(node('p', '选择服务后点击“测试 / 刷新工具”。尚未读取工具。', 'mcp-help')); return; }
+            if (!tools.length) { const health = serviceId ? m().health(serviceId) : null; toolsArea.append(node('p', health?.checkedAt ? '上次发现 ' + health.tools + ' 个工具。刷新连接后可核对授权与调用。' : '选择服务后点击“测试 / 刷新工具”。尚未读取工具。', 'mcp-help')); return; }
             const svc = m().service(serviceId), size = 6, pages = Math.ceil(tools.length / size); page = Math.max(0, Math.min(page, pages - 1));
             for (const tool of tools.slice(page * size, (page + 1) * size)) {
                 const card = node('article', undefined, 'mcp-tool'); card.append(node('strong', tool.name), node('p', tool.unavailable || tool.description, 'mcp-help'));
@@ -373,8 +376,8 @@
             if (old.url !== key.url) m().vault.clear(old);
             d.status.textContent = '工具判断配置已保存；还需为角色主动开启自动模式';
         })));
-        logsArea.append(node('summary', '最近调用与用量（仅当前页面，最多 40 条）'));
-        const logs = node('div'); logsArea.append(button('刷新记录', () => renderLogs()),button('导出脱敏诊断',()=>download(m().diagnostics(),'uvu-mcp-diagnostics.json')), logs);
+        logsArea.classList.add('mcp-logs-view');logsArea.append(node('summary', '最近调用与用量（仅当前页面，最多 40 条）'));
+        const logs = node('div'),logActions=node('div',undefined,'mcp-log-actions');logActions.append(button('刷新记录', () => renderLogs()),button('导出脱敏诊断',()=>download(m().diagnostics(),'uvu-mcp-diagnostics.json')));logsArea.append(logActions,logs);
         function renderLogs() { logs.replaceChildren(); for (const item of m().logs()) logs.append(node('p', new Date(item.at).toLocaleTimeString() + ' · ' + (item.kind === 'planner' ? '独立工具判断' : (item.serviceId || '') + (item.toolName ? '/' + item.toolName : '')) + ' · ' + item.status + (item.stage ? ' · ' + ({ discovery: '发现', call: '调用', resource: '资源预览', prompt: '模板预览' }[item.stage] || item.stage) : '') + (item.code ? ' · 代码 ' + item.code : '') + (item.ms !== undefined ? ' · ' + item.ms + 'ms' : '') + (item.cached ? ' · 缓存' : '') + (item.usage ? '\n输入 ' + item.usage.promptTokens + ' / 输出 ' + item.usage.completionTokens + ' / 合计 ' + item.usage.totalTokens + ' Token（' + (item.usage.actual ? 'API 返回' : '本地估算') + '）' : ''), 'mcp-help')); if (!m().logs().length) logs.append(node('p', '暂无调用；这里不保存参数、结果或密钥。', 'mcp-help')); }
         const configRow = node('div', undefined, 'mcp-row'), file = node('input'); file.type = 'file'; file.accept = '.json,application/json'; file.hidden = true;
         configRow.append(button('导出配置', () => download(m().exportConfig(), 'uvu-mcp-config.json')), button('导入配置', () => file.click()), file);

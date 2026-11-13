@@ -511,3 +511,38 @@
 #storage-analysis-screen .storage-backup-extras input[type=checkbox] { width:16px;height:16px;flex:0 0 16px; }
 #storage-analysis-screen .storage-backup-extras p { margin:0;line-height:1.65;font-size:12px;color:var(--text-secondary,#666); }
 #storage-analysis-screen [data-resource-health] { align-self:flex-start;min-height:36px;padding:8px 14px;border:1px solid #e8e8ed;border-radius:18px;background:var(--input-bg,#f7f8fa);color:inherit;font:inherit;font-size:13px; }
+
+/* Spacing refinement: only the photographed derived workspaces. */
+.uvu-lenso-panel.uvu-mono-panel .mono-page-nav > .sheet-guide { order:3;margin-left:auto !important; }
+#uvu-feature-workspace .uvu-lenso-panel .derived-body { gap:16px; }
+#uvu-feature-workspace .uvu-lenso-panel .draft-hub-group { margin:0;padding:0 !important;gap:0; }
+#uvu-feature-workspace .uvu-lenso-panel .draft-hub-group + .draft-hub-group { padding-top:0 !important; }
+#uvu-feature-workspace .uvu-lenso-panel .draft-hub-group .mono-route { min-height:44px;padding-block:10px;font-size:14px; }
+#mcp-services .uvu-lenso-panel .draft-mcp-scope { gap:8px; }
+#mcp-services .uvu-lenso-panel .draft-mcp-scope > .mono-route-list { border-radius:0; }
+#mcp-services .uvu-lenso-panel .draft-mcp-scope .mono-route { min-height:44px;padding-block:10px; }
+#mcp-services .uvu-lenso-panel .draft-mcp-scope .draft-mcp-help { width:100%;align-self:stretch;font-size:14px; }
+#mcp-services .uvu-lenso-panel .mcp-log-actions { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 16px; }
+#mcp-services .uvu-lenso-panel .mcp-log-actions > button { flex:0 1 auto;min-height:34px;padding:7px 12px !important;font-size:13px;line-height:20px; }
+#mcp-services .uvu-lenso-panel .mcp-logs-view { padding:0 !important;border:0 !important;border-radius:0 !important;background:transparent !important; }
+#mcp-services .uvu-lenso-panel .mcp-logs-view > summary { display:none; }
+.memory-library .uvu-lenso-panel .panel-library-more[open] { display:flex;flex-direction:column;align-items:stretch;gap:12px; }
+.memory-library .uvu-lenso-panel .panel-index-content { display:flex;flex-direction:column;gap:8px;margin:0 !important;padding-bottom:0; }
+.memory-library .uvu-lenso-panel .panel-library-more > summary { margin-bottom:0 !important; }
+.memory-library .uvu-lenso-panel .panel-index-content > button { align-self:flex-start;min-height:34px;padding:7px 12px !important;font-size:13px; }
+.memory-library .uvu-lenso-panel .panel-index-inline[open] { padding:0 !important; }
+.memory-library .uvu-lenso-panel .panel-index-buttons { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 !important; }
+.memory-library .uvu-lenso-panel .panel-index-inline > summary[hidden] { display:none !important; }
+.memory-library .uvu-lenso-panel .panel-index-buttons > button { width:100%;min-width:0;min-height:34px;margin:0 !important;padding:7px 10px !important;font-size:13px;line-height:20px; }
+#uvu-story-bridge-screen.uvu-lenso-panel .mono-route-list { margin:0; }
+#uvu-story-bridge-screen.uvu-lenso-panel .uvu-bridge-review { gap:16px; }
+#uvu-story-bridge-screen.uvu-lenso-panel :is(.draft-review-options,.draft-review-filters) { margin:0 !important;padding:0 !important;border:0 !important; }
+#uvu-story-bridge-screen.uvu-lenso-panel :is(.draft-review-options,.draft-review-filters) > summary { min-height:40px;padding-block:10px;font-size:14px; }
+#uvu-story-bridge-screen.uvu-lenso-panel .draft-review-filters .uvu-bridge-review-toolbar { gap:8px; }
+#uvu-story-bridge-screen.uvu-lenso-panel .draft-review-options > .mono-field { margin-block:12px; }
+.uvu-calendar .calendar-evidence { display:flex;flex-direction:column;gap:8px;padding-block:16px;border-block:1px solid var(--draft-line,#e5e7eb); }
+.uvu-calendar .calendar-evidence :is(h4,p) { margin:0; }
+.uvu-calendar .calendar-evidence h4:not(:first-child) { margin-top:8px; }
+.uvu-calendar .calendar-observation-record { display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-width:0;text-align:left;white-space:normal;overflow-wrap:anywhere; }
+.uvu-calendar .calendar-observation-record strong { font-size:14px;font-weight:500; }
+.uvu-calendar .calendar-observation-record span { font-size:12px;color:var(--draft-muted,#666); }
