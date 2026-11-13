@@ -432,6 +432,7 @@ function renderWorldBookList() {
         
         container.appendChild(card);
     });
+    if (typeof decorateWorldBookRenameButtons === 'function') decorateWorldBookRenameButtons();
 }
 
 function renderCategorizedWorldBookList(container, books, selectedIds, idPrefix) {

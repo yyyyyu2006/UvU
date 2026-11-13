@@ -45,7 +45,76 @@ function setupWorldBookDocumentTools() {
         form.worldBookRules = rules;
     }, true);
     fill();
+    decorateWorldBookRenameButtons();
 }
+
+const pendingWorldBookRenames = new Set();
+async function renameWorldBookItem(id, value) {
+    const item = db.worldBooks.find(book => book.id === id);
+    if (!item) throw new Error('该世界书或文件夹已不存在');
+    const name = String(value ?? '').trim();
+    if (!name) throw new Error('名称不能为空');
+    if (pendingWorldBookRenames.has(id)) throw new Error('正在保存，请稍后再试');
+    if (name === item.name) return false;
+    const previousName = item.name;
+    pendingWorldBookRenames.add(id);
+    item.name = name;
+    try {
+        await saveData();
+    } catch (error) {
+        if (item.name === name) item.name = previousName;
+        throw error;
+    } finally {
+        pendingWorldBookRenames.delete(id);
+    }
+    if (db.worldBooks.includes(item)) {
+        for (const stack of [wbPathStack, selectorPathStack]) {
+            for (const part of stack) if (part.id === id) part.name = name;
+        }
+    }
+    return true;
+}
+
+// Keep the legacy card layout and editing action; only the new pencil opens rename.
+function decorateWorldBookRenameButtons() {
+    const container = document.getElementById('world-book-list-container');
+    if (!container || isWorldBookMultiSelectMode) return;
+    for (const card of container.querySelectorAll('.wb-item-card')) {
+        if (card.querySelector('.wb-rename-button')) continue;
+        const item = db.worldBooks.find(book => book.id === card.dataset.id);
+        if (!item) continue;
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'wb-rename-button';
+        const label = '重命名' + (item.type === 'folder' ? '文件夹' : '条目');
+        button.title = label; button.setAttribute('aria-label', label + '：' + item.name);
+        if (window.UvULucide?.pencil) {
+            button.innerHTML = window.UvULucide.pencil;
+            button.querySelector('svg').setAttribute('aria-hidden', 'true');
+        } else button.textContent = '改名';
+        button.addEventListener('touchstart', event => event.stopPropagation(), { passive: true });
+        button.addEventListener('click', async event => {
+            event.preventDefault(); event.stopPropagation();
+            if (button.disabled) return;
+            const value = prompt(label, item.name);
+            if (value === null) return;
+            button.disabled = true;
+            try {
+                const changed = await renameWorldBookItem(item.id, value);
+                renderWorldBookList();
+                if (document.getElementById('world-book-selection-modal')?.classList.contains('visible')) renderWorldBookSelectorList();
+                const renamedCard = [...container.querySelectorAll('.wb-item-card')].find(node => node.dataset.id === item.id);
+                renamedCard?.querySelector('.wb-rename-button')?.focus({ preventScroll: true });
+                if (changed) showToast('名称已更新');
+            } catch (error) {
+                showToast('改名失败：' + (error.message || '请重试'));
+            } finally {
+                button.disabled = false;
+            }
+        });
+        card.appendChild(button);
+    }
+}
+
 async function importWorldBookDocument(file) {
     let result;
     const folderId = 'wb_f_' + crypto.randomUUID();
