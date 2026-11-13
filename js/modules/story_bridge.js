@@ -21,6 +21,7 @@
     let channelSwitchBusy = false;
     let publishingCount = 0;
     let maintenanceBusy = false;
+    let settingsWriteBusy = false;
     let lastRequest = {stage:'idle', code:'NONE'};
     let remoteCapacity = null;
     let remoteService = null;
@@ -199,7 +200,7 @@
     }
     async function changeTTMode(value) {
         if (!['file', 'https'].includes(value)) throw new Error('不支持的 TT 交接方式。');
-        if (channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy) throw new Error('请等待当前收发或总结完成后切换交接方式。');
+        if (maintenanceBusy || settingsWriteBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy) throw new Error('请等待当前收发或总结完成后切换交接方式。');
         const state = settings('tt'), previous = state.transport;
         channelSwitchBusy = true; generation++; state.transport = value;
         try { await saveData(); } catch (error) { if (previous === undefined) delete state.transport; else state.transport = previous; throw error; } finally { channelSwitchBusy = false; }
@@ -1149,11 +1150,20 @@
         } finally { inboxBusy = false; }
     }
 
+    async function saveBridgeSetting(target, key, value) {
+        if (settingsWriteBusy || maintenanceBusy || channelSwitchBusy) throw new Error('请等待当前设置保存或恢复完成。');
+        const existed = Object.hasOwn(target, key), previous = target[key];
+        settingsWriteBusy = true; target[key] = value;
+        try { await saveData(); }
+        catch (error) {
+            if (target[key] === value) { if (existed) target[key] = previous; else delete target[key]; }
+            throw error;
+        } finally { settingsWriteBusy = false; }
+    }
+
     async function setSceneInjection(enabled) {
         const chat=selectedBridgeChat(); if (!chat) throw new Error('请先在交接角色列表选择角色。');
-        const key=String(chat.id), previous=settings().injectionByCharacter[key];
-        settings().injectionByCharacter[key]=Boolean(enabled);
-        try { await saveData(); } catch(error) { if(previous===undefined)delete settings().injectionByCharacter[key];else settings().injectionByCharacter[key]=previous;throw error; }
+        await saveBridgeSetting(settings().injectionByCharacter, String(chat.id), Boolean(enabled));
     }
 
     async function importSceneFile(text) {
@@ -1168,7 +1178,7 @@
     }
 
     async function importRecovery(text,{confirmed=false}={}){
-        if(maintenanceBusy || reviewBusy || syncBusy || inboxBusy || sendBusy || automaticBusy || publishingCount || pairingBusy || reconnecting || channelSwitchBusy)throw new Error('请等待当前桥接操作完成后恢复。');
+        if(maintenanceBusy || settingsWriteBusy || reviewBusy || syncBusy || inboxBusy || sendBusy || automaticBusy || publishingCount || pairingBusy || reconnecting || channelSwitchBusy)throw new Error('请等待当前桥接操作完成后恢复。');
         const channel=channelId(),targets=(db.characters || []).map(chat=>({id:String(chat.id),archives:[...new Set(['default',String(chat.activeArchiveId || 'default'),...(chat.archives || []).map(a=>String(a.id))])]}));
         const file=globalThis.UvUBridgeFile.validateRecovery(text,{channel,targets});
         const state=channel==='tt' ? db.uvuStoryBridgeSettings?.ttSettings || {} : db.uvuStoryBridgeSettings || {};
@@ -1224,7 +1234,7 @@
 
     async function changeChannel(value) {
         if(!['st','tt'].includes(value))throw new Error('不支持的酒馆通道。');
-        if(maintenanceBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
+        if(maintenanceBusy || settingsWriteBusy || channelSwitchBusy || publishingCount || inboxBusy || syncBusy || sendBusy || reviewBusy || reviewWriteCount || pairingBusy || reconnecting || automaticBusy)throw new Error('请等待当前收发或总结完成后切换通道。');
         const root=db.uvuStoryBridgeSettings ||= {}, before=root.channel;
         channelSwitchBusy=true;generation++;
         root.channel=value;
@@ -1266,9 +1276,8 @@
         if (enabledCheckbox) {
             enabledCheckbox.checked = isEnabled();
             enabledCheckbox.addEventListener('change', async () => {
-                const previous = settings().bridgeEnabled; settings().bridgeEnabled = enabledCheckbox.checked;
                 generation++; enabledCheckbox.disabled = true;
-                try { await saveData(); } catch(error) { settings().bridgeEnabled = previous; enabledCheckbox.checked = previous !== false; status('互通开关保存失败：' + error.message, true); return; } finally { enabledCheckbox.disabled = false; }
+                try { await saveBridgeSetting(settings(), 'bridgeEnabled', enabledCheckbox.checked); } catch(error) { enabledCheckbox.checked = settings().bridgeEnabled !== false; status('互通开关保存失败：' + error.message, true); return; } finally { enabledCheckbox.disabled = false; }
                 status(enabledCheckbox.checked ? '酒馆互通已启用。' : '酒馆互通已停用；原聊天、提示词和日记数据不受修改。');
                 renderReview(true);
             });

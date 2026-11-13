@@ -162,6 +162,7 @@
         })));
         actions.append(button('调用', () => d.run(async signal => {
             result = null;
+            output.textContent = ''; supply.disabled = true;
             let args; try { args = JSON.parse(raw.value); } catch (_) { throw new Error('请填写有效 JSON 参数'); }
             if (!tool.validate(args)) throw new Error('参数与 Schema 不符，请检查必填项、类型和范围');
             let confirmed = false;

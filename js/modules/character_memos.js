@@ -132,6 +132,39 @@ function characterMemoRevision(note) {
     return {at:Date.now(),fact:note.fact,content:note.content,status:note.status,validFrom:note.validFrom??null,validTo:note.validTo??null,
         expiresAt:note.expiresAt??null,useContext:note.useContext!==false,localOnly:note.localOnly===true};
 }
+function inheritBranchCharacterMemos(data, includedMessageIds, cutoff) {
+    const state = data.characterMemos;
+    if (!state || !Array.isArray(state.notes)) return;
+    const hasCutoff = Number.isFinite(cutoff) && cutoff > 0;
+    const retained = note => note.sources?.length
+        ? note.sources.every(source => includedMessageIds.has(source.id))
+        : hasCutoff && Number.isFinite(note.recordedAt ?? note.createdAt) && (note.recordedAt ?? note.createdAt) <= cutoff;
+    const removed = state.notes.filter(note => !retained(note));
+    state.notes = state.notes.filter(retained);
+    for (const correction of removed) {
+        if (correction.conflictReview?.decision !== 'replace') continue;
+        const original = state.notes.find(note => note.id === correction.conflictReview.id && note.owner === correction.owner);
+        if (original?.status !== 'superseded') continue;
+        const revision = [...(original.revisions || [])].reverse().find(item => item.status === 'approved');
+        if (revision) {
+            const { at, ...fields } = revision;
+            Object.assign(original, fields);
+            original.revisions = (original.revisions || []).filter(item => item.at < at);
+        }
+    }
+    // Unanchored records inherit only if they demonstrably predate the branch.
+    // The source archive remains untouched, including its trash and review history.
+    for (const note of state.notes) {
+        if (!hasCutoff) continue;
+        const later = (note.revisions || []).find(revision => revision.at > cutoff);
+        if (later) { const { at, ...fields } = later; Object.assign(note, fields); note.revisions = note.revisions.filter(revision => revision.at <= cutoff); }
+    }
+    state.trash = (state.trash || []).filter(item => hasCutoff && item.deletedAt <= cutoff && retained(item.note));
+    state.blocked = (state.blocked || []).filter(item => item.sourceIds?.length && item.sourceIds.every(id => includedMessageIds.has(id)));
+    state.processed = Object.fromEntries(Object.entries(state.processed || {}).map(([owner, sources]) =>
+        [owner, Object.fromEntries(Object.entries(sources || {}).filter(([id]) => includedMessageIds.has(id)))]));
+    state.task = null; state.lastRun = 0; state.lastError = '';
+}
 async function restoreCharacterMemo(chat,id) {
     const owner=characterMemoOwner(chat),next=characterMemoState(chat),entry=next.trash.find(x=>x.note.id===id&&x.note.owner===owner.persona);
     if(!entry)throw new Error('回收站记录已过期或已变化');

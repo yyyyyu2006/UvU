@@ -261,6 +261,7 @@
 .uvu-lenso-panel .panel-editor-actions { flex-wrap:wrap; }
 .uvu-lenso-panel [hidden] { display:none !important; }
 :root[data-uvu-derived-color=theme] .uvu-lenso-panel { --draft-canvas:var(--secondary-bg,#fff);--draft-paper:var(--primary-bg,#fff);--draft-ink:var(--text-color,#171719); }
+:root[data-uvu-derived-color=theme] .uvu-lenso-panel.uvu-mono-panel { color:var(--draft-ink);--lenso-field-bg:var(--primary-bg,#f5f5f9);--lenso-field-line:var(--border-color,#8a8a93);--draft-muted:var(--secondary-text-color,var(--draft-ink)); }
 @media(max-height:600px) {
     .uvu-lenso-panel.uvu-sheet-v2.uvu-mono-panel.mono-page:not(.screen),#auto-memory-modal .uvu-lenso-panel.uvu-sheet-v2.mono-page { height:calc(100dvh - 32px) !important; }
 }
@@ -281,6 +282,7 @@
 .uvu-lenso-panel.uvu-mono-panel.mono-page.sticker-description-card > .draft-scroll,
 .uvu-lenso-panel.uvu-mono-panel.mono-page.shared-document-dialog[data-document-mode=send] > .shared-document-body { flex:0 1 auto;padding-bottom:16px !important;gap:16px; }
 .uvu-lenso-panel.uvu-mono-panel.sticker-description-card .sticker-description-options { padding:12px !important; }
+#sticker-description-settings .uvu-lenso-panel.sticker-description-card { display:flex;flex-direction:column; }
 .uvu-lenso-panel.shared-document-dialog[data-document-mode=send] .shared-document-upload { padding:16px !important;gap:12px; }
 :root[data-uvu-derived-motion=false] .uvu-lenso-panel * { transition:none !important;animation:none !important; }
 /* Explicit owned roots win over older monochrome ID rules. */
@@ -434,7 +436,7 @@
 .uvu-lenso-panel.uvu-mono-panel .lenso-title { margin:0 !important;line-height:30px !important; }
 .uvu-lenso-panel.uvu-mono-panel :is(.draft-card,.panel-card,.memo-settings,.relationship-section,.ms-npcs) { padding:0 !important;border-radius:0 !important; }
 .uvu-lenso-panel.uvu-mono-panel :is(.lenso-task-grid,.draft-bridge-tiles) > :is(.lenso-task,.draft-card) { border-radius:20px !important;padding:16px !important; }
-.uvu-lenso-panel.uvu-mono-panel :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select,textarea) { background:#f5f5f9;border:1px solid #ededf2; }
+.uvu-lenso-panel.uvu-mono-panel :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),select,textarea) { background:var(--lenso-field-bg,#f5f5f9);color:var(--draft-ink);border:1px solid var(--lenso-field-line,#ededf2); }
 .uvu-lenso-panel.uvu-mono-panel .panel-artwork :is(.panel-artwork-cover,.panel-artwork-avatar) { padding:0 !important; }
 #character-memos-dialog .uvu-lenso-panel .memo-main { gap:20px; }
 #character-memos-dialog .uvu-lenso-panel .memo-card p { color:#42424a; }

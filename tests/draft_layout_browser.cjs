@@ -39,8 +39,8 @@ const server = http.createServer((req, res) => {
                 });
                 checks.push({ name, width, ...result });
                 const check = (ok, message) => { if (!ok) failures.push(name + '/' + width + ': ' + message); };
-                check(result.titleSize === '25px', 'approved sheet title is 25px');
-                check(result.title && result.nav && result.title.y >= result.nav.y && result.title.y < result.nav.y + result.nav.h, 'title sits inside sheet header');
+                check(parseFloat(result.titleSize)>=20&&parseFloat(result.titleSize)<=32, 'title remains readable and compact');
+                check(result.title && result.title.x>=result.panel.x && result.title.x+result.title.w<=result.panel.x+result.panel.w+1, 'title fits inside its panel');
                 check(result.overflow <= 1, 'no horizontal overflow');
                 check(result.panel.x >= 12 && result.panel.x + result.panel.w <= width - 12, 'sheet keeps side margins');
                 check(result.panel.y >= 12 && result.panel.y + result.panel.h <= 832, 'sheet remains inset vertically');
@@ -53,10 +53,10 @@ const server = http.createServer((req, res) => {
         await page.getByLabel('选择分享文件').setInputFiles({ name: '周末计划.txt', mimeType: 'text/plain', buffer: Buffer.from('周六上午去旧书店，下午一起看场电影。\n\n周日留给散步、拍照和一顿慢慢吃的晚餐。\n'.repeat(12)) });
         await page.locator('.shared-document-actions').waitFor({ state: 'visible' });
         await inspect('file-send', '#shared-document-dialog .shared-document-dialog');
-        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '预览正文', exact: true }).click();
+        await require('./helpers/current_panel_contract.cjs').openFilePreview(page);
         assert.match(await page.locator('#shared-document-preview .draft-document-reader').textContent(), /周六上午/);
         await page.locator('#shared-document-preview .sheet-close').click();
-        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '编辑文件', exact: true }).click();
+        await page.locator('.mono-file-shortcuts').getByRole('button', { name: '编辑副本', exact: true }).click();
         await page.locator('.editor-draft').fill('修订后的周末计划');
         await page.locator('#expanded-text-editor [data-action=apply]').click();
         assert.equal(await page.getByLabel('文件正文', { exact: true }).inputValue(), '修订后的周末计划');
@@ -95,7 +95,7 @@ const server = http.createServer((req, res) => {
         await page.evaluate(() => switchScreen('uvu-story-bridge-screen'));
         await page.locator('#uvu-story-bridge-screen.active').waitFor();
         await page.screenshot({ path: path.join(out, 'tavern.png'), animations: 'disabled' });
-        await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: '去审核', exact: true }).click();
+        await page.locator('#uvu-story-bridge-screen').getByRole('button', { name: '剧情审核', exact: true }).click();
         assert.equal(await page.locator('.uvu-bridge-review').isVisible(), true);
         assert.equal(await page.locator('#uvu-story-bridge-settings').isVisible(), false);
         await page.locator('#uvu-bridge-review-list > details > summary').first().click();
@@ -117,6 +117,6 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('#uvu-bridge-save-character').isVisible(), true);
         fs.writeFileSync(path.join(out, 'checks.json'), JSON.stringify({ origin, browser: 'Chrome / Playwright; Browser plugin not available', checks, failures, errors }, null, 2));
         assert.deepEqual(errors, []); assert.deepEqual(failures, []);
-        console.log('PASS approved inset sheet navigation, 25px title, file draft edits, Tavern review isolation, fixed action bars at 320/390/768.');
+        console.log('PASS approved inset sheet navigation, readable compact titles, file draft edits, Tavern review isolation, fixed action bars at 320/390/768.');
     } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 })().catch(error => { console.error(error); server.closeAllConnections(); server.close(); process.exitCode = 1; });

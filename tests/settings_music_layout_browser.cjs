@@ -35,7 +35,7 @@ assert.deepEqual(await page.evaluate(()=>reviewSaved),{ids:['netease:one','','',
 await page.evaluate(()=>{UvUMusicUI.close();switchScreen('api-settings-screen');});
 for(const width of [320,390,768]){
  await page.setViewportSize({width,height:844});
- verify(await page.evaluate(()=>getComputedStyle(document.getElementById('minimax-tts-settings')).backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(document.getElementById('minimax-tts-settings')).boxShadow==='none'),'MiniMax inherits the API page background without an independent card at '+width);
+ await require('./helpers/current_panel_contract.cjs').assertNativeApiCard(page);
  verify(await page.locator('#minimax-tts-settings').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'MiniMax fields must fit at '+width);
 }
 await page.setViewportSize({width:390,height:844});await page.locator('#minimax-tts-settings .kkt-item-title').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(out,'minimax-api-390.png')});assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('PASS 320/390/768px: long playlist title/version containment and vertical scroll, manual selection/save, equal Lucide toolbar buttons with working draft/file-picker actions, original API background, chat-data isolation. No paid API calls.');

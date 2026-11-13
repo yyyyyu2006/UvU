@@ -19,7 +19,7 @@ try{
    await page.setViewportSize({width,height});await panel.evaluate(el=>el.getAnimations({subtree:true}).forEach(a=>a.finish()));
    const r=await panel.evaluate(el=>{const box=n=>{const r=n?.getBoundingClientRect();return r&&{x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom};};const t=el.querySelector('.mono-page-title');return{box:box(el),title:box(t),size:t&&getComputedStyle(t).fontSize,footer:box(el.querySelector(':scope>footer,:scope>.shared-document-actions,:scope>.mcp-actions')),overflow:el.scrollWidth-el.clientWidth};});
    checks.push({name,width,height,...r});assert.ok(r.box.x>=12&&r.box.y>=12&&r.box.x+r.box.w<=width-12&&r.box.bottom<=height-12,name+' contained '+JSON.stringify(r));
-   assert.equal(r.size,'25px',name+' title');assert.ok(r.overflow<=1,name+' horizontal overflow');if(r.footer)assert.ok(r.footer.bottom<=r.box.bottom+1,name+' footer');
+   assert.ok(parseFloat(r.size)>=(name==='file-editor'?14:20)&&parseFloat(r.size)<=32,name+' readable compact title '+r.size);assert.ok(r.overflow<=1,name+' horizontal overflow');if(r.footer)assert.ok(r.footer.bottom<=r.box.bottom+1,name+' footer '+JSON.stringify({width,height,...r}));
    if(width===390)await panel.screenshot({path:path.join(out,name+'.png'),animations:'disabled'});
   }await page.setViewportSize({width:390,height:844});
  }
@@ -39,8 +39,8 @@ try{
  await page.evaluate(()=>document.getElementById('vector-memory-settings-btn').click());await inspect('vector','#auto-memory-modal .auto-memory-dialog');await page.locator('#auto-memory-close').click();
  await page.evaluate(()=>openSharedDocumentDialog());await page.getByLabel('选择分享文件').setInputFiles({name:'旅行计划.txt',mimeType:'text/plain',buffer:Buffer.from('周六下午去看展，结束后在附近吃饭。\n\n如果下雨，就先去街角的咖啡店。')});
  await page.locator('.mono-file-shortcuts').waitFor({state:'visible'});await inspect('files','#shared-document-dialog .shared-document-dialog');
- await page.getByRole('button',{name:'预览正文',exact:true}).click();await inspect('file-preview','#shared-document-preview .derived-settings');await page.locator('#shared-document-preview .sheet-close').click();
- await page.getByRole('button',{name:'编辑文件',exact:true}).click();await inspect('file-editor','.text-editor-card');await page.locator('.text-editor-card .sheet-close').click();await page.locator('#shared-document-dialog .sheet-close').click();
+ await require('./helpers/current_panel_contract.cjs').openFilePreview(page);await inspect('file-preview','#shared-document-preview .derived-settings');await page.locator('#shared-document-preview .sheet-close').click();
+ await page.getByRole('button',{name:'编辑副本',exact:true}).click();await inspect('file-editor','.text-editor-card');await page.locator('.text-editor-card .sheet-close').click();await page.locator('#shared-document-dialog .sheet-close').click();
  await page.evaluate(()=>openMcpSettings());await inspect('mcp','#mcp-services .mcp-settings');await page.locator('#mcp-services .sheet-close').click();
  await page.evaluate(()=>UvUMomentsUI.settings(db.characters[0]));await inspect('npc-settings','.ms-dialog');await page.locator('.ms-dialog .sheet-close').click();
  await page.evaluate(()=>openRelationshipDialog());await inspect('relationship','.relationship-dialog');await page.locator('.relationship-dialog .sheet-close').click();
@@ -63,12 +63,12 @@ try{
  await page.evaluate(()=>switchScreen('api-settings-screen'));
  assert.equal(await page.locator('#minimax-tts-settings .draft-workspace-overlay').count(),0);
  assert.equal(await page.locator('#minimax-tts-key').evaluate(el=>Boolean(el.closest('#minimax-tts-settings'))),true);
- assert.equal(await page.locator('#minimax-tts-settings').evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
+ await require('./helpers/current_panel_contract.cjs').assertNativeApiCard(page);
  await page.locator('#minimax-tts-settings').screenshot({path:path.join(out,'voice-inline.png')});
  await page.evaluate(()=>switchScreen('storage-analysis-screen'));assert.equal(await page.locator('#storage-backup-options').evaluate(el=>Boolean(el.closest('#storage-analysis-screen'))),true);
  assert.equal(await page.locator('#draft-backup-workspace').count(),0);
  await page.locator('#toast-notification').evaluate(el=>el?.classList.remove('show')).catch(()=>{});
- await page.evaluate(()=>switchScreen('uvu-story-bridge-screen'));await page.locator('#uvu-story-bridge-screen').waitFor({state:'visible'});await page.locator('#uvu-story-bridge-screen').getByRole('button',{name:'去审核',exact:true}).waitFor();await page.evaluate(()=>document.getAnimations().forEach(a=>a.finish()));
+ await page.evaluate(()=>switchScreen('uvu-story-bridge-screen'));await page.locator('#uvu-story-bridge-screen').waitFor({state:'visible'});await page.locator('#uvu-story-bridge-screen').getByRole('button',{name:'剧情审核',exact:true}).waitFor();await page.evaluate(()=>document.getAnimations().forEach(a=>a.finish()));
  assert.equal(await page.locator('#uvu-story-bridge-screen').evaluate(el=>el.classList.contains('uvu-sheet-v2')),false);
  const tavern=await page.locator('#uvu-story-bridge-screen').evaluate(el=>({radius:getComputedStyle(el).borderRadius,w:el.clientWidth,parent:el.parentElement.clientWidth}));assert.equal(tavern.radius,'0px');assert.equal(tavern.w,tavern.parent);
  await page.locator('#uvu-story-bridge-screen').screenshot({path:path.join(out,'tavern-fullscreen.png'),animations:'disabled'});

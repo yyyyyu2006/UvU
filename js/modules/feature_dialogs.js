@@ -2,13 +2,15 @@
 (function () {
     'use strict';
     const records = new Map();
-    const selector = '.feature-dialog:not(#expanded-text-editor), .message-forward-overlay, #char-status-overlay.visible';
-    const active = el => el.isConnected && (el.id !== 'char-status-overlay' || el.classList.contains('visible'));
-    const allowed = el => el.id === 'char-status-overlay' || el.matches('.feature-dialog') || !!el.querySelector('.mcp-settings,.derived-settings,.resource-health');
+    const inlineSelector = '#uvu-notification-preferences[open] > .draft-inline-workspace, .worldbook-advanced[open] > .draft-inline-workspace';
+    const selector = '.feature-dialog:not(#expanded-text-editor), .message-forward-overlay, #char-status-overlay.visible, ' + inlineSelector;
+    const active = el => el.isConnected && (el.id !== 'char-status-overlay' || el.classList.contains('visible')) &&
+        (!el.matches('.draft-inline-workspace') || el.parentElement.open && el.getClientRects().length > 0);
+    const allowed = el => el.id === 'char-status-overlay' || el.matches('.feature-dialog,.draft-inline-workspace') || !!el.querySelector('.mcp-settings,.derived-settings,.resource-health');
     const isolated = new Map();
     let isolationRoot = null, syncing = false;
     // The native rescue window must remain interactive above a derived dialog.
-    const overlaySelector = '.feature-dialog,.message-forward-overlay,#char-status-overlay.visible,#global-rescue-panel';
+    const overlaySelector = '.feature-dialog,.message-forward-overlay,#char-status-overlay.visible,#global-rescue-panel,' + inlineSelector;
     const topDialog = () => [...document.querySelectorAll(overlaySelector)]
         .filter(el => el.getClientRects().length).pop() || null;
     function restoreBackground() {
@@ -30,7 +32,7 @@
         }
         isolationRoot = root;
     }
-    const focusable = root => [...root.querySelectorAll('button,input,select,textarea,a[href],iframe,[tabindex]')]
+    const focusable = root => [...root.querySelectorAll('button,input,select,textarea,summary,a[href],iframe,[tabindex]')]
         .filter(el => !el.disabled && el.tabIndex >= 0 && !el.closest('[hidden],[inert]') && el.getClientRects().length);
     function sync() {
         if (syncing) return;
@@ -77,7 +79,7 @@
         // The calendar range owns the first Escape; a later Escape closes it.
         if (event.key === 'Escape' && event.target.closest?.('.uvu-calendar .calendar-month.is-range-mode')) return;
         if (event.key === 'Escape') {
-            const close = root.querySelector('[data-action="close"],.message-forward-close,[data-close],#close-status-panel-btn');
+            const close = root.querySelector('[data-action="close"],.message-forward-close,[data-close],#close-status-panel-btn,.sheet-close,.mono-nav-back');
             if (!close || close.disabled) return;
             event.preventDefault(); event.stopImmediatePropagation(); close.click();
         } else {
@@ -89,6 +91,6 @@
             }
         }
     }, true);
-    const start = () => { new MutationObserver(sync).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] }); sync(); };
+    const start = () => { new MutationObserver(sync).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class','open'] }); sync(); };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start, { once: true });
 }());

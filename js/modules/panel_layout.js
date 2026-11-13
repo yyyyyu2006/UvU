@@ -1315,12 +1315,7 @@
         const save=[...body.children].find(el=>el.tagName==='BUTTON'&&/保存/.test(el.textContent));
         if(save) {save.classList.add('panel-primary');footer.append(save);} else {const done=make('button','panel-primary','返回条目');done.type='button';done.onclick=back.onclick;footer.append(done);}
         body.querySelectorAll('input[type=checkbox]').forEach(asSwitch);
-        panel.addEventListener('keydown',event=>{
-            if(event.key==='Escape'){event.preventDefault();event.stopPropagation();back.click();return;}
-            if(event.key!=='Tab')return;
-            const controls=[...panel.querySelectorAll('button,input,select,textarea,summary,[tabindex]')].filter(el=>!el.disabled&&el.tabIndex>=0&&el.getClientRects().length);
-            const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
-        });
+        // feature_dialogs owns focus, background isolation and keyboard dismissal.
         if(root.id==='uvu-notification-preferences') {
             const labels=[...body.querySelectorAll(':scope > label')], switches=labels.filter(el=>q(el,'input[type=checkbox]'));
             group(switches.slice(0,2),'通知','draft-card');

@@ -222,6 +222,25 @@ function journalBelongsToBranch(journal, includedMessageIds, cutoff) {
     return journal.range && Number(journal.range.end) <= cutoff;
 }
 
+function inheritBranchMemories(data, chatId, sourceArchiveId, archiveId, includedMessageIds, cutoff) {
+    const retained = (journal, depth = 0) => depth < 64 &&
+        journalBelongsToBranch(journal, includedMessageIds, cutoff) &&
+        (!journal.autoMemory?.sources || journal.autoMemory.sources.every(source => includedMessageIds.has(source.id))) &&
+        (!journal.manualMergeSources || Array.isArray(journal.manualMergeSources) && journal.manualMergeSources.every(source => retained(source, depth + 1)));
+    const remap = (journal, depth = 0) => {
+        if (depth >= 64) return;
+        const target = journal.memorySourceTarget;
+        if (target?.chatId === chatId && target.archiveId === String(sourceArchiveId || 'default')) target.archiveId = archiveId;
+        for (const source of journal.manualMergeSources || []) remap(source, depth + 1);
+    };
+    data.memoryJournals = (data.memoryJournals || []).filter(journal => retained(journal));
+    const ids = new Set(data.memoryJournals.map(journal => journal.id));
+    for (const journal of data.memoryJournals) {
+        remap(journal);
+        if (journal.vectorSupersededBy && !ids.has(journal.vectorSupersededBy)) delete journal.vectorSupersededBy;
+    }
+}
+
 async function createBranchArchiveAtMessage(messageId) {
     const chat = getCurrentChatEntity();
     if (!chat || !Array.isArray(chat.history)) return;
@@ -237,16 +256,16 @@ async function createBranchArchiveAtMessage(messageId) {
     const data = cloneArchiveValue(sourceArchive.data);
     data.history = data.history.slice(0, branchIndex + 1);
     const includedMessageIds = new Set(data.history.map(message => message.id));
-    data.memoryJournals = (data.memoryJournals || []).filter(journal =>
-        journalBelongsToBranch(journal, includedMessageIds, branchIndex + 1)
-    );
+    const archiveId = createArchiveId();
+    inheritBranchMemories(data, chat.id, sourceArchive.id, archiveId, includedMessageIds, branchIndex + 1);
+    if (typeof inheritBranchCharacterMemos === 'function') inheritBranchCharacterMemos(data, includedMessageIds, data.history[branchIndex].timestamp);
     data.callHistory = (data.callHistory || []).filter(call => !call.timestamp || call.timestamp <= (data.history[branchIndex].timestamp || Infinity));
     data.lastUserMessageTimestamp = [...data.history].reverse().find(message => message.role === 'user')?.timestamp || null;
     resetArchiveDerivedRuntime(data);
 
     const now = Date.now();
     const archive = {
-        id: createArchiveId(),
+        id: archiveId,
         name: name.trim() || suggestedName,
         createdAt: now,
         updatedAt: now,

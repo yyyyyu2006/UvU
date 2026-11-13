@@ -242,6 +242,7 @@
         signal?.addEventListener('abort', api.dispose, { once: true }); return api;
     }
     async function listVoices(config, signal) {
+        if (signal?.aborted) throw abort();
         const url = endpoint(config.endpoint); url.pathname = url.pathname.replace(/\/t2a_v2\/?$/, '/get_voice');
         if (!/\/get_voice$/.test(url.pathname)) throw new Error('自定义接口未提供音色列表路径，请手动填写 Voice ID');
         if (!config.apiKey) throw new Error('请先填写语音密钥');
@@ -249,6 +250,8 @@
         const controller = new AbortController(), cancel = () => controller.abort(), timer = setTimeout(cancel, 20000);
         signal?.addEventListener('abort', cancel, { once: true });
         try {
+            if (signal?.aborted) cancel();
+            if (controller.signal.aborted) throw abort();
             const response = await fetch(url.href, { method: 'POST', headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ voice_type: 'all' }), signal: controller.signal, credentials: 'omit', redirect: 'error' });
             const result = await readResponse(response, controller.signal, null, 2 * 1048576);
