@@ -996,9 +996,9 @@ const VideoCallModule = {
                 }
             }
         } catch (e) {
-            if (this.isCallScopeCurrent(scope) && !controller.signal.aborted) {
+            if (this.isCallScopeCurrent(scope) && e.name !== 'AbortError') {
                 console.error("AI Reply Error:", e);
-                showToast("信号连接失败");
+                showToast(e.message === '通话请求超时' ? '通话请求超时，请点击头像重试' : '信号连接失败');
             }
         } finally {
             // 移除处理中状态样式
@@ -1162,6 +1162,10 @@ const VideoCallModule = {
         listContainer.innerHTML = '';
         const pending = this.state.pendingCallSave;
         const chatType = currentChatType;
+        const historyArchiveId = chat.activeArchiveId;
+        const historyReference = chat.history;
+        const ownsHistory = () => (chatType === 'private' ? db.characters : db.groups).includes(chat) &&
+            chat.activeArchiveId === historyArchiveId && chat.history === historyReference;
         const sameChatScope = () => currentChatId === chat.id && currentChatType === chatType &&
             (chatType === 'private' ? db.characters : db.groups).includes(chat) &&
             chat.activeArchiveId === pending.scope.archiveId && chat.history === pending.scope.history;
@@ -1272,26 +1276,35 @@ const VideoCallModule = {
                                 e.stopPropagation(); // 防止触发折叠
                                 
                                 if (genBtn.disabled) return;
+                                if (!ownsHistory() || currentChatId !== chat.id || currentChatType !== chatType) {
+                                    showToast('角色或存档已变化，请重新打开通话记录');
+                                    return;
+                                }
+                                // 保存失败会还原 callHistory 对象；重试应读取还原后的记录。
+                                const liveRecord = chat.callHistory?.find(item => item.id === record.id);
+                                if (!liveRecord) {
+                                    showToast('通话记录已变化，请重新打开');
+                                    return;
+                                }
                                 genBtn.disabled = true;
                                 genBtn.textContent = "生成中...";
                                 
                                 try {
                                     if (typeof generateCallSummary === 'function') {
-                                        const chat = this.state.currentChat, archiveId = chat.activeArchiveId, history = chat.history;
-                                        const summary = await generateCallSummary(chat, record.context);
-                                        if (chat.activeArchiveId !== archiveId || chat.history !== history || !chat.callHistory?.includes(record)) throw new Error('通话所属存档已变化');
+                                        const summary = await generateCallSummary(chat, liveRecord.context);
+                                        if (!ownsHistory() || !chat.callHistory?.includes(liveRecord)) throw new Error('通话所属存档已变化');
                                         
                                         if (summary) {
-                                            const summaryMsg = chat.history.find(m => m.callRecordId === record.id);
-                                            const mutation = beginChatMutation(chat, db.characters.includes(chat) ? 'private' : 'group', summaryMsg ? [summaryMsg] : [], ['callHistory']);
+                                            const summaryMsg = chat.history.find(m => m.callRecordId === liveRecord.id);
+                                            const mutation = beginChatMutation(chat, chatType, summaryMsg ? [summaryMsg] : [], ['callHistory']);
                                             // 1. 更新数据
-                                            record.summary = summary;
+                                            liveRecord.summary = summary;
                                             
                                             // 2. 更新聊天记录中的消息
                                             if (summaryMsg) {
-                                                const date = new Date(record.startTime);
+                                                const date = new Date(liveRecord.startTime);
                                                 const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
-                                                const durationStr = this.formatDuration(record.duration);
+                                                const durationStr = this.formatDuration(liveRecord.duration);
                                                 summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
                                             }
                                             

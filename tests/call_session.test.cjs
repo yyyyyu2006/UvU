@@ -1,16 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 function fixture(){
- const a={id:'a',history:[],activeArchiveId:'one'},b={id:'b',history:[],activeArchiveId:'one'},timers=[],pending=[],delivered=[];
+ const a={id:'a',history:[],activeArchiveId:'one'},b={id:'b',history:[],activeArchiveId:'one'},timers=[],pending=[],delivered=[],toasts=[];
  const node={style:{},classList:{add(){},remove(){}},textContent:''};
- const c=vm.createContext({window:{},db:{characters:[a,b],groups:[]},AbortController,console:{error(){},warn(){}},showToast(){},
+ const c=vm.createContext({window:{},db:{characters:[a,b],groups:[]},AbortController,console:{error(){},warn(){}},showToast:text=>toasts.push(text),
  document:{getElementById:()=>node,addEventListener(){}},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){},clearInterval(){},
  getCallReply:(chat,type,context,chunk,signal)=>new Promise(resolve=>pending.push({chat,signal,finish:text=>{chunk(text);resolve(text)}}))});
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/video_call.js'),'utf8'),c);
  const m=vm.runInContext('VideoCallModule',c),realParse=m.parseAndAddAiResponse;
  const enter=chat=>{m.state.currentChat=chat;m.state.currentCallContext=[];m.state.isCallActive=true;m.state.isGenerating=false;m.state.isAiSpeaking=false;m.state.callSession={};m.state.callScope=null;m.captureCallScope();};
  m.parseAndAddAiResponse=text=>delivered.push({id:m.state.currentChat.id,text});enter(a);
- return {m,c,a,b,timers,pending,delivered,enter,realParse};
+ return {m,c,a,b,timers,pending,delivered,toasts,enter,realParse};
 }
 test('a late call result cannot deliver to another session or clear its generation controls',async()=>{
  const f=fixture(),pa=f.m.triggerAiReply();f.enter(f.b);const pb=f.m.triggerAiReply();
@@ -42,4 +42,26 @@ test('old hangup animation cannot hide a newer active call',async()=>{
  const f=fixture();await f.m.endCall();f.enter(f.b);
  const scene=f.c.document.getElementById('vc-scene-call');scene.style.display='flex';
  for(const fn of f.timers)fn();assert.equal(scene.style.display,'flex');
+});
+
+test('an active call timeout reports a retryable error and releases generation controls',async()=>{
+ const f=fixture(),job=f.m.triggerAiReply();
+ const controller=f.m.state.replyController;
+ f.timers[f.timers.length-1](); await job;
+ assert.equal(controller.signal.aborted,true);
+ assert.equal(f.m.state.isGenerating,false);
+ assert.equal(f.m.state.isAiSpeaking,false);
+ assert.ok(f.toasts.some(text=>/超时/.test(text)));
+ f.pending[0].finish('[a的声音：late]'); await Promise.resolve();
+ assert.equal(f.delivered.length,0);
+ const retry=f.m.triggerAiReply(); f.pending[1].finish('[a的声音：retry]'); await retry;
+ assert.equal(f.delivered.length,1);
+});
+
+test('intentional hangup and expired session timeouts do not show a connection error',async()=>{
+ const ended=fixture(),job=ended.m.triggerAiReply();await ended.m.endCall();await job;
+ assert.deepEqual(ended.toasts,[]);
+ const stale=fixture(),old=stale.m.triggerAiReply();stale.enter(stale.b);
+ stale.timers[stale.timers.length-1]();await old;
+ assert.deepEqual(stale.toasts,[]);
 });
