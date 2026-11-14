@@ -851,6 +851,14 @@ function sendMyGift(description) {
 }
 
 // --- 转发聊天记录弹窗逻辑 ---
+function splitForwardedChatLines(content) {
+    // Decode only record separators followed by a speaker, not arbitrary escapes
+    // in messages, code or paths. Stored content and prompt examples stay intact.
+    return String(content || '').replace(/\r\n?/g, '\n')
+        .replace(/(?<!\\)\\(?:r\\n|n|r)(?=[^\\/\r\n：:<>{}\[\]]{1,40}[：:])/g, '\n')
+        .split('\n').filter(line => line.trim() !== '');
+}
+
 window.showForwardedChatModal = function(chatContent, charName) {
     const modal = document.getElementById('forwarded-chat-modal');
     const titleEl = document.getElementById('forwarded-chat-modal-title');
@@ -862,7 +870,7 @@ window.showForwardedChatModal = function(chatContent, charName) {
     titleEl.textContent = `${charName}的聊天记录`;
     
     // 解析聊天记录内容
-    const lines = chatContent.split('\n').filter(line => line.trim() !== '');
+    const lines = splitForwardedChatLines(chatContent);
     let html = '';
     
     lines.forEach(line => {

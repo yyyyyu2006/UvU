@@ -586,6 +586,7 @@ function setupChatRoom() {
     getReplyBtn.addEventListener('click', handleAiReplyButton);
     regenerateBtn.addEventListener('click', handleRegenerate);
     
+    setupMessageThinkingViewer(messageArea);
     messageArea.addEventListener('click', (e) => {
         if (isDebugMode && !isInMultiSelectMode) {
             const messageWrapper = e.target.closest('.message-wrapper');

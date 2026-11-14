@@ -786,7 +786,10 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     else if (documentSources.length) fullResponse = documentReply.text;
     let mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
     const ownedMessages = new Map(), removedMessages = new Set();
+    let replyThinkingId = null;
     const appendReplyMessage = message => {
+        // Display-only association; keep content, history order and requests intact.
+        if (targetChatType === 'private' && message.role === 'assistant' && !message.isThinking) message.thinkingMessageId = replyThinkingId;
         chat.history.push(message);
         ownedMessages.set(message, mutation.clone(message));
     };
@@ -831,6 +834,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             };
             
             // 存入历史记录
+            replyThinkingId = thinkingMsg.id;
             appendReplyMessage(thinkingMsg);
 
             // 【新增】清理旧的思维链消息，仅保留最近 50 条

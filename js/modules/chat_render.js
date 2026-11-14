@@ -168,7 +168,8 @@ function loadMoreMessages() {
 
 function createMessageBubbleElement(message, isContinuous = false) {
     const element = createBaseMessageBubbleElement(message, isContinuous);
-    return typeof decorateRelationshipMessage === 'function' ? decorateRelationshipMessage(element, message) : element;
+    const decorated = typeof decorateRelationshipMessage === 'function' ? decorateRelationshipMessage(element, message) : element;
+    return typeof decorateMessageThinkingAvatar === 'function' ? decorateMessageThinkingAvatar(decorated, message) : decorated;
 }
 
 function createBaseMessageBubbleElement(message, isContinuous = false) {
@@ -633,7 +634,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     } else if (forwardedChatMatch) {
         const chatContent = forwardedChatMatch[1].trim();
         // 截取前两行作为预览
-        const lines = chatContent.split('\n').filter(line => line.trim() !== '');
+        const lines = splitForwardedChatLines(chatContent);
         const previewLines = lines.slice(0, 3).map(line => {
             // 简单截断过长的行
             return line.length > 20 ? line.substring(0, 20) + '...' : line;

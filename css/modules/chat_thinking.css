@@ -1,0 +1,14 @@
+#char-thinking-dialog {
+    box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:75dvh;
+    padding:0;border:0;border-radius:24px;background:#fff;color:#333;
+    box-shadow:0 12px 40px rgba(0,0,0,.12);overflow:hidden;
+}
+#char-thinking-dialog[open] { display:flex;flex-direction:column; }
+#char-thinking-dialog::backdrop { background:rgba(0,0,0,.28); }
+#char-thinking-dialog > header { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #eee;flex-shrink:0; }
+#char-thinking-dialog h3 { margin:0;font-size:16px;font-weight:500; }
+#char-thinking-dialog header button { width:36px;height:36px;padding:0;flex-shrink:0;color:#888; }
+#char-thinking-dialog .char-thinking-content { min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere; }
+#char-thinking-dialog :focus-visible { outline:2px solid #b4d0e1;outline-offset:-3px; }
+#message-area [data-thinking-avatar] { cursor:pointer; }
+#message-area [data-thinking-avatar]:focus-visible { outline:2px solid #b4d0e1;outline-offset:2px; }
