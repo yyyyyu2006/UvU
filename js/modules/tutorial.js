@@ -678,7 +678,7 @@ async function tutorialBackupBlob(data) {
 // GitHub requests are bounded, cancellable and never retried automatically after PUT.
 const GitHubMgr = {
     config:{token:'',repo:'',auto:false,interval:48,lastTime:0,fileName:'',branch:'',includeCredentials:false,includeVectorIndex:true},
-    inFlight:null, timer:null, controller:null, initialized:false, lastAttempt:0,
+    inFlight:null, inFlightType:null, timer:null, controller:null, initialized:false, lastAttempt:0,
     normalize(raw) {
         raw=raw && typeof raw==='object' && !Array.isArray(raw) ? raw : {};
         const text=key=>typeof raw[key]==='string'?raw[key].trim():'';
@@ -728,7 +728,7 @@ const GitHubMgr = {
     },
     async checkAndBackup() {
         const c=GitHubMgr.config,now=Date.now();
-        if(document.hidden||!c.auto||!c.token||!c.repo||GitHubMgr.inFlight||now-c.lastTime<c.interval*3600000||now-GitHubMgr.lastAttempt<300000)return;
+        if(document.hidden||!c.auto||!c.token||!c.repo||loadingBtn||GitHubMgr.inFlight||now-c.lastTime<c.interval*3600000||now-GitHubMgr.lastAttempt<300000)return;
         GitHubMgr.lastAttempt=now;
         try { await GitHubMgr.performUpload(message=>showToast('自动备份: '+message));showToast('自动备份成功'); }
         catch(error) { showToast('自动备份失败: '+error.message); }
@@ -778,10 +778,12 @@ const GitHubMgr = {
         finally {if(btn){btn.innerText=original;btn.style.pointerEvents='auto';}}
     },
     performUpload(onProgress=()=>{}) {
+        if(loadingBtn||(GitHubMgr.inFlight&&GitHubMgr.inFlightType!=='upload'))return Promise.reject(new Error('另一个备份任务正在进行，请稍候或取消。'));
         if(GitHubMgr.inFlight)return GitHubMgr.inFlight;
         const config={...GitHubMgr.config};
         GitHubMgr.controller=new AbortController();
-        GitHubMgr.inFlight=GitHubMgr.uploadSnapshot(config,onProgress).finally(()=>{GitHubMgr.inFlight=null;GitHubMgr.controller=null;});
+        GitHubMgr.inFlightType='upload';
+        GitHubMgr.inFlight=GitHubMgr.uploadSnapshot(config,onProgress).finally(()=>{GitHubMgr.inFlight=null;GitHubMgr.inFlightType=null;GitHubMgr.controller=null;});
         return GitHubMgr.inFlight;
     },
     async uploadSnapshot(config,onProgress) {
@@ -826,25 +828,24 @@ const GitHubMgr = {
         const btn=event?.currentTarget||document.getElementById('gh-restore-btn'),original=btn?.innerText;
         if(btn){btn.innerText='恢复中...';btn.style.pointerEvents='none';}
         GitHubMgr.controller=new AbortController();
+        GitHubMgr.inFlightType='restore';
         const operation=GitHubMgr.restoreSnapshot(config);GitHubMgr.inFlight=operation;
         try{await operation;}catch(error){showToast('恢复失败: '+error.message);}
-        finally{GitHubMgr.inFlight=null;GitHubMgr.controller=null;if(btn){btn.innerText=original;btn.style.pointerEvents='auto';}}
+        finally{GitHubMgr.inFlight=null;GitHubMgr.inFlightType=null;GitHubMgr.controller=null;if(btn){btn.innerText=original;btn.style.pointerEvents='auto';}}
     },
     async restoreSnapshot(config) {
         GitHubMgr.validateConfig(config);
-        const headers={Authorization:'token '+config.token};let path;
-        if(config.lastSnapshot&&config.lastSnapshotRepo===config.repo&&(!config.branch||config.lastSnapshotBranch===config.branch))path=config.lastSnapshot;
-        else {
-            const prefix=config.fileName?config.fileName.replace(/\.(ee|json)$/i,''):'AutoBackup';
-            const slash=prefix.lastIndexOf('/'),directory=slash>=0?prefix.slice(0,slash):'',name=prefix.slice(slash+1);
-            const listing=await GitHubMgr.request(GitHubMgr.contentsUrl(config,directory),{headers});if(!listing.ok)throw GitHubMgr.httpError(listing);
-            const files=await listing.json();if(!Array.isArray(files))throw new Error('备份目录无效');
-            const backups=files.filter(file=>file.type==='file'&&/\.(ee|json)$/i.test(file.name)&&(file.name.startsWith(name+'_')||file.name===name+'.ee'||file.name===name+'.json'));
-            backups.sort((x,y)=>{const stamp=name=>Number(name.match(/_(\d+)(?:_[a-z0-9]+)?\.(?:ee|json)$/i)?.[1]||0);return stamp(y.name)-stamp(x.name);});
-            if(!backups.length)throw new Error('未找到备份；请检查目录和分支，或下载本地分类文件恢复');
-            if(files.length>=1000)throw new Error('目录文件过多，无法可靠判断最新快照；请下载指定文件后本地导入');
-            path=backups[0].path||[directory,backups[0].name].filter(Boolean).join('/');
-        }
+        const headers={Authorization:'token '+config.token};
+        // Another device may have uploaded a newer snapshot, or the chosen prefix may have changed.
+        const prefix=config.fileName?config.fileName.replace(/\.(ee|json)$/i,''):'AutoBackup';
+        const slash=prefix.lastIndexOf('/'),directory=slash>=0?prefix.slice(0,slash):'',name=prefix.slice(slash+1);
+        const listing=await GitHubMgr.request(GitHubMgr.contentsUrl(config,directory),{headers});if(!listing.ok)throw GitHubMgr.httpError(listing);
+        const files=await listing.json();if(!Array.isArray(files))throw new Error('备份目录无效');
+        const backups=files.filter(file=>file.type==='file'&&/\.(ee|json)$/i.test(file.name)&&(file.name.startsWith(name+'_')||file.name===name+'.ee'||file.name===name+'.json'));
+        backups.sort((x,y)=>{const stamp=name=>Number(name.match(/_(\d+)(?:_[a-z0-9]+)?\.(?:ee|json)$/i)?.[1]||0);return stamp(y.name)-stamp(x.name);});
+        if(!backups.length)throw new Error('未找到备份；请检查目录和分支，或下载本地分类文件恢复');
+        if(files.length>=1000)throw new Error('目录文件过多，无法可靠判断最新快照；请下载指定文件后本地导入');
+        const path=backups[0].path||[directory,backups[0].name].filter(Boolean).join('/');
         showToast('正在下载: '+path);
         const response=await GitHubMgr.request(GitHubMgr.contentsUrl(config,path),{headers:{...headers,Accept:'application/vnd.github.raw+json'}},120000,64*1024*1024);
         if(!response.ok)throw GitHubMgr.httpError(response);

@@ -100,3 +100,115 @@ test('worker full-restore parser preserves modern envelope marker without alteri
  const c=vm.createContext({self:{}});vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/storage_backup_worker.js'),'utf8'),c);
  for(const [text,expected] of [['{"modules":{"worldBooks":[]}}','3.0'],['{"_exportVersion":"2.0","worldBooks":[]}','2.0']]){const parser=c.createBackupParser(['worldBooks','_exportVersion'],true);parser.write(text);assert.equal(parser.finish()._exportVersion,expected);}
 });
+
+test('cloud restore selects the newest remote snapshot rather than this device last upload', async t => {
+ const f = await fixture(t), requests = [];
+ const oldPath = 'backups/user_100_old.json', newPath = 'backups/user_200_new.json';
+ const config = { token: 'fixture', repo: 'owner/repo', branch: 'main', fileName: 'backups/user', lastSnapshot: oldPath, lastSnapshotRepo: 'owner/repo', lastSnapshotBranch: 'main' };
+ f.c.fetch = async url => {
+  requests.push(url);
+  if (new URL(url).pathname.endsWith('/contents/backups/')) throw new Error('unexpected trailing slash');
+  if (new URL(url).pathname.endsWith('/contents/backups')) return Response.json([
+   { type: 'file', name: 'user_100_old.json', path: oldPath },
+   { type: 'file', name: 'user_200_new.json', path: newPath }
+  ]);
+  return Response.json({ modules: { characters: [{ id: url.includes('user_200_new') ? 'newest' : 'stale', history: [] }] } });
+ };
+ await f.mgr.restoreSnapshot(config);
+ assert.equal(f.c.db.characters[0].id, 'newest');
+ assert.ok(await f.database.characters.get('newest'));
+ assert.ok(requests.every(url => new URL(url).searchParams.get('ref') === 'main'));
+});
+
+test('changing cloud backup prefix does not restore the old cached path', async t => {
+ const f = await fixture(t), requests = [];
+ const config = { token: 'fixture', repo: 'owner/repo', branch: 'main', fileName: 'new/place', lastSnapshot: 'old/place_100_id.json', lastSnapshotRepo: 'owner/repo', lastSnapshotBranch: 'main' };
+ f.c.fetch = async url => {
+  requests.push(url);
+  if (new URL(url).pathname.endsWith('/contents/new')) return Response.json([{ type: 'file', name: 'place_200_id.json', path: 'new/place_200_id.json' }]);
+  return Response.json({ modules: { characters: [{ id: url.includes('/contents/new/') ? 'selected-prefix' : 'wrong-prefix', history: [] }] } });
+ };
+ await f.mgr.restoreSnapshot(config);
+ assert.equal(f.c.db.characters[0].id, 'selected-prefix');
+ assert.ok(requests.every(url => !url.includes('/contents/old/')));
+});
+
+test('remote listing failure does not silently restore a stale cached snapshot', async t => {
+ const f = await fixture(t);
+ f.c.fetch = async () => new Response('{}', { status: 403 });
+ await assert.rejects(f.mgr.restoreSnapshot({ token: 'fixture', repo: 'owner/repo', fileName: '', lastSnapshot: 'AutoBackup_1_x.json', lastSnapshotRepo: 'owner/repo' }), /403/);
+ assert.equal(f.c.db.characters[0].id, 'original');
+ assert.ok(await f.database.characters.get('original'));
+});
+
+test('cloud restore refuses ambiguous capped directories even with a local cached path', async t => {
+ const f = await fixture(t);
+ f.c.fetch = async () => Response.json(Array.from({ length: 1000 }, (_, i) => ({ type: 'file', name: `AutoBackup_${i}_x.json`, path: `AutoBackup_${i}_x.json` })));
+ await assert.rejects(f.mgr.restoreSnapshot({ token: 'fixture', repo: 'owner/repo', fileName: '', lastSnapshot: 'AutoBackup_1_x.json', lastSnapshotRepo: 'owner/repo' }), /目录文件过多/);
+ assert.equal(f.c.db.characters[0].id, 'original');
+});
+
+test('declining the newest cloud restore leaves persistent and live data untouched', async t => {
+ const f = await fixture(t); let confirmed = '';
+ f.c.confirm = message => { confirmed = message; return false; };
+ f.c.fetch = async url => new URL(url).pathname.endsWith('/contents/')
+  ? Response.json([{ type: 'file', name: 'AutoBackup_200_x.json', path: 'AutoBackup_200_x.json' }])
+  : Response.json({ modules: { characters: [{ id: 'replacement', history: [] }] } });
+ await f.mgr.restoreSnapshot({ token: 'fixture', repo: 'owner/repo', fileName: '' });
+ assert.match(confirmed, /AutoBackup_200_x.json/);
+ assert.equal(f.c.db.characters[0].id, 'original');
+ assert.ok(await f.database.characters.get('original'));
+ assert.equal(await f.database.characters.get('replacement'), undefined);
+});
+
+test('upload requested during cloud restore is rejected instead of sharing its success result', async t => {
+ const f = await fixture(t); let finishRestore;
+ f.mgr.restoreSnapshot = () => new Promise(resolve => { finishRestore = resolve; });
+ const restoring = f.mgr.restoreLatest();
+ const controller = f.mgr.controller;
+ const uploading = f.mgr.performUpload();
+ const rejected = assert.rejects(uploading, /另一个备份任务/);
+ finishRestore();
+ await restoring; await rejected;
+ assert.equal(controller.signal.aborted, false);
+ assert.equal(f.mgr.inFlight, null);
+});
+
+test('upload cannot replace the cancellation controller of a pending local import', async t => {
+ const f = await fixture(t); let finishRead, uploads = 0;
+ f.c.storageReadBackup = () => new Promise(resolve => { finishRead = resolve; });
+ f.mgr.uploadSnapshot = async () => { uploads++; };
+ const input = { files: [new File(['{}'], 'backup.json')], value: 'chosen' };
+ const importing = f.c.tutorialImportFile({ target: input });
+ const controller = f.mgr.controller;
+ try {
+  await assert.rejects(f.mgr.performUpload(), /另一个备份任务/);
+  assert.equal(uploads, 0);
+  assert.equal(f.mgr.controller, controller);
+ } finally {
+  controller.abort(); finishRead({ characters: [] }); await importing;
+ }
+ assert.equal(f.c.db.characters[0].id, 'original');
+});
+
+test('automatic backup skips local import without consuming its retry window', async t => {
+ const f = await fixture(t); let finishRead, uploads = 0;
+ f.c.storageReadBackup = () => new Promise(resolve => { finishRead = resolve; });
+ f.mgr.config = { token: 'fixture', repo: 'owner/repo', auto: true, interval: 1, lastTime: 0 };
+ f.mgr.performUpload = async () => { uploads++; };
+ const importing = f.c.tutorialImportFile({ target: { files: [new File(['{}'], 'backup.json')], value: 'chosen' } });
+ await f.mgr.checkAndBackup();
+ assert.equal(uploads, 0); assert.equal(f.mgr.lastAttempt, 0);
+ f.mgr.cancel(); finishRead({ characters: [] }); await importing;
+ await f.mgr.checkAndBackup(); assert.equal(uploads, 1);
+});
+
+test('failed restore releases its task ownership so a subsequent upload can run', async t => {
+ const f = await fixture(t); let uploads = 0;
+ f.mgr.restoreSnapshot = async () => { throw new Error('simulated restore failure'); };
+ await f.mgr.restoreLatest();
+ assert.equal(f.mgr.inFlight, null); assert.equal(f.mgr.inFlightType, null); assert.equal(f.mgr.controller, null);
+ f.mgr.uploadSnapshot = async () => { uploads++; };
+ await f.mgr.performUpload();
+ assert.equal(uploads, 1); assert.equal(f.mgr.inFlight, null); assert.equal(f.mgr.inFlightType, null);
+});
