@@ -687,7 +687,8 @@ function getVectorMemoryCandidates(chat) {
         const bucket = settings.vectorStableSources ? message.id : Math.floor((floor - 1) / 12);
         if (!groups.has(bucket)) groups.set(bucket, []);
         const stamp = Number(message.timestamp);
-        const date = Number.isFinite(stamp) && stamp > 0 ? new Date(stamp).toISOString() : '日期未知';
+        const sourceDate = new Date(stamp);
+        const date = stamp > 0 && Number.isFinite(sourceDate.getTime()) ? sourceDate.toISOString() : '日期未知';
 
         groups.get(bucket).push({ id: message.id, hash: autoMemoryMessageHash(message), floor, timestamp: stamp || 0, content: `[${date} · ${message.role === 'user' ? '用户' : '角色'}] ${content}` });
     }
@@ -1046,7 +1047,11 @@ function buildAutoMemoryPrompt(chat, type, sources, kind, settings) {
             }
             if (message.quote && typeof memoryMessageContent === 'function') message.content = memoryMessageContent(message);
         });
-        data = filtered.map(message => `[${new Date(message.timestamp || 0).toISOString()} | ${message.role} | ${message.senderId || ''}]\n${message.content}`).join('\n\n');
+        data = filtered.map(message => {
+            const date = new Date(message.timestamp || 0);
+            const label = Number.isFinite(date.getTime()) ? date.toISOString() : '日期未知';
+            return `[${label} | ${message.role} | ${message.senderId || ''}]\n${message.content}`;
+        }).join('\n\n');
         original = custom ? '' : buildJournalSummaryPrompt(chat, type, filtered, false);
     } else {
         data = sources.map(journal => `楼层 ${journal.range.start}-${journal.range.end}\n标题：${journal.title}\n${journal.content}`).join('\n\n---\n\n');

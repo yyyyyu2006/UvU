@@ -160,6 +160,21 @@ test('latest handoff range counts 50 eligible messages rather than hidden histor
     assert.deepEqual(JSON.parse(JSON.stringify(f.bridge.latestHandoffRange(f.chat))), {start:0,end:0,count:0});
 });
 
+test('handoff preview preserves legacy messages with out-of-range timestamps', () => {
+    const f = harness(async () => ({ ok: true, json: async () => ({}) }));
+    f.chat.history = [
+        { id: 'old', role: 'user', content: '约定原文', timestamp: 1e20 },
+        { id: 'normal', role: 'assistant', content: '正常回复', timestamp: 1700000000000 }
+    ];
+    const before = JSON.stringify(f.chat.history);
+    assert.deepEqual(JSON.parse(JSON.stringify(f.bridge.latestHandoffRange(f.chat))), { start: 1, end: 2, count: 2 });
+    const records = f.bridge.messageRecords(f.chat, 0);
+    assert.equal(records[0].text, '[时间未知 | User]\n约定原文');
+    assert.equal(records[0].createdAt, 0);
+    assert.equal(records[1].text, '[2023-11-14T22:13:20.000Z | Character]\n正常回复');
+    assert.equal(JSON.stringify(f.chat.history), before);
+});
+
 test('explicit handoff resends selected source messages even when the local sent ledger is already current', async () => {
     const calls=[]; const f=harness(async(url,options)=>{calls.push(JSON.parse(options.body||'{}'));return {ok:true,json:async()=>({})};});
     let result=await f.bridge.publishTurn(f.chat,null,[{id:'m',text:'原文',createdAt:1}]);

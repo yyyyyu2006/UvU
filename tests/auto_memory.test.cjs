@@ -617,6 +617,24 @@ test('zero context limit sends no raw messages', () => {
     assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 0);
 });
 
+test('out-of-range legacy timestamps do not block default or custom automatic summaries', async () => {
+    for (const timestamp of [1e20, -1e20]) {
+        for (const summaryPrompt of ['', '只整理事实']) {
+            const f = fixture(6, { summaryPrompt, mergeEnabled: false });
+            f.chat.history[0].timestamp = timestamp;
+            const before = JSON.stringify(f.chat.history);
+            const result = await f.run({ force: true });
+            assert.equal(result.error, undefined);
+            assert.equal(result.count, 1);
+            assert.equal(f.requests.length, 1);
+            assert.match(JSON.stringify(f.requests[0].body), /原楼层0/);
+            if (summaryPrompt) assert.match(JSON.stringify(f.requests[0].body), /日期未知/);
+            assert.equal(JSON.stringify(f.chat.history), before);
+            assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 4);
+        }
+    }
+});
+
 test('range retry can finish a failed merge even when every source floor was already saved', async () => {
     const f = fixture(12, { mergeThreshold: 6, mergeBatchSize: 6 });
     const original = f.context.fetchAiResponse;

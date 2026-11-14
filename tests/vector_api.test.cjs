@@ -19,6 +19,26 @@ const json = data => ({ ok: true, json: async () => data });
 const failure = status => ({ ok: false, status });
 const candidates = () => [{ journal: { title: 'one', content: 'movie' } }, { journal: { title: 'two', content: 'weekend' } }];
 
+test('out-of-range legacy dates remain indexable without changing source timestamps', async () => {
+    const { c, chat } = fixture();
+    chat.autoMemorySettings.keepRecent = 0;
+    chat.history = [
+        { id: 'bad', role: 'user', content: '仍需记住的约定', timestamp: 1e20 },
+        { id: 'good', role: 'assistant', content: '普通日期的回复', timestamp: 1700000000000 }
+    ];
+    const before = JSON.stringify(chat.history), inputs = [];
+    c.fetch = async (_url, init) => {
+        inputs.push(JSON.parse(init.body).input);
+        return json({ data: [{ embedding: [1, 0] }] });
+    };
+    const result = await c.getVectorMemoryContext(chat, '约定');
+    assert.match(result, /日期未知.*仍需记住的约定/);
+    assert.match(result, /2023-11-14T22:13:20.000Z.*普通日期的回复/);
+    assert.ok(inputs.some(input => String(input).includes('日期未知')));
+    assert.ok(Object.keys(chat.memoryVectorIndex).length);
+    assert.equal(JSON.stringify(chat.history), before);
+});
+
 test('optional embedding prefixes preserve whitespace and Gemini query/document task types', async () => {
     const { c, config } = fixture(); const bodies = [];
     c.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return json(config.provider === 'gemini' ? { embedding: { values: [1, 0] } } : { data: [{ embedding: [1, 0] }] }); };

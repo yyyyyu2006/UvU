@@ -415,7 +415,7 @@
             if (!message || !['user', 'assistant'].includes(message.role) || message.isThinking || message.isHidden || message.isWithdrawn || message.isContextDisabled || message.isStatusUpdate || message.relationshipDelivery) return null;
             const text = cleanText(message.content || (message.parts || []).filter(part => part.type === 'text').map(part => part.text).join('\n'));
             if (!text) return null;
-            const stamp = Number(message.timestamp), known = Number.isFinite(stamp) && stamp > 0;
+            const stamp = Number(message.timestamp), known = stamp > 0 && Number.isFinite(new Date(stamp).getTime());
             const speaker = message.role === 'user' ? chat.myName || 'User' : chat.realName || chat.name || 'Character';
             return { id: String(message.id || ('legacy-' + (start + index) + '-' + globalThis.UvUBridgeText.fingerprint(text))),
                 text: '[' + (known ? new Date(stamp).toISOString() : '时间未知') + ' | ' + speaker + ']\n' + text,
