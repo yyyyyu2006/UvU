@@ -215,7 +215,7 @@ function createMessageForwardElement(message, chat, type, isContinuous) {
     card.appendChild(messageForwardNode('div', 'message-forward-card-footer', '聊天记录 · 共 ' + message.forwardedChat.records.length + ' 条'));
     card.addEventListener('click', () => { if (!isInMultiSelectMode && !isDebugMode) showMessageForwardDetail(message.forwardedChat); });
     card.addEventListener('keydown', event => {
-        if ((event.key === 'Enter' || event.key === ' ') && !isInMultiSelectMode) { event.preventDefault(); showMessageForwardDetail(message.forwardedChat); }
+        if ((event.key === 'Enter' || event.key === ' ') && !isInMultiSelectMode && !isDebugMode) { event.preventDefault(); showMessageForwardDetail(message.forwardedChat); }
     });
     if (message.quote) card.prepend(createQuotedMessageElement(message.quote, chat));
     const info = messageForwardNode('div', 'message-info'); info.appendChild(avatar);

@@ -901,6 +901,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.setAttribute('aria-label', '播放语音消息');
             bubbleElement.addEventListener('keydown', event => {
                 if (event.key !== 'Enter' && event.key !== ' ') return;
+                if (isInMultiSelectMode || isDebugMode) return;
                 event.preventDefault();
                 MiniMaxTTS.play(bubbleElement, bubbleElement.dataset.voiceText);
             });
