@@ -19,6 +19,23 @@
     }
     const command = (label, fn, cls = 'ms-button') => { const b = node('button', cls, label); b.type = 'button'; b.onclick = fn; return b; };
     async function work(b, fn) { if (b?.disabled) return; if (b) b.disabled = true; try { return await fn(); } catch (e) { toast(e.message); } finally { if (b) b.disabled = false; } }
+    async function fillGeneratedDraft(d, input, request, owners = []) {
+        const before = input.value, ownerValues = owners.map(control => control.value);
+        let changed = false;
+        const markChanged = () => { changed = true; };
+        input.addEventListener('input', markChanged);
+        owners.forEach(control => control.addEventListener('change', markChanged));
+        try {
+            const value = await request();
+            // Editing and then undoing, or switching away and back, still owns the draft.
+            if (changed || input.value !== before || owners.some((control, i) => control.value !== ownerValues[i]) ||
+                d.signal.aborted || !d.overlay.isConnected || !valid(d.t)) return false;
+            input.value = value; return true;
+        } finally {
+            input.removeEventListener('input', markChanged);
+            owners.forEach(control => control.removeEventListener('change', markChanged));
+        }
+    }
     const safeImage = url => typeof url === 'string' && /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,|assets\/)/i.test(url) ? url : '';
     function avatar(person, cls = 'ms-avatar') {
         const a = node('span', cls, (person?.name || '?').slice(0, 1)), src = safeImage(person?.avatar);
@@ -185,7 +202,12 @@
         const d = dialog('动态记忆', chat), content = field('摘要', '', true), pending = node('p', 'ms-note', '生成摘要后，可编辑并审核保存。'); content.input.rows = 7; content.input.maxLength = 12000;
         let reviewScope = M().capture(chat, post.id);
         d.body.append(content.row, pending);
-        d.foot.append(command('生成摘要', e => work(e.currentTarget, async () => { guard(d.t); content.input.value = await AI().summarize(chat, post.id, d.signal); reviewScope = M().capture(chat, post.id); pending.textContent = ''; })));
+        d.foot.append(command('生成摘要', e => work(e.currentTarget, async () => {
+            guard(d.t);
+            const applied = await fillGeneratedDraft(d, content.input, () => AI().summarize(chat, post.id, d.signal));
+            if (!applied) { if (d.overlay.isConnected && valid(d.t)) pending.textContent = '已保留你修改的摘要'; return; }
+            reviewScope = M().capture(chat, post.id); pending.textContent = '';
+        })));
         d.foot.append(command('审核并保存', e => work(e.currentTarget, async () => { guard(d.t); if (!M().isCurrent(reviewScope)) throw new Error('动态已变化，请重新生成或打开审核'); await M().approveMemory(chat, post.id, content.input.value); d.close(); toast('已加入记忆日记'); }), 'ms-button ms-primary'));
     }
     function postOptions(chat, post) {
@@ -248,7 +270,12 @@
             guard(d.t); const files = [...upload.files]; if (files.length + images.length > 9) throw new Error('最多添加 9 张图片');
             for (const file of files) { if (file.size > 10 * 1024 * 1024) throw new Error('单张图片不能超过 10 MB'); const url = await compressImage(file, { quality: 0.8, maxWidth: 1200 }); guard(d.t); images.push(url); } redraw(); upload.value = '';
         });
-        const generate = command('生成草稿', e => work(e.currentTarget, async () => { guard(d.t); const person = people[Number(select.value)]; if (person.ref.kind === 'user') throw new Error('选择角色或 NPC 后生成草稿'); content.input.value = await AI().draftPost(chat, person.ref, d.signal); }));
+        const generate = command('生成草稿', e => work(e.currentTarget, async () => {
+            guard(d.t); const person = people[Number(select.value)];
+            if (person.ref.kind === 'user') throw new Error('选择角色或 NPC 后生成草稿');
+            const applied = await fillGeneratedDraft(d, content.input, () => AI().draftPost(chat, person.ref, d.signal), [select]);
+            if (!applied && d.overlay.isConnected && valid(d.t)) toast('正文或发布人物已修改，已保留当前草稿');
+        }));
         d.body.append(by.row, content.row, pictures, upload, audience); redraw(); d.foot.append(imageButton); if (!original) d.foot.append(generate);
         d.foot.append(command(original ? '保存' : '发布', e => work(e.currentTarget, async () => {
             guard(d.t); const selected = audienceInputs.filter(item => item.input.checked).map(item => item.ref);
