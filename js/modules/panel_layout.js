@@ -1495,7 +1495,20 @@
             const actions = make('div', 'draft-image-history-actions'), reuse = make('button', 'panel-primary', '使用提示词'), save = make('a', '', '保存图片'), remove = make('button', '', '删除'); reuse.type = remove.type = 'button';
             reuse.onclick = () => { const field = document.getElementById('pv-text-input'); field.value = item.prompt || ''; field.dispatchEvent(new Event('input', { bubbles: true })); d.dismiss(); };
             save.href = safeImage(item.image); save.download = 'UvU-generated-' + item.timestamp + '.png'; save.rel = 'noopener';
-            remove.onclick = async () => { if (!window.confirm('删除这张工坊记录？已发送的图片会保留。')) return; remove.disabled = true; try { await dexieDB.workshopHistory.delete(item.id); records = records.filter(row => row.id !== item.id); selectedId = undefined; detail.hidden = true; render(); if (typeof loadWorkshopHistory === 'function') await loadWorkshopHistory(); } catch { status.textContent = '删除失败，请重试。'; remove.disabled = false; } };
+            remove.onclick = async () => {
+                if (!window.confirm('删除这张工坊记录？已发送的图片会保留。')) return;
+                remove.disabled = true;
+                try {
+                    await dexieDB.workshopHistory.delete(item.id);
+                    records = records.filter(row => row.id !== item.id);
+                    if (selectedId === item.id) {
+                        selectedId = undefined;
+                        detail.hidden = true;
+                    }
+                    render();
+                    if (typeof loadWorkshopHistory === 'function') await loadWorkshopHistory();
+                } catch { status.textContent = '删除失败，请重试。'; remove.disabled = false; }
+            };
             actions.append(reuse, save, remove); detail.append(actions);
             for (const button of gallery.children) button.setAttribute('aria-pressed', String(button.dataset.recordId === String(selectedId)));
         };
