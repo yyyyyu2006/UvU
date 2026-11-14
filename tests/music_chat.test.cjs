@@ -287,3 +287,60 @@ test('enabling continuous mode cannot adopt an unrelated song or queue',async()=
  state={track:{...track(),id:'foreign'},queue:[{...track(),id:'foreign'}],queueVersion:2,playing:true,phase:'playing'};
  assert.equal(api.setContinuous(true),false);assert.equal(api.session().track.id,'1');assert.equal(api.session().localPlayback,false);assert.equal(api.session().continuous,false);
 });
+
+test('replaying an accepted card keeps its room and continuous mode through loading and failure', async () => {
+    for (const failure of ['blocked', 'error', 'rejected']) {
+        const { api, c, chat } = fixture();
+        let state = { track: track(), queue: [track()], queueVersion: 1, playing: true, phase: 'playing' };
+        c.UvUMusic.player.snapshot = () => state;
+        await api.share(track(), { invite: true });
+        const plan = api.requestPlan(chat.history, chat);
+        await api.consumeReply(command(plan.invitations[0].id), chat, plan);
+        api.setContinuous(true);
+        const before = JSON.stringify(chat.history), room = api.session();
+        let finish;
+        c.UvUMusic.player.play = () => new Promise((resolve, reject) => {
+            state = { ...state, playing: false, phase: 'loading' };
+            finish = () => { state = { ...state, phase: failure === 'rejected' ? 'error' : failure }; failure === 'rejected' ? reject(Error('network')) : resolve(false); };
+        });
+        const pending = api.listen(track(), { chat, message: chat.history[0] });
+        const loading = api.session();
+        finish();
+        await assert.rejects(pending, /播放|重试|network/);
+        assert.equal(loading?.id, room.id, failure + ': keep room while loading');
+        assert.equal(api.session()?.id, room.id, failure + ': keep room after failure');
+        assert.equal(api.session().continuous, true);
+        assert.equal(api.session().localPlayback, false);
+        assert.equal(JSON.stringify(chat.history), before);
+    }
+});
+
+test('a successful replay of the same invitation retains continuous mode', async () => {
+    const { api, c, chat } = fixture();
+    c.UvUMusic.player.snapshot = () => ({ track: track(), queue: [track()], queueVersion: 1, playing: true, phase: 'playing' });
+    await api.share(track(), { invite: true }); const plan = api.requestPlan(chat.history, chat);
+    await api.consumeReply(command(plan.invitations[0].id), chat, plan);
+    api.setContinuous(true);
+    assert.equal(await api.listen(track(), { chat, message: chat.history[0] }), true);
+    assert.equal(api.session().continuous, true);
+});
+
+test('ending the visible room cancels a pending replacement invitation without reopening it', async () => {
+    const { api, c, chat } = fixture();
+    let state = { track: track(), playing: true, phase: 'playing' };
+    c.UvUMusic.player.snapshot = () => state;
+    await api.share(track(), { invite: true }); const plan = api.requestPlan(chat.history, chat);
+    await api.consumeReply(command(plan.invitations[0].id), chat, plan);
+    const original = chat.history[0], nextTrack = { ...track(), id: '2', title: 'Second' };
+    await api.share(nextTrack, { invite: true }); const replacement = chat.history[1]; replacement.music.invitation.status = 'accepted';
+    let finish;
+    c.UvUMusic.player.play = value => new Promise(resolve => { finish = () => { state = { track: value, playing: true, phase: 'playing' }; resolve(true); }; });
+    const pending = api.listen(nextTrack, { chat, message: replacement });
+    const ended = await api.end();
+    finish();
+    assert.equal(await pending, false);
+    assert.equal(ended, true);
+    assert.equal(original.music.invitation.status, 'ended');
+    assert.equal(replacement.music.invitation.status, 'accepted');
+    assert.equal(api.session(), null);
+});

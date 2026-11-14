@@ -166,18 +166,23 @@
         const record = { chat: binding.chat, message: binding.message, archiveId: binding.chat.activeArchiveId, history: binding.chat.history };
         if (!sourceActive(record)) return false;
         const generation = ++listenIntent, requested = portableTrack(track);
-        activeSession = null; notify();
-        const played = await root.UvUMusic.player.play(requested);
-        if (generation !== listenIntent || !sourceActive(record)) return false;
+        // Keep the accepted room while transport loads or fails. Replace it only
+        // after the requested song actually starts, unless the user ended it.
+        session(); notify();
+        let played;
+        try { played = await root.UvUMusic.player.play(requested); }
+        catch (error) { notify(); throw error; }
+        if (generation !== listenIntent || !sourceActive(record) || record.message.music.invitation.status !== 'accepted') return false;
         // The core resolves play() even when browser permissions or stream loading fail.
         // Only its final state proves that this invitation's actual track started.
         const playback = root.UvUMusic.player.snapshot();
         const sameTrack = playback?.track && playback.track.provider === requested.provider && String(playback.track.id) === requested.id;
         if (played === false || !sameTrack || playback.phase !== 'playing' || playback.playing !== true) {
-            activeSession = null; notify();
+            notify();
             throw new Error(playback?.phase === 'blocked' ? '浏览器阻止自动播放，请点击歌曲卡片的播放按钮重试' : '歌曲尚未开始播放，请点击歌曲卡片的播放按钮重试');
         }
-        record.lastTrack = requested; activeSession = record; notify(); return true;
+        const continuing = activeSession?.message === record.message && activeSession.history === record.history && activeSession.archiveId === record.archiveId;
+        activeSession = continuing ? activeSession : record; activeSession.lastTrack = requested; notify(); return true;
     }
     async function togglePlayback() {
         const current = session(); if (!current) return false;
@@ -240,6 +245,7 @@
         if (!['pending', 'accepted'].includes(invitation.status)) return false;
         const mutation = beginChatMutation(record.chat, 'private', [record.message]);
         invitation.status = 'ended';
+        if (!target || activeSession?.message === record.message) ++listenIntent;
         if (!await saveChatMutation(mutation, '一起听结束状态未保存，请重试')) return false;
         if (activeSession?.message === record.message) activeSession = null;
         notify(); return true;
