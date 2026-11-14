@@ -215,8 +215,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     }
 
     if (data.promptActual) {
-        const estimatedInput = [data.baseSystem, data.cot, data.worldBook, data.charPersona, data.userPersona, data.memory, data.vectorMemory, data.history]
-            .reduce((sum, value) => sum + Number(value || 0), 0);
+        const estimatedInput = items.reduce((sum, [, value]) => sum + Number(value || 0), 0);
         const difference = Number(data.promptTokens || 0) - estimatedInput;
         if (difference !== 0) {
             const name = difference < 0 ? '分类估算高于 API 返回输入' : 'API 返回输入高于分类估算';

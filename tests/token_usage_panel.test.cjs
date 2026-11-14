@@ -4,6 +4,40 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+function renderUsageRows(usage) {
+    const createElement = () => ({
+        children: [],
+        append(...nodes) { this.children.push(...nodes); },
+        appendChild(node) { this.children.push(node); },
+        replaceChildren(...nodes) { this.children = nodes; },
+        setAttribute() {}, addEventListener() {},
+    });
+    const context = vm.createContext({ window: {}, document: { createElement }, getChatTokenUsageSnapshot: () => usage });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/chat.js'), 'utf8'), context);
+    const container = createElement();
+    context.renderTokenUsagePanel(container, { id: 'display-only', history: [] });
+    return container.children.find(node => node.className === 'status-token-list').children;
+}
+
+for (const [name, environment, mcp] of [['environment', 30, 0], ['MCP', 0, 20], ['environment and MCP', 30, 20]]) {
+    test(`token reconciliation includes ${name} in the displayed input estimate`, () => {
+        const rows = renderUsageRows({ baseSystem: 100, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0,
+            memory: 0, vectorMemory: 0, history: 0, environment, mcp,
+            promptActual: true, promptTokens: 100 + environment + mcp });
+        assert.equal(rows.some(row => row.className.includes('status-token-difference')), false);
+        assert.equal(rows.filter(row => /真实环境|MCP 外部资料/.test(row.children[0].textContent)).length, Number(environment > 0) + Number(mcp > 0));
+    });
+}
+
+test('token reconciliation retains genuine positive and negative differences', () => {
+    for (const [promptTokens, label] of [[160, 'API 返回输入高于分类估算'], [140, '分类估算高于 API 返回输入']]) {
+        const rows = renderUsageRows({ baseSystem: 100, environment: 30, mcp: 20, promptActual: true, promptTokens });
+        const difference = rows.find(row => row.className.includes('status-token-difference'));
+        assert.equal(difference.children[0].textContent, label);
+        assert.equal(difference.children[1].textContent, '10 token');
+    }
+});
+
 test('token estimate keeps only worldbooks activated for the current request', () => {
     const chat = {
         id: 'token-chat',
