@@ -261,7 +261,7 @@ function compareCharacterMemoryRanking(rows) {
 }
 function characterMemoQuery(chat) { return (chat.history||[]).filter(m=>m.role==='user'&&characterMemoMessageAllowed(chat,m)).slice(-3).map(m=>m.content).join('\n'); }
 function characterMemoRecallStamp(chat) {return JSON.stringify([characterMemoIdentity(chat),chat.activeArchiveId,characterMemoQuery(chat),characterMemoSettings(chat).excludedTopics]);}
-function characterMemoVectorConfigStamp(config) {return JSON.stringify([config.url,config.embeddingModel,config.embeddingDimensions,config.embeddingTaskType]);}
+function characterMemoVectorConfigStamp(config) {return JSON.stringify([config.provider,config.url,config.embeddingModel,config.embeddingDimensions,config.embeddingTaskMode,config.queryPrefix,config.documentPrefix,config.key]);}
 function characterMemoCosine(a,b) {
     if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length||!a.length||a.length>16384||!a.every(Number.isFinite)||!b.every(Number.isFinite))throw new Error('嵌入向量无效');
     const norm=v=>{const max=Math.max(...v.map(Math.abs));if(!max)throw new Error('嵌入向量无效');const scaled=v.map(x=>x/max),length=Math.hypot(...scaled);return scaled.map(x=>x/length);};
@@ -286,7 +286,9 @@ async function buildCharacterMemoRecallCache(chat,{signal}={}) {
 }
 function characterMemoCachedScore(chat,note) {
     if(!characterMemoSettings(chat).semanticRecall||typeof resolveVectorMemoryApi!=='function')return 0;
-    const cache=characterMemoRecallCaches.get(chat);if(!cache||Date.now()-cache.at>3600000||cache.stamp!==characterMemoRecallStamp(chat)||cache.config!==characterMemoVectorConfigStamp(resolveVectorMemoryApi()))return 0;
+    const cache=characterMemoRecallCaches.get(chat);if(!cache)return 0;
+    if(cache.config!==characterMemoVectorConfigStamp(resolveVectorMemoryApi())){characterMemoRecallCaches.delete(chat);return 0;}
+    if(Date.now()-cache.at>3600000||cache.stamp!==characterMemoRecallStamp(chat))return 0;
     const item=cache.scores.get(note.id);return item?.hash===characterMemoHash(note.fact)?item.score:0;
 }
 async function recordCharacterMemoFeedback(chat,id,value) {

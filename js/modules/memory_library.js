@@ -85,6 +85,34 @@ function memoryLibraryLocalDay(timestamp) {
     if (!Number.isFinite(date.getTime())) return '';
     return [String(date.getFullYear()).padStart(4,'0'), String(date.getMonth()+1).padStart(2,'0'), String(date.getDate()).padStart(2,'0')].join('-');
 }
+
+async function deleteLibraryMemory(chat, journal, { isCurrent = memoryLibrarySnapshot(chat) } = {}) {
+    if (!isCurrent() || !chat.memoryJournals?.includes(journal)) throw new Error('存档或记忆已变化，请重新打开记忆管理');
+    const archiveId = chat.activeArchiveId, previous = chat.memoryJournals;
+    const next = previous.filter(item => item !== journal);
+    const applied = next.slice(), originalIndex = previous.indexOf(journal);
+    chat.memoryJournals = next;
+    try { await saveData(); }
+    catch (error) {
+        const restore = data => {
+            const rows = data?.memoryJournals;
+            if (!Array.isArray(rows) || rows.some(item => item.id === journal.id)) return;
+            if (rows === next && rows.length === applied.length && rows.every((item, i) => item === applied[i])) {
+                data.memoryJournals = previous; return;
+            }
+            // Restore only this deletion, keeping later edits and their ordering.
+            const restored = rows.slice();
+            const following = previous.slice(originalIndex + 1).find(item => restored.some(row => row.id === item.id));
+            const position = following ? restored.findIndex(item => item.id === following.id) : Math.min(originalIndex, restored.length);
+            restored.splice(position, 0, journal); data.memoryJournals = restored;
+        };
+        if (chat.activeArchiveId === archiveId) restore(chat);
+        restore(chat.archives?.find(item => item.id === archiveId)?.data);
+        throw error;
+    }
+    return next;
+}
+
 function queryMemoryLibrary(journals, { query = '', category = '', source = '', status = '', from = '', to = '', page = 0, pageSize = 20, states = new Map() } = {}) {
     const terms = String(query).toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
     const day = value => { const match = String(value || '').match(/\d{4}-\d{2}-\d{2}/); return match ? match[0] : ''; };
@@ -142,14 +170,15 @@ async function undoLibraryMemoryMerge(chat, merged, { isCurrent = memoryLibraryS
         const restored = { ...item }; delete restored.vectorSupersededBy; return restored;
     });
     const changes = new Map(before.filter(item => !next.includes(item)).map(item => [item.id, item]));
+    const applied = new Map(next.filter(item => changes.has(item.id)).map(item => [item.id, JSON.stringify(item)]));
     chat.memoryJournals = next;
     try { await saveData(); }
     catch (error) {
         const restore = target => {
             if (!Array.isArray(target?.memoryJournals)) return;
             target.memoryJournals = target.memoryJournals.map(item => {
-                const applied = next.find(entry => entry.id === item.id), old = changes.get(item.id);
-                return old && applied && JSON.stringify(item) === JSON.stringify(applied) ? old : item;
+                const old = changes.get(item.id);
+                return old && applied.get(item.id) === JSON.stringify(item) ? old : item;
             });
             if (!target.memoryJournals.some(item => item.id === merged.id)) target.memoryJournals.push(merged);
         };
@@ -435,12 +464,8 @@ function openMemoryLibrary() {
                 },
                 async remove() {
                     assertCurrent();if(!confirm('确定删除这篇记忆？原始聊天会保留。'))return false;
-                    const archiveId=chat.activeArchiveId,history=chat.history,previous=chat.memoryJournals,next=previous.filter(item=>item!==journal);chat.memoryJournals=next;
-                    try { await saveData(); } catch(error) {
-                        if(chat.activeArchiveId===archiveId&&chat.memoryJournals===next)chat.memoryJournals=previous;
-                        const archived=chat.archives?.find(item=>item.id===archiveId)?.data;if(archived?.memoryJournals===next)archived.memoryJournals=previous;
-                        throw error;
-                    }
+                    const archiveId=chat.activeArchiveId,history=chat.history;
+                    const next=await deleteLibraryMemory(chat,journal,{isCurrent});
                     selection.delete(journal.id);if(!closed&&chat.activeArchiveId===archiveId&&chat.history===history&&chat.memoryJournals===next){isCurrent=memoryLibrarySnapshot(chat);refresh();renderJournalList();}return true;
                 }
             };

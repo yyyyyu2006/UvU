@@ -33,3 +33,35 @@ test('failed memory approval removes its summary and preserves a concurrent jour
 test('hidden posts reject all user interaction and memory entry points',async()=>{const {api,chat}=await enabled(fixture());await api.updatePost(chat,'post',{audience:[{kind:'character',id:chat.id}]});for(const action of [()=>api.addComment(chat,'post','hidden'),()=>api.toggleLike(chat,'post'),()=>api.markRead(chat,'post'),()=>api.approveMemory(chat,'post','hidden memory')])await assert.rejects(action(),/可见/);assert.equal(chat.history.length,0);});
 
 test('renamed same-name NPC replies use stable IDs and deletion cannot reassign an old identity',async()=>{const {api,chat}=await enabled(fixture());const left=await api.saveNpc(chat,{name:'同名',persona:'左'}),right=await api.saveNpc(chat,{name:'同名',persona:'右'});await api.configure(chat,{npcThreads:true});await api.applyActions(chat,'post',[{actor:{kind:'npc',id:left.id},content:'NPC发言',localId:'a'},{actor:{kind:'npc',id:right.id},content:'NPC回复',replyToLocalId:'a'}]);await api.saveNpc(chat,{...left,name:'改名'});const comments=api.view(chat)[0].comments;assert.equal(comments[1].replyToCommentId,comments[0].id);assert.equal(api.actor(chat,comments[0].authorRef).name,'改名');await api.removeNpc(chat,left.id);assert.equal(api.actor(chat,comments[0].authorRef),null);await assert.rejects(api.applyActions(chat,'post',[{actor:{kind:'npc',id:left.id},content:'deleted identity'}]),/身份|人物/);assert.equal(chat.history.length,0);});
+
+test('social request guards avoid serializing image payloads and detect same-length edits',async()=>{
+ const {api,chat,c}=await enabled(fixture());
+ const image='data:image/png;base64,'+'a'.repeat(100000);
+ chat.moments[0].images=[image];
+ chat.moments.push({id:'other',content:'other',images:[image],comments:[],likes:[]});
+ const before=JSON.stringify(chat);let payloadBytes=0;
+ c.__countJson=value=>{payloadBytes+=value.length;};
+ vm.runInContext(`const originalJsonStringify=JSON.stringify;JSON.stringify=function(...args){const result=originalJsonStringify.apply(this,args);if(typeof result==='string')__countJson(result);return result;};`,c);
+ const scope=api.capture(chat,'post');
+ for(let i=0;i<4;i++)assert.equal(api.isCurrent(scope),true);
+ assert.equal(JSON.stringify(chat),before,'snapshot normalization must not mutate source');
+ assert.ok(payloadBytes<20000,'request guards serialized '+payloadBytes+' bytes including image data');
+ chat.moments[1].images[0]=image.slice(0,-1)+'b';
+ assert.equal(api.isCurrent(scope),false,'non-target image changes must invalidate');
+ chat.moments[1].images[0]=image;
+ chat.moments[0].extra={nested:[{value:'left'}]};
+ const nestedScope=api.capture(chat,'post');chat.moments[0].extra.nested[0].value='rite';
+ assert.equal(api.isCurrent(nestedScope),false,'nested extension fields remain guarded');
+});
+
+test('social snapshots distinguish string positions and preserve legacy normalization',()=>{
+ const {api,chat}=fixture();delete chat.moments[0].id;
+ chat.moments[0].comments=[{author:'unknown',content:'legacy'}];
+ chat.moments[0].extra={left:'0',right:null};
+ let scope=api.capture(chat,'legacy_m_0');assert.equal(api.isCurrent(scope),true);
+ chat.moments[0].extra={left:null,right:'0'};assert.equal(api.isCurrent(scope),false);
+ scope=api.capture(chat,'missing');assert.equal(api.isCurrent(scope),false);
+ scope=api.capture(chat,'legacy_m_0');chat.history=[];assert.equal(api.isCurrent(scope),false);
+ scope=api.capture(chat,'legacy_m_0');chat.myPersona='changed';assert.equal(api.isCurrent(scope),false);
+ scope=api.capture(chat,'legacy_m_0');chat.moments[0].comments[0].read=true;assert.equal(api.isCurrent(scope),true);
+});

@@ -670,12 +670,12 @@ function persistedRecordBaseline(table, key) {
     const baseline = persistedPageTable(table);
     return baseline ? baseline.get(key) || { stored: 'missing', local: 'missing' } : null;
 }
-function stagePersistedRecords(table, records, keyName = 'id') {
+function stagePersistedRecords(table, records, keyName = 'id', stamps = []) {
     const state = persistedTransactionState();
-    if (!state) { const target = persistedPageTable(table, true); for (const row of records) { const stamp = persistedRecordStamp(row); target.set(row[keyName], { stored: stamp, local: stamp }); } return; }
+    if (!state) { const target = persistedPageTable(table, true); for (const [i, row] of records.entries()) { const stamp = stamps[i] ?? persistedRecordStamp(row); target.set(row[keyName], { stored: stamp, local: stamp }); } return; }
     if (!state.has(table)) state.set(table, new Map());
     const pending = state.get(table);
-    for (const row of records) pending.set(row[keyName], persistedRecordStamp(row));
+    for (const [i, row] of records.entries()) pending.set(row[keyName], stamps[i] ?? persistedRecordStamp(row));
 }
 function stagePersistedDeletions(table, keys) {
     const state = persistedTransactionState();
@@ -745,7 +745,7 @@ async function putChangedRecords(table, records, keyName = 'id', batchSize = 16)
                 if (local !== remote) throw persistedConflict(table);
             }
             if (!persistedValuesEqual(record, stored[i])) changed.push(record);
-            stagePersistedRecords(table, [record], keyName);
+            stagePersistedRecords(table, [record], keyName, [local]);
         }
         if (changed.length) await table.bulkPut(changed);
     }

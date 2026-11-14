@@ -221,7 +221,12 @@ function setupMiniMaxTtsSettings() {
     };
     const saveButton = document.getElementById('minimax-tts-save');
     const previewButton = document.getElementById('minimax-tts-preview');
-    if (!saveButton || !previewButton || saveButton.dataset.listenerBound === 'true') return;
+    if (!saveButton || !previewButton) return;
+    const speech = typeof window !== 'undefined' && window.MiniMaxSpeech;
+    if (saveButton.dataset.listenerBound === 'true') {
+        speech?.refreshRoles?.();
+        return;
+    }
 
     const saved = db.minimaxTtsSettings || {};
     fields.endpoint.value = saved.endpoint || 'https://api.minimaxi.com/v1/t2a_v2';
@@ -232,7 +237,6 @@ function setupMiniMaxTtsSettings() {
     fields.speed.value = saved.speed || '1';
     fields.pitch.value = saved.pitch ?? '0';
     if (typeof VoiceDirector !== 'undefined') VoiceDirector.setupSettings(saved.director);
-    const speech = typeof window !== 'undefined' && window.MiniMaxSpeech;
     if (speech) speech.setupSettings(saved);
 
     const updateRangeLabels = () => {

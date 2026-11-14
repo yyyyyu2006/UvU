@@ -22,3 +22,17 @@ test('cross-source exact facts can be reviewed as candidates without inferring u
 test('semantic cache rechecks evidence before each external document batch',async()=>{const f=fixture();const source={id:'char-source',role:'assistant',content:'我计划周末去书店'};f.chat.history.push(source);const n=await note(f,{fact:'角色计划周末去书店',subject:'char'});n.manual=false;n.sources=[{id:source.id,fingerprint:f.c.characterMemoFingerprint(source),quote:source.content}];f.chat.characterMemos.settings.semanticRecall=true;f.c.resolveVectorMemoryApi=()=>({url:'https://mock',key:'fake',embeddingModel:'mock'});let release,calls=0;f.c.requestMemoryEmbeddings=texts=>{calls++;return calls===1?new Promise(r=>release=r):Promise.resolve(texts.map(()=>[1,0]))};const task=f.c.buildCharacterMemoRecallCache(f.chat);source.isHidden=true;release([[1,0]]);await assert.rejects(task,/变化|来源/);assert.equal(calls,1);});
 test('retry preserves the exact failed input rather than silently switching to newer history',async()=>{const f=fixture();f.c.fetchAiResponse=async()=>{throw Error('offline')};await assert.rejects(f.c.runCharacterMemos(f.chat,true));f.chat.history.push(...Array.from({length:61},(_,i)=>({id:'new'+i,role:'user',content:'我今天读书'+i})));let ids;f.c.fetchAiResponse=async(_,body)=>{ids=JSON.parse(body[1].content).records.map(x=>x.id);return '{"notes":[]}'};await f.c.retryCharacterMemoTask(f.chat);assert.deepEqual(Array.from(ids),['u']);});
 test('purging a suppressed record clears its plaintext while retaining an explicit opaque block',async()=>{const f=fixture(),n=await note(f,{fact:'用户私密的个人爱好'});await f.c.deleteCharacterMemo(f.chat,n.id,true);await f.c.purgeCharacterMemo(f.chat,n.id);const state=f.chat.characterMemos;assert.equal(state.blocked.length,1);assert.ok(state.blocked[0].factHash);assert.equal(JSON.stringify(state).includes('用户私密的个人爱好'),false);});
+
+test('semantic recall invalidates cached embeddings when effective embedding configuration changes',async()=>{
+ const changes={provider:'gemini',embeddingTaskMode:'retrieval',queryPrefix:'query: ',documentPrefix:'document: ',url:'https://changed',embeddingModel:'new-model',embeddingDimensions:768,key:'other-account'};
+ for(const [field,value] of Object.entries(changes)){
+  const f=fixture();await note(f,{fact:'空调温度太低会难受'});f.chat.characterMemos.settings.semanticRecall=true;
+  const config={provider:'openai',url:'https://mock',key:'fake',embeddingModel:'mock',embeddingDimensions:512,embeddingTaskMode:'default',queryPrefix:'',documentPrefix:''};
+  f.c.resolveVectorMemoryApi=()=>({...config});let calls=0;f.c.requestMemoryEmbeddings=async texts=>{calls++;return texts.map(()=>[1,0]);};
+  await f.c.buildCharacterMemoRecallCache(f.chat);assert.equal(f.c.selectCharacterMemos(f.chat).length,1,field+' before change');
+  const before=config[field];config[field]=value;assert.equal(f.c.selectCharacterMemos(f.chat).length,0,field+' invalidates recall');
+  config[field]=before;assert.equal(f.c.selectCharacterMemos(f.chat).length,0,field+' requires explicit cache rebuild');
+  assert.equal(calls,2,field+' invalidation cannot call the API automatically');
+  await f.c.buildCharacterMemoRecallCache(f.chat);assert.equal(f.c.selectCharacterMemos(f.chat).length,1,field+' rebuild');
+ }
+});

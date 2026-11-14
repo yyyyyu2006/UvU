@@ -87,3 +87,80 @@ test('manual save rollback preserves a later edit and later additions to the sam
     assert.equal(chat.memoryJournals[0].content, 'Later edit');
     assert.equal(chat.memoryJournals[1].id, 'later');
 });
+
+test('failed memory deletion restores only its own entry and preserves concurrent changes', async () => {
+    const { chat, c } = fixture();
+    const removed = {id:'removed',content:'restore'}, deleted = {id:'deleted'}, edited = {id:'edited',content:'old'}, replaced = {id:'replaced',content:'old'};
+    chat.memoryJournals = [removed,deleted,edited,replaced];
+    const later = {id:'later'}, replacement = {id:'replaced',content:'new'};
+    c.saveData = async () => {
+        chat.memoryJournals.splice(0,1);
+        edited.content = 'new';
+        chat.memoryJournals.splice(1,1,replacement);
+        chat.memoryJournals.push(later);
+        throw Error('quota');
+    };
+    await assert.rejects(c.deleteLibraryMemory(chat,removed), /quota/);
+    assert.deepEqual(Array.from(chat.memoryJournals,item=>item.id), ['removed','edited','replaced','later']);
+    assert.equal(chat.memoryJournals[1],edited);
+    assert.equal(edited.content,'new');
+    assert.equal(chat.memoryJournals[2],replacement);
+    assert.equal(chat.memoryJournals[3],later);
+});
+
+test('failed memory deletion repairs only its source archive after switching branches', async () => {
+    const { chat, c } = fixture();
+    const removed = {id:'removed'}, kept = {id:'kept'}, branch = [{id:'branch'}];
+    chat.memoryJournals = [removed,kept];
+    chat.archives = [{id:'a',data:{}},{id:'b',data:{memoryJournals:branch}}];
+    c.saveData = async () => {
+        chat.archives[0].data.memoryJournals = JSON.parse(JSON.stringify(chat.memoryJournals));
+        chat.archives[0].data.memoryJournals.push({id:'later'});
+        chat.activeArchiveId = 'b'; chat.memoryJournals = branch;
+        throw Error('quota');
+    };
+    await assert.rejects(c.deleteLibraryMemory(chat,removed), /quota/);
+    assert.equal(chat.memoryJournals,branch);
+    assert.deepEqual(Array.from(chat.archives[0].data.memoryJournals,item=>item.id), ['removed','kept','later']);
+});
+
+test('failed memory deletion preserves a newer record with the same id', async () => {
+    const { chat, c } = fixture();
+    const removed = {id:'removed',content:'old'}, replacement = {id:'removed',content:'new'};
+    chat.memoryJournals = [removed];
+    c.saveData = async () => {chat.memoryJournals.push(replacement);throw Error('quota');};
+    await assert.rejects(c.deleteLibraryMemory(chat,removed), /quota/);
+    assert.equal(chat.memoryJournals.length,1);
+    assert.equal(chat.memoryJournals[0],replacement);
+});
+
+test('memory deletion retains normal success and rejects stale callers', async () => {
+    const { chat, c } = fixture();
+    const removed = {id:'removed'}, kept = {id:'kept'}; chat.memoryJournals = [removed,kept];
+    let saves=0; c.saveData=async()=>{saves++;};
+    await assert.rejects(c.deleteLibraryMemory(chat,removed,{isCurrent:()=>false}), /变化/);
+    assert.equal(saves,0);
+    const next=await c.deleteLibraryMemory(chat,removed);
+    assert.equal(next,chat.memoryJournals);
+    assert.deepEqual(Array.from(next,item=>item.id), ['kept']);
+    assert.equal(saves,1);
+});
+
+test('failed merge undo retains edits made while saving and repairs only untouched entries', async () => {
+    const { chat, c } = fixture();
+    const first={id:'first',content:'original'}, second={id:'second',content:'other'};
+    chat.memoryJournals=[first,second];
+    const merged=await c.saveLibraryMemory(chat,{title:'Merged',content:'Result'},{sources:[first,second]});
+    let later;
+    c.saveData=async()=>{
+        later=chat.memoryJournals[0];later.content='concurrent edit';
+        chat.memoryJournals.push({id:'later'});
+        throw Error('quota');
+    };
+    await assert.rejects(c.undoLibraryMemoryMerge(chat,merged), /quota/);
+    assert.equal(chat.memoryJournals.find(item=>item.id==='first'),later);
+    assert.equal(later.content,'concurrent edit');
+    assert.equal(chat.memoryJournals.find(item=>item.id==='second').vectorSupersededBy,merged.id);
+    assert.equal(chat.memoryJournals.find(item=>item.id===merged.id),merged);
+    assert.ok(chat.memoryJournals.some(item=>item.id==='later'));
+});

@@ -181,7 +181,15 @@ function importWorldBookJson(value, parentId) {
     const entries = Array.isArray(source) ? source : source?.entries;
     if (!entries || typeof entries !== 'object') throw new Error('JSON 中未找到世界书 entries');
     const warnings = [];
-    const books = Object.values(entries).filter(e => e && typeof e.content === 'string').map((e, index) => {
+    const candidates = [];
+    for (const key in entries) {
+        if (!Object.hasOwn(entries, key)) continue;
+        const entry = entries[key];
+        if (!entry || typeof entry.content !== 'string') continue;
+        if (candidates.length === 3000) throw new Error('单次最多导入 3000 条');
+        candidates.push(entry);
+    }
+    const books = candidates.map((e, index) => {
         const ext = e.extensions || {};
         const portable = ext.uvu?.version === 1 ? ext.uvu.original : null;
         const rawPosition = portable?.position ?? ext.position ?? e.position ?? 'before';
@@ -213,6 +221,5 @@ function importWorldBookJson(value, parentId) {
         return { id: 'wb_' + crypto.randomUUID(), parentId, type: 'entry', name: e.comment || e.name || `条目 ${index + 1}`, content: e.content, position, depth: Number.isFinite(portable?.depth) ? portable.depth : (e.depth ?? 100), rules, importSource: e, importCompatibility };
     });
     if (!books.length) throw new Error('没有可导入的世界书内容');
-    if (books.length > 3000) throw new Error('单次最多导入 3000 条');
     return { books, warnings };
 }

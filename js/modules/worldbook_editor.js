@@ -168,8 +168,9 @@ async function importWorldBookDocument(file) {
     }
     const note = result.warnings.length ? '\n' + result.warnings.slice(0, 5).join('\n') : '';
     if (!confirm('解析到 ' + result.books.length + ' 条世界书，导入到当前目录的新文件夹？导入后需在聊天设置中绑定。' + note)) return;
-    const previous = db.worldBooks.slice();
-    db.worldBooks.push({ id: folderId, parentId: wbPathStack[wbPathStack.length - 1].id, type: 'folder', name: file.name.replace(/\.[^.]+$/, '') }, ...result.books);
-    try { await saveData(); } catch (error) { db.worldBooks = previous; throw error; }
+    const folder = { id: folderId, parentId: wbPathStack[wbPathStack.length - 1].id, type: 'folder', name: file.name.replace(/\.[^.]+$/, '') };
+    const imported = new Set([folder, ...result.books]);
+    db.worldBooks.push(folder, ...result.books);
+    try { await saveData(); } catch (error) { db.worldBooks = db.worldBooks.filter(book => !imported.has(book)); throw error; }
     renderWorldBookList(); showToast('已导入 ' + result.books.length + ' 条世界书' + (result.warnings.length ? '；兼容差异已保留，请展开条目说明核对' : ''));
 }

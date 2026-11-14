@@ -47,6 +47,17 @@ const output = path.join(root, 'outputs/speech-refinement'); fs.mkdirSync(output
             assert.equal(saved.settings.profiles['role-a'].dictionary[0], '晴/(qing2)');
             assert.equal(saved.settings.profiles['role-a'].style, 'expressive');
             await advanced.locator('.minimax-speech-profile').getByLabel('音色 ID', { exact: true }).fill('unsaved-voice');
+            await page.evaluate(() => {
+                db.characters.push({ id: 'role-b', realName: '新角色' });
+                db.characters[0].realName = '已改名';
+            });
+            await advanced.getByLabel('音色与表达', { exact: true }).focus();
+            assert.deepEqual(await advanced.getByLabel('音色与表达', { exact: true }).locator('option').allTextContents(), ['默认设置', '已改名', '新角色']);
+            assert.equal(await advanced.getByLabel('音色与表达', { exact: true }).inputValue(), 'role-a');
+            assert.equal(await advanced.locator('.minimax-speech-profile').getByLabel('音色 ID', { exact: true }).inputValue(), 'unsaved-voice');
+            await page.evaluate(() => setupMiniMaxTtsSettings());
+            assert.equal(await advanced.locator('.minimax-speech-profile').getByLabel('音色 ID', { exact: true }).inputValue(), 'unsaved-voice');
+            assert.equal(await page.locator('#minimax-speech-advanced').count(), 1);
             await advanced.getByLabel('音色与表达', { exact: true }).selectOption('');
             assert.equal(await page.evaluate(() => db.minimaxTtsSettings.profiles['role-a'].voiceId), 'voice-a', 'unsaved form changes cannot mutate saved settings');
             await advanced.locator('summary').filter({ hasText: /^播放与缓存$/ }).click();

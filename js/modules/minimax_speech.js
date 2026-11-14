@@ -358,6 +358,7 @@
         }, read: () => ({ ...options({ stream: stream.checked, segmented: segmented.checked,
             persistentCache: persistentCache.checked, cacheMiB: cacheMiB.value, cacheDays: cacheDays.value, segmentChars: segmentChars.value,
             volume: volume.value, language: language.value }), favoriteVoices: [...favorites].slice(0, 200) }) };
+        roleSelect.addEventListener('focus', refreshRoles);
     }
     function openDirectorPreview(initialBubble) {
         if (typeof createMessageForwardDialog !== 'function') return;

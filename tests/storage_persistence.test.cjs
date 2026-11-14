@@ -493,3 +493,18 @@ test('MiniMax voice settings restore only when selected and malformed settings d
     assert.deepEqual(f.writes, []);
     assert.deepEqual(await f.database.globalSettings.get('minimaxTtsSettings'), { key: 'minimaxTtsSettings', value: voice });
 });
+
+test('each save hashes a local record once and reuses only that operation result', async t => {
+    const f = await fixture(t), record = f.c.db.characters[0], originalStamp = f.c.persistedRecordStamp;
+    let localHashes = 0;
+    f.c.persistedRecordStamp = value => { if (value === record) localHashes++; return originalStamp(value); };
+    record.persona = 'first edit'; await f.save();
+    assert.equal(localHashes, 1, 'baseline staging reuses the local stamp from conflict checking');
+    record.persona = 'second in-place edit'; localHashes = 0; await f.save();
+    assert.equal(localHashes, 1); assert.equal((await f.database.characters.get('c')).persona, 'second in-place edit');
+    const peer = await peerOf(f); peer.c.db.characters[0].persona = 'peer edit'; await peer.save();
+    record.persona = 'stale local draft';
+    await assert.rejects(f.save(), /更新/);
+    assert.equal((await f.database.characters.get('c')).persona, 'peer edit');
+    assert.equal(record.persona, 'stale local draft');
+});

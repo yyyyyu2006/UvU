@@ -13,9 +13,9 @@
         if (typeof value !== 'string' || value.length > max || (!empty && !value.trim())) throw new Error(label + '内容无效');
         return value.trim();
     }
-    function validateConfig(raw) {
+    function validateConfig(raw, copy = clone) {
         if (!raw || raw.version !== 1) throw new Error('动态设置版本无效');
-        const out = { ...defaults(), ...clone(raw) };
+        const out = { ...defaults(), ...copy(raw) };
         for (const key of ['enabled', 'charReplies', 'npcsEnabled', 'npcThreads']) if (typeof out[key] !== 'boolean') throw new Error('动态设置无效');
         if (!Number.isInteger(out.maxReplies) || out.maxReplies < 1 || out.maxReplies > 8 || !Number.isInteger(out.cooldown) || out.cooldown < 5 || out.cooldown > 3600 || !Number.isSafeInteger(out.revision) || out.revision < 0) throw new Error('动态数量或冷却设置无效');
         out.publicFacts = text(out.publicFacts, 12000, '公开信息');
@@ -46,9 +46,9 @@
         const found = actors(chat, config).filter(item => item.name === name);
         return found.length === 1 ? clone(found[0].ref) : null;
     }
-    function view(chat, config = settings(chat)) {
+    function view(chat, config = settings(chat), copy = clone) {
         const seen = new Set();
-        return (Array.isArray(chat.moments) ? clone(chat.moments) : []).map((post, index) => {
+        return (Array.isArray(chat.moments) ? copy(chat.moments) : []).map((post, index) => {
             let postId = typeof post.id === 'string' && post.id ? post.id : 'legacy_m_' + index;
             while (seen.has(postId)) postId += '_duplicate';
             seen.add(postId); post.id = postId;
@@ -93,12 +93,28 @@
         }
     }
     const snapshotText = chat => {
-        const config = settings(chat); delete config.revision;
-        const posts = view(chat).map(post => ({ ...post, comments: post.comments.map(comment => { const copy = { ...comment }; delete copy.read; return copy; }) }));
-        return JSON.stringify([chat.persona, chat.realName, chat.myName, chat.myPersona, config, posts]);
+        // Validation creates new config/NPC objects; the snapshot never edits nested values.
+        const config = chat.momentsSocial ? validateConfig(chat.momentsSocial, value => value) : defaults(); delete config.revision;
+        const posts = view(chat, config, values => values.map(post => ({ ...post,
+            comments: Array.isArray(post.comments) ? post.comments.map(comment => ({ ...comment })) : []
+        })));
+        posts.forEach(post => post.comments.forEach(comment => { delete comment.read; }));
+        // Keep immutable text/image strings separate, avoiding repeated escaping and copying.
+        // String indexes stay strings, so nulls/numbers and differing text positions stay distinct.
+        const strings = [];
+        const shape = JSON.stringify([chat.persona, chat.realName, chat.myName, chat.myPersona, config, posts], (_key, value) => {
+            if (typeof value !== 'string') return value;
+            strings.push(value); return String(strings.length - 1);
+        });
+        return { shape, strings, postIds: posts.map(post => post.id) };
     };
     function capture(chat, postId) { return { chat, archiveId: chat.activeArchiveId, history: chat.history, postId, stamp: snapshotText(chat) }; }
-    function isCurrent(scope) { return present(scope.chat) && scope.chat.activeArchiveId === scope.archiveId && scope.chat.history === scope.history && scope.stamp === snapshotText(scope.chat) && (!scope.postId || view(scope.chat).some(post => post.id === scope.postId)); }
+    function isCurrent(scope) {
+        if (!present(scope.chat) || scope.chat.activeArchiveId !== scope.archiveId || scope.chat.history !== scope.history) return false;
+        const current = snapshotText(scope.chat);
+        return scope.stamp.shape === current.shape && scope.stamp.strings.length === current.strings.length &&
+            scope.stamp.strings.every((value, index) => value === current.strings[index]) && (!scope.postId || current.postIds.includes(scope.postId));
+    }
     // Undo only this mutation's values; concurrent posts and comments keep their IDs and order.
     function undoOwned(before, applied, current) {
         const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);

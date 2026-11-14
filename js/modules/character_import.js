@@ -1,6 +1,7 @@
 // --- 角色导入与创建模块 ---
 
 let pendingImportData = null;
+let characterImportPending = null;
 
 function setupAddCharModal() {
     document.getElementById('add-char-form').addEventListener('submit', async (e) => {
@@ -112,7 +113,17 @@ function parseCharJson(file) {
     });
 }
 
-async function createCharacterFromData(data, avatar) {
+function createCharacterFromData(data, avatar) {
+    // Deduplication must only see imports whose save or rollback has finished.
+    const task = () => materializeCharacterFromData(data, avatar);
+    const pending = characterImportPending ? characterImportPending.catch(() => {}).then(task) : task();
+    characterImportPending = pending;
+    const cleanup = () => { if (characterImportPending === pending) characterImportPending = null; };
+    pending.then(cleanup, cleanup);
+    return pending;
+}
+
+async function materializeCharacterFromData(data, avatar) {
     const retainedSource = window.UvUCharacterCard ? window.UvUCharacterCard.retain(data) : null;
     const charData = data.data || data;
 

@@ -33,3 +33,14 @@ test('standard book container settings and safe vendor extensions survive a sele
 });
 
 test('V3 group greetings survive editing and export while new cards remain V2',()=>{const {api,chat,books}=fixture();chat.characterCardSource={spec:'chara_card_v3',data:{name:'old',group_only_greetings:['群聊开场'],alternate_greetings:['备用开场']}};const card=api.build(api.capture(chat,books),['static']);assert.equal(card.spec,'chara_card_v3');assert.deepEqual(Array.from(card.data.group_only_greetings),['群聊开场']);assert.deepEqual(Array.from(card.data.alternate_greetings),['备用开场']);assert.equal(card.data.character_book.entries.length,1);});
+
+test('a failed import cannot remove a worldbook reused by a concurrent successful import',async()=>{
+ const {api,chat,books,c}=fixture(),card=api.build(api.capture(chat,books),['static']);importer(c);c.db.worldBooks=[];
+ let rejectFirst,calls=0;c.saveData=()=>++calls===1?new Promise((_,reject)=>{rejectFirst=reject;}):Promise.resolve();
+ const first=c.createCharacterFromData(card,''),failed=assert.rejects(first,/quota/);
+ const second=c.createCharacterFromData(card,'');rejectFirst(Error('quota'));await failed;const imported=await second;
+ assert.equal(c.db.characters.filter(x=>x.id===imported.id).length,1);
+ assert.equal(imported.worldBookIds.length,1);
+ assert.ok(imported.worldBookIds.every(id=>c.db.worldBooks.some(book=>book.id===id)),'successful import retains every referenced worldbook after the failed import rolls back');
+ assert.equal(c.db.worldBooks.filter(book=>book.type==='entry').length,1);
+});
