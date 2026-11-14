@@ -1563,6 +1563,7 @@ function setupCleanImageCache() {
         confirmBtn.disabled = true;
         confirmBtn.textContent = '清理中...';
 
+        let stickerCleanup = null;
         try {
             let dataChanged = false;
             let removedStickerIds = [];
@@ -1631,17 +1632,21 @@ function setupCleanImageCache() {
             }
 
             if (selectedCategories.includes('stickers')) {
-                const originalLength = db.myStickers.length;
-                removedStickerIds = db.myStickers.filter(sticker => isBase64Image(sticker.data)).map(sticker => sticker.id);
-                db.myStickers = db.myStickers.filter(sticker => !isBase64Image(sticker.data));
-                if (originalLength !== db.myStickers.length) dataChanged = true;
+                const removed = new Set(db.myStickers.filter(sticker => isBase64Image(sticker.data)));
+                removedStickerIds = [...removed].map(sticker => sticker.id);
+                if (removed.size) {
+                    const before = db.myStickers, after = before.filter(sticker => !removed.has(sticker));
+                    stickerCleanup = { before, after, removed };
+                    db.myStickers = after;
+                    dataChanged = true;
+                }
             }
 
             if (dataChanged) {
-                await dexieDB.transaction('rw', dexieDB.tables, async () => {
-                    if (removedStickerIds.length) await dexieDB.myStickers.bulkDelete(removedStickerIds);
+                await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.tables, async () => {
+                    if (removedStickerIds.length) await deleteGuardedRecords(dexieDB.myStickers, removedStickerIds);
                     await saveData();
-                });
+                }));
             }
 
             showToast('清理完成！');
@@ -1654,8 +1659,19 @@ function setupCleanImageCache() {
             }
 
         } catch (error) {
+            // Restore this deletion only; keep newer lists, edits and additions intact.
+            if (stickerCleanup && db.myStickers === stickerCleanup.after) {
+                const { before, removed } = stickerCleanup;
+                const present = new Set(db.myStickers.map(item => item.id));
+                before.forEach((sticker, index) => {
+                    if (removed.has(sticker) && !present.has(sticker.id)) {
+                        db.myStickers.splice(Math.min(index, db.myStickers.length), 0, sticker);
+                        present.add(sticker.id);
+                    }
+                });
+            }
             console.error("Error cleaning cache:", error);
-            showToast('清理过程中发生错误');
+            showToast(error.name === 'DataConflictError' ? error.message : '清理过程中发生错误');
         } finally {
             confirmBtn.disabled = false;
             confirmBtn.textContent = '确认清理';
