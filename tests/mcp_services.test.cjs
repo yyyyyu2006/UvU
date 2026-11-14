@@ -38,6 +38,24 @@ async function enabled(f) {
     const list=await f.api.discover('s'); const next=f.api.settings(); next.services[0].tools.weather={enabled:true,readOnly:true,signature:list[0].signature,cacheSeconds:30};
     next.policies=[{chatId:'a',type:'private',enabled:true,auto:false,grants:[{serviceId:'s',toolName:'weather'}]}]; await f.api.save(next); return list;
 }
+
+test('MCP rejects expensive input checks before a tool request and rejects expensive output before injection', async () => {
+    for (const output of [false, true]) {
+        const f = fixture();
+        const schema = { type: 'object', properties: { rows: { type: 'array', allOf: Array.from({ length: 400 }, () => ({ uniqueItems: true })) } } };
+        const rows = Array.from({ length: 1248 }, (_, n) => ({ n }));
+        const original = f.c.window.MCPTransport.create;
+        f.c.window.MCPTransport.create = (...args) => ({ ...original(...args),
+            listTools: async () => [{ name: 'weather', inputSchema: output ? { type: 'object' } : schema, ...(output ? { outputSchema: schema } : {}) }],
+            call: async () => { f.calls.push({ name: 'weather' }); return { structuredContent: { rows } }; }
+        });
+        await enabled(f);
+        const scope = f.api.scope(f.chat);
+        await assert.rejects(f.api.call('s', 'weather', output ? {} : { rows }, { scope }), output ? /结果结构/ : /参数/);
+        assert.equal(f.calls.length, output ? 1 : 0);
+        assert.equal(f.api.pending(scope), 0);
+    }
+});
 test('external-memory review accepts only genuine current granted results and does not stage context',async()=>{
     const f=fixture();await enabled(f);const scope=f.api.scope(f.chat),result=await f.api.call('s','weather',{city:'上海'},{scope});
     assert.equal(f.api.reviewable(result,scope),true);assert.equal(f.api.pending(scope),0);

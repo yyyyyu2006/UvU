@@ -32,26 +32,33 @@ function inspect(schema, ajv) {
     const resolve = ref => {
         if (typeof ref !== 'string' || !ref.startsWith('#/')) throw Error('Schema 仅支持本地 #/ 引用');
         let value = root;
-        try { for (const part of decodeURIComponent(ref.slice(2)).split('/').map(x => x.replace(/~1/g, '/').replace(/~0/g, '~'))) {
+        try { for (const part of ref.slice(2).split('/').map(x => decodeURIComponent(x).replace(/~1/g, '/').replace(/~0/g, '~'))) {
             if (!value || typeof value !== 'object' || !Object.hasOwn(value, part)) throw Error();
             value = value[part];
         } } catch (_) { throw Error('Schema 本地引用无效'); }
         if (typeof value !== 'boolean' && (!value || typeof value !== 'object' || Array.isArray(value))) throw Error('Schema 引用目标无效');
         return value;
     };
-    const visit = (node, depth = 0) => {
+    const inspectNode = (node, nested) => {
         if (['pattern', 'patternProperties', '$dynamicRef', '$recursiveRef'].some(key => Object.hasOwn(node, key))) throw Error('此版暂不支持含正则或动态引用的 Schema');
-        if (depth && node.$id) throw Error('Schema 暂不支持嵌套 $id 引用作用域');
+        if (nested && node.$id) throw Error('Schema 暂不支持嵌套 $id 引用作用域');
         if (Object.hasOwn(node, 'format') && (typeof node.format !== 'string' || !Object.hasOwn(ajv.formats, node.format))) throw Error('Schema format 格式暂不支持');
         if (Object.hasOwn(node, '$ref')) resolve(node.$ref);
+    };
+    const visit = (node, depth = 0) => {
+        inspectNode(node, depth > 0);
         for (const child of children(node)) visit(child, depth + 1);
     };
     visit(schema);
     const memo = new WeakMap(), active = new Set();
+    let hasUnique = false;
     function cost(node) {
         if (typeof node === 'boolean') return 1;
         if (active.has(node)) throw Error('Schema 递归引用暂不支持');
         if (memo.has(node)) return memo.get(node);
+        // A local ref can turn otherwise literal example/const data into a schema.
+        inspectNode(node, node !== root);
+        if (node.uniqueItems === true) hasUnique = true;
         active.add(node); let total = 1;
         const targets = children(node, false);
         if (node.$ref) targets.push(resolve(node.$ref));
@@ -61,6 +68,7 @@ function inspect(schema, ajv) {
     // Check definitions too: referenced schemas must not hide a costly/recursive graph.
     const checkCost = node => { cost(node); children(node).forEach(checkCost); };
     checkCost(schema);
+    return { nodes: cost(schema), hasUnique };
 }
 function compile(schema) {
     const key = JSON.stringify(schema);
@@ -70,10 +78,18 @@ function compile(schema) {
     if (cache.has(key)) return cache.get(key);
     let validator;
     const ajv = schema.$schema?.includes('draft-07') ? legacy : modern;
-    inspect(schema, ajv);
+    const work = inspect(schema, ajv);
     try { validator = ajv.compile(schema); ajv.removeSchema(schema); }
     catch (_) { throw Error('Schema 格式或本地引用无效'); }
-    const validate = value => { try { guard(value); return new TextEncoder().encode(JSON.stringify(value)).length <= 32768 && validator(value); } catch (_) { return false; } };
+    const validate = value => {
+        try {
+            const state = { nodes: 0 };
+            guard(value, 0, state);
+            // Pairwise object equality can multiply schema work by instance size squared.
+            if (work.hasUnique && work.nodes * state.nodes * state.nodes > 1000000) return false;
+            return new TextEncoder().encode(JSON.stringify(value)).length <= 32768 && validator(value);
+        } catch (_) { return false; }
+    };
     if (cache.size >= 32) cache.delete(cache.keys().next().value);
     cache.set(key, validate); return validate;
 }

@@ -44,3 +44,51 @@ test('MCP validates enum and const literal data without treating pattern or $ref
     assert.equal(vm.runInContext("v({choice:{pattern:'literal'},fixed:literal})",c),true);
     assert.equal(vm.runInContext("v({choice:{pattern:'other'},fixed:literal})",c),false);
 });
+
+test('MCP bounds repeated uniqueItems work before running the validator', () => {
+    const c = realm();
+    assert.equal(vm.runInContext(`(() => {
+        const schema = {type:'object',properties:{rows:{type:'array',allOf:Array.from({length:400},()=>({uniqueItems:true}))}}};
+        const validate = window.MCPSchema.compile(schema);
+        return validate({rows:Array.from({length:1248},(_,n)=>({n}))});
+    })()`, c, { timeout: 1500 }), false);
+});
+
+test('MCP applies uniqueItems budgets through references and schema dependencies', () => {
+    const c = realm();
+    assert.equal(vm.runInContext(`(() => {
+        const rows = Array.from({length:700},(_,n)=>({n}));
+        const cases = [
+            {type:'object',properties:{rows:{$ref:'#/$defs/list'}},$defs:{list:{type:'array',uniqueItems:true}}},
+            {$schema:'http://json-schema.org/draft-07/schema#',type:'object',dependencies:{rows:{properties:{rows:{$ref:'#/definitions/list'}}}},definitions:{list:{uniqueItems:true}}},
+            {type:'object',properties:{rows:{$ref:'#/examples/0'}},examples:[{uniqueItems:true}]},
+            {type:'object',dependentSchemas:{rows:{properties:{rows:{allOf:[{uniqueItems:true}]}}}}}
+        ];
+        return cases.every(schema => window.MCPSchema.compile(schema)({rows}) === false);
+    })()`, c, { timeout: 1500 }), true);
+});
+
+test('MCP retains small unique arrays and literal data while checking referenced literals as schemas', () => {
+    const c = realm();
+    assert.equal(vm.runInContext(`(() => {
+        const validate = window.MCPSchema.compile({type:'object',properties:{rows:{type:'array',uniqueItems:true}}});
+        return validate({rows:[{n:1},{n:2}]}) && !validate({rows:[{n:1},{n:1}]});
+    })()`, c), true);
+    assert.throws(() => c.window.MCPSchema.compile({type:'object',properties:{value:{$ref:'#/examples/0'}},examples:[{type:'string',pattern:'(a+)+$'}]}), /正则/);
+    assert.equal(c.window.MCPSchema.compile({type:'object',examples:[{pattern:'(a+)+$'}]})({}), true);
+});
+
+test('MCP inspects the same percent-encoded pointer targets as the validator', () => {
+    const s = api();
+    for (const slash of ['%2F', '%2f', '~1']) {
+        for (const target of [{type:'string',pattern:'^SAFE$'}, {type:'string',format:'unknown-private-format'}, {$id:'https://nested.test/'}]) {
+            const schema = {type:'object',properties:{value:{$ref:'#/examples/0/a'+slash+'b'}},examples:[{'a/b':target,a:{b:{}}}]};
+            assert.throws(() => s.compile(schema), /正则|格式|引用/);
+        }
+        const schema = {type:'object',properties:{rows:{$ref:'#/examples/0/a'+slash+'b'}},examples:[{'a/b':{type:'array',uniqueItems:true},a:{b:{}}}]};
+        assert.equal(s.compile(schema)({rows:Array.from({length:700},(_,n)=>({n}))}), false);
+    }
+    const ordinary = s.compile({type:'object',properties:{value:{$ref:'#/examples/0/a%2Fb'}},examples:[{'a/b':{type:'integer'},a:{b:{}}}]});
+    assert.equal(ordinary({value:3}), true);
+    assert.equal(ordinary({value:'3'}), false);
+});
