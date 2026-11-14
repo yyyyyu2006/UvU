@@ -92,7 +92,13 @@ function openCharacterMemos(target) {
         }catch(error){if(d.panel.isConnected)semanticStatus.textContent=error.name==='AbortError'?'检查已取消或来源、配置已变化':error.message;}
         finally{if(semanticController===controller)semanticController=null;semanticRun.disabled=false;semanticCancel.hidden=true;}
     };
-    const legacy=button('模拟便签',()=>{guard();d.dismiss();if(chat.peekData?.memos?.memos){renderMemosList(chat.peekData.memos.memos);switchScreen('peek-memos-screen');}else generateAndRenderPeekContent('memos',{forceRefresh:true});});
+    const legacy=button('模拟便签',()=>{
+        guard();
+        // This synchronous navigation must release the dialog's own busy close lock.
+        d.setBusy(false);d.dismiss();
+        if(chat.peekData?.memos?.memos){renderMemosList(chat.peekData.memos.memos);switchScreen('peek-memos-screen');}
+        else generateAndRenderPeekContent('memos',{forceRefresh:true});
+    });
     const identity=node('div','memo-identity'),avatar=node('span','draft-avatar',(chat.remarkName||chat.realName||'角').slice(0,1));
     identity.append(avatar,node('span','',chat.remarkName||chat.realName),node('small','',chat.archives?.find(a=>a.id===owner.archive)?.name||'当前存档'));
     const batch=node('details','memo-batch');batch.append(node('summary','','批量管理'),filter,actions);

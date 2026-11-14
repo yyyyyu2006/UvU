@@ -2056,6 +2056,14 @@ function renderPeekBag(data) {
 async function generateAndRenderPeekContent(appType, options = {}) {
     const { forceRefresh = false } = options;
 
+    // Factual memos are independent of the simulated phone app's generation lock.
+    if (appType === 'memos' && !forceRefresh && typeof openCharacterMemos === 'function') {
+        const char = db.characters.find(c => c.id === currentChatId);
+        if (!char) return showToast('无法找到当前角色');
+        openCharacterMemos(char);
+        return;
+    }
+
     if (generatingPeekApps.has(appType)) {
         showToast('该应用内容正在生成中，请稍候...');
         return;
@@ -2064,8 +2072,6 @@ async function generateAndRenderPeekContent(appType, options = {}) {
     const char = db.characters.find(c => c.id === currentChatId);
     if (!char) return showToast('无法找到当前角色');
     
-    if (appType === 'memos' && !forceRefresh && typeof openCharacterMemos === 'function') { openCharacterMemos(char); return; }
-
     if (!char.peekData) char.peekData = {};
 
     if (!forceRefresh && char.peekData[appType]) {
