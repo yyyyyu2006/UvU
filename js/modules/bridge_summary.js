@@ -72,9 +72,11 @@
             check();
             const identity = JSON.stringify([config.url, config.model, prompt]);
             const key = globalThis.crypto?.subtle ? [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(identity)))].map(value=>value.toString(16).padStart(2,'0')).join('') : identity;
+            check();
             if (cache.has(key)) {cached++; report(); return cache.get(key);}
             if (callCount >= maxCalls) throw new Error('本轮总结调用预算已用完；原文和已完成分组保留，可提高预算后继续。');
             callCount++; report();
+            check();
             const control = new AbortController(), abort = () => control.abort();
             const timeout = setTimeout(abort, 90000);
             options.signal?.addEventListener('abort', abort, {once: true});

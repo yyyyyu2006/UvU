@@ -77,34 +77,48 @@ function gestureFixture() {
     doc.getElementById = () => ({ classList: { contains: () => true } });
     Object.assign(c, { document: doc, window: win, isWorldBookMultiSelectMode: false,
         setTimeout: fn => { timers.set(++serial, fn); return serial; }, clearTimeout: id => timers.delete(id),
-        renames: [], selections: [], requestWorldBookRename: id => c.renames.push(id),
+        renames: [], actions: [], selections: [], requestWorldBookRename: id => c.renames.push(id),
+        requestWorldBookActions: id => c.actions.push(id),
         enterWorldBookMultiSelectMode: id => c.selections.push(id) });
     c.setupWorldBookLongPress(container);
     const emit = (type, target = name, options = {}, source = 'list') => {
         const event = { target, pointerId: 1, isPrimary: true, button: 0, clientX: 20, clientY: 30,
             preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...options };
-        for (const { fn } of listeners.get(source + ':' + type) || []) { fn(event); if (event.stopped) break; }
+        const handlers = [...(source === 'list' && ['pointerdown', 'click'].includes(type) ? listeners.get('document:' + type) || [] : []),
+            ...listeners.get(source + ':' + type) || []];
+        for (const { fn } of handlers) { fn(event); if (event.stopped) break; }
         return event;
     };
     const hold = () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); };
     return { c, container, card, name, icon, emit, hold, timers };
 }
 
-test('holding a name renames once and blocks the release click; a fresh tap still opens normally', () => {
+test('holding a name offers item actions and blocks the release click; a fresh tap still opens normally', () => {
     const { c, emit, hold } = gestureFixture();
     emit('pointerdown'); hold();
-    assert.deepEqual(c.renames, ['entry']); assert.deepEqual(c.selections, []);
+    assert.deepEqual(c.actions, ['entry']); assert.deepEqual(c.renames, []); assert.deepEqual(c.selections, []);
     emit('pointerup', undefined, {}, 'document');
     assert.equal(emit('click').prevented, true);
     emit('pointerdown'); emit('pointerup', undefined, {}, 'document');
     assert.equal(emit('click').prevented, undefined);
 });
 
-test('holding an icon renames just like the name, without entering multi-select', () => {
+test('holding an icon offers the same actions as holding its name', () => {
     const { c, icon, emit, hold } = gestureFixture();
     emit('pointerdown', icon); hold();
-    assert.deepEqual(c.selections, []); assert.deepEqual(c.renames, ['entry']);
+    assert.deepEqual(c.actions, ['entry']); assert.deepEqual(c.selections, []); assert.deepEqual(c.renames, []);
     assert.equal(emit('click', icon).prevented, true);
+});
+
+test('touch release cannot dismiss the new action menu, but the next tap and keyboard click work', () => {
+    const { emit, hold } = gestureFixture();
+    const backdrop = { closest: selector => selector === '#worldbook-item-actions' ? backdrop : null };
+    emit('pointerdown'); hold(); emit('pointerup', undefined, {}, 'document');
+    assert.equal(emit('click', backdrop, { detail: 1 }, 'document').prevented, true);
+    emit('pointerdown'); hold(); emit('pointerup', undefined, {}, 'document');
+    assert.equal(emit('click', backdrop, { detail: 0 }, 'document').prevented, undefined);
+    emit('pointerdown', backdrop, {}, 'document');
+    assert.equal(emit('click', backdrop, { detail: 1 }, 'document').prevented, undefined);
 });
 
 test('scroll, pointer cancellation, leaving the list, hidden page and a removed card cancel pending holds', () => {
@@ -118,7 +132,7 @@ test('scroll, pointer cancellation, leaving the list, hidden page and a removed 
         if (action === 'removed') card.isConnected = false;
         if (action === 'release') emit('pointerup', undefined, {}, 'document');
         if (action === 'blur') emit('blur', undefined, {}, 'window');
-        hold(); assert.deepEqual(c.renames, [], action); assert.deepEqual(c.selections, [], action);
+        hold(); assert.deepEqual(c.actions, [], action); assert.deepEqual(c.renames, [], action); assert.deepEqual(c.selections, [], action);
     }
 });
 
@@ -128,7 +142,45 @@ test('multi-select mode, additional pointers and a secondary mouse button never 
     c.isWorldBookMultiSelectMode = false;
     emit('pointerdown', undefined, { button: 2 }); hold();
     emit('pointerdown'); emit('pointerdown', undefined, { isPrimary: false, pointerId: 2 }); hold();
-    assert.deepEqual(c.renames, []); assert.deepEqual(c.selections, []);
+    assert.deepEqual(c.actions, []); assert.deepEqual(c.renames, []); assert.deepEqual(c.selections, []);
+});
+
+function actionsFixture() {
+    const { c, book } = fixture();
+    const buttons = [];
+    const card = { dataset: { id: book.id }, querySelector: () => ({ focus() {} }) };
+    Object.assign(c.document, {
+        getElementById: id => id === 'world-book-screen' ? { classList: { contains: () => true } } :
+            { querySelectorAll: () => [card] },
+        createElement: () => ({ dataset: {}, addEventListener(type, handler) { this[type] = handler; } })
+    });
+    Object.assign(c, {
+        isWorldBookMultiSelectMode: false, selections: [], renames: [], dismissed: 0,
+        enterWorldBookMultiSelectMode: id => c.selections.push(id), requestWorldBookRename: id => c.renames.push(id),
+        createMessageForwardDialog: () => ({ panel: { classList: { add() {} }, appendChild: button => buttons.push(button) }, dismiss: () => c.dismissed++ })
+    });
+    return { c, book, buttons };
+}
+
+test('long-press actions preserve multi-select with the pressed item selected, alongside rename', () => {
+    for (const action of ['select', 'rename']) {
+        const { c, buttons } = actionsFixture();
+        c.requestWorldBookActions('entry');
+        assert.deepEqual(buttons.map(button => button.dataset.wbAction), ['select', 'rename']);
+        buttons.find(button => button.dataset.wbAction === action).click();
+        assert.equal(c.dismissed, 1);
+        assert.deepEqual(c.selections, action === 'select' ? ['entry'] : []);
+        assert.deepEqual(c.renames, action === 'rename' ? ['entry'] : []);
+    }
+});
+
+test('an action menu cannot target an item replaced or removed while it was open', () => {
+    for (const replacement of [[], [{ id: 'entry', name: 'other archive' }]]) {
+        const { c, buttons } = actionsFixture();
+        c.requestWorldBookActions('entry'); c.db.worldBooks = replacement;
+        buttons[0].click();
+        assert.equal(c.dismissed, 1); assert.deepEqual(c.selections, []); assert.deepEqual(c.renames, []);
+    }
 });
 
 test('F2 offers keyboard rename while long-press context menus are suppressed only on cards', () => {

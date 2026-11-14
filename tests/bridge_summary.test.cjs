@@ -73,3 +73,29 @@ test('successful summary groups emit safe bounded resume keys and can continue a
  assert.equal(saved.length,1);assert.match(saved[0][0],/^[a-f0-9]{64}$/);assert.doesNotMatch(saved[0][0],/example|剧情|private/);
  const resumed=await f.api.generate({},source,{batchChars:2000,maxCalls:20,cache:new Map(saved)});assert.equal(resumed.cachedCount,1);
 });
+
+test('cancelling while a summary cache key is calculated prevents the API request',async()=>{
+ const f=setup(),control=new AbortController();let release,started;
+ const reached=new Promise(resolve=>started=resolve);
+ f.ctx.crypto={subtle:{digest:()=>new Promise(resolve=>{release=()=>resolve(new Uint8Array(32).buffer);started();})}};
+ const pending=f.api.generate({},items,{signal:control.signal});
+ await reached;control.abort();release();
+ await assert.rejects(pending,/取消/);
+ assert.equal(f.calls.filter(call=>call.kind==='api').length,0);
+});
+
+test('an archive becoming stale during summary hashing cannot dispatch a paid request',async()=>{
+ const f=setup();let release,started,current=true;
+ const reached=new Promise(resolve=>started=resolve);
+ f.ctx.crypto={subtle:{digest:()=>new Promise(resolve=>{release=()=>resolve(new Uint8Array(32).buffer);started();})}};
+ const pending=f.api.generate({},items,{assertCurrent:()=>{if(!current)throw new Error('stale');}});
+ await reached;current=false;release();
+ await assert.rejects(pending,/stale/);
+ assert.equal(f.calls.filter(call=>call.kind==='api').length,0);
+});
+
+test('cancellation from a summary progress callback stops before dispatch',async()=>{
+ const f=setup(),control=new AbortController();
+ await assert.rejects(f.api.generate({},items,{signal:control.signal,onBudgetProgress:()=>control.abort()}),/取消/);
+ assert.equal(f.calls.filter(call=>call.kind==='api').length,0);
+});

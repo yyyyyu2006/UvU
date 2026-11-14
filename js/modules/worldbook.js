@@ -420,7 +420,7 @@ function renderWorldBookList() {
         `;
         card.querySelector('.wb-item-name').textContent = item.name;
         card.querySelector('.wb-item-name').tabIndex = 0;
-        card.querySelector('.wb-item-name').title = '长按修改名称（键盘 F2）';
+        card.querySelector('.wb-item-name').title = '长按多选管理或改名（键盘 F2 改名）';
         
         container.appendChild(card);
     });

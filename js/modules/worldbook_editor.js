@@ -99,7 +99,25 @@ async function requestWorldBookRename(id) {
     }
 }
 
-// Use one long-press action for the entire card; bulk management has its own menu entry.
+function requestWorldBookActions(id) {
+    const item = db.worldBooks.find(book => book.id === id);
+    if (!item || isWorldBookMultiSelectMode) return;
+    const dialog = createMessageForwardDialog(item.name, 'worldbook-item-actions');
+    for (const [action, label] of [['select', '多选管理'], ['rename', '重命名']]) {
+        const button = document.createElement('button');
+        button.type = 'button'; button.textContent = label; button.dataset.wbAction = action;
+        button.addEventListener('click', () => {
+            dialog.dismiss();
+            if (!db.worldBooks.includes(item) || isWorldBookMultiSelectMode ||
+                !document.getElementById('world-book-screen')?.classList.contains('active')) return;
+            if (action === 'select') enterWorldBookMultiSelectMode(id);
+            else requestWorldBookRename(id);
+        });
+        dialog.panel.appendChild(button);
+    }
+}
+
+// Keep rename and the original bulk actions available from the same gesture.
 function setupWorldBookLongPress(container) {
     if (container.dataset.longPressBound) return;
     container.dataset.longPressBound = 'true';
@@ -108,6 +126,7 @@ function setupWorldBookLongPress(container) {
         if (pending) clearTimeout(pending.timer);
         pending = null;
     };
+    document.addEventListener('pointerdown', () => { blockedClick = null; }, true);
     container.addEventListener('pointerdown', event => {
         cancel();
         if (event.isPrimary === false || event.button !== 0) return;
@@ -122,7 +141,7 @@ function setupWorldBookLongPress(container) {
             if (!card.isConnected || document.hidden || isWorldBookMultiSelectMode ||
                 !document.getElementById('world-book-screen')?.classList.contains('active')) return;
             blockedClick = { id: gesture.id, until: Infinity };
-            requestWorldBookRename(gesture.id);
+            requestWorldBookActions(gesture.id);
         }, 600);
     });
     container.addEventListener('pointermove', event => {
@@ -141,8 +160,10 @@ function setupWorldBookLongPress(container) {
     container.addEventListener('contextmenu', event => {
         if (event.target.closest('.wb-item-card') && (pending || blockedClick?.until > Date.now())) event.preventDefault();
     });
-    container.addEventListener('click', event => {
-        if (blockedClick?.until > Date.now() && event.target.closest('.wb-item-card')?.dataset.id === blockedClick.id) {
+    // Touch release can retarget its compatibility click to the newly opened backdrop.
+    document.addEventListener('click', event => {
+        if (event.detail !== 0 && blockedClick?.until > Date.now() &&
+            (event.target.closest('.wb-item-card')?.dataset.id === blockedClick.id || event.target.closest('#worldbook-item-actions'))) {
             event.preventDefault(); event.stopImmediatePropagation();
             blockedClick = null;
         }
