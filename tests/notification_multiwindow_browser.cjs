@@ -1,12 +1,12 @@
 'use strict';
 // Real same-origin Web Locks and localStorage; only system delivery is simulated.
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const source=fs.readFileSync(path.join(__dirname,'../js/modules/notifications.js'),'utf8');
 const server=http.createServer((req,res)=>res.end('<!doctype html><title>Isolated notifications</title>'));
 (async()=>{
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
- const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
  try {
   const context=await browser.newContext(),pages=await Promise.all([context.newPage(),context.newPage()]);const errors=[];
   for(const page of pages){

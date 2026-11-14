@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.join(__dirname,'..');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
 const page=await browser.newPage({viewport:{width:390,height:844}});await page.setContent('<button id="minimax-tts-preview">试听</button>');
 await page.evaluate(()=>{window.toasts=[];window.showToast=x=>toasts.push(x);window.db={minimaxTtsSettings:{apiKey:'secret',voiceId:'voice',director:{enabled:true,endpoint:'https://director.example',apiKey:'director-secret',model:'model'}}};window.Audio=class extends EventTarget{pause(){}load(){}removeAttribute(){}play(){return Promise.resolve();}};window.fetch=async url=>({ok:true,status:200,json:async()=>url.includes('director.example')?{choices:[{message:{content:JSON.stringify({emotion:'sad',speedMultiplier:0.9,pauses:[{after:'你好，',seconds:0.4}]})}}]}:{data:{audio:'fffb9064'+'00'.repeat(413)}}});});
 for(const f of ['voice_director','chat_features'])await page.addScriptTag({content:fs.readFileSync(path.join(root,'js/modules/'+f+'.js'),'utf8')});

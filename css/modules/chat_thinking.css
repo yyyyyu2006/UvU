@@ -1,14 +1,22 @@
 #char-thinking-dialog {
-    box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-height:75dvh;
+    box-sizing:border-box;width:min(420px,calc(100vw - 32px));height:calc(100dvh - 40px);
+    max-height:calc(100dvh - 40px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     padding:0;border:0;border-radius:24px;background:#fff;color:#333;
     box-shadow:0 12px 40px rgba(0,0,0,.12);overflow:hidden;
 }
 #char-thinking-dialog[open] { display:flex;flex-direction:column; }
 #char-thinking-dialog::backdrop { background:rgba(0,0,0,.28); }
-#char-thinking-dialog > header { display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 20px;border-bottom:1px solid #eee;flex-shrink:0; }
-#char-thinking-dialog h3 { margin:0;font-size:16px;font-weight:500; }
-#char-thinking-dialog header button { width:36px;height:36px;padding:0;flex-shrink:0;color:#888; }
-#char-thinking-dialog .char-thinking-content { min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere; }
+#char-thinking-dialog > header { display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #eee;flex-shrink:0; }
+#char-thinking-dialog .char-thinking-avatar { width:32px;height:32px;border-radius:10px;object-fit:cover;flex-shrink:0;background:#d4e5ef; }
+#char-thinking-dialog .char-thinking-identity { min-width:0;flex:1; }
+#char-thinking-dialog h3 { margin:0;font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+#char-thinking-dialog .char-thinking-identity > span { display:block;color:#999;font-size:11px;margin-top:2px; }
+#char-thinking-dialog .char-thinking-actions { display:flex;gap:4px;flex-shrink:0; }
+#char-thinking-dialog header button { box-sizing:border-box;display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:transparent;color:#888;cursor:pointer; }
+#char-thinking-dialog header button:hover { background:#f4f7f9; }
+#char-thinking-dialog header button svg { width:18px;height:18px; }
+#char-thinking-dialog .char-thinking-content { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px;font-size:14px;line-height:24px;white-space:pre-wrap;overflow-wrap:anywhere; }
+#char-thinking-dialog .char-thinking-copy-buffer { position:absolute;width:1px;height:1px;opacity:0; }
 #char-thinking-dialog :focus-visible { outline:2px solid #b4d0e1;outline-offset:-3px; }
 #message-area [data-thinking-avatar] { cursor:pointer; }
 #message-area [data-thinking-avatar]:focus-visible { outline:2px solid #b4d0e1;outline-offset:2px; }

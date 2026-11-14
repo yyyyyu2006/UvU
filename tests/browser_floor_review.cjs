@@ -1,8 +1,8 @@
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const {chromium} = require(process.env.PLAYWRIGHT_MODULE || '../../uvu-verification-deps/node_modules/playwright');
+const {chromium} = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.join(__dirname, '..');
 (async () => {
-    const browser = await chromium.launch({headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+    const browser = await chromium.launch({headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath()});
     try {
         const page = await browser.newPage({viewport: {width: 320, height: 844}, isMobile: true, hasTouch: true});
         const errors = [];
@@ -46,7 +46,7 @@ const root = path.join(__dirname, '..');
             await page.setViewportSize({width, height: 844});
             const metrics = await page.locator('#uvu-bridge-review-list').evaluate(element => ({width: element.clientWidth, scrollWidth: element.scrollWidth}));
             assert.ok(metrics.scrollWidth <= metrics.width, JSON.stringify(metrics));
-            await page.screenshot({path: path.join(root, '../uvu-verification-deps/floor-review-' + width + '.png'), fullPage: true});
+            await page.screenshot({path: path.join(root, 'outputs/legacy-browser/floor-review-' + width + '.png'), fullPage: true});
         }
         await page.getByRole('button', {name: '原文直接加入记忆', exact: true}).click();
         const result = await page.evaluate(() => ({journal: saved.characters[0].memoryJournals[0], allowed: UvUStoryBridge.allowedMemory(db.characters[0], db.characters[0].memoryJournals[0])}));

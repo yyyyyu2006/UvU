@@ -1,10 +1,10 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.resolve(__dirname,'..'),out=path.join(root,'outputs/calendar-life');fs.mkdirSync(out,{recursive:true});
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m,i)=>[m[1],path.resolve(root,'../browser-test-assets',i+'.js')]));
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=require('./helpers/browser_runtime.cjs').assetMap(html);
 const server=http.createServer((req,res)=>{const p=path.resolve(root,'.'+(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));if(!p.startsWith(root+path.sep))return res.writeHead(403).end();fs.readFile(p,(e,b)=>{if(e)return res.writeHead(404).end();res.setHeader('Content-Type',({'.js':'application/javascript','.css':'text/css','.html':'text/html'}[path.extname(p)]||'application/octet-stream')+'; charset=utf-8');res.end(b);});});
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
 const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});await context.addInitScript(()=>{localStorage.setItem('uvu-calendar-view.v1',JSON.stringify({date:'2026-11-07',month:'2026-11',side:'user'}));localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');});
 await context.route('**/*',r=>{const url=r.request().url();if(libs.has(url))return r.fulfill({path:libs.get(url),contentType:'application/javascript'});if(url.startsWith(origin)||url.startsWith('data:')||url.startsWith('blob:'))return r.continue();return r.abort();});
 const page=await context.newPage(),errors=[];page.setDefaultTimeout(8000);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());await page.goto(origin,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');

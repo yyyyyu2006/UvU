@@ -1,8 +1,8 @@
 // Real UI modules with isolated in-memory documents; no model or account calls.
 const assert=require('node:assert/strict'),path=require('node:path');
-const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.resolve(__dirname,'..');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
 const page=await browser.newPage({viewport:{width:390,height:844}});
 await page.route('http://document.test/**',r=>r.fulfill({body:'<main><button id="open">文件</button></main>',contentType:'text/html'}));await page.goto('http://document.test/');
 await page.evaluate(()=>{window.crypto.randomUUID=()=>String(Math.random()).slice(2);window.chat={id:'c',realName:'角色',activeArchiveId:'a',history:[]};window.currentChatType='private';window.currentChatId='c';window.isInMultiSelectMode=false;window.isDebugMode=false;window.toasts=[];window.showToast=x=>toasts.push(x);window.captureChatSendTarget=()=>({chat,type:'private',chatId:'c',archiveId:'a',history:chat.history});window.isChatSendTargetValid=()=>true;window.saveData=async()=>{};});

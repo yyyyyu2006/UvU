@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.join(__dirname,'..');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
  const page=await browser.newPage({viewport:{width:390,height:844}});await page.setContent('<div id="global-css-modal"><textarea id="global-beautification-css">.draft {color:purple}</textarea><input type="file" id="global-css-document-input"><button id="global-css-document-import">导入</button><button id="global-css-document-export">导出</button><div id="global-css-export-menu"><button id="global-css-document-export-txt">TXT</button><button id="global-css-document-export-docx">DOCX</button></div></div>');
  await page.addStyleTag({content:fs.readFileSync(path.join(root,'css/modules/document_features.css'),'utf8')});
  await page.evaluate(()=>{window.db={globalCss:'.old {color:red}'};window.toasts=[];window.showToast=x=>toasts.push(x);window.saveData=async()=>{if(window.failSave)throw Error('disk full');};window.applyGlobalCss=x=>window.activeCss=x;window.readImportDocument=async()=>({text:'.incoming {color:blue}'});});

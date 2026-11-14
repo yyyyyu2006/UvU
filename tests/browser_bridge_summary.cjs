@@ -1,9 +1,9 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE || '../node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.join(__dirname,'..');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
  try{
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),errors=[];
   page.setDefaultTimeout(10000);
@@ -45,7 +45,7 @@ const root=path.join(__dirname,'..');
   for(const width of [320,390]){
    await page.setViewportSize({width,height:844});
    const metrics=await page.locator('#uvu-bridge-review-list').evaluate(e=>({width:e.clientWidth,scrollWidth:e.scrollWidth}));assert.ok(metrics.scrollWidth<=metrics.width,JSON.stringify(metrics));
-   await page.screenshot({path:path.join(root,'../uvu-verification-deps/bridge-summary-'+width+'.png'),fullPage:true});
+   await page.screenshot({path:path.join(root,'outputs/legacy-browser/bridge-summary-'+width+'.png'),fullPage:true});
   }
   await page.getByLabel('编辑摘要',{exact:true}).fill('审核后的第三人称摘要。');
   await page.evaluate(()=>window.failSave=true);

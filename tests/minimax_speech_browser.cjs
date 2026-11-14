@@ -1,13 +1,13 @@
 // Actual derived speech settings, local response fixtures; no paid API calls.
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const start = html.indexOf('<div class="kkt-group minimax-tts-settings"');
 const panel = html.slice(start, html.indexOf('<!-- 预设管理 -->', start));
 const output = path.join(root, 'outputs/speech-refinement'); fs.mkdirSync(output, { recursive: true });
 (async () => {
-    const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+    const browser = await chromium.launch({ headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath() });
     try {
         for (const width of [320, 390]) {
             const page = await browser.newPage({ viewport: { width, height: 844 } }), errors = [], calls = [];

@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {fullApp,root}=require('./helpers/full_app_browser.cjs');
-const out=path.resolve(root,'../../outputs/nov12-repairs');fs.mkdirSync(out,{recursive:true});
+const out=path.resolve(root,'outputs/nov12-repairs');fs.mkdirSync(out,{recursive:true});
 (async()=>{
     const app=await fullApp(),results=[];
     const check=async(name,fn)=>{try{await fn();results.push({name,passed:true});}catch(error){results.push({name,passed:false,error:error.message});}console.log(JSON.stringify(results.at(-1)));};

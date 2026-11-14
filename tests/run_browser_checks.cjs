@@ -11,6 +11,7 @@ if(fs.existsSync(nested))entries.push(...fs.readdirSync(nested).filter(f=>f.ends
 const files=entries.filter(f=>match.test(f)).sort();
 if(!files.length){console.error('No matching browser scripts');process.exit(1);}
 if(args.includes('--list')){console.log(files.join('\n'));process.exit(0);}
+require('./helpers/browser_runtime.cjs').preflight();
 const out=path.resolve(root,option('--out','outputs/browser-checks-'+new Date().toISOString().replace(/[:.]/g,'-')));
 fs.mkdirSync(out,{recursive:true});
 const results=[];let cursor=0;
@@ -18,7 +19,7 @@ async function worker(){
     while(cursor<files.length){
         const file=files[cursor++],started=Date.now();
         const result=await new Promise(resolve=>{
-            const child=spawn(process.execPath,[path.join(root,file)],{cwd:root,env:{...process.env,PLAYWRIGHT_MODULE:process.env.PLAYWRIGHT_MODULE||path.resolve(root,'../uvu-verification-deps/node_modules/playwright')},windowsHide:true});
+            const child=spawn(process.execPath,[path.join(root,file)],{cwd:root,env:{...process.env,UVU_BROWSER_OUTPUT_DIR:out},windowsHide:true});
             let log='',timedOut=false;
             const timer=setTimeout(()=>{
                 timedOut=true;

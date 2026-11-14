@@ -1,9 +1,9 @@
 // Optional browser verification with fixed, trusted text fixtures (no external API).
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE||path.resolve(__dirname,'../../uvu-verification-deps/node_modules/playwright'));
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.resolve(__dirname,'..');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
  try {
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
@@ -35,11 +35,11 @@ const root=path.resolve(__dirname,'..');
    const bubble=page.locator('.image-bubble');assert.equal(await bubble.locator('img').count(),1);
    assert.equal(await bubble.locator('.quoted-text').textContent(),'选哪个好？');
    const img=await bubble.locator('img').boundingBox(),quote=await bubble.locator('.quoted-message').boundingBox();
-   await page.screenshot({path:path.join(root,'../uvu-verification-deps/artifacts',`quote-sticker-${width}.png`)});
+   await page.screenshot({path:path.join(root,'outputs/legacy-browser',`quote-sticker-${width}.png`)});
    assert.ok(quote.y>=img.y+img.height&&quote.x>=0&&quote.x+quote.width<=width,JSON.stringify({img,quote,width}));
    assert.equal(await page.locator('#reply-preview-bar').evaluate(e=>e.classList.contains('visible')),false);
    assert.equal(await page.locator('#message-input').inputValue(),'保留这段草稿');
-   await page.screenshot({path:path.join(root,'../uvu-verification-deps/artifacts',`quote-sticker-${width}.png`)});
+   await page.screenshot({path:path.join(root,'outputs/legacy-browser',`quote-sticker-${width}.png`)});
   }
   assert.deepEqual(errors,[]);console.log('PASS quoted sticker: private send, persisted re-render, image and quote below, draft preserved, 320/390px.');
  }finally{await browser.close();}

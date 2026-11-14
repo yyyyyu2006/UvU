@@ -1,10 +1,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '..');
 (async () => {
-    const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+    const browser = await chromium.launch({ headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath() });
     const failures = [];
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } });

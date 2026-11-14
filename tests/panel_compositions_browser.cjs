@@ -1,9 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
-const root=path.resolve(__dirname,'..'),out=path.resolve(root,'../../outputs/mixed-production-20261113');fs.mkdirSync(out,{recursive:true});
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m,i)=>[m[1],path.resolve(root,'../browser-test-assets',i+'.js')]));
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
+const root=path.resolve(__dirname,'..'),out=path.resolve(root,'outputs/mixed-production-20261113');fs.mkdirSync(out,{recursive:true});
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=require('./helpers/browser_runtime.cjs').assetMap(html);
 const server=http.createServer((req,res)=>{const p=path.resolve(root,'.'+(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));if(!p.startsWith(root+path.sep))return res.writeHead(403).end();fs.readFile(p,(e,b)=>{if(e)return res.writeHead(404).end();res.setHeader('Content-Type',({'.html':'text/html','.js':'application/javascript','.css':'text/css','.webp':'image/webp'}[path.extname(p)]||'application/octet-stream')+'; charset=utf-8');res.end(b)});});
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
  const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
  await context.addInitScript(()=>{localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');document.addEventListener('click',()=>{if(typeof globalRescueClickCount!=='undefined')globalRescueClickCount=0;if(typeof globalRescueLastClickTime!=='undefined')globalRescueLastClickTime=0;},true);});
  await context.route('**/*',r=>{const url=r.request().url();if(libs.has(url))return r.fulfill({path:libs.get(url),contentType:'application/javascript'});return url.startsWith(origin)||url.startsWith('data:')||url.startsWith('blob:')?r.continue():r.abort();});

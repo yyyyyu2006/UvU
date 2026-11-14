@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.join(__dirname,'..');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
  const page=await browser.newPage({viewport:{width:390,height:844}});
  await page.route('https://preview.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="send-pv-modal" class="visible"><form id="send-pv-form"><input id="pv-mode-text" type="radio"><input id="pv-mode-ai" type="radio"><input id="pv-text-input"><button id="pv-send-btn" type="button">发送</button><button id="pv-cancel-generation" type="button">取消</button><p id="pv-generation-status"></p><p id="pv-generation-hint">生图</p></form></div>'}));
  await page.goto('https://preview.test/');

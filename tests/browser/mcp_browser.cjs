@@ -1,6 +1,6 @@
 // Run with Node; PLAYWRIGHT_MODULE / CHROME_PATH may override local verification tools.
 const http = require('node:http'), fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || path.resolve(__dirname, '../../../uvu-verification-deps/node_modules/playwright'));
+const { chromium } = require('../helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '../..'), out = process.env.UVU_DRAFT_EVIDENCE || path.join(root, 'outputs/mcp-browser');
 fs.mkdirSync(out, { recursive: true });
 let calls = 0, writes = 0, origin, toolUrl, holdWrites = false;
@@ -40,7 +40,7 @@ const server = http.createServer(async (req, res) => {
 (async () => {
     await new Promise(r => server.listen(0, '127.0.0.1', r));origin = 'http://127.0.0.1:' + server.address().port;
     await new Promise(r => toolServer.listen(0, '127.0.0.1', r));toolUrl = 'http://127.0.0.1:' + toolServer.address().port + '/mcp';
-    const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+    const browser = await chromium.launch({ executablePath: require('../helpers/browser_runtime.cjs').browserPath(), headless: true });
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });const errors = [];page.on('pageerror',e=>errors.push(e.message));
         const capture=async(name,selector)=>{if(!process.env.UVU_DRAFT_EVIDENCE)return;await page.setViewportSize({width:402,height:874});await page.locator(selector).last().screenshot({path:path.join(out,name+'.png'),animations:'disabled'});await page.setViewportSize({width:390,height:844});};

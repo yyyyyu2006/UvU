@@ -1,6 +1,6 @@
 // Local app + intercepted HTTPS OAuth fixtures; no real credentials or paid requests.
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE||path.resolve(__dirname,'../../../uvu-verification-deps/node_modules/playwright'));
+const {chromium}=require('../helpers/browser_runtime.cjs').playwright();
 const root=path.resolve(__dirname,'../..');let origin,exchange=0;
 const scripts=['modules/message_forward.js','vendor/mcp_schema.js','modules/mcp_transport.js','modules/mcp_oauth.js','modules/mcp_forms.js','modules/mcp_services.js','modules/mcp_chat.js','modules/mcp_ui.js'];
 const server=http.createServer((req,res)=>{
@@ -10,7 +10,7 @@ const server=http.createServer((req,res)=>{
 });
 (async()=>{
     await new Promise(r=>server.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+server.address().port;
-    const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+    const browser=await chromium.launch({headless:true,executablePath:require('../helpers/browser_runtime.cjs').browserPath()});
     try {
         const context=await browser.newContext({viewport:{width:390,height:844}}),errors=[];
         context.on('page',p=>p.on('pageerror',e=>errors.push(e.message)));

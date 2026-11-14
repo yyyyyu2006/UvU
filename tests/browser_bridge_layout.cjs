@@ -1,10 +1,10 @@
 // Optional Chromium check of the two bridge panels at mobile widths.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 let durable={revision:0,settings:null};
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-Bridge');
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
+const root=path.join(__dirname,'..'),plugin=process.env.UVU_BRIDGE_ROOT||path.join(root,'../SillyTavern-UvU-Bridge');
 (async()=>{
- const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
  try {
   const page=await browser.newPage({viewport:{width:320,height:844}}), errors=[],metrics=[],onlineEvents=[];
   page.on('pageerror',e=>errors.push(e.message));
@@ -85,7 +85,7 @@ const root=path.join(__dirname,'..'),plugin=path.join(root,'../SillyTavern-UvU-B
    assert.ok(fields.slice(1).every((f,i)=>f.top-fields[i].bottom>=32));
    assert.ok(Math.max(...fields.map(f=>f.left))-Math.min(...fields.map(f=>f.left))<1);
    metrics.push({panel:'UvU',viewport:width,numberInputWidths:result.inputs.map(i=>i.width),noOverflow:true,stackedFields:true});
-   await uvu.screenshot({path:path.join(root,'../uvu-verification-deps/artifacts',`bridge-form-${width}.png`),fullPage:true});
+   await uvu.screenshot({path:path.join(root,'outputs/legacy-browser',`bridge-form-${width}.png`),fullPage:true});
   }
   assert.deepEqual(errors,[]);console.log(JSON.stringify({metrics,errors},null,2));
  } finally {await browser.close();}

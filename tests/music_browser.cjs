@@ -1,9 +1,9 @@
 // Real app + local deterministic gateway/audio fixtures; no real account or paid calls.
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'outputs/music-browser'); fs.mkdirSync(out, { recursive: true });
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
+const libs = require('./helpers/browser_runtime.cjs').assetMap(html);
 const song = id => ({ provider:'netease', id, title:'秋日来信 ' + id, artists:['林间'], album:'来信', duration:10, availability:'full' });
 const wav = Buffer.alloc(44 + 8000 * 2 * 10); wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8,4); wav.write('WAVEfmt ',8); wav.writeUInt32LE(16,16); wav.writeUInt16LE(1,20); wav.writeUInt16LE(1,22); wav.writeUInt32LE(8000,24); wav.writeUInt32LE(16000,28); wav.writeUInt16LE(2,32); wav.writeUInt16LE(16,34); wav.write('data',36); wav.writeUInt32LE(wav.length - 44,40);
 let base, searches = 0, authorized = false, publicCalls = 0, accountStreams = 0, shippedEndpoint = '', gatewayOffline = false;
@@ -31,7 +31,7 @@ const server = http.createServer((req,res) => {
 });
 (async()=>{
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve)); base='http://127.0.0.1:'+server.address().port;
-    const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+    const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
     try {
         const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,serviceWorkers:'block'});
         await context.addInitScript(()=>{ localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true'); document.addEventListener('click',()=>{if(typeof globalRescueClickCount!=='undefined')globalRescueClickCount=0;if(typeof globalRescueLastClickTime!=='undefined')globalRescueLastClickTime=0;},true); });

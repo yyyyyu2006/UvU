@@ -9,7 +9,7 @@ function getSavedMessageThinking(chat, messageId) {
         if (!record || record.role !== 'assistant' || record.isWithdrawn ||
             !(record.isThinking || /^\s*<thinking>/i.test(record.content || ''))) return null;
         const blocks = [...String(record.content || '').matchAll(/<thinking>([\s\S]*?)<\/thinking>/gi)];
-        const text = blocks.map(block => block[1].trim()).filter(Boolean).join('\n\n');
+        const text = blocks.map(block => block[1]).filter(text => text.trim()).join('\n\n');
         return text ? { text, legacy } : null;
     };
     // An explicit null means this response had no saved thinking. Never borrow a
@@ -59,13 +59,43 @@ function setupMessageThinkingViewer(area) {
         dialog.id = 'char-thinking-dialog';
         dialog.setAttribute('aria-labelledby', 'char-thinking-title');
         const header = document.createElement('header');
+        const portrait = document.createElement('img'); portrait.className = 'char-thinking-avatar';
+        portrait.alt = '';
+        const portraitSource = avatar.currentSrc || avatar.src || chat.avatar;
+        if (portraitSource) portrait.src = portraitSource;
+        const identity = document.createElement('div'); identity.className = 'char-thinking-identity';
         const title = document.createElement('h3'); title.id = 'char-thinking-title';
-        title.textContent = saved.legacy ? '该段聊天保存的思考' : '本轮思考';
+        title.textContent = chat.remarkName || chat.realName || '角色';
+        const source = document.createElement('span');
+        source.textContent = saved.legacy ? '该段聊天保存的思考' : '本轮思考';
+        identity.append(title, source);
+        const icon = (button, paths) => {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            for (const [key, value] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(key, value);
+            for (const d of paths) { const path = document.createElementNS(svg.namespaceURI, 'path'); path.setAttribute('d', d); svg.append(path); }
+            button.append(svg);
+        };
+        const copy = document.createElement('button'); copy.type = 'button';
+        copy.setAttribute('aria-label', '复制思考内容');
+        icon(copy, ['M9 9h11v11H9z', 'M5 15H4V4h11v1']);
         const close = document.createElement('button'); close.type = 'button';
-        close.className = 'icon-btn-simple'; close.textContent = '✕'; close.setAttribute('aria-label', '关闭思考内容');
+        close.setAttribute('aria-label', '关闭思考内容'); icon(close, ['M6 6l12 12M18 6 6 18']);
+        const actions = document.createElement('div'); actions.className = 'char-thinking-actions'; actions.append(copy, close);
         const body = document.createElement('div'); body.className = 'char-thinking-content';
         body.tabIndex = 0; body.textContent = saved.text;
-        header.append(title, close); dialog.append(header, body); document.body.append(dialog);
+        header.append(portrait, identity, actions); dialog.append(header, body); document.body.append(dialog);
+        copy.addEventListener('click', async () => {
+            try {
+                if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(saved.text);
+                else {
+                    const field = document.createElement('textarea'); field.value = saved.text;
+                    field.className = 'char-thinking-copy-buffer'; dialog.append(field);
+                    try { field.select(); if (!document.execCommand('copy')) throw new Error('copy unavailable'); }
+                    finally { field.remove(); copy.focus({ preventScroll: true }); }
+                }
+                showToast('已复制思考内容');
+            } catch (_) { showToast('复制失败，请选中正文后复制'); }
+        });
         const archive = chat.activeArchiveId, history = chat.history;
         const observer = new MutationObserver(() => {
             if (currentChatType !== 'private' || currentChatId !== chat.id || !db.characters.includes(chat) ||

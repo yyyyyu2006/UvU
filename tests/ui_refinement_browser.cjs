@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
-const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 
 const root = path.resolve(__dirname, '..');
 const cssFiles = [
@@ -15,7 +15,7 @@ const cssFiles = [
 ];
 
 (async () => {
-    const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+    const browser = await chromium.launch({ headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath() });
     try {
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
         const css = cssFiles.map(file => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
@@ -85,7 +85,7 @@ const cssFiles = [
                 assert.ok(result.buttonWidth < width * 0.6, JSON.stringify(result));
                 assert.ok(result.buttonHeight <= 36, JSON.stringify(result));
                 assert.equal(result.viewportWidth, result.width, JSON.stringify(result));
-                if (width === 320) await page.screenshot({ path: path.join(root, `../outputs/liquid-panels-${scheme}-${width}.png`) });
+                if (width === 320) await page.screenshot({ path: path.join(root, `outputs/liquid-panels-${scheme}-${width}.png`) });
             }
         }
         assert.match(css, /--derived-control-height/);

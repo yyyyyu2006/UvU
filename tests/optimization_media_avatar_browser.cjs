@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
  const page=await browser.newPage({viewport:{width:390,height:844}});await page.setContent('<button>头像设置</button>');
  await page.evaluate(()=>{window.currentChatId='a';window.currentChatType='private';window.toasts=[];window.showToast=x=>toasts.push(x);window.saveData=async()=>{if(window.failSave)throw Error('disk full');};window.db={characters:[{id:'a',activeArchiveId:'one',history:[1,2].map(n=>({id:String(n),role:'user',parts:[{type:'image',data:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII='+n}]}))}],groups:[]};window.createMessageForwardDialog=(title,id)=>{const host=document.createElement('div');host.id=id;const panel=document.createElement('div');host.appendChild(panel);document.body.appendChild(host);return{panel,setBusy(){}};};});
  await page.addScriptTag({content:fs.readFileSync(path.join(__dirname,'../js/modules/character_avatar.js'),'utf8')});await page.evaluate(()=>openCharacterAvatarSettings());

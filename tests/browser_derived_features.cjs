@@ -1,16 +1,18 @@
-// Optional visual/touch check: PLAYWRIGHT_MODULE and CHROME_PATH may override local runtimes.
+// Local functionality fixture only; screenshots do not represent the full app.
+// PLAYWRIGHT_MODULE and CHROME_PATH may override local runtimes.
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.join(__dirname, '..');
 (async () => {
-    const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+    const browser = await chromium.launch({ headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath() });
+    fs.mkdirSync(path.join(root, 'outputs/derived-fixture'), {recursive:true});
     try {
         const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
         const page = await context.newPage(), errors = [], apiCalls = [];
         page.on('pageerror', error => errors.push(error.message));
         await page.route('https://uvu-derived.test/**', route => {
             const relative = new URL(route.request().url()).pathname.slice(1);
-            if (!relative) return route.fulfill({ contentType: 'text/html', body: '<meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0}</style><button id="char-status-btn">状态栏</button><div id="char-status-overlay" class="status-panel-overlay"><div id="char-status-content" class="status-panel-content"></div><button id="close-status-panel-btn" class="close-status-panel">关闭</button></div>' });
+            if (!relative) return route.fulfill({ contentType: 'text/html', body: '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0}</style><button id="char-status-btn">状态栏</button><div id="char-status-overlay" class="status-panel-overlay"><div id="char-status-content" class="status-panel-content"></div><button id="close-status-panel-btn" class="close-status-panel">关闭</button></div>' });
             const file = path.join(root, relative);
             return fs.existsSync(file) ? route.fulfill({ contentType: relative.endsWith('.json') ? 'application/json' : 'application/javascript', body: fs.readFileSync(file) }) : route.abort();
         });
@@ -74,7 +76,7 @@ const root = path.join(__dirname, '..');
             await page.evaluate(() => openCharacterAvatarSettings());
             let metrics = await page.locator('#character-avatar-settings .message-forward-dialog').evaluate(e => ({ width: e.clientWidth, scrollWidth: e.scrollWidth, height: e.clientHeight, viewport: innerHeight }));
             assert.ok(metrics.scrollWidth <= metrics.width); assert.ok(metrics.height < metrics.viewport);
-            await page.screenshot({ path: path.join(root, '..', `derived-avatar-${width}.png`) });
+            await page.screenshot({ path: path.join(root, 'outputs/derived-fixture', `derived-avatar-${width}.png`) });
             await page.locator('#character-avatar-settings .message-forward-close').click();
             await page.evaluate(() => openEnvironmentSettings(true));
             await page.locator('[data-place="user"] .derived-search input').fill('上海');
@@ -90,7 +92,7 @@ const root = path.join(__dirname, '..');
             await page.locator('[data-mcp] summary').click();
             metrics = await page.locator('#environment-settings .message-forward-dialog').evaluate(e => ({ width: e.clientWidth, scrollWidth: e.scrollWidth, height: e.clientHeight, viewport: innerHeight }));
             assert.ok(metrics.scrollWidth <= metrics.width); assert.ok(metrics.height < metrics.viewport);
-            await page.screenshot({ path: path.join(root, '..', `derived-settings-${width}.png`) });
+            await page.screenshot({ path: path.join(root, 'outputs/derived-fixture', `derived-settings-${width}.png`) });
             await page.locator('#environment-settings .message-forward-close').click();
             await page.evaluate(() => openEnvironmentCalendar());
             await page.waitForFunction(() => document.querySelector('.environment-calendar .derived-help')?.textContent.includes('21'));
@@ -101,7 +103,7 @@ const root = path.join(__dirname, '..');
             assert.ok(metrics.scrollWidth <= metrics.width);
             const navRows = await page.locator('.environment-calendar .derived-toolbar').nth(1).evaluate(e => [...e.children].map(child => { const r = child.getBoundingClientRect(); return r.top + r.height / 2; }));
             assert.ok(Math.max(...navRows) - Math.min(...navRows) < 2, 'calendar month controls fit one row');
-            const output = path.join(root, '..', `derived-calendar-${width}.png`); await page.screenshot({ path: output });
+            const output = path.join(root, 'outputs/derived-fixture', `derived-calendar-${width}.png`); await page.screenshot({ path: output });
             await page.locator('#environment-calendar .message-forward-close').click();
             layout.push({ width, noOverflow: true, settingsSaved: true });
         }

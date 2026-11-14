@@ -1,10 +1,10 @@
 // Real app, isolated browser profile, local fixture data and no external API calls.
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const { chromium } = require('../../uvu-verification-deps/node_modules/playwright');
+const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'outputs/audit-repair-browser');
 fs.mkdirSync(out, { recursive: true });
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
-const libs = new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m, i) => [m[1], path.resolve(root, '../browser-test-assets', i + '.js')]));
+const libs = require('./helpers/browser_runtime.cjs').assetMap(html);
 const server = http.createServer((req, res) => {
     const file = path.resolve(root, '.' + (req.url.split('?')[0] === '/' ? '/index.html' : req.url.split('?')[0]));
     if (!file.startsWith(root + path.sep)) return res.writeHead(403).end();
@@ -16,7 +16,7 @@ const server = http.createServer((req, res) => {
 (async () => {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + server.address().port;
-    const browser = await chromium.launch({ headless: true, executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' });
+    const browser = await chromium.launch({ headless: true, executablePath: require('./helpers/browser_runtime.cjs').browserPath() });
     try {
         const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
         await context.addInitScript(() => {

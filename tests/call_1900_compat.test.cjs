@@ -3,8 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const current = path.resolve(__dirname, '..');
-const baseline = process.env.UVU_1900_ROOT || 'C:/Users/15271130817/Desktop/1900版uwu';
-const available = fs.existsSync(path.join(baseline, 'js/modules/chat_ai_call.js'));
+const { root: baseline, available } = require('./helpers/baseline_1900.cjs').baseline1900();
 function fixture(root, provider, version, stream, cot) {
     const requests = [], updates = [];
     const chat = { id: 'call-char', realName: '测试角色', remarkName: '测试角色', myName: '我', persona: '原人设',

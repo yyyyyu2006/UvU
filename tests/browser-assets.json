@@ -1,0 +1,37 @@
+[
+  {
+    "url": "https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js",
+    "file": "dexie-3.2.4.js",
+    "sha256": "1c3292c03803242f5d6a25ae42ae4f98124f6b96657d1857f27353eb47aa2ac1"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/dompurify@2.3.8/dist/purify.min.js",
+    "file": "dompurify-2.3.8.js",
+    "sha256": "d48e3c32ba5c79567f39903147035e803da5fc50ff01c7dab7bde9fcbb9919d1"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js",
+    "file": "echarts-5.5.0.js",
+    "sha256": "42f8329d989b6f6539dd2b15bbdf0d82025762ac112fbb60dc57b27d7bcf3946"
+  },
+  {
+    "url": "https://cdn.bootcdn.net/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    "file": "html2canvas-1.4.1.js",
+    "sha256": "e87e550794322e574a1fda0c1549a3c70dae5a93d9113417a429016838eab8cb"
+  },
+  {
+    "url": "https://unpkg.com/mammoth@1.4.21/mammoth.browser.min.js",
+    "file": "mammoth-1.4.21.js",
+    "sha256": "3602670e0cf145e4b270e3530033b780f9c081eb9ed9b2ad79e2f1e448921941"
+  },
+  {
+    "url": "https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js",
+    "file": "sortablejs-1.15.7.js",
+    "sha256": "bf4241bc73fef7f11c59a283a69fe8051cdd31c6d8ff5a2b9ba219e7831fcf76"
+  },
+  {
+    "url": "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js",
+    "file": "crypto-js-4.1.1.js",
+    "sha256": "8e3b0117f4df4be452c0b6af5b8f0a0acf9d4ade23d08d55d7e312af22077762"
+  }
+]

@@ -1,8 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const baseline = process.env.UVU_1900_ROOT || 'C:/Users/15271130817/Desktop/1900版uwu';
-const available = fs.existsSync(path.join(baseline, 'js/modules/chat_ai_prompt.js'));
+const { root: baseline, available } = require('./helpers/baseline_1900.cjs').baseline1900();
 const current = path.join(__dirname, '..');
 function fixture(root, provider, version, type) {
     const requests = [], errors = [];

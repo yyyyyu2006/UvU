@@ -8,7 +8,7 @@ const root=path.resolve(__dirname,'..');
  const markup=html.slice(html.indexOf('<div id="uvu-story-bridge-screen"'),html.indexOf('<div id="wallpaper-screen"'));
  const server=createServer((_req,res)=>res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'}).end('<meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;font:14px sans-serif}input,select,button{font:inherit;max-width:100%}label{display:block}main{padding:12px}pre,code{white-space:pre-wrap;overflow-wrap:anywhere}</style>'+markup));
  server.listen(0,'127.0.0.1');await once(server,'listening');
- const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});
  const page=await browser.newPage({viewport:{width:320,height:844}}),errors=[],requests=[];
  page.on('pageerror',e=>errors.push(e.message));
  try{
@@ -30,7 +30,7 @@ const root=path.resolve(__dirname,'..');
   const pending=page.waitForEvent('download');await page.locator('#uvu-bridge-export-file').click();
   const download=await pending,file=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
   assert.equal(file.characterKey,'c');assert.equal(file.archiveId,'a');assert.equal(file.direction,'to-tavern');assert.doesNotMatch(JSON.stringify(file),/token|adminSecret/);
-  const dir=path.resolve(root,'../uvu-verification-deps/artifacts');fs.mkdirSync(dir,{recursive:true});
+  const dir=path.resolve(root,'outputs/legacy-browser');fs.mkdirSync(dir,{recursive:true});
   for(const width of [320,390]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'overflow '+width);await page.screenshot({path:path.join(dir,'uvu-tt-file-'+width+'.png'),fullPage:true});}
   await page.locator('#uvu-bridge-tt-mode').selectOption('https');
   assert.equal(await page.locator('#uvu-bridge-url').isVisible(),true);

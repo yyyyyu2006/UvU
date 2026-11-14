@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {chromium}=require('C:/Users/15271130817/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
 const page=await browser.newPage({viewport:{width:390,height:844}});await page.setContent('<button id="home-preset-export-btn">导出</button><button id="home-preset-import-btn">导入</button><input id="home-preset-import-input" type="file"><input id="home-preset-name"><input id="home-preset-include-appearance" type="checkbox"><p id="home-preset-status"></p>');
 await page.addStyleTag({content:fs.readFileSync(path.join(__dirname,'../css/modules/document_features.css'),'utf8')});
 await page.evaluate(()=>{window.defaultIcons={};window.defaultWidgetSettings=Object.fromEntries(['topLeft','topRight','bottomLeft','bottomRight'].map(k=>[k,{emoji:'',text:''}]));window.db={wallpaper:'',homeScreenMode:'day',customIcons:{},homeSignature:'old',insWidgetSettings:{},homeWidgetSettings:defaultWidgetSettings,homeLayoutPages:[['app-customize']],widgetTemplates:[],addedWidgets:[]};window.dexieDB={globalSettings:{async put(){},async delete(){}},transaction:async(a,b,fn)=>fn()};window.setupHomeScreen=()=>{};window.renderCustomizeForm=()=>{};window.applyGlobalFont=()=>{};window.applyFontSize=()=>{};window.applyGlobalCss=()=>{};window.showToast=()=>{};});

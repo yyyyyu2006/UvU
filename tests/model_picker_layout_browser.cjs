@@ -1,9 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const {chromium}=require('../../uvu-verification-deps/node_modules/playwright');
-const root=path.resolve(__dirname,'..'),out=path.resolve(root,'../../outputs/ui-model-picker');fs.mkdirSync(out,{recursive:true});
-const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=new Map([...html.matchAll(/<script[^>]+src="(https:[^"]+)"/g)].map((m,i)=>[m[1],path.resolve(root,'../browser-test-assets',i+'.js')]));
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
+const root=path.resolve(__dirname,'..'),out=path.resolve(root,'outputs/ui-model-picker');fs.mkdirSync(out,{recursive:true});
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8'),libs=require('./helpers/browser_runtime.cjs').assetMap(html);
 const server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+(req.url.split('?')[0]==='/'?'/index.html':req.url.split('?')[0]));if(!file.startsWith(root+path.sep))return res.writeHead(403).end();fs.readFile(file,(error,data)=>{if(error)return res.writeHead(404).end();res.setHeader('Content-Type',({'.js':'application/javascript','.css':'text/css','.html':'text/html'}[path.extname(file)]||'text/plain')+'; charset=utf-8');res.end(data);});});
-(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});try{
+(async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,executablePath:require('./helpers/browser_runtime.cjs').browserPath()});try{
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,serviceWorkers:'block'});await context.addInitScript(()=>{localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');});
  await context.route('**/*',route=>{const u=route.request().url();if(libs.has(u))return route.fulfill({path:libs.get(u),contentType:'application/javascript'});if(u.startsWith(origin)||u.startsWith('data:')||u.startsWith('blob:'))return route.continue();return route.abort();});
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(origin,{waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');

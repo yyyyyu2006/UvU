@@ -6,7 +6,7 @@ const {fullApp,root}=require('./helpers/full_app_browser.cjs');
  const {page,errors}=await app.page();page.setDefaultTimeout(8000);
  await page.evaluate(async()=>{const c={id:'layout',realName:'很长的角色名称 Layout Character',myName:'我',persona:'温和',myPersona:'',history:[],memoryJournals:[],maxMemory:20,worldBookIds:[]};db.characters=[c];db.groups=[];await saveData();openChatRoom(c.id,'private');});
  const before=await page.locator('#send-message-btn').evaluate(el=>({html:el.outerHTML,font:getComputedStyle(el).font}));
- const output=path.resolve(root,'../../outputs/derived-panels-current');fs.mkdirSync(output,{recursive:true});
+ const output=path.resolve(root,'outputs/derived-panels-current');fs.mkdirSync(output,{recursive:true});
  async function inspect(name,selector){const panel=page.locator(selector).last();await panel.waitFor({state:'visible'});for(const [width,height]of [[320,740],[390,844],[768,844],[390,420]]){await page.setViewportSize({width,height});await panel.evaluate(el=>Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{}))));const r=await panel.evaluate(el=>{const b=el.getBoundingClientRect();return{width:b.width,height:b.height,overflow:el.scrollWidth-el.clientWidth}});assert.ok(r.width<=width+1&&r.height<=height+1&&r.overflow<=1,name+': '+JSON.stringify(r));}await page.setViewportSize({width:390,height:844});await panel.screenshot({path:path.join(output,name+'.png'),animations:'disabled'});console.log('PASS',name);}
  await page.evaluate(()=>openSharedDocumentDialog());await inspect('file','#shared-document-dialog .shared-document-dialog');
  await page.getByLabel('选择分享文件').setInputFiles({name:'很长的文件名称-and-中文.txt',mimeType:'text/plain',buffer:Buffer.from('正文\n'.repeat(80))});
