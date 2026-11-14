@@ -735,7 +735,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterAvatar === 'function') {
             checkCharacterAvatar(chat).catch(error => console.warn('Character avatar check failed:', error.message));
         }
-        if (replyDelivered && chatType === 'private' && typeof checkCharacterBlacklist === 'function') {
+        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterBlacklist === 'function') {
             checkCharacterBlacklist(chat).catch(error => console.warn('Character relationship check failed:', error.message));
         }
     }
@@ -771,6 +771,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     const replyIsCurrent = () => !signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory &&
         (targetChatType !== 'private' || typeof relationshipCanChat !== 'function' || (relationshipCanChat(chat, targetChatType) && chat.friendRelationship?.revision === relationshipRevision));
     const notifyNewMessages = () => {
+        if (chat.activeArchiveId !== replyArchiveId || chat.history !== replyHistory) return;
         const added = chat.history.slice(notificationOffset);
         notificationOffset = chat.history.length;
         showIncomingMessageNotifications(chat, added, targetChatId, targetChatType);

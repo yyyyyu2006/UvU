@@ -227,6 +227,45 @@ test("failed reply save never publishes bridge turns or triggers avatar/blacklis
  await f.c.getAiReply('a','private',true);assert.equal(checks,0);
 });
 
+for (const mode of ['complete', 'cancel', 'archive', 'history']) {
+    test('relationship followup stays with the completed reply: ' + mode, async () => {
+        const f = fixture(), chat = f.chats[0], checks = [], archiveId = chat.activeArchiveId;
+        f.c.getMixedContent = text => [{ type: 'text', content: text }];
+        f.c.escapeMessageRegex = text => text;
+        f.c.showIncomingMessageNotifications = () => {};
+        f.c.checkCharacterBlacklist = async target => checks.push(target.activeArchiveId);
+        f.c.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '[a的消息：reply]' } }] }) });
+        const pending = f.c.getAiReply('a', 'private');
+        await tick();
+        assert.ok(f.timers.length, 'reply reached its typing delay');
+        if (mode === 'cancel') assert.equal(f.c.stopAiReply(), true);
+        if (mode === 'archive') { chat.activeArchiveId = 'other'; chat.history = []; }
+        if (mode === 'history') chat.history = [];
+        if (mode !== 'cancel') f.timers.shift()();
+        await pending;
+        assert.deepEqual(checks, mode === 'complete' ? [archiveId] : []);
+        assert.equal(chat.history.length, mode === 'complete' ? 1 : 0);
+    });
+}
+
+test('archive switch during reply save never notifies messages from the new archive', async () => {
+    const f = fixture(), chat = f.chats[0], notified = [], checks = [];
+    f.c.getMixedContent = text => [{ type: 'text', content: text }];
+    f.c.escapeMessageRegex = text => text;
+    f.c.showIncomingMessageNotifications = (_chat, messages) => notified.push(...messages.map(message => message.id));
+    f.c.checkCharacterBlacklist = async target => checks.push(target.activeArchiveId);
+    f.c.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: '[a的消息：reply]' } }] }) });
+    f.c.saveData = async () => {
+        f.c.syncChatActiveArchive(chat);
+        chat.activeArchiveId = 'other';
+        chat.history = [{ id: 'other-archive-message', role: 'assistant', content: 'unrelated' }];
+    };
+    await f.c.getAiReply('a', 'private', true);
+    assert.deepEqual(notified, []);
+    assert.deepEqual(checks, []);
+    assert.deepEqual(chat.history.map(message => message.id), ['other-archive-message']);
+});
+
 test('bad optional file block keeps normal reply and reports file failure separately', async () => {
  const f=fixture(),chat=f.chats[0];
  f.c.crypto=require('node:crypto').webcrypto;vm.runInContext(source('modules/chat_documents.js'),f.c);
