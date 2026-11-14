@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { isIP } from 'node:net';
 import { createProviderAdapter, engineInstalled, ENGINE_REVISION } from './provider-adapter.mjs';
+import { safeProviderFailure } from './provider-errors.mjs';
 
 const PROVIDERS = ['netease', 'qq'];
 const BASE_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', Vary: 'Origin' };
@@ -81,6 +82,9 @@ export async function createGateway(options = {}) {
     const adapterFactory = options.adapterFactory || (provider => createProviderAdapter(provider, { timeoutMs: Math.max(1, timeoutMs - 100) }));
     const engineReady = options.engineStatus || (options.adapterFactory ? async () => true : engineInstalled);
     const sessions = new Map();
+    const maxSessions = options.maxSessions ?? 100;
+    const maxAnonymousSessions = Math.min(options.maxAnonymousSessions ?? 40, maxSessions);
+    const anonymousIdleMs = 300000;
     const ipRates = new Map();
     const persistPath = options.persistPath;
     const key = options.encryptionKey;
@@ -90,13 +94,13 @@ export async function createGateway(options = {}) {
     let closing;
     const assertOpen = () => { if (closed) throw error(503, 'gateway_closed'); };
     const makeAccount = () => ({ loggedIn: false, credential: '', user: undefined, adapter: null, generation: 0 });
-    const makeSession = (remember = false) => ({ expiresAt: now() + (remember ? 7 : 1) * 86400000, remember, accounts: Object.fromEntries(PROVIDERS.map(p => [p, makeAccount()])), qrs: new Map(), rate: { at: now(), count: 0 }, inflight: 0 });
+    const makeSession = (remember = false) => ({ expiresAt: now() + (remember ? 7 : 1) * 86400000, remember, hasLoggedIn: false, lastUsed: now(), accounts: Object.fromEntries(PROVIDERS.map(p => [p, makeAccount()])), qrs: new Map(), rate: { at: now(), count: 0 }, inflight: 0 });
 
     async function save() {
         assertOpen();
         if (!persistPath) return;
-        const records = [...sessions].filter(([, session]) => session.remember && session.expiresAt > now()).map(([id, session]) => ({
-            id, expiresAt: session.expiresAt,
+        const records = [...sessions].filter(([, session]) => session.remember && session.hasLoggedIn && session.expiresAt > now()).map(([id, session]) => ({
+            id, expiresAt: session.expiresAt, hasLoggedIn: true,
             accounts: Object.fromEntries(PROVIDERS.map(p => [p, { credential: session.accounts[p].credential, user: session.accounts[p].user }]))
         }));
         const plaintext = JSON.stringify({ version: 1, records });
@@ -122,13 +126,15 @@ export async function createGateway(options = {}) {
             decipher.setAAD(Buffer.from('uvu-music-gateway-v1'));
             decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
             const records = JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.data, 'base64')), decipher.final()]).toString('utf8')).records;
-            for (const record of records.slice(0, options.maxSessions ?? 100)) {
+            for (const record of records.slice(0, maxSessions)) {
                 if (!/^[a-f0-9]{64}$/.test(record.id) || !(record.expiresAt > now())) continue;
                 const session = makeSession(true); session.expiresAt = record.expiresAt;
+                session.hasLoggedIn = record.hasLoggedIn === true;
                 for (const p of PROVIDERS) {
                     const stored = record.accounts?.[p];
                     if (typeof stored?.credential === 'string' && stored.credential.length <= 32768 && stored.credential) {
                         Object.assign(session.accounts[p], { loggedIn: true, credential: stored.credential, user: userFacts(stored.user, p) });
+                        session.hasLoggedIn = true;
                     }
                 }
                 sessions.set(record.id, session);
@@ -141,7 +147,8 @@ export async function createGateway(options = {}) {
             const result = await Promise.race([Promise.resolve().then(() => { assertOpen(); return operation(); }), new Promise((_, reject) => { timer = setTimeout(() => reject(error(504, 'provider_timeout')), timeoutMs); })]);
             assertOpen();
             return result;
-        } finally { clearTimeout(timer); }
+        } catch (failure) { throw safeProviderFailure(failure); }
+        finally { clearTimeout(timer); }
     }
     async function getAdapter(account, provider) {
         assertOpen();
@@ -167,7 +174,9 @@ export async function createGateway(options = {}) {
         let changed = false;
         for (const [id, session] of sessions) {
             for (const qr of session.qrs.values()) if (qr.expiresAt <= now() && qr.status !== 'authorized') retireQR(qr);
-            if (session.expiresAt > now()) continue;
+            const activeQR = [...session.qrs.values()].some(qr => qr.expiresAt > now() && ['waiting', 'scanned'].includes(qr.status));
+            const idleAnonymous = !session.hasLoggedIn && !session.inflight && !activeQR && now() - session.lastUsed >= anonymousIdleMs;
+            if (session.expiresAt > now() && !idleAnonymous) continue;
             sessions.delete(id); changed = true;
             for (const account of Object.values(session.accounts)) { account.generation++; void closeAdapter(account.adapter); }
             for (const qr of session.qrs.values()) retireQR(qr);
@@ -212,7 +221,7 @@ export async function createGateway(options = {}) {
                     ipRates.set(ip, { at: now(), count: 0 });
                 }
                 rateLimit(ipRates.get(ip), 10);
-                if (sessions.size >= (options.maxSessions ?? 100)) throw error(429, 'session_limit');
+                if (sessions.size >= maxSessions || [...sessions.values()].filter(session => !session.hasLoggedIn).length >= maxAnonymousSessions) throw error(429, 'session_limit');
                 const remember = input.body?.remember === true;
                 if (remember && !persistPath) throw error(400, 'persistence_disabled');
                 const token = opaque(); sessions.set(hash(token), makeSession(remember)); await save();
@@ -225,7 +234,7 @@ export async function createGateway(options = {}) {
             if (!session) throw error(401, 'unauthorized');
             rateLimit(session.rate, 180);
             if (session.inflight >= 8) throw error(429, 'request_limit');
-            session.inflight++; activeSession = session;
+            session.lastUsed = now(); session.inflight++; activeSession = session;
             let body;
             if (method === 'GET' && route === '/v1/accounts') {
                 body = { accounts: PROVIDERS.map(provider => ({ provider, loggedIn: session.accounts[provider].loggedIn, ...(session.accounts[provider].user ? { user: session.accounts[provider].user } : {}) })) };
@@ -247,7 +256,7 @@ export async function createGateway(options = {}) {
                     account.generation++;
                     for (const qr of session.qrs.values()) if (qr.provider === provider) retireQR(qr);
                     while (session.qrs.size >= 8) session.qrs.delete(session.qrs.keys().next().value);
-                    const qr = { id: opaque(), provider, generation: account.generation, expiresAt: now() + (options.qrTtlMs ?? 180000), status: 'waiting', state: '', adapter: Promise.resolve(adapterFactory(provider)), pending: null };
+                    const qr = { id: opaque(), provider, generation: account.generation, expiresAt: now() + (options.qrTtlMs ?? 180000), status: 'waiting', state: '', adapter: Promise.resolve().then(() => adapterFactory(provider)), pending: null };
                     session.qrs.set(qr.id, qr);
                     try {
                         const result = await bounded(async () => (await qr.adapter).createQR());
@@ -278,6 +287,7 @@ export async function createGateway(options = {}) {
                                 if (qr.status === 'expired' || qr.expiresAt <= now() || account.generation !== qr.generation || session.accounts[provider] !== account || !sessions.has(hash(authorization.slice(7)))) { retireQR(qr); return { status: 'expired' }; }
                                 const previous = account.adapter;
                                 Object.assign(account, { adapter: authorizedAdapter, credential: result.credential, loggedIn: true, user: userFacts(result.user, provider) });
+                                session.hasLoggedIn = true;
                                 qr.status = 'authorized'; qr.state = ''; qr.user = account.user;
                                 qr.adapter = null;
                                 if (previous !== authorizedAdapter) void closeAdapter(previous);
@@ -305,7 +315,7 @@ export async function createGateway(options = {}) {
                 body = { tracks: [], errors: [], hasMore: false };
                 results.forEach((result, i) => {
                     if (result.status === 'fulfilled') { body.tracks.push(...result.value.tracks); body.hasMore ||= result.value.hasMore; }
-                    else body.errors.push({ provider: selected[i], code: result.reason?.status === 504 ? 'provider_timeout' : 'provider_unavailable', message: 'Platform request failed' });
+                    else body.errors.push({ provider: selected[i], code: safeProviderFailure(result.reason).code, message: 'Platform request failed' });
                 });
             } else if (method === 'GET' && /^\/v1\/track\/[^/]+\/[^/]+\/(stream|lyrics)$/.test(route)) {
                 const [, , , providerValue, encodedId, action] = route.split('/');
@@ -332,7 +342,7 @@ export async function createGateway(options = {}) {
             if (closed) e = error(503, 'gateway_closed');
             const status = e.status || (e instanceof URIError ? 400 : 502);
             return { status, headers, body: { error: { code: e.code && e.status ? e.code : (status === 400 ? 'invalid_parameter' : 'provider_unavailable'), message: status === 502 ? 'Platform request failed' : 'Request could not be completed' } } };
-        } finally { if (activeSession) activeSession.inflight--; }
+        } finally { if (activeSession) { activeSession.inflight--; activeSession.lastUsed = now(); } }
     }
     async function handler(req, res) {
         let size = 0, chunks = [];

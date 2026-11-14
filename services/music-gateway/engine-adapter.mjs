@@ -1,3 +1,4 @@
+import { providerError, safeProviderFailure } from './provider-errors.mjs';
 const parse = value => typeof value === 'string' ? JSON.parse(value) : value;
 const numericId = value => /^\d{1,24}$/.test(String(value || '')) ? String(value) : '';
 
@@ -126,39 +127,42 @@ export function createEngineAdapter(Meting, provider, credential = '') {
 export function createRestrictedFetch(fetchImpl, provider) {
     const domains = provider === 'netease' ? ['music.163.com'] : ['qq.com', 'qqmusic.qq.com', 'gtimg.cn'];
     return async function restrictedFetch(input, options = {}) {
-        let url = new URL(input);
-        const requestOptions = { ...options, headers: new Headers(options.headers || {}) };
-        requestOptions.headers.delete('X-Forwarded-For');
-        requestOptions.headers.delete('X-Real-IP');
-        const timeoutSignal = AbortSignal.timeout(10000);
-        requestOptions.signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-        for (let redirects = 0; redirects <= 5; redirects++) {
-            if (url.username || url.password || url.port || !domains.some(d => url.hostname === d || url.hostname.endsWith('.' + d))) throw Error('Upstream host denied');
-            if (url.protocol === 'http:') url.protocol = 'https:';
-            if (url.protocol !== 'https:') throw Error('Upstream protocol denied');
-            const response = await fetchImpl(url, { ...requestOptions, redirect: 'manual' });
-            if (options.redirect !== 'manual' && [301, 302, 303, 307, 308].includes(response.status)) {
-                const location = response.headers.get('location');
-                if (!location) throw Error('Invalid redirect');
-                await response.body?.cancel();
-                const next = new URL(location, url);
-                if (next.origin !== url.origin) { requestOptions.headers.delete('Cookie'); requestOptions.headers.delete('Authorization'); }
-                if (response.status === 303 || ((response.status === 301 || response.status === 302) && requestOptions.method === 'POST')) { requestOptions.method = 'GET'; delete requestOptions.body; }
-                url = next; continue;
-            }
-            if (Number(response.headers.get('content-length')) > 2 * 1024 * 1024) { await response.body?.cancel(); throw Error('Upstream response too large'); }
-            const reader = response.body?.getReader();
-            const chunks = []; let size = 0;
-            if (reader) {
-                for (;;) {
-                    const part = await reader.read(); if (part.done) break;
-                    size += part.value.length;
-                    if (size > 2 * 1024 * 1024) { await reader.cancel(); throw Error('Upstream response too large'); }
-                    chunks.push(Buffer.from(part.value));
+        try {
+            let url = new URL(input);
+            const requestOptions = { ...options, headers: new Headers(options.headers || {}) };
+            requestOptions.headers.delete('X-Forwarded-For');
+            requestOptions.headers.delete('X-Real-IP');
+            const timeoutSignal = AbortSignal.timeout(10000);
+            requestOptions.signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
+            for (let redirects = 0; redirects <= 5; redirects++) {
+                if (url.username || url.password || url.port || !domains.some(d => url.hostname === d || url.hostname.endsWith('.' + d))) throw Error('Upstream host denied');
+                if (url.protocol === 'http:') url.protocol = 'https:';
+                if (url.protocol !== 'https:') throw Error('Upstream protocol denied');
+                const response = await fetchImpl(url, { ...requestOptions, redirect: 'manual' });
+                if (response.status >= 400) { await response.body?.cancel(); throw providerError('provider_http_error'); }
+                if (options.redirect !== 'manual' && [301, 302, 303, 307, 308].includes(response.status)) {
+                    const location = response.headers.get('location');
+                    if (!location) throw Error('Invalid redirect');
+                    await response.body?.cancel();
+                    const next = new URL(location, url);
+                    if (next.origin !== url.origin) { requestOptions.headers.delete('Cookie'); requestOptions.headers.delete('Authorization'); }
+                    if (response.status === 303 || ((response.status === 301 || response.status === 302) && requestOptions.method === 'POST')) { requestOptions.method = 'GET'; delete requestOptions.body; }
+                    url = next; continue;
                 }
+                if (Number(response.headers.get('content-length')) > 2 * 1024 * 1024) { await response.body?.cancel(); throw Error('Upstream response too large'); }
+                const reader = response.body?.getReader();
+                const chunks = []; let size = 0;
+                if (reader) {
+                    for (;;) {
+                        const part = await reader.read(); if (part.done) break;
+                        size += part.value.length;
+                        if (size > 2 * 1024 * 1024) { await reader.cancel(); throw Error('Upstream response too large'); }
+                        chunks.push(Buffer.from(part.value));
+                    }
+                }
+                return new Response(Buffer.concat(chunks), { status: response.status, statusText: response.statusText, headers: response.headers });
             }
-            return new Response(Buffer.concat(chunks), { status: response.status, statusText: response.statusText, headers: response.headers });
-        }
-        throw Error('Too many redirects');
+            throw Error('Too many redirects');
+        } catch (error) { throw safeProviderFailure(error); }
     };
 }

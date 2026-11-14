@@ -16,7 +16,7 @@ node services/music-gateway/launch.mjs
 
 这条命令会检查引擎，缺少时运行安装脚本；首次生成 `.env`、32字节随机加密密钥和本机 vault 路径，然后启动原网关。已有 `.env` 和部署环境变量保留，不覆盖。默认仅监听本机；新配置允许本项目 Pages 来源，并支持勾选“记住此设备”。没有域名、证书或服务器访问权限时，该命令不会自动完成线上部署。
 
-部署者执行脚本并配置 HTTPS 后，可以将验证通过的公开地址写入 `js/modules/music_config.js` 的 `endpoint`，更新网页及该脚本的缓存版本。玩家直接点网易云 / QQ 的“扫码登录” → 官方 App 授权 → 歌单 → 导入到资料库，无需填写服务地址。当前尚无已部署地址，配置留空；不填示例地址。该文件是公开前端配置，只能放服务地址，不能放 cookie、Token、vault 密钥等凭据。
+部署者执行脚本并配置 HTTPS 后，可以将验证通过的公开地址写入 `js/modules/music_config.js` 的 `endpoint`，更新网页及该脚本的缓存版本。玩家直接点网易云 / QQ 的“扫码登录” → 官方 App 授权 → 歌单 → 导入到资料库，无需填写服务地址。当前源码内置 `https://uvu-music.onrender.com`，仅表示客户端默认配置，不保证该服务在线或平台登录可用。该文件是公开前端配置，只能放服务地址，不能放 cookie、Token、vault 密钥等凭据。
 
 用户已有自定义服务时优先使用自己的地址；在「更换音乐服务」中留空并保存恢复内置地址。内置地址不会被普通偏好保存或备份固定为自定义地址。静态 Pages 不能执行 Node 脚本，也不能自动使用部署者电脑的 localhost。已有其他服务配置可继续使用原 setup/start 命令。
 
@@ -45,7 +45,7 @@ node --env-file=services/music-gateway/.env services/music-gateway/start.mjs
 |`MUSIC_VAULT_KEY`|可选；32 字节随机密钥的 base64；启用凭据文件时必填|
 |`MUSIC_TLS_CERT` / `MUSIC_TLS_KEY`|可选；同时设置以直接启用 HTTPS，TLS 最低版本 1.2|
 
-默认会话只在内存保留，固定有效期 24 小时；重启服务需重新登录。需要跨重启保留时配置 vault，并以 `POST /v1/session` JSON `{ "remember": true }` 创建会话，有效期 7 天。没有启用 vault 时请求 remember 会返回 `400 persistence_disabled`。可用以下命令生成密钥：
+默认会话只在内存保留，最长有效期 24 小时；重启服务需重新登录。从未成功登录的会话空闲 5 分钟后会在后续请求到达时清理；正常请求会刷新活动时间，进行中的请求和有效扫码流程会受到保护。成功登录过的会话继续使用原来的固定有效期，不参与匿名空闲回收。需要跨重启保留时配置 vault，并以 `POST /v1/session` JSON `{ "remember": true }` 创建会话，有效期 7 天；只有成功登录过的 remembered 会话写入 vault。没有启用 vault 时请求 remember 会返回 `400 persistence_disabled`。可用以下命令生成密钥：
 
 ```sh
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
@@ -65,11 +65,17 @@ music.example.com {
 
 DNS 指向服务器并开放 443，配置 `MUSIC_ORIGINS=https://你的网页域名`，小手机填写 `https://music.example.com`。直接 TLS 方式则配置 `MUSIC_TLS_CERT` 和 `MUSIC_TLS_KEY`，以及合适的监听端口与防火墙。HTTPS 页面不能请求 HTTP 网关，否则浏览器会阻止混合内容；网关正常返回也不代表音频 CDN 允许所有浏览器跨域播放。
 
-此服务用于自己的小手机实例。生产环境在反向代理或私有网络中设置访问限制，避免公开给任意用户创建会话；CORS 是浏览器来源限制，不是服务器用户身份认证。默认最多 100 个会话，每 IP 每分钟最多 10 个新会话，每会话每分钟 180 请求、最多 8 个同时请求。
+此服务用于自己的小手机实例。CORS 是浏览器来源限制，不是服务器用户身份认证。默认最多 100 个会话，其中从未成功登录的会话最多 40 个；每 IP 每分钟最多 10 个新会话，每会话每分钟 180 请求、最多 8 个同时请求。旧的闲置匿名会话回收后，新访客可重新取得名额，不会为腾位置注销已登录用户。匿名满额时仍可能暂时拒绝新访客；持续刷新活动或反复发起二维码的访问者仍可能占住匿名名额。
+
+所有会话、平台和操作共享进程内最多 8 个引擎 Worker（执行单个平台操作的后台工作进程），涵盖扫码、搜索、播放地址、歌词和歌单。超量立即返回 `provider_busy`，不累积等待队列；任务成功、失败、超时或取消后，等待 Worker 终止再归还名额。单个 Worker 的 V8 老生代内存上限仍为 96 MB，这不是整个服务的总内存保证，也不能替代 Render 实际资源负载验证。
+
+这些限制只控制当前 Node 进程的资源数量。公开给玩家使用时，真正的访问准入、可信代理来源和跨实例限流仍需由部署端实现。客户端可以自行伪造 Origin，未受信任的代理转发头也不能当作访客身份；不要在公开网页中塞入固定“秘密”来冒充身份校验。当前补丁没有新增前端密钥、验证码或必须先登录才能使用的门槛。
 
 ## HTTP 合约
 
 所有接口前缀为 `/v1`。除 health、session 创建和预检外，需要 `Authorization: Bearer <token>`。所有响应 `Cache-Control: no-store`；错误为 `{ "error": { "code": "...", "message": "..." } }`，不会回传平台错误原文。
+
+平台错误只传递固定类别：`provider_unavailable`（未能进一步分类）、`provider_invalid_response`（格式错误）、`provider_http_error`（平台 HTTP 失败）、`provider_timeout`（超时）、`provider_busy`（网关工作进程已满）和 `provider_cancelled`（任务取消）。搜索的 `errors` 也使用这些类别；任何平台原文、异常堆栈、Cookie 和原始响应体都不会作为诊断字段返回。平台引擎本身已经吞掉的错误仍可能只能表现为无结果或不可播放，固定类别不保证能识别所有登录、版权或地区问题。
 
 |方法与路径|响应|
 |---|---|
@@ -95,9 +101,11 @@ DNS 指向服务器并开放 443，配置 `MUSIC_ORIGINS=https://你的网页域
 ## 验证与局限
 
 ```sh
-node --test tests/music_gateway.test.cjs
+node --test tests/music_gateway.test.cjs tests/music_gateway_hardening.test.cjs tests/music_gateway_workers.test.cjs
 ```
 
 本地夹具测试覆盖 HTTP 合约、账号隔离、外来及过期二维码、注销/替换/并发授权竞争、平台部分失败、URL/参数限制、CORS、超时、加密持久化和适配器格式。`createGateway({adapterFactory,now,...})` 与 `createEngineAdapter(Meting,provider,credential)` 可注入本地测试依赖，测试不使用真实账号。
+
+补充测试覆盖匿名回收与独立名额、活动时间刷新、扫码/进行中任务保护、跨账号共享工作进程上限、终止完成前保留名额、关闭取消、超时/崩溃/创建失败后的恢复，以及真实 Node Worker 的安全错误传递。上游平台使用本地夹具替代，没有进行真实账号或线上平台调用。
 
 固定上游的源码已检查，实际安装会保留该版本。**夹具验证不等于真实账号登录成功，也不保证任何 VIP 曲目可播放。** 平台可随时变更接口；真实二维码授权、实际权益、移动浏览器音频策略、设备网络及 CDN 访问仍需要用户在自己的账号和设备上验证。不要把本服务可运行误认为已经提供了可供 Pages 使用的线上 HTTPS 后端。

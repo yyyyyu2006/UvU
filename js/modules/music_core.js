@@ -315,7 +315,9 @@
             try { const result = await transport(host, path, { ...options, token }); if (settings().endpoint !== host) throw abortError(); return result; }
             catch (error) {
                 if (error.status !== 401 || (error.code && error.code !== 'unauthorized')) throw error;
-                tokenClear(host); token = await session(host, options.signal);
+                if (settings().endpoint !== host) throw abortError();
+                if (tokenGet(host) === token) tokenClear(host);
+                token = await session(host, options.signal);
                 if (settings().endpoint !== host) throw abortError();
                 const result = await transport(host, path, { ...options, token }); if (settings().endpoint !== host) throw abortError(); return result;
             }

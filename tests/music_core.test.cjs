@@ -533,6 +533,46 @@ test('structured account errors preserve safe details without replacing the musi
     assert.equal(h.calls.filter(call => call.url.endsWith('/session')).length, 1);
 });
 
+test('a late unauthorized response reuses the refreshed token instead of clearing it', async () => {
+    const h = harness({ musicSettings: { endpoint: 'https://one.test' } }), old = [deferred(), deferred()];
+    const vault = 'uvu.music.session.v1:https%3A%2F%2Fone.test';
+    h.session.set(vault, 'old-token');
+    let oldRequests = 0, sessions = 0;
+    h.fetch = async (url, options) => {
+        if (url.endsWith('/session')) { h.status = 200; return { token: 'fresh-' + (++sessions) }; }
+        if (options.headers.Authorization === 'Bearer old-token') {
+            await old[oldRequests++].promise; h.status = 401;
+            return { error: { code: 'unauthorized', message: 'Expired' } };
+        }
+        h.status = 200; return { accounts: [] };
+    };
+    const first = h.music.accounts(), late = h.music.accounts(); await tick();
+    assert.equal(oldRequests, 2);
+    old[0].resolve(); await first;
+    assert.equal(h.session.get(vault), 'fresh-1');
+    old[1].resolve(); await late;
+    assert.equal(sessions, 1, 'the late response must not create a third session');
+    assert.equal(h.session.get(vault), 'fresh-1');
+    assert.deepEqual(h.calls.filter(c => c.url.endsWith('/accounts')).map(c => c.options.headers.Authorization),
+        ['Bearer old-token', 'Bearer old-token', 'Bearer fresh-1', 'Bearer fresh-1']);
+});
+
+test('an old endpoint unauthorized response cannot clear its token or refresh after switching gateways', async () => {
+    const h = harness({ musicSettings: { endpoint: 'https://one.test' } }), old = deferred();
+    const oldVault = 'uvu.music.session.v1:https%3A%2F%2Fone.test', nextVault = 'uvu.music.session.v1:https%3A%2F%2Ftwo.test';
+    h.session.set(oldVault, 'old-host-token'); h.session.set(nextVault, 'new-host-token');
+    h.fetch = async url => {
+        if (url.endsWith('/session')) { h.status = 200; return { token: 'unwanted-session' }; }
+        await old.promise; h.status = 401; return { error: { code: 'unauthorized' } };
+    };
+    const request = h.music.accounts(); await tick();
+    await h.music.saveSettings({ endpoint: 'https://two.test' }); old.resolve();
+    await assert.rejects(request, { name: 'AbortError' });
+    assert.equal(h.calls.length, 1, 'a retired gateway must receive no refresh request');
+    assert.equal(h.session.get(oldVault), 'old-host-token');
+    assert.equal(h.session.get(nextVault), 'new-host-token');
+});
+
 test('unknown gateway error details are bounded and redact credential-looking content', async () => {
     const h = harness({ musicSettings: { endpoint: 'https://one.test' } });
     h.fetch = async url => {

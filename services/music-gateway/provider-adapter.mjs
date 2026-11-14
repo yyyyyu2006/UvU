@@ -1,6 +1,11 @@
 import { Worker } from 'node:worker_threads';
 import { access, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { providerError, safeProviderFailure } from './provider-errors.mjs';
+
+// Shared by every account/provider adapter in this process; no unbounded queue.
+let activeWorkers = 0;
+const MAX_WORKERS = 8;
 
 export const ENGINE_REVISION = '4d83862b063b31af3eab1d823cfc7ff584609234';
 export const ENGINE_DIRECTORY = fileURLToPath(new URL('./.runtime/engine/', import.meta.url));
@@ -39,24 +44,35 @@ export function createPlaylistPager(load, render, now = Date.now) {
 export function createProviderAdapter(provider, options = {}) {
     let credential = '';
     let closed = false;
-    const workers = new Set();
+    const workers = new Map();
     async function invoke(operation, args = []) {
-        if (closed || !(await engineInstalled())) throw Error('Provider unavailable');
+        if (closed) throw providerError('provider_cancelled');
+        if (!(await engineInstalled())) throw providerError();
+        if (closed) throw providerError('provider_cancelled');
+        if (activeWorkers >= MAX_WORKERS) throw providerError('provider_busy');
+        activeWorkers++;
         return new Promise((resolve, reject) => {
-            const worker = new Worker(new URL('./engine-worker.mjs', import.meta.url), {
-                workerData: { provider, operation, args, credential },
-                resourceLimits: { maxOldGenerationSizeMb: 96 }, stdout: true, stderr: true
-            });
-            workers.add(worker);
+            let worker;
+            try {
+                worker = new Worker(new URL('./engine-worker.mjs', import.meta.url), {
+                    workerData: { provider, operation, args, credential },
+                    resourceLimits: { maxOldGenerationSizeMb: 96 }, stdout: true, stderr: true
+                });
+            } catch { activeWorkers--; reject(providerError()); return; }
             worker.stdout.resume(); worker.stderr.resume();
-            let settled = false;
+            let finishing;
             const finish = (failure, value) => {
-                if (settled) return;
-                settled = true; clearTimeout(timer); workers.delete(worker); void worker.terminate();
-                if (failure) reject(Object.assign(Error('Provider request failed'), failure)); else resolve(value);
+                if (finishing) return finishing;
+                clearTimeout(timer);
+                finishing = Promise.resolve().then(() => worker.terminate()).catch(() => {}).then(() => {
+                    activeWorkers--; workers.delete(worker);
+                    if (failure) reject(safeProviderFailure(failure)); else resolve(value);
+                });
+                return finishing;
             };
+            workers.set(worker, () => finish(providerError('provider_cancelled')));
             const timer = setTimeout(() => finish({ status: 504, code: 'provider_timeout' }), options.timeoutMs ?? 14000);
-            worker.once('message', message => finish(message.ok ? null : {}, message.value));
+            worker.once('message', message => finish(message?.ok === true ? null : safeProviderFailure(message?.error), message?.value));
             worker.once('error', () => finish({}));
             worker.once('exit', () => finish({}));
         });
@@ -68,6 +84,6 @@ export function createProviderAdapter(provider, options = {}) {
         search: (query, page) => invoke('search', [query, page]),
         stream: id => invoke('stream', [id]), lyrics: id => invoke('lyrics', [id]),
         playlists: user => invoke('playlists', [user]), playlist: (id, page) => playlists.page(id, page),
-        async close() { closed = true; playlists.clear(); credential = ''; await Promise.all([...workers].map(worker => worker.terminate())); workers.clear(); }
+        async close() { closed = true; playlists.clear(); credential = ''; await Promise.all([...workers.values()].map(cancel => cancel())); }
     };
 }
