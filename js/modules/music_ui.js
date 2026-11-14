@@ -71,6 +71,11 @@
         root.dispatchEvent(new CustomEvent('music-sheet-state'));
         done?.();
     }
+    function finishSheet(body) {
+        // A completed save belongs to its original dialog, not a later one.
+        if (!sheet?.contains(body)) return;
+        closeSheet(); render();
+    }
     function share(track, invite = false) {
         const capturedTarget = shareTarget, controller = new AbortController(); let alive = true;
         modal(invite ? '邀请一起听' : '分享音乐', body => {
@@ -105,16 +110,16 @@
         if(target)shareTarget=target;
         modal(track.title, body => {
             body.append(button('播放下一首', () => { M.player.enqueue(track, true); closeSheet(); }, undefined, 'um-wide'),
-                button(M.library().favorites.some(t => M.key(t) === M.key(track)) ? '取消喜欢' : '加入喜欢', async () => { await M.toggleFavorite(track); closeSheet(); render(); }, undefined, 'um-wide'),
+                button(M.library().favorites.some(t => M.key(t) === M.key(track)) ? '取消喜欢' : '加入喜欢', async () => { await M.toggleFavorite(track); finishSheet(body); }, undefined, 'um-wide'),
                 button('加入歌单', () => choosePlaylist(track), undefined, 'um-wide'),
                 button('分享给角色', async () => { closeSheet(); await share(track); }, undefined, 'um-wide'),
                 button('邀请一起听', async () => { closeSheet(); await share(track, true); }, undefined, 'um-wide'));
-            if (options.playlistId) body.append(button('从歌单移除', async () => { await M.removeFromPlaylist(options.playlistId, M.key(track)); closeSheet(); render(); }, undefined, 'um-wide'));
+            if (options.playlistId) body.append(button('从歌单移除', async () => { await M.removeFromPlaylist(options.playlistId, M.key(track)); finishSheet(body); }, undefined, 'um-wide'));
             if (track.provider === 'qq' && M.settings().playbackSource === 'public' && root.UvUPublicMusic?.candidates)
                 body.append(button('选择公共音源', () => publicCandidatePanel(track), undefined, 'um-wide'));
             if (track.provider === 'local') body.append(button('编辑歌曲资料',()=>editLocal(track),undefined,'um-wide'),button('删除本地音乐', async () => {
                 const confirmed = typeof showConfirm === 'function' ? await showConfirm('删除本地音乐', '同时移出本机资料库、歌单和队列。聊天中已分享的歌曲卡片仍会保留。') : root.confirm('删除这首本地音乐？');
-                if (!confirmed) return; await M.deleteLocal(track); closeSheet(); render();
+                if (!confirmed) return; await M.deleteLocal(track); finishSheet(body);
             }, undefined, 'um-wide'));
             if (track.pageUrl) { const a = el('a', '在来源平台查看', 'um-link'); a.href = track.pageUrl; a.target = '_blank'; a.rel = 'noopener noreferrer'; body.append(a); }
         });
@@ -138,20 +143,20 @@
     }
     function editLocal(track){
         modal('歌曲资料',body=>{const fields={};for(const [name,label,value]of [['title','歌名',track.title],['artists','歌手',track.artists.join(' / ')],['album','专辑',track.album],['cover','封面链接',track.cover]]){const field=el('label',label,'um-muted'),input=el('input');input.value=value||'';input.setAttribute('aria-label',label);field.append(input);body.append(field);fields[name]=input;}
-            body.append(button('保存',async()=>{await M.updateLocal(track,{title:fields.title.value,artists:fields.artists.value.split(/\s*\/\s*/).filter(Boolean),album:fields.album.value,cover:fields.cover.value});closeSheet();render();},undefined,'um-primary'));
+            body.append(button('保存',async()=>{await M.updateLocal(track,{title:fields.title.value,artists:fields.artists.value.split(/\s*\/\s*/).filter(Boolean),album:fields.album.value,cover:fields.cover.value});finishSheet(body);},undefined,'um-primary'));
         });
     }
     function choosePlaylist(track) {
         modal('加入歌单', body => {
             const list = M.library().playlists;
-            for (const item of list) body.append(button(item.name, async () => { await M.addToPlaylist(item.id, track); closeSheet(); render(); }, undefined, 'um-wide'));
+            for (const item of list) body.append(button(item.name, async () => { await M.addToPlaylist(item.id, track); finishSheet(body); }, undefined, 'um-wide'));
             body.append(button('新建歌单', () => createPlaylist(track), undefined, 'um-wide'));
         });
     }
     function createPlaylist(track) {
         modal('新建歌单', body => {
             const input = el('input'); input.placeholder = '歌单名称'; input.maxLength = 160; input.setAttribute('aria-label', '歌单名称');
-            body.append(input, button('创建', async () => { const item = await M.addPlaylist(input.value); if (track) await M.addToPlaylist(item.id, track); closeSheet(); render(); }, undefined, 'um-primary'));
+            body.append(input, button('创建', async () => { const item = await M.addPlaylist(input.value); if (track) await M.addToPlaylist(item.id, track); finishSheet(body); }, undefined, 'um-primary'));
         });
     }
     function importPlaylistPanel(reference) {
@@ -269,7 +274,7 @@
                     if (!alive || controller.signal.aborted) return;page = nextPage;const keys=new Set(tracks.map(M.key));for(const t of data.tracks){const id=M.key(t);if(!keys.has(id)){keys.add(id);tracks.push(t);}}draw();footer.replaceChildren();
                     if (data.hasMore) footer.append(button('加载更多', load));
                     if (cloudProvider) footer.append(button('导入到资料库', () => importPlaylistPanel({ provider: cloudProvider, id: item.id, name: item.name })));
-                    if (managed) footer.append(button('重命名',()=>renamePlaylistPanel(item)),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); closeSheet(); render(); }));
+                    if (managed) footer.append(button('重命名',()=>renamePlaylistPanel(item)),button('删除歌单', async () => { if (!root.confirm('删除这个歌单？音乐文件会保留。')) return; await M.deletePlaylist(item.id); finishSheet(body); }));
                 } catch (e) { if (alive) { toast(e); if (!page) { footer.replaceChildren(); footer.append(button('重试读取', load)); } } } finally { pending = false; }
             }; void load();
         }, () => { alive = false; controller.abort();unsubscribe?.(); });
