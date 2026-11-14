@@ -155,3 +155,70 @@ test('failed deletion restores history and synchronized archive without clearing
     assert.equal(f.c.selectedMessageIds.size, 4); assert.equal(f.c.isInMultiSelectMode, true);
     assert.match(f.toasts.at(-1), /恢复/);
 });
+
+for (const mode of ['single', 'selection']) {
+    const remove = f => mode === 'single'
+        ? f.c.deleteSingleMessage('m2', f.chat, 'private', 'archive1')
+        : (f.c.enterMultiSelectMode('m2'), f.c.deleteSelectedMessages());
+
+    test(mode + ' deletion failure preserves later removals and replacement messages', async () => {
+        const f = fixture();
+        f.chat.archives = [{ id: 'archive1', data: {} }];
+        f.c.saveData = async () => {
+            f.chat.history = f.chat.history.filter(message => message.id !== 'm5').map(message =>
+                message.id === 'm3' ? { ...message, content: 'newer edit' } : message);
+            f.chat.history.push({ id: 'arrival', content: 'new arrival' });
+            f.chat.archives[0].data.history = JSON.parse(JSON.stringify(f.chat.history));
+            throw Error('quota');
+        };
+        await remove(f);
+        for (const history of [f.chat.history, f.chat.archives[0].data.history]) {
+            assert.deepEqual(Array.from(history, message => message.id), ['m0', 'm1', 'm2', 'm3', 'm4', 'm6', 'm7', 'arrival']);
+            assert.equal(history.find(message => message.id === 'm3').content, 'newer edit');
+        }
+    });
+
+    test(mode + ' deletion failure restores only the original archive after switching away', async () => {
+        const f = fixture();
+        f.chat.archives = [{ id: 'archive1', data: {} }];
+        f.c.saveData = async () => {
+            f.chat.archives[0].data.history = JSON.parse(JSON.stringify(f.chat.history));
+            f.chat.archives[0].data.history[0] = { id: 'm0', content: 'new archived edit' };
+            f.chat.archives[0].data.history.push({ id: 'archived-arrival', content: 'new' });
+            f.chat.activeArchiveId = 'archive2';
+            f.chat.history = [{ id: 'other', content: 'other archive' }];
+            throw Error('quota');
+        };
+        await remove(f);
+        assert.deepEqual(Array.from(f.chat.history, message => message.id), ['other']);
+        const history = f.chat.archives[0].data.history;
+        assert.equal(history.find(message => message.id === 'm0').content, 'new archived edit');
+        assert.ok(history.some(message => message.id === 'm2'));
+        assert.equal(history.at(-1).id, 'archived-arrival');
+    });
+}
+
+test('completed deletion does not dismiss a newer selection in the same archive', async () => {
+    const f = fixture(); let finish;
+    f.c.saveData = () => new Promise(resolve => { finish = resolve; });
+    f.c.enterMultiSelectMode('m2');
+    const pending = f.c.deleteSelectedMessages();
+    f.c.enterMultiSelectMode('m6');
+    finish(); await pending;
+    assert.equal(f.c.isInMultiSelectMode, true);
+    assert.deepEqual([...f.c.selectedMessageIds], ['m6']);
+});
+
+for (const removeAll of [false, true]) {
+    test('failed mutation restores deleted tail ahead of arrivals; all=' + removeAll, async () => {
+        const f = fixture(), before = f.chat.history.map(message => message.id);
+        const state = f.c.beginChatMutation(f.chat, 'private');
+        f.chat.history = removeAll ? [] : f.chat.history.slice(0, -2);
+        f.c.saveData = async () => {
+            f.chat.history.push({ id: 'arrival', content: 'new arrival' });
+            throw Error('quota');
+        };
+        assert.equal(await f.c.saveChatMutation(state), false);
+        assert.deepEqual(Array.from(f.chat.history, message => message.id), [...before, 'arrival']);
+    });
+}

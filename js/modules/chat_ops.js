@@ -51,8 +51,15 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
                     const bucket = beforeAnchor.get(id) || [];
                     for (let i = bucket.length - 1; i >= 0; i--) restored.push(bucket[i]);
                 };
-                for (const message of data.history) { appendBefore(message.id); restored.push(message); }
-                appendBefore(null);
+                let lastSurvivor = -1;
+                for (let i = 0; i < data.history.length; i++) if (beforeIds.has(data.history[i].id)) lastSurvivor = i;
+                // Deleted trailing records preceded later arrivals; retain that order on rollback.
+                if (lastSurvivor < 0) appendBefore(null);
+                for (let i = 0; i < data.history.length; i++) {
+                    const message = data.history[i];
+                    appendBefore(message.id); restored.push(message);
+                    if (i === lastSurvivor) appendBefore(null);
+                }
                 data.history.length = 0;
                 for (const message of restored) data.history.push(message);
             }
@@ -74,7 +81,13 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
         if (chat.activeArchiveId === state.archiveId) restore(chat);
         const archive = chat.archives?.find(item => item.id === state.archiveId);
         if (archive?.data) restore(archive.data);
-        if (currentChatId === chat.id && currentChatType === state.type && chat.activeArchiveId === state.archiveId && typeof renderMessages === 'function') renderMessages(false, true);
+        if (currentChatId === chat.id && currentChatType === state.type && chat.activeArchiveId === state.archiveId) {
+            if (typeof renderMessages === 'function') renderMessages(false, true);
+            if (state.type === 'private') {
+                const statusText = document.getElementById('chat-room-status-text');
+                if (statusText) statusText.textContent = chat.status || '在线';
+            }
+        }
         if (typeof renderChatList === 'function') renderChatList();
         showToast(failureText);
         return false;
@@ -1083,23 +1096,13 @@ async function deleteSingleMessage(messageId, chat, type, archiveId) {
     if (!chat || chat.activeArchiveId !== archiveId || currentChatId !== chat.id || currentChatType !== type) return;
     const originalHistory = chat.history;
     if (!originalHistory?.some(message => message.id === messageId)) return;
+    const target = captureChatSendTarget(chat.id, type);
+    const mutation = beginChatMutation(chat, type);
     const nextHistory = originalHistory.filter(message => message.id !== messageId);
     chat.history = nextHistory;
     if (type === 'private') recalculateChatStatus(chat);
-    try { await saveData(); }
-    catch (error) {
-        const ids = new Set(originalHistory.map(message => message.id));
-        const restored = originalHistory.concat(nextHistory.filter(message => !ids.has(message.id)));
-        if (chat.activeArchiveId === archiveId && chat.history === nextHistory) {
-            chat.history = restored;
-            if (type === 'private') recalculateChatStatus(chat);
-        }
-        const stored = chat.archives?.find(archive => archive.id === archiveId);
-        if (stored?.data) stored.data.history = restored;
-        showToast('删除未保存，消息已恢复，请重试');
-        return;
-    }
-    if (chat.activeArchiveId !== archiveId || currentChatId !== chat.id || currentChatType !== type) return;
+    if (!await saveChatMutation(mutation, '删除未保存，消息已恢复，请重试')) return;
+    if (!isChatTargetVisible({ ...target, history: nextHistory })) return;
     if (typeof currentQuoteInfo !== 'undefined' && currentQuoteInfo?.id === messageId) cancelQuoteReply();
     if (typeof editingMessageId !== 'undefined' && editingMessageId === messageId) cancelMessageEdit();
     currentPage = 1;
@@ -1113,7 +1116,9 @@ async function deleteSelectedMessages() {
     const deletedCount = selectedMessageIds.size;
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!isCurrentMessageSelection(chat)) return;
-    const archiveId = chat.activeArchiveId;
+    const selection = messageSelectionScope;
+    const target = captureChatSendTarget();
+    const mutation = beginChatMutation(chat, target.type);
     const originalHistory = chat.history;
     const nextHistory = originalHistory.filter(m => !selectedMessageIds.has(m.id));
     chat.history = nextHistory;
@@ -1122,21 +1127,8 @@ async function deleteSelectedMessages() {
         recalculateChatStatus(chat);
     }
 
-    try {
-        await saveData();
-    } catch (error) {
-        const ids = new Set(originalHistory.map(message => message.id));
-        const restored = originalHistory.concat(nextHistory.filter(message => !ids.has(message.id)));
-        if (chat.activeArchiveId === archiveId && chat.history === nextHistory) {
-            chat.history = restored;
-            if (currentChatType === 'private') recalculateChatStatus(chat);
-        }
-        const stored = chat.archives?.find(archive => archive.id === archiveId);
-        if (stored?.data) stored.data.history = restored;
-        showToast('删除未保存，消息已恢复，请重试');
-        return;
-    }
-    if (chat.activeArchiveId !== archiveId || !isCurrentMessageSelection(chat)) return;
+    if (!await saveChatMutation(mutation, '删除未保存，消息已恢复，请重试')) return;
+    if (messageSelectionScope !== selection || !isChatTargetVisible({ ...target, history: nextHistory })) return;
     currentPage = 1;
     renderMessages(false, true);
     renderChatList();
