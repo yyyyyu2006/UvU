@@ -306,6 +306,7 @@ window.parseImageResponse = async function(response, expectedFormat = 'auto') {
         const parseLine = line => {
             if (!line.startsWith('data:')) return;
             let packet; try { packet = JSON.parse(line.slice(5).trim()); } catch (_) { return; }
+            if (!packet || typeof packet !== 'object' || Array.isArray(packet)) return;
             if (packet.event_type === 'error' || packet.code) throw new Error('NovelAI 错误: ' + String(packet.message || packet.code).slice(0, 300));
             if (packet.event_type === 'intermediate') return;
             imageData = packet.b64 || packet.image || packet.images?.[0] || imageData;
