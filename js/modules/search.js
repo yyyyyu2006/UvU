@@ -354,11 +354,19 @@ const SearchSystem = {
 
     // 关键词高亮处理
     highlightKeyword(content, keyword) {
-        if (!keyword) return this.escapeHtml(content);
-        const safeContent = this.escapeHtml(content);
-        const safeKeyword = this.escapeHtml(keyword);
-        const regex = new RegExp(`(${safeKeyword})`, 'gi');
-        return safeContent.replace(regex, '<span class="keyword-highlight">$1</span>');
+        const text = String(content ?? '');
+        if (!keyword) return this.escapeHtml(text);
+        const regex = new RegExp(escapeMessageRegex(keyword), 'gi');
+        const fragments = [];
+        let lastIndex = 0;
+        // Match literal source text before escaping, so HTML entities cannot become partial matches.
+        for (const match of text.matchAll(regex)) {
+            fragments.push(this.escapeHtml(text.slice(lastIndex, match.index)),
+                '<span class="keyword-highlight">', this.escapeHtml(match[0]), '</span>');
+            lastIndex = match.index + match[0].length;
+        }
+        fragments.push(this.escapeHtml(text.slice(lastIndex)));
+        return fragments.join('');
     },
 
     // 打开筛选范围模态框

@@ -16,9 +16,34 @@ function initGPTTagsSystem() {
         ];
     }
 
+    const renderTestTags = (tags) => {
+        const testTagsContainer = document.getElementById('workshop-gpt-test-tags-container');
+        if (!testTagsContainer) return;
+        testTagsContainer.innerHTML = '';
+        tags.forEach(tag => {
+            if (!tag.name || tag.enabled === false) return;
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-small btn-neutral';
+            btn.style.padding = '4px 8px';
+            btn.style.fontSize = '12px';
+            btn.textContent = tag.name;
+            btn.addEventListener('click', () => {
+                if (db.workshopSettings.gptTags !== tags || !tags.includes(tag) || tag.enabled === false) return;
+                const testPromptInput = document.getElementById('workshop-gpt-test-prompt');
+                if (testPromptInput) {
+                    testPromptInput.value = testPromptInput.value ? testPromptInput.value + ' ' + tag.name : tag.name;
+                    // Programmatic input events are intentionally ignored; change uses the existing save path.
+                    testPromptInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            testTagsContainer.appendChild(btn);
+        });
+    };
+
     const renderTags = () => {
         tagsListContainer.innerHTML = '';
         const tags = db.workshopSettings.gptTags;
+        renderTestTags(tags);
 
         if (tags.length === 0) {
             tagsListContainer.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">暂无标签，点击右上角添加</div>';
@@ -59,6 +84,7 @@ function initGPTTagsSystem() {
             nameInput.addEventListener('change', async (e) => {
                 if (db.workshopSettings.gptTags !== tags || !tags.includes(tag)) return;
                 if (!await saveLocalSettingsFields([{target:tag,values:{name:e.target.value.trim()}}])) nameInput.value = tag.name;
+                if (db.workshopSettings.gptTags === tags) renderTestTags(tags);
             });
 
             promptInput.addEventListener('change', async (e) => {
@@ -89,28 +115,6 @@ function initGPTTagsSystem() {
             tagsListContainer.appendChild(itemDiv);
         });
         
-        // 同步渲染测试 UI 中的标签按钮
-        const testTagsContainer = document.getElementById('workshop-gpt-test-tags-container');
-        if (testTagsContainer) {
-            testTagsContainer.innerHTML = '';
-            tags.forEach(tag => {
-                if (!tag.name || tag.enabled === false) return;
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-small btn-neutral';
-                btn.style.padding = '4px 8px';
-                btn.style.fontSize = '12px';
-                btn.textContent = tag.name;
-                btn.addEventListener('click', () => {
-                    const testPromptInput = document.getElementById('workshop-gpt-test-prompt');
-                    if (testPromptInput) {
-                        testPromptInput.value = testPromptInput.value ? testPromptInput.value + ' ' + tag.name : tag.name;
-                        // 触发 input 事件以保存
-                        testPromptInput.dispatchEvent(new Event('input'));
-                    }
-                });
-                testTagsContainer.appendChild(btn);
-            });
-        }
     };
 
     renderTags();

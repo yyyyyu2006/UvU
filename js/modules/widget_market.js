@@ -654,13 +654,14 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
         }
 
         const styleId = `preview-style-${template.id}`;
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
+        let style = document.getElementById(styleId);
+        if (!style) {
+            style = document.createElement('style');
             style.id = styleId;
-            // 修复：注入 CSS 时也必须替换 {{id}} 为真实的模板 ID
-            style.textContent = template.css.replace(/{{id}}/g, template.id);
             document.head.appendChild(style);
         }
+        // Same-ID replacements must refresh the existing preview style too.
+        style.textContent = template.css.replace(/{{id}}/g, template.id);
 
         // 真实比例缩放包装器
         const scaleWrapper = document.createElement('div');
@@ -1087,49 +1088,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Single exports and batch exports share the same validation before any state is changed.
+function normalizeWidgetImport(data) {
+    const templates = Array.isArray(data) ? data : [data];
+    if (!templates.length) throw new Error('小组件文件没有模板');
+    const seen = new Set();
+    return templates.map((template, index) => {
+        const invalid = () => { throw new Error(`第 ${index + 1} 个小组件格式无效`); };
+        if (!template || typeof template !== 'object' || Array.isArray(template)) invalid();
+        if (['id', 'name', 'html', 'css'].some(key => typeof template[key] !== 'string') ||
+            !template.id.trim() || !template.name.trim()) invalid();
+        if (template.js !== undefined && typeof template.js !== 'string') invalid();
+        if (template.size !== undefined && typeof template.size !== 'string') invalid();
+        if (template.defaultVars !== undefined && (!template.defaultVars ||
+            typeof template.defaultVars !== 'object' || Array.isArray(template.defaultVars))) invalid();
+        if (seen.has(template.id)) throw new Error(`小组件文件包含重复标识：${template.id}`);
+        seen.add(template.id);
+        return { ...template, size: template.size ?? '2x2', js: template.js ?? '', defaultVars: template.defaultVars ?? {} };
+    });
+}
+
 // 绑定导入按钮
 document.addEventListener('DOMContentLoaded', () => {
     const importInput = document.getElementById('widget-import-input');
 
     if (importInput) {
-        importInput.addEventListener('change', (e) => {
+        let importing = false;
+        importInput.addEventListener('change', async (e) => {
+            if (importing) return;
             const file = e.target.files[0];
             if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const template = JSON.parse(event.target.result);
-                    
-                    // 简单验证
-                    if (!template.id || !template.name || !template.html || !template.css) {
-                        throw new Error('无效的小组件格式');
-                    }
-                    
-                    // 兼容旧版本没有 js 字段的情况
-                    if (template.js === undefined) {
-                        template.js = '';
-                    }
-
-                    if (!db.widgetTemplates) db.widgetTemplates = [];
-                    
-                    // 检查是否已存在
-                    const existingIndex = db.widgetTemplates.findIndex(t => t.id === template.id);
-                    if (existingIndex >= 0) {
-                        if (confirm('已存在同名模板，是否覆盖？')) {
-                            db.widgetTemplates[existingIndex] = template;
-                        } else {
-                            return;
-                        }
-                    } else {
-                        db.widgetTemplates.push(template);
-                    }
-
-                    await saveData();
-                    showToast('导入成功');
-                    renderWidgetMarket();
-                    
-                    // 注入全局 CSS
+            importing = true;
+            importInput.disabled = true;
+            const targetDb = db;
+            try {
+                const text = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('小组件文件读取失败，请重新选择文件'));
+                    reader.onabort = () => reject(new Error('小组件文件读取已取消'));
+                    reader.readAsText(file);
+                });
+                const templates = normalizeWidgetImport(JSON.parse(text));
+                if (db !== targetDb) throw new Error('数据已切换，请重新导入小组件');
+                const existing = targetDb.widgetTemplates || [];
+                if (templates.some(template => existing.some(item => item.id === template.id)) &&
+                    !confirm('已存在相同的小组件，是否覆盖？')) return;
+                const next = [...existing];
+                for (const template of templates) {
+                    const index = next.findIndex(item => item.id === template.id);
+                    if (index >= 0) next[index] = template;
+                    else next.push(template);
+                }
+                if (!await saveLocalSettingsFields([{ target: targetDb, values: { widgetTemplates: next } }])) return;
+                if (db !== targetDb) return;
+                showToast('导入成功');
+                renderWidgetMarket();
+                for (const template of templates) {
+                    if (!db.widgetTemplates.includes(template)) continue;
                     const styleId = `custom-widget-style-${template.id}`;
                     let styleEl = document.getElementById(styleId);
                     if (!styleEl) {
@@ -1137,15 +1153,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         styleEl.id = styleId;
                         document.head.appendChild(styleEl);
                     }
-                    styleEl.textContent = template.css;
-
-                } catch (error) {
-                    console.error(error);
-                    showToast('导入失败：' + error.message);
+                    styleEl.textContent = template.css.replace(/{{id}}/g, template.id);
                 }
-                importInput.value = ''; // 清空 input
-            };
-            reader.readAsText(file);
+            } catch (error) {
+                console.error('小组件导入失败:', error.message);
+                showToast('导入失败：' + error.message);
+            } finally {
+                importing = false;
+                importInput.disabled = false;
+                importInput.value = '';
+            }
         });
     }
 });

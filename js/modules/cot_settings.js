@@ -291,32 +291,32 @@ function initXmlHelpFeature() {
                         <p>默认思维链中使用了以下 XML 标签来构建 System Prompt，了解它们有助于你更好地调整预设或在思维链中快捷引用：</p>
                         
             <div class="xml-tag-item">
-              <code><char_settings></code>
+              <code>&lt;char_settings&gt;</code>
               <p><strong>角色设定</strong>：包含角色设定以及世界书·后（不包含世界书·破限和世界书·前）</p>
             </div>
 
             <div class="xml-tag-item">
-              <code><user_settings></code>
+              <code>&lt;user_settings&gt;</code>
               <p><strong>用户设定</strong>：包含你的名字以及你对自己的人设描述。</p>
             </div>
 
             <div class="xml-tag-item">
-              <code><logic_rules></code>
+              <code>&lt;logic_rules&gt;</code>
               <p><strong>逻辑规则</strong>：包含各种交互逻辑的详细说明，如表情包列表、相册图片、特殊指令（转账、礼物、撤回等）的处理规则。</p>
             </div>
 
             <div class="xml-tag-item">
-              <code><output_formats></code>
+              <code>&lt;output_formats&gt;</code>
               <p><strong>输出格式</strong>：AI 回复消息的格式总规范。</p>
             </div>
 
             <div class="xml-tag-item">
-              <code><Chatting Guidelines></code>
+              <code>&lt;Chatting Guidelines&gt;</code>
               <p><strong>对话指南</strong>：定义对话的节奏、回复条数限制以及风格建议。</p>
             </div>
 
             <div class="xml-tag-item">
-              <code><thinking></code>
+              <code>&lt;thinking&gt;</code>
               <p><strong>思维链</strong>：AI 的思考过程将包裹在此标签内。这部分内容不会显示在聊天界面上，仅用于 AI 进行逻辑推演。</p>
             </div>
                     </div>
