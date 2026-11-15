@@ -43,6 +43,19 @@ test('SSE missing final result, cancellation and invalid hex fail explicitly', a
     const controller = new AbortController(); controller.abort();
     await assert.rejects(s.readResponse(new Response('{}'), controller.signal), { name: 'AbortError' });
 });
+
+test('a terminal MiniMax packet completes even when the transport remains open', async () => {
+    const s = fixture(), controller = new AbortController();
+    let cancelled = false;
+    const body = new ReadableStream({ start(stream) {
+        stream.enqueue(new TextEncoder().encode('data: {"data":{"audio":"fffb9064","status":2},"extra_info":{"usage_characters":4}}\n\n'));
+    }, cancel() { cancelled = true; } });
+    const timer = setTimeout(() => controller.abort(), 100);
+    try {
+        const result = await s.readResponse(new Response(body, { headers: { 'content-type': 'text/event-stream' } }), controller.signal);
+        assert.equal(result.data.audio, 'fffb9064'); assert.equal(result.extra_info.usage_characters, 4); assert.equal(cancelled, true);
+    } finally { clearTimeout(timer); }
+});
 test('role overrides retain API defaults while dictionaries affect only synthesis parameters', () => {
     const s = fixture(); const saved = { apiKey: 'secret', voiceId: 'default', director: { enabled: true }, speech: { stream: false },
         profiles: { a: { voiceId: 'alice', directorMode: 'off', dictionary: ['晴/(qing2)'] } } };

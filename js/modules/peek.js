@@ -163,7 +163,9 @@ function setupPeekFeature() {
             const char = db.characters.find(c => c.id === currentChatId);
             const cachedData = char ? char.peekData.messages : null;
             if (cachedData && cachedData.conversations) {
-                const conversation = cachedData.conversations.find(c => c.partnerName === partnerName);
+                const index = Number(chatItem.dataset.conversationIndex);
+                const conversation = chatItem.dataset.conversationIndex !== undefined && Number.isInteger(index)
+                    ? cachedData.conversations[index] : cachedData.conversations.find(c => c.partnerName === partnerName);
                 if (conversation) {
                     renderPeekConversation(conversation.history, conversation.partnerName);
                     switchScreen('peek-conversation-screen');
@@ -706,12 +708,9 @@ async function deleteMoment(momentId) {
         const momentToDelete = char.moments[momentIndex];
         
         // 1. 从聊天记录中删除对应的指令消息
-        // 寻找包含该动态内容的原始指令消息
-        const snippet = momentToDelete.content.substring(0, 20);
-        const msgIndex = char.history.findIndex(m => 
-            m.content.includes('发布了一条动态') && m.content.includes(snippet) ||
-            m.content.includes('发布了一条带图动态') && m.content.includes(snippet)
-        );
+        // 旧记录没有可靠关联时保留历史，避免同文动态互相误删。
+        const msgIndex = momentToDelete.sourceMessageId
+            ? char.history.findIndex(m => m.id === momentToDelete.sourceMessageId) : -1;
         
         if (msgIndex > -1) {
             char.history.splice(msgIndex, 1);
@@ -741,10 +740,8 @@ async function deleteMomentComment(momentId, commentId) {
         const commentToDelete = moment.comments[commentIndex];
         
         // 1. 从聊天记录中删除对应的指令消息
-        const msgIndex = char.history.findIndex(m => 
-            (m.content.includes('评论了') || m.content.includes('回复了')) && 
-            m.content.includes(commentToDelete.content)
-        );
+        const msgIndex = commentToDelete.sourceMessageId
+            ? char.history.findIndex(m => m.id === commentToDelete.sourceMessageId) : -1;
         
         if (msgIndex > -1) {
             char.history.splice(msgIndex, 1);
@@ -795,13 +792,15 @@ async function addMomentComment(momentId, text, replyTo = null) {
         systemMsg = `[system: ${myName}评论了${char.realName}的动态“${momentSnippet}...”：${text}]`;
     }
 
-    char.history.push({
+    const sourceMessage = {
         id: `msg_${Date.now()}_${Math.random()}`,
         role: 'user',
         content: systemMsg,
         timestamp: Date.now(),
         isContextDisabled: false // 评论进入上下文
-    });
+    };
+    newComment.sourceMessageId = sourceMessage.id;
+    char.history.push(sourceMessage);
 
     if (!await saveChatMutation(mutation, '评论未保存，请重试') || !isChatTargetVisible(target)) return;
     renderMomentsScreen();
@@ -1112,7 +1111,7 @@ function renderPeekChatList(conversations = []) {
         return;
     }
 
-    conversations.forEach((convo) => {
+    conversations.forEach((convo, index) => {
         const history = convo.history || [];
         const lastMessage = history.length > 0 ? history[history.length - 1] : null;
         const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息：([\s\S]+)\]/, '$1') : '...';
@@ -1120,6 +1119,7 @@ function renderPeekChatList(conversations = []) {
         const li = document.createElement('li');
         li.className = 'list-item chat-item';
         li.dataset.name = convo.partnerName;
+        li.dataset.conversationIndex = String(index);
 
         const avatarUrl = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
 

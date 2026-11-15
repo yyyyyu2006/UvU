@@ -694,9 +694,7 @@ async function saveMessageEdit() {
                         
                         let html = chat.statusPanel.replacePattern;
                         
-                        for (let i = 1; i < match.length; i++) {
-                            html = html.replace(new RegExp(`\\$${i}`, 'g'), match[i]);
-                        }
+                        html = html.replace(/\$(\d+)/g, (token, index) => match[Number(index)] ?? token);
                         chat.statusPanel.currentStatusHtml = html;
                         
                         editedMessage.isStatusUpdate = true;
@@ -1256,12 +1254,12 @@ function generateRangePreview(chat, startIndex, endIndex) {
     const renderMsg = (msg) => {
         const contentMatch = msg.content.match(/\[.*?的消息：([\s\S]+)\]/);
         let text = contentMatch ? contentMatch[1] : msg.content;
-        text = text.replace(/</g, '<').replace(/>/g, '>'); // Escape HTML
+        const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const sender = msg.role === 'user' ? '我' : (chat.remarkName || chat.name || '对方');
         const status = msg.isContextDisabled ? ' <span style="color:red; font-size:10px;">(已隐藏)</span>' : '';
         return `<div style="margin-bottom:4px; padding-bottom:4px; border-bottom:1px solid #eee;">
-            <span style="font-weight:600; color:#555;">${sender}</span>${status}: 
-            <span style="color:#666;">${text.substring(0, 60)}${text.length > 60 ? '...' : ''}</span>
+            <span style="font-weight:600; color:#555;">${escape(sender)}</span>${status}:
+            <span style="color:#666;">${escape(text.substring(0, 60))}${text.length > 60 ? '...' : ''}</span>
         </div>`;
     };
 

@@ -495,6 +495,8 @@
         }
         // Explicit allow-list: music and original screens never receive this surface.
         if (root.closest('#uvu-music-screen,.uvu-music-sheet,[id^=music-],.music-app,.music-dialog,.together-listening-dialog')) return;
+        const modelSearch = root.classList.contains('model-picker-card') && q(root, '.model-picker-search');
+        const searchSelection = modelSearch && document.activeElement === modelSearch ? [modelSearch.selectionStart, modelSearch.selectionEnd] : null;
         if (!initialized.has(root)) {
             initialized.add(root); root.classList.add('uvu-panel-layout', 'uvu-mono-panel');
             if (root.id === 'auto-memory-modal') summary(root);
@@ -543,6 +545,7 @@
         }
         sheetLayout(root);
         window.UvULensoPanels?.decorate(root);
+        if (searchSelection && modelSearch.isConnected) { modelSearch.focus({preventScroll:true}); modelSearch.setSelectionRange(...searchSelection); }
     }
     function sheetLayout(root) {
         const panel = root.id === 'auto-memory-modal' ? q(root, '.auto-memory-dialog') : root;
@@ -1105,7 +1108,7 @@
                 searchRow.append(search);
                 if(searchButton){searchButton.title=searchButton.textContent;searchButton.setAttribute('aria-label','查找正文');navIcon(searchButton,'search');searchRow.prepend(searchButton);searchButton.addEventListener('click',()=>queueMicrotask(()=>{renderReader();reader.querySelectorAll('mark').forEach(mark=>mark.replaceWith(document.createTextNode(mark.textContent)));if(!search.value)return;for(const paragraph of reader.children){const content=paragraph.textContent,index=content.indexOf(search.value);if(index<0)continue;const mark=make('mark','',search.value);paragraph.replaceChildren(document.createTextNode(content.slice(0,index)),mark,document.createTextNode(content.slice(index+search.value.length)));mark.scrollIntoView({block:'nearest'});break;}}));}
                 if(copyButton&&options)options.append(copyButton);
-                search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchButton?.click();}});
+                search.addEventListener('keydown',event=>{if(event.isComposing||event.keyCode===229)return;if(event.key==='Enter'){event.preventDefault();searchButton?.click();}});
                 editor.before(searchRow);
             }
             if (pages) editor.after(pages);

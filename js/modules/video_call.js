@@ -44,6 +44,7 @@ const VideoCallModule = {
     },
 
     cancelCallRequests: function() {
+        this.cancelReplySegments();
         this.state.replyController?.abort();
         this.state.initialController?.abort();
         this.state.replyController = null;
@@ -390,8 +391,13 @@ const VideoCallModule = {
         }, 300);
     },
 
+    cancelReplySegments: function() {
+        this.state.replyRound = (this.state.replyRound || 0) + 1;
+        for (const timer of this.state.replyTimers || []) clearTimeout(timer);
+        this.state.replyTimers = new Set();
+    },
     // 接收来电
-    receiveCall: function(type, chatId) {
+    receiveCall: function(type, chatId, chatType) {
         let chat;
         if (chatId) {
             chat = db.characters.find(c => c.id === chatId);
@@ -400,7 +406,8 @@ const VideoCallModule = {
             }
         }
         
-        if (!chat && typeof currentChatId !== 'undefined' && currentChatId) {
+        if (chatId && chatType) chat = (chatType === 'private' ? db.characters : db.groups).find(c => c.id === chatId);
+        if (!chatId && !chat && typeof currentChatId !== 'undefined' && currentChatId) {
             if (currentChatType === 'private') {
                 chat = db.characters.find(c => c.id === currentChatId);
             } else if (currentChatType === 'group') {
@@ -412,6 +419,7 @@ const VideoCallModule = {
         if (db.characters.includes(chat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(chat)) return;
         
         this.state.incomingChat = chat;
+        this.state.incomingTarget = captureChatSendTarget(chat.id, db.characters.includes(chat) ? 'private' : 'group');
         this.state.callType = type;
 
         const avatarUrl = chat.avatar || 'https://i.postimg.cc/1zsGZ85M/Camera_1040g3k831o3b7f1bkq105oaltnigkev8gp3kia8.jpg';
@@ -433,6 +441,7 @@ const VideoCallModule = {
     },
 
     acceptCall: function() {
+        if (this.state.incomingTarget && !isChatSendTargetValid(this.state.incomingTarget)) { showToast('来电所属存档已变化，请重新发起通话'); return; }
         const modal = document.getElementById('vc-incoming-modal');
         modal.classList.remove('visible');
         setTimeout(() => {
@@ -452,6 +461,7 @@ const VideoCallModule = {
     },
 
     rejectCall: async function() {
+        if (this.state.incomingTarget && !isChatSendTargetValid(this.state.incomingTarget)) { showToast('来电所属存档已变化，请重新发起通话'); return; }
         if (this.state.rejectPending) return;
         this.state.rejectPending = true;
         try {
@@ -766,6 +776,8 @@ const VideoCallModule = {
 
     parseAndAddAiResponse: function(fullText) {
         const scope = this.captureCallScope();
+        const round = this.state.replyRound || 0;
+        if (!this.state.replyTimers) this.state.replyTimers = new Set();
         const regex = /\[(.*?)[：:]([\s\S]+?)\]/g;
         let match;
         let delay = 500;
@@ -780,10 +792,12 @@ const VideoCallModule = {
                 type = 'visual';
             }
             
-            setTimeout(() => {
-                if (!this.isCallScopeCurrent(scope)) return;
+            const timer = setTimeout(() => {
+                this.state.replyTimers.delete(timer);
+                if (!this.isCallScopeCurrent(scope) || (this.state.replyRound || 0) !== round) return;
                 this.addMessage('ai', type, content);
             }, delay);
+            this.state.replyTimers.add(timer);
             
             delay += 2000; 
         }
@@ -924,6 +938,7 @@ const VideoCallModule = {
             return;
         }
 
+        this.cancelReplySegments();
         // 1. 找到最后一条 User 消息的索引
         let lastUserIndex = -1;
         for (let i = this.state.currentCallContext.length - 1; i >= 0; i--) {

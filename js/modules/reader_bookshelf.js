@@ -72,12 +72,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 删除书籍
     async function deleteBook(bookId) {
         try {
-            await dexieDB.transaction('rw', dexieDB.reader_books, dexieDB.reader_chapters, async () => {
+            await dexieDB.transaction('rw', dexieDB.reader_books, dexieDB.reader_chapters, dexieDB.reader_comments, async () => {
                 await dexieDB.reader_books.delete(bookId);
                 // 删除关联的章节
                 const chapters = await dexieDB.reader_chapters.where('bookId').equals(bookId).toArray();
                 const chapterIds = chapters.map(ch => ch.id);
                 await dexieDB.reader_chapters.bulkDelete(chapterIds);
+                await dexieDB.reader_comments.where('bookId').equals(bookId).delete();
             });
             showToast("删除成功");
         } catch (error) {

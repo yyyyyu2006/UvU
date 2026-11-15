@@ -135,14 +135,13 @@ function initWorkshopGeneration() {
             if (styleSelect) settings.gptStyle = styleSelect.value;
         }
         
-        await saveData();
-        
         isGenerating = true;
         const originalText = generateBtn.innerHTML;
         generateBtn.innerHTML = '⏳ 生成中...';
         generateBtn.disabled = true;
         
         try {
+            await saveData();
             const { imageData, payload } = await window.executeImageGeneration(settings);
             
             // 暂存数据并渲染图片
@@ -517,7 +516,7 @@ async function buildGPTPayload(settings, rawPrompt) {
         settings.gptTags.forEach(tag => {
             if (tag.enabled !== false && tag.name && tag.prompt && finalPrompt.includes(tag.name)) {
                 // 移除标签
-                finalPrompt = finalPrompt.replace(new RegExp(tag.name, 'g'), '');
+                finalPrompt = finalPrompt.split(tag.name).join('');
                 // 收集风格提示词
                 stylePrompts.push(tag.prompt);
             }
@@ -529,8 +528,7 @@ async function buildGPTPayload(settings, rawPrompt) {
         settings.boundCharacters.forEach(boundChar => {
             const char = db.characters.find(c => c.id === boundChar.charId);
             if (char && boundChar.prompt) {
-                const regex = new RegExp(`\\{\\{${char.realName}\\}\\}`, 'g');
-                finalPrompt = finalPrompt.replace(regex, boundChar.prompt);
+                finalPrompt = finalPrompt.split('{{' + char.realName + '}}').join(boundChar.prompt);
             }
         });
     }
@@ -608,12 +606,12 @@ async function buildNovelAIPayload(settings, customCharacterPrompt = null) {
             const char = db.characters.find(c => c.id === boundChar.charId);
             if (char && boundChar.prompt) {
                 // 匹配 {{角色真名}}
-                const regex = new RegExp(`\\{\\{${char.realName}\\}\\}`, 'g');
-                finalPositive = finalPositive.replace(regex, boundChar.prompt);
+                finalPositive = finalPositive.split('{{' + char.realName + '}}').join(boundChar.prompt);
             }
         });
     }
 
+    payload.input = finalPositive;
     if (settings.novelaiModel && settings.novelaiModel.includes('diffusion-4')) {
         payload.parameters.params_version = 3;
         payload.parameters.v4_prompt = {

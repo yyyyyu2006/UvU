@@ -176,6 +176,7 @@ function setupMoreCardBgModal() {
     const preview = document.getElementById('more-card-bg-preview');
     const urlInput = document.getElementById('more-card-bg-url-input');
     const fileUpload = document.getElementById('more-card-bg-file-upload');
+    let selectionVersion = 0, pendingImage = Promise.resolve();
     
     // 绑定点击事件到背景层
     // 注意：由于 renderMoreScreen 可能会被多次调用，我们需要使用事件委托或者确保只绑定一次
@@ -189,6 +190,7 @@ function setupMoreCardBgModal() {
             modal.classList.add('visible');
             urlInput.value = '';
             fileUpload.value = null;
+            selectionVersion++; pendingImage = Promise.resolve(); delete fileUpload.dataset.base64;
             preview.style.backgroundImage = `url('${db.moreProfileCardBg || 'https://i.postimg.cc/XvFDdTKY/Smart-Select-20251013-023208.jpg'}')`;
             preview.innerHTML = '';
         }
@@ -196,6 +198,7 @@ function setupMoreCardBgModal() {
 
     // URL 输入预览
     urlInput.addEventListener('input', () => {
+        selectionVersion++; pendingImage = Promise.resolve(); delete fileUpload.dataset.base64; fileUpload.value = '';
         if (urlInput.value) {
             preview.style.backgroundImage = `url('${urlInput.value}')`;
             preview.innerHTML = '';
@@ -206,20 +209,29 @@ function setupMoreCardBgModal() {
     fileUpload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
+            const version = ++selectionVersion; delete fileUpload.dataset.base64;
             const reader = new FileReader();
+            pendingImage = new Promise(resolve => {
+            reader.onerror = reader.onabort = () => { if (version === selectionVersion) showToast('图片读取失败，请重选'); resolve(); };
             reader.onload = (e) => {
+                if (version !== selectionVersion) { resolve(); return; }
                 preview.style.backgroundImage = `url('${e.target.result}')`;
                 preview.innerHTML = '';
                 // 临时存储 base64，提交时使用
-                fileUpload.dataset.base64 = e.target.result;
+                fileUpload.dataset.base64 = e.target.result; resolve();
             };
             reader.readAsDataURL(file);
+            });
         }
     });
 
     // 保存
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const version = selectionVersion;
+        await pendingImage;
+        if (version !== selectionVersion) return;
+        if (fileUpload.files.length && !fileUpload.dataset.base64) return;
         let newBg = db.moreProfileCardBg;
 
         if (fileUpload.files.length > 0 && fileUpload.dataset.base64) {
@@ -393,6 +405,7 @@ function calculatePagesFromIds(ids, allItemsHtmlMap) {
             rows = parseInt(match[1]);
             cols = parseInt(match[2]);
         }
+        if (rows < 1 || rows > PAGE_ROWS || cols < 1 || cols > PAGE_COLS) { rows = 2; cols = 2; }
         
         let placed = false;
         while (currR <= PAGE_ROWS - rows) {
@@ -525,8 +538,8 @@ function setupHomeScreen() {
                 }
                 
                 // 转换尺寸类名 (4x2 对应 grid-item-2x4)
-                let sizeClass = `grid-item-${template.size}`;
-                if (template.size === '4x2') sizeClass = 'grid-item-2x4';
+                const size = /^[1-6]x[1-4]$/.test(template.size || '') ? template.size : '2x2';
+                const sizeClass = `grid-item-${size === '4x2' ? '2x4' : size}`;
                 
                 allItems[instance.id] = `
                     <div class="${sizeClass}" data-id="${instance.id}">
@@ -593,6 +606,7 @@ function setupHomeScreen() {
             let rows = 1, cols = 1;
             const match = html.match(/grid-item-(\d+)x(\d+)/);
             if (match) { rows = parseInt(match[1]); cols = parseInt(match[2]); }
+            if (rows < 1 || rows > 6 || cols < 1 || cols > 4) { rows = 2; cols = 2; }
             
             let placed = false;
             while (currR <= 6 - rows) {

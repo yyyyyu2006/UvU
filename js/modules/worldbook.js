@@ -67,7 +67,7 @@ async function deleteSelectedWorldBooks() {
         const allIdsToDelete = new Set();
         const findChildren = (parentId) => {
             db.worldBooks.forEach(item => {
-                if (item.parentId === parentId) {
+                if (item.parentId === parentId && !allIdsToDelete.has(item.id)) {
                     allIdsToDelete.add(item.id);
                     if (item.type === 'folder') findChildren(item.id);
                 }
@@ -81,21 +81,34 @@ async function deleteSelectedWorldBooks() {
         });
 
         const finalIds = Array.from(allIdsToDelete);
-        await dexieDB.worldBooks.bulkDelete(finalIds);
-        db.worldBooks = db.worldBooks.filter(book => !allIdsToDelete.has(book.id));
-        
-        db.characters.forEach(char => {
-            if (char.worldBookIds) {
-                char.worldBookIds = char.worldBookIds.filter(id => !allIdsToDelete.has(id));
+        const before = db.worldBooks;
+        let after;
+        const bindings = [];
+        try {
+            await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.tables, async () => {
+                await deleteGuardedRecords(dexieDB.worldBooks, finalIds);
+                after = db.worldBooks.filter(book => !allIdsToDelete.has(book.id));
+                db.worldBooks = after;
+                [...db.characters, ...db.groups].forEach(chat => {
+                    if (!chat.worldBookIds) return;
+                    const old = chat.worldBookIds;
+                    const next = old.filter(id => !allIdsToDelete.has(id));
+                    bindings.push({ chat, old, next });
+                    chat.worldBookIds = next;
+                });
+                await saveData();
+            }));
+        } catch (error) {
+            if (db.worldBooks === after) {
+                const present = new Set(after.map(book => book.id));
+                before.forEach((book, index) => {
+                    if (allIdsToDelete.has(book.id) && !present.has(book.id)) after.splice(Math.min(index, after.length), 0, book);
+                });
             }
-        });
-        db.groups.forEach(group => {
-            if (group.worldBookIds) {
-                group.worldBookIds = group.worldBookIds.filter(id => !allIdsToDelete.has(id));
-            }
-        });
-
-        await saveData();
+            bindings.forEach(({ chat, old, next }) => { if (chat.worldBookIds === next) chat.worldBookIds = old; });
+            showToast(error.name === 'DataConflictError' ? error.message : '删除失败，已恢复本次操作，请重试');
+            return;
+        }
         showToast(`已成功删除 ${finalIds.length} 个项目`);
         exitWorldBookMultiSelectMode();
     }

@@ -565,6 +565,7 @@ function openApiManageModal() {
             const newName = prompt('输入新名称：', p.name);
             if (!newName) return;
             const all = _getApiPresets();
+            if (all.some((item, index) => index !== idx && item.name === newName)) { showToast('该名称已存在，请换一个名称'); return; }
             all[idx].name = newName;
             _saveApiPresets(all);
             openApiManageModal();

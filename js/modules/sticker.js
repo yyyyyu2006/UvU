@@ -119,12 +119,25 @@ async function setupStickerSystem() {
         if (selectedStickerIds.size === 0) return;
         if (confirm(`确定要删除这 ${selectedStickerIds.size} 个表情吗？`)) {
             const idsToDelete = Array.from(selectedStickerIds);
-
-            await dexieDB.myStickers.bulkDelete(idsToDelete);
-
-            db.myStickers = db.myStickers.filter(s => !selectedStickerIds.has(s.id));
-            
-            await saveData();
+            const ids = new Set(idsToDelete), before = db.myStickers;
+            let after;
+            try {
+                await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.tables, async () => {
+                    await deleteGuardedRecords(dexieDB.myStickers, idsToDelete);
+                    after = db.myStickers.filter(s => !ids.has(s.id));
+                    db.myStickers = after;
+                    await saveData();
+                }));
+            } catch (error) {
+                if (db.myStickers === after) {
+                    const present = new Set(after.map(sticker => sticker.id));
+                    before.forEach((sticker, index) => {
+                        if (ids.has(sticker.id) && !present.has(sticker.id)) after.splice(Math.min(index, after.length), 0, sticker);
+                    });
+                }
+                showToast(error.name === 'DataConflictError' ? error.message : '删除失败，已恢复本次操作，请重试');
+                return;
+            }
             
             showToast('表情已彻底删除');
             exitStickerManageMode();

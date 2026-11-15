@@ -301,7 +301,7 @@ function showErrorModal(friendlyMessage, fullError) {
                     <svg style="width: 32px; height: 32px; color: #d32f2f;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </div>
                 <h3 style="margin: 0 0 10px; color: #333; font-size: 18px; font-weight: 700;">出错了</h3>
-                <p style="margin: 0; color: #666; font-size: 15px; line-height: 1.5;">${friendlyMessage}</p>
+                <p class="error-friendly-message" style="margin: 0; color: #666; font-size: 15px; line-height: 1.5;"></p>
             </div>
             <div style="padding: 0 20px 25px; display: flex; flex-direction: column; gap: 10px;">
                 <button id="copy-error-btn" style="width: 100%; border-radius: 12px; font-weight: 600; font-size: 15px; padding: 12px; background: #f5f5f5; color: #555; border: none; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: all 0.2s;">
@@ -320,6 +320,7 @@ function showErrorModal(friendlyMessage, fullError) {
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = modalHtml;
     const modalOverlay = tempDiv.firstElementChild;
+    modalOverlay.querySelector('.error-friendly-message').textContent = String(friendlyMessage);
     document.body.appendChild(modalOverlay);
 
     // 绑定关闭按钮

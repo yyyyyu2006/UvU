@@ -428,8 +428,8 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
 
     let cotText = '';
     const cotSettings = db.cotSettings;
-    if (cotSettings?.callEnabled) {
-        const activePresetId = chat.exclusiveCotPreset || cotSettings.activeCallPresetId || 'default_call';
+    if (cotSettings?.enabled) {
+        const activePresetId = chat.exclusiveCotPreset || cotSettings.activePresetId || 'default';
         const preset = (db.cotPresets || []).find(item => item.id === activePresetId);
         cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
     }

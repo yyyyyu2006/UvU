@@ -10,6 +10,7 @@ function setupCommunityModule() {
 
     // 监听搜索框回车事件
     communitySearchInput.addEventListener('keydown', async (e) => {
+        if (e.isComposing || e.keyCode === 229) return;
         if (e.key === 'Enter') {
             const query = communitySearchInput.value.trim();
             
@@ -25,7 +26,10 @@ function setupCommunityModule() {
 /**
  * 动态加载社区详情页 HTML
  */
+let communityLoadVersion = 0;
 async function loadCommunityDetail() {
+    const version = ++communityLoadVersion;
+    const sourceScreen = document.querySelector('.screen.active');
     const containerId = 'community-detail-screen';
     let container = document.getElementById(containerId);
 
@@ -42,6 +46,7 @@ async function loadCommunityDetail() {
         const response = await fetch('community_detail.html');
         if (!response.ok) throw new Error('无法加载社区页面');
         const html = await response.text();
+        if (version !== communityLoadVersion || document.querySelector('.screen.active') !== sourceScreen) return;
 
         // 2. 注入 HTML
         container.innerHTML = html;

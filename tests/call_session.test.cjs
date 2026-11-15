@@ -32,6 +32,14 @@ test('queued call message bubbles retain session identity',()=>{
  m.parseAndAddAiResponse('[a的声音：late]');m.state.currentCallContext=[];for(const fn of f.timers)fn();assert.equal(count,0);
 });
 
+test('regenerating within the same call history invalidates queued old segments',()=>{
+ const f=fixture(),m=f.m,history=m.state.currentCallContext;let count=0,retries=0;
+ history.push({role:'user',content:'continue'});m.parseAndAddAiResponse=f.realParse;m.addMessage=()=>count++;
+ m.parseAndAddAiResponse('[a的声音：old queued]');const timers=f.timers.slice();m.triggerAiReply=()=>retries++;
+ m.handleRegenerate();assert.equal(m.state.currentCallContext,history);for(const fn of timers)fn();
+ assert.equal(count,0);assert.equal(retries,1);
+});
+
 test('call session origin remains pinned after switching archives before a fresh reply or hangup',async()=>{
  const f=fixture();f.m.state.currentCallContext.push({role:'user',content:'old private call'});
  f.a.activeArchiveId='two';f.a.history=[];

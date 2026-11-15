@@ -80,10 +80,13 @@ function setupContactsScreen() {
             const file = e.target.files[0];
             if (file) {
                 try {
+                    const persona = db.myPersonaPresets?.[currentPersonaIndex];
+                    if (!persona) return;
                     const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 300, maxHeight: 300});
                     // 更新当前显示的人设头像
-                    if (db.myPersonaPresets && db.myPersonaPresets[currentPersonaIndex]) {
-                        db.myPersonaPresets[currentPersonaIndex].avatar = compressedUrl;
+                    if (db.myPersonaPresets?.includes(persona)) {
+                        persona.avatar = compressedUrl;
+                        if (db.myPersonaPresets[currentPersonaIndex] !== persona) return;
                         // 重新渲染当前 active 的图片
                         // 找到当前居中的 img
                         const activeImg = document.querySelector('.mp-carousel-item.active img');

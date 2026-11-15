@@ -699,6 +699,7 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
             const addBtn = document.createElement('button');
             addBtn.className = 'widget-card-btn';
             addBtn.innerText = '添加到主屏幕';
+            addBtn.onclick = e => { e.stopPropagation(); return card.onclick({ target: card }); };
             // 模态框内直接点击即可，不走防误触
             actionsBox.appendChild(addBtn);
         } else if (isTemplateLibrary) {
@@ -803,6 +804,7 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
             }
         };
 
+        let adding = false;
         // 点击卡片执行操作
         card.onclick = async (e) => {
             // 如果点击的是按钮，由按钮自身的逻辑处理（包含防误触）
@@ -827,6 +829,8 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
             }
 
             if (isModal) {
+                if (adding) return;
+                adding = true;
                 const instanceId = `custom-widget-${Date.now()}`;
                 const newInstance = {
                     id: instanceId,
@@ -843,7 +847,13 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
                 if (!db.homeLayoutOrder) db.homeLayoutOrder = [];
                 db.homeLayoutOrder.push(instanceId);
                 
-                await saveData();
+                try { await saveData(); }
+                catch (_) {
+                    db.addedWidgets = db.addedWidgets.filter(item => item !== newInstance);
+                    db.homeLayoutPages.forEach(page => { const i = page.indexOf(instanceId); if (i !== -1) page.splice(i, 1); });
+                    db.homeLayoutOrder = db.homeLayoutOrder.filter(id => id !== instanceId);
+                    showToast('添加未保存，请重试'); adding = false; return;
+                }
                 showToast('已添加到主屏幕');
                 
                 document.getElementById('widget-add-modal').classList.remove('visible');
@@ -1100,6 +1110,7 @@ function normalizeWidgetImport(data) {
             !template.id.trim() || !template.name.trim()) invalid();
         if (template.js !== undefined && typeof template.js !== 'string') invalid();
         if (template.size !== undefined && typeof template.size !== 'string') invalid();
+        if (!/^[1-6]x[1-4]$/.test(template.size ?? '2x2')) invalid();
         if (template.defaultVars !== undefined && (!template.defaultVars ||
             typeof template.defaultVars !== 'object' || Array.isArray(template.defaultVars))) invalid();
         if (seen.has(template.id)) throw new Error(`小组件文件包含重复标识：${template.id}`);

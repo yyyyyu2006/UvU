@@ -256,31 +256,33 @@ function injectCharaToPng(pngBuffer, jsonData) {
  * 辅助函数：确保图片是标准 PNG 格式
  */
 async function ensurePngFormat(buffer) {
-    return new Promise((resolve) => {
-        const blob = new Blob([buffer]);
-        const url = URL.createObjectURL(blob);
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-            canvas.toBlob((pngBlob) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsArrayBuffer(pngBlob);
-                URL.revokeObjectURL(url);
-            }, 'image/png');
-        };
-        img.src = url;
-    });
+    const url = URL.createObjectURL(new Blob([buffer]));
+    try {
+        return await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('图片无法解码，请选择有效图片'));
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width; canvas.height = img.height;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    canvas.toBlob(png => {
+                        if (!png) return reject(new Error('图片转换失败，请重试'));
+                        fileToArrayBuffer(png).then(resolve, reject);
+                    }, 'image/png');
+                } catch (error) { reject(error); }
+            };
+            img.src = url;
+        });
+    } finally { URL.revokeObjectURL(url); }
 }
 
 function fileToArrayBuffer(file) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('图片读取失败，请重新选择'));
+        reader.onabort = () => reject(new Error('图片读取已取消'));
         reader.readAsArrayBuffer(file);
     });
 }

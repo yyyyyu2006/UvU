@@ -259,7 +259,7 @@
         });
         for (const [key, entry] of Object.entries(saved.snapshot)) { if (entry.exists) db[key] = entry.value; else delete db[key]; }
         saved.addedTemplates.forEach(id => document.getElementById('custom-widget-style-' + id)?.remove?.());
-        if (saved.keys.includes('fontUrl')) { applyGlobalFont(db.fontUrl || '', false); applyFontSize(db.fontSizeScale || 1); applyGlobalCss(db.globalCss || ''); }
+        if (saved.keys.includes('fontUrl')) { applyGlobalFont(db.fontUrl || '', (db.fontUrl || '').startsWith('CustomFont_')); applyFontSize(db.fontSizeScale || 1); applyGlobalCss(db.globalCss || ''); }
         setupHomeScreen(); renderCustomizeForm(); undoState = null;
     }
     function previewPreset(preset, summary, includesCode) {

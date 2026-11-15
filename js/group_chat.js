@@ -164,14 +164,16 @@ function setupGroupChatSystem() {
     if (groupAvatarUpload) {
         groupAvatarUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
+            const target = captureChatSendTarget(currentChatId, 'group');
+            if (file && target) {
                 try {
                     const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 400, maxHeight: 400});
-                    const group = db.groups.find(g => g.id === currentChatId);
+                    if (!isChatSendTargetValid(target)) return;
+                    const group = target.chat;
                     if (group) {
+                        const mutation = beginChatMutation(group, 'group', [], ['avatar']);
                         group.avatar = compressedUrl;
-                        document.getElementById('setting-group-avatar-preview').src = compressedUrl;
-                        saveGroupSettingsFromSidebar(false);
+                        if (await saveChatMutation(mutation) && isChatTargetVisible(target)) document.getElementById('setting-group-avatar-preview').src = compressedUrl;
                     }
                 } catch (error) {
                     showToast('群头像压缩失败，请重试');
@@ -184,19 +186,23 @@ function setupGroupChatSystem() {
     if (groupChatBgUpload) {
         groupChatBgUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
+            const target = captureChatSendTarget(currentChatId, 'group');
+            if (file && target) {
                 try {
                     const compressedUrl = await compressImage(file, {
                         quality: 0.85,
                         maxWidth: 1080,
                         maxHeight: 1920
                     });
-                    const group = db.groups.find(g => g.id === currentChatId);
+                    if (!isChatSendTargetValid(target)) return;
+                    const group = target.chat;
                     if (group) {
+                        const mutation = beginChatMutation(group, 'group', [], ['chatBg']);
                         group.chatBg = compressedUrl;
-                        chatRoomScreen.style.backgroundImage = `url(${compressedUrl})`;
-                        await saveData();
-                        showToast('聊天背景已更换');
+                        if (await saveChatMutation(mutation) && isChatTargetVisible(target)) {
+                            chatRoomScreen.style.backgroundImage = 'url(' + compressedUrl + ')';
+                            showToast('聊天背景已更换');
+                        }
                     }
                 } catch (error) {
                     showToast('群聊背景压缩失败，请重试');
@@ -225,8 +231,9 @@ function setupGroupChatSystem() {
             const group = db.groups.find(g => g.id === currentChatId);
             if (!group) return;
             if (confirm(`你确定要清空群聊“${group.name}”的所有聊天记录吗？这个操作是不可恢复的！`)) {
-                group.history = [];
-                await saveData();
+                const mutation = beginChatMutation(group, 'group'), target = captureChatSendTarget(group.id, 'group');
+                group.history.splice(0);
+                if (!await saveChatMutation(mutation, '清空未保存，已恢复聊天记录') || !isChatTargetVisible(target)) return;
                 renderMessages(false, true);
                 renderChatList();
                 showToast('聊天记录已清空');
@@ -385,11 +392,14 @@ function setupGroupChatSystem() {
     if (settingGroupMyAvatarUpload) {
         settingGroupMyAvatarUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
+            const target = captureChatSendTarget(currentChatId, 'group');
+            if (file && target) {
                 try {
                     const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 400, maxHeight: 400});
-                    document.getElementById('setting-group-my-avatar-preview').src = compressedUrl;
-                    saveGroupSettingsFromSidebar(false);
+                    if (!isChatSendTargetValid(target)) return;
+                    const group = target.chat, mutation = beginChatMutation(group, 'group', [], ['me']);
+                    group.me.avatar = compressedUrl;
+                    if (await saveChatMutation(mutation) && isChatTargetVisible(target)) document.getElementById('setting-group-my-avatar-preview').src = compressedUrl;
                 } catch (error) {
                     showToast('头像压缩失败')
                 }
@@ -470,12 +480,14 @@ function setupRedPacketSystem() {
                 senderId: 'user_me'
             };
 
+            const mutation = beginChatMutation(group, 'group');
             group.history.push(message);
             if (typeof addMessageBubble === 'function') {
                 addMessageBubble(message, group.id, 'group');
             }
             
-            await saveData();
+            if (!await saveChatMutation(mutation, '红包未发送，请重试')) return;
+            if (currentChatId !== group.id || currentChatType !== 'group') return;
             sendRedPacketModal.classList.remove('visible');
             showToast('红包已发出');
         });

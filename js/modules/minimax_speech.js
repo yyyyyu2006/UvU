@@ -103,7 +103,11 @@
                 bytes += item.value.byteLength;
                 if (bytes > maxBytes) throw new Error('语音响应过大，已停止读取');
                 text += decoder.decode(item.value, { stream: true });
-                if (sse) events(false);
+                if (sse) {
+                    events(false);
+                    // A completed synthesis is independent of a proxy keeping HTTP open.
+                    if (final) break;
+                }
             }
             if (!sse) return JSON.parse(text);
             events(true);

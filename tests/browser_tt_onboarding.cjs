@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createServer}=require('node:http'),{once}=require('node:events');
-const {chromium}=require(process.env.PLAYWRIGHT_MODULE);
+const {chromium}=require('./helpers/browser_runtime.cjs').playwright();
 const root=path.resolve(__dirname,'..');
 (async()=>{
  const html=fs.readFileSync(path.join(root,'index.html'),'utf8');

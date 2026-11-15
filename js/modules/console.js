@@ -172,7 +172,7 @@
                             textArea.focus();
                             textArea.select();
                             try {
-                                document.execCommand('copy');
+                                if (!document.execCommand('copy')) throw new Error('复制未获浏览器允许');
                                 if (typeof showToast === 'function') showToast('已复制');
                             } catch (err) {
                                 console.error('复制失败:', err);

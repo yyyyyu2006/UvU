@@ -161,6 +161,31 @@ function setupChatListScreen() {
 }
 
 // 文件夹管理
+function captureFolderMutation() {
+    return { folders: (db.chatFolders || []).map(row => ({ row, name: row.name })),
+        bindings: [...db.characters, ...db.groups].map(chat => ({ chat, folderId: chat.folderId })), selected: currentFolderId };
+}
+async function saveFolderMutation(state) {
+    const added = (db.chatFolders || []).filter(row => !state.folders.some(old => old.row === row));
+    const addedValues = new Map(added.map(row => [row, JSON.stringify(row)]));
+    const appliedNames = new Map((db.chatFolders || []).map(row => [row, row.name]));
+    const appliedBindings = new Map(state.bindings.map(({ chat }) => [chat, chat.folderId]));
+    const appliedSelection = currentFolderId;
+    try { await saveData(); return true; }
+    catch (_) {
+        db.chatFolders = (db.chatFolders || []).filter(row => !addedValues.has(row) || JSON.stringify(row) !== addedValues.get(row));
+        state.folders.forEach(({ row, name }, index) => {
+            if (!db.chatFolders.some(item => item.id === row.id)) db.chatFolders.splice(Math.min(index, db.chatFolders.length), 0, row);
+            if (row.name === appliedNames.get(row)) row.name = name;
+        });
+        state.bindings.forEach(({ chat, folderId }) => {
+            if (chat.folderId !== appliedBindings.get(chat)) return;
+            if (folderId === undefined) delete chat.folderId; else chat.folderId = folderId;
+        });
+        if (currentFolderId === appliedSelection) currentFolderId = state.selected;
+        showToast('文件夹操作未保存，已恢复，请重试'); return false;
+    }
+}
 function setupFolderManagement() {
     const folderModal = document.getElementById('folder-manage-modal');
     const folderNameInput = document.getElementById('folder-name-input');
@@ -191,10 +216,12 @@ function setupFolderManagement() {
         const name = folderNameInput.value.trim();
         if (!name) return showToast('请输入文件夹名称');
 
+        const mutation = captureFolderMutation();
+        const editing = Boolean(currentFolderActionTarget);
         if (currentFolderActionTarget) {
             const folder = db.chatFolders.find(f => f.id === currentFolderActionTarget);
             if (folder) folder.name = name;
-            showToast('文件夹已更新');
+
         } else {
             const newFolder = {
                 id: `folder_${Date.now()}`,
@@ -202,10 +229,11 @@ function setupFolderManagement() {
             };
             if (!db.chatFolders) db.chatFolders = [];
             db.chatFolders.push(newFolder);
-            showToast('文件夹已创建');
+
         }
         
-        await saveData();
+        if (!await saveFolderMutation(mutation)) return;
+        showToast(editing ? '文件夹已更新' : '文件夹已创建');
         renderChatFolders();
         folderModal.classList.remove('visible');
     });
@@ -213,6 +241,7 @@ function setupFolderManagement() {
     deleteBtn.addEventListener('click', async () => {
         if (!currentFolderActionTarget) return;
         if (confirm('确定删除此文件夹吗？其中的聊天不会被删除，将归入"全部"列表。')) {
+            const mutation = captureFolderMutation();
             db.chatFolders = db.chatFolders.filter(f => f.id !== currentFolderActionTarget);
             
             db.characters.forEach(c => { if (c.folderId === currentFolderActionTarget) delete c.folderId; });
@@ -222,7 +251,7 @@ function setupFolderManagement() {
                 currentFolderId = 'all';
             }
 
-            await saveData();
+            if (!await saveFolderMutation(mutation)) return;
             renderChatFolders();
             renderChatList(); 
             folderModal.classList.remove('visible');
@@ -281,14 +310,16 @@ function setupFolderManagement() {
         const chat = (type === 'private') ? db.characters.find(c => c.id === id) : db.groups.find(g => g.id === id);
         
         if (chat) {
+            const mutation = captureFolderMutation();
             if (folderId) {
                 chat.folderId = folderId;
-                showToast('已移动到文件夹');
+
             } else {
                 delete chat.folderId; 
-                showToast('已移出文件夹');
+
             }
-            await saveData();
+            if (!await saveFolderMutation(mutation)) return;
+            showToast(folderId ? '已移动到文件夹' : '已移出文件夹');
             renderChatList();
         }
     }

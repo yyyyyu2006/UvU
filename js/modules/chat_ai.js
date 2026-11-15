@@ -877,6 +877,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             momentSignatureMatch = content.match(momentSignatureRegex);
 
             let isMomentAction = false;
+            let sourceMomentRecord = null;
 
             if (momentPostWithImageMatch) {
                 isMomentAction = true;
@@ -898,6 +899,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     likes: [],
                     comments: []
                 });
+                sourceMomentRecord = chat.moments[0];
 
                 const notificationMsg = {
                     id: `msg_${Date.now()}_${Math.random()}`,
@@ -927,6 +929,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     likes: [],
                     comments: []
                 });
+                sourceMomentRecord = chat.moments[0];
 
                 const notificationMsg = {
                     id: `msg_${Date.now()}_${Math.random()}`,
@@ -969,6 +972,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                              newComment.replyTo = commentedOn;
                         }
                         targetMoment.comments.push(newComment);
+                        sourceMomentRecord = newComment;
                         if (commentedOn === chat.myName || commentedOn === '你') {
                             const notificationMsg = {
                                 id: `msg_${Date.now()}_${Math.random()}`,
@@ -1001,6 +1005,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     timestamp: Date.now(),
                     isContextDisabled: false
                 };
+                if (sourceMomentRecord) sourceMomentRecord.sourceMessageId = originalCmdMsg.id;
                 appendReplyMessage(originalCmdMsg);
                 addMessageBubble(originalCmdMsg, targetChatId, targetChatType);
             } else {
@@ -1075,21 +1080,15 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 }
             }
 
-            // --- 自动隔空投送检测 ---
-            const photoRegex = /\[(.*?)发来的照片\/视频：(.*?)\]/;
-            const photoMatch = item.content.match(photoRegex);
-            if (photoMatch && chat.autoAirDropEnabled) {
-                // 延迟一点触发，确保消息已经渲染
+            // Capture this photo before later replies can change the history tail.
+            const photoMatch = item.content.match(/\[(.*?)发来的照片\/视频：(.*?)\]/);
+            const scheduleAutoAirDrop = message => {
+                if (!photoMatch || !chat.autoAirDropEnabled) return;
                 setTimeout(() => {
-                    if (typeof receiveAirDropPhoto === 'function') {
-                        // 找到刚插入的这条消息的 ID
-                        const targetMsg = chat.history[chat.history.length - 1];
-                        if (targetMsg) {
-                            receiveAirDropPhoto(targetMsg.id, true);
-                        }
-                    }
+                    if (replyIsCurrent() && currentChatId === targetChatId && currentChatType === targetChatType &&
+                        chat.history.includes(message) && typeof receiveAirDropPhoto === 'function') receiveAirDropPhoto(message.id, true);
                 }, 500);
-            }
+            };
 
             // --- 视频/语音通话邀请检测 ---
             const callInviteRegex = /\[(.*?)向(.*?)发起了(视频|语音)通话\]/;
@@ -1098,7 +1097,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 const type = callInviteMatch[3] === '视频' ? 'video' : 'voice';
                 // 触发来电界面
                 if (window.VideoCallModule && typeof window.VideoCallModule.receiveCall === 'function') {
-                    window.VideoCallModule.receiveCall(type);
+                    window.VideoCallModule.receiveCall(type, targetChatId, targetChatType);
                 }
                 // 不将此消息显示为普通气泡，或者显示为系统通知
                 // 这里选择显示为系统通知样式的消息
@@ -1353,6 +1352,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     }
 
                     appendReplyMessage(message);
+                    scheduleAutoAirDrop(message);
                     addMessageBubble(message, targetChatId, targetChatType);
                 }
 
@@ -1432,6 +1432,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             senderId: sender.id
                         };
                         appendReplyMessage(message);
+                        scheduleAutoAirDrop(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 }

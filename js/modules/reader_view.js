@@ -13,6 +13,17 @@ function readerIllustrationSource(content) {
     return /^[A-Za-z0-9+/]+={0,2}$/.test(raw) ? 'data:image/png;base64,' + raw : null;
 }
 document.addEventListener('DOMContentLoaded', () => {
+    let preferenceWarningShown = false;
+    const preferenceCall = (method, ...args) => {
+        try { return localStorage[method](...args); }
+        catch (_) {
+            if (!preferenceWarningShown && typeof showToast === 'function') showToast('阅读设置暂时无法保存，仍可继续阅读');
+            preferenceWarningShown = true;
+            return null;
+        }
+    };
+    const readerPreferences = { getItem: key => preferenceCall('getItem', key),
+        setItem: (key, value) => preferenceCall('setItem', key, value), removeItem: key => preferenceCall('removeItem', key) };
     const readerScreen = document.getElementById('reader-view-screen');
     const header = document.getElementById('reader-header');
     const footer = document.getElementById('reader-footer');
@@ -95,7 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
             renderToc();
 
             // 加载上次阅读的章节
-            currentChapterIndex = currentBook.currentChapterIndex || 0;
+            const savedIndex = currentBook.currentChapterIndex;
+            currentChapterIndex = Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < currentChapters.length ? savedIndex : 0;
+            chapterTitleEl.textContent = '';
+            document.getElementById('reader-text-content').textContent = currentChapters.length ? '' : '这本书暂无章节';
+            currentPage = 0;
+            totalPages = 1;
+            textContainer.style.transform = 'translateX(0)';
             await loadChapter(currentChapterIndex, currentBook.scrollProgress || 0);
 
             // 更新最后阅读时间
@@ -687,7 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 字体大小调节
     function updateFontSize(size) {
-        fontSize = Math.max(12, Math.min(36, size));
+        fontSize = Number.isFinite(size) ? Math.max(12, Math.min(36, size)) : 18;
         
         // 记录当前进度比例
         const currentRatio = totalPages > 0 ? currentPage / totalPages : 0;
@@ -705,7 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 50);
 
         // 保存到 localStorage
-        localStorage.setItem('reader_font_size', fontSize);
+        readerPreferences.setItem('reader_font_size', fontSize);
     }
 
     if (fontIncreaseBtn) fontIncreaseBtn.addEventListener('click', () => updateFontSize(fontSize + 2));
@@ -715,7 +732,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateFontColor(color) {
         readerScreen.style.setProperty('--reader-text-color', color);
         if (fontColorPicker) fontColorPicker.value = color;
-        localStorage.setItem('reader_font_color', color);
+        readerPreferences.setItem('reader_font_color', color);
     }
 
     if (fontColorPicker) {
@@ -727,7 +744,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fontColorResetBtn) {
         fontColorResetBtn.addEventListener('click', () => {
             readerScreen.style.removeProperty('--reader-text-color');
-            localStorage.removeItem('reader_font_color');
+            readerPreferences.removeItem('reader_font_color');
             // 恢复当前主题的默认颜色
             const activeTheme = document.querySelector('.reader-theme-circle.active');
             if (activeTheme) {
@@ -776,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 circle.classList.add('active');
                 
                 // 如果没有自定义字体颜色，则更新颜色选择器的值以匹配主题
-                if (!localStorage.getItem('reader_font_color')) {
+                if (!readerPreferences.getItem('reader_font_color')) {
                     const computedStyle = getComputedStyle(readerScreen);
                     const themeTextColor = computedStyle.getPropertyValue('--reader-text-color').trim();
                     if (themeTextColor.startsWith('#') && fontColorPicker) {
@@ -785,7 +802,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // 如果没有自定义背景，更新面板背景色
-                if (!localStorage.getItem('reader_bg_image')) {
+                if (!readerPreferences.getItem('reader_bg_image')) {
                     const bgColor = getComputedStyle(circle).backgroundColor;
                     // 将 rgb(r, g, b) 转换为 rgba(r, g, b, 0.85)
                     const rgbaColor = bgColor.replace('rgb', 'rgba').replace(')', ', 0.85)');
@@ -793,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // 保存到 localStorage
-                localStorage.setItem('reader_theme', theme);
+                readerPreferences.setItem('reader_theme', theme);
             });
         });
     }
@@ -848,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 压缩图片：最大宽高 1920，质量 0.8
                 compressImage(file, 1920, 1920, 0.8, (base64Image) => {
                     try {
-                        localStorage.setItem('reader_bg_image', base64Image);
+                        readerPreferences.setItem('reader_bg_image', base64Image);
                         applyCustomBg(base64Image);
                     } catch (error) {
                         console.error("保存背景图片失败:", error);
@@ -872,7 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
             readerScreen.style.removeProperty('--reader-bg-image');
             readerScreen.style.removeProperty('--reader-bg-color');
             bgClearBtn.style.display = 'none';
-            localStorage.removeItem('reader_bg_image');
+            readerPreferences.removeItem('reader_bg_image');
             
             // 恢复当前主题的面板背景色
             const activeTheme = document.querySelector('.reader-theme-circle.active');
@@ -908,7 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
         readerScreen.style.setProperty('--reader-margin-left', margins.left);
         readerScreen.style.setProperty('--reader-margin-right', margins.right);
 
-        localStorage.setItem('reader_margins', JSON.stringify({
+        readerPreferences.setItem('reader_margins', JSON.stringify({
             top: marginInputs.top.value,
             bottom: marginInputs.bottom.value,
             left: marginInputs.left.value,
@@ -932,10 +949,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 初始化设置
-    const savedFontSize = localStorage.getItem('reader_font_size');
+    const savedFontSize = readerPreferences.getItem('reader_font_size');
     if (savedFontSize) updateFontSize(parseInt(savedFontSize));
     
-    const savedTheme = localStorage.getItem('reader_theme');
+    const savedTheme = readerPreferences.getItem('reader_theme');
     if (savedTheme) {
         const targetCircle = document.querySelector(`.reader-theme-circle[data-theme="${savedTheme}"]`);
         if (targetCircle) targetCircle.click();
@@ -945,17 +962,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (defaultCircle) defaultCircle.click();
     }
 
-    const savedFontColor = localStorage.getItem('reader_font_color');
+    const savedFontColor = readerPreferences.getItem('reader_font_color');
     if (savedFontColor) {
         updateFontColor(savedFontColor);
     }
 
-    const savedBgImage = localStorage.getItem('reader_bg_image');
+    const savedBgImage = readerPreferences.getItem('reader_bg_image');
     if (savedBgImage) {
         applyCustomBg(savedBgImage);
     }
 
-    const savedMargins = localStorage.getItem('reader_margins');
+    const savedMargins = readerPreferences.getItem('reader_margins');
     if (savedMargins) {
         try {
             const margins = JSON.parse(savedMargins);

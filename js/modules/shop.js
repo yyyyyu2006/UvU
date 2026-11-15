@@ -300,6 +300,8 @@ async function handlePickupConfirm() {
 
     let found = false;
     let foundItemName = '';
+    let pickupMutation;
+    const pickupTarget = captureChatSendTarget(chat.id, currentChatType);
 
     // 遍历历史记录查找未提取的自提订单
     // 格式: [A为B下单了：自提口令: xxx|金额|商品清单]
@@ -314,6 +316,7 @@ async function handlePickupConfirm() {
                 
                 if (msgCode.toLowerCase() === code.toLowerCase()) {
                     // 匹配成功
+                    pickupMutation = beginChatMutation(chat, currentChatType, [msg]);
                     msg.isPickedUp = true;
                     found = true;
                     foundItemName = items;
@@ -324,7 +327,7 @@ async function handlePickupConfirm() {
     }
 
     if (found) {
-        await saveData();
+        if (!await saveChatMutation(pickupMutation, '提取未保存，请重试') || !isChatTargetVisible(pickupTarget)) return;
         document.getElementById('shop-pickup-modal').classList.remove('visible');
         input.value = '';
         
@@ -398,8 +401,11 @@ function initCartUI() {
 }
 
 // 购物车操作
+function shopProductKey(item) {
+    return item.id ? 'id:' + item.id : JSON.stringify([item.name, String(item.price), item.desc || '', item.type || '']);
+}
 function addToCart(item) {
-    const existing = shopState.cart.find(i => i.item.name === item.name);
+    const existing = shopState.cart.find(i => shopProductKey(i.item) === shopProductKey(item));
     if (existing) {
         existing.quantity++;
     } else {
@@ -413,8 +419,9 @@ function addToCart(item) {
     setTimeout(() => badge.classList.remove('bump'), 200);
 }
 
-function removeFromCart(itemName) {
-    const index = shopState.cart.findIndex(i => i.item.name === itemName);
+function removeFromCart(itemOrName) {
+    const index = shopState.cart.findIndex(i => typeof itemOrName === 'object'
+        ? shopProductKey(i.item) === shopProductKey(itemOrName) : i.item.name === itemOrName);
     if (index > -1) {
         shopState.cart[index].quantity--;
         if (shopState.cart[index].quantity <= 0) {
@@ -463,12 +470,17 @@ function updateCartUI() {
                 <div class="cart-item-name">${entry.item.name}</div>
                 <div class="cart-item-price">¥${entry.item.price}</div>
                 <div class="cart-item-controls">
-                    <button class="cart-ctrl-btn minus" onclick="removeFromCart('${entry.item.name}')">-</button>
+                    <button class="cart-ctrl-btn minus">-</button>
                     <span class="cart-item-qty">${entry.quantity}</span>
-                    <button class="cart-ctrl-btn plus" onclick="addToCart({name:'${entry.item.name}', price:'${entry.item.price}'})">+</button>
+                    <button class="cart-ctrl-btn plus">+</button>
                 </div>
             </div>
         `).join('');
+        container.querySelectorAll('.cart-item-row').forEach((row, index) => {
+            const item = shopState.cart[index].item;
+            row.querySelector('.minus').onclick = () => removeFromCart(item);
+            row.querySelector('.plus').onclick = () => addToCart(item);
+        });
         document.querySelector('.cart-checkout-btn').disabled = false;
     }
 
@@ -533,6 +545,8 @@ async function openShopScreen() {
 // 强制刷新商城
 async function forceRefreshShop() {
     if (shopState.isLoading) return; // 避免重复点击
+    const target = captureChatSendTarget(currentChatId, 'private');
+    if (!target) return;
     
     // 检查是否已有商品，如果有则需要确认，否则直接开始
     const hasItems = shopState.items && Object.values(shopState.items).some(arr => arr && arr.length > 0);
@@ -550,18 +564,19 @@ async function forceRefreshShop() {
 
     try {
         // 清空数据库中的缓存
-        const chat = db.characters.find(c => c.id === currentChatId);
+        const chat = target.chat;
         if (chat) {
             delete chat.shopData;
             if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopData: null });
             else await dexieDB.characters.update(chat.id, { shopData: null });
         }
 
+        if (!isChatTargetVisible(target)) return;
         await fetchShopData();
-        renderShopContent();
+        if (isChatTargetVisible(target)) renderShopContent();
     } catch (e) {
         console.error("商城刷新失败", e);
-        renderShopError();
+        if (isChatTargetVisible(target)) renderShopError();
     } finally {
         shopState.isLoading = false;
     }
@@ -937,13 +952,17 @@ function renderShopContent() {
                 <div class="shop-item-desc">${item.desc}</div>
                 <div class="shop-item-footer">
                     <div class="shop-item-price">${item.price}</div>
-                    <div class="shop-item-buy-btn" onclick="event.stopPropagation(); addToCart({name: '${item.name}', price: '${item.price}', desc: '${item.desc.replace(/'/g, "\\'")}'})">
+                    <div class="shop-item-buy-btn">
                         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"></path></svg>
                     </div>
                 </div>
             </div>
         `;
         
+        card.querySelector('.shop-item-buy-btn').addEventListener('click', event => {
+            event.stopPropagation();
+            addToCart(item);
+        });
         // 点击卡片不再直接加入购物车，防止误触
         // card.onclick = () => addToCart(item);
         grid.appendChild(card);

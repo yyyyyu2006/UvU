@@ -39,11 +39,20 @@ test('widget import supplies missing legacy script and variables', () => {
     assert.equal(result.js, ''); assert.deepEqual(JSON.parse(JSON.stringify(result.defaultVars)), {});
     assert.equal(result.size, '2x2'); assert.equal(old.js, undefined);
 });
+
+test('widget import keeps valid legacy row and column sizes unchanged', () => {
+    const c = fixture();
+    for (const size of ['1x4', '4x2', '6x4']) {
+        const input = { ...widget(), size };
+        assert.equal(c.normalizeWidgetImport(input)[0].size, size);
+        assert.equal(input.size, size);
+    }
+});
 test('widget import validates the entire batch including duplicate IDs before accepting it', () => {
     const c = fixture();
     for (const input of [null, [], {}, [widget(), null], [widget(), widget()],
         { ...widget(), id: 1 }, { ...widget(), id: '  ' }, { ...widget(), name: {} },
         { ...widget(), html: [] }, { ...widget(), css: {} }, { ...widget(), js: [] },
         { ...widget(), defaultVars: [] }, { ...widget(), defaultVars: null },
-        { ...widget(), size: 2 }]) assert.throws(() => c.normalizeWidgetImport(input), /小组件|重复/);
+        { ...widget(), size: 2 }, ...['0x1','1x7','7x1','1x5','-1x1','1x0','2xInfinity','7x7'].map(size => ({ ...widget(), size }))]) assert.throws(() => c.normalizeWidgetImport(input), /小组件|重复/);
 });

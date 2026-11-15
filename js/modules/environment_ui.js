@@ -116,7 +116,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
                 results.appendChild(pick);
             }); status.textContent = found.length ? '请选择搜索结果' : '未找到城市，可尝试英文名称或更大的城市';
         });
-        input.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); button.click(); } };
+        input.onkeydown = event => { if (event.isComposing || event.keyCode === 229) return; if (event.key === 'Enter') { event.preventDefault(); button.click(); } };
         if (who === 'user') {
             const locate = environmentNode('button', '定位并获取天气'); locate.type = 'button'; locate.dataset.locate = '';
             locate.onclick = () => run(async () => {

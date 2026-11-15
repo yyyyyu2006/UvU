@@ -388,6 +388,15 @@ const MiniMaxTTS = (() => {
         stop();
         const session = { bubble, cacheKey, source, identity, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
         activeSession = session; setLoading(session, true);
+        if (typeof MutationObserver === 'function' && bubble.isConnected && document.body) {
+            const screen = bubble.closest('.screen');
+            session.observer = new MutationObserver(() => {
+                const binding = identity?.binding;
+                if (!bubble.isConnected || (screen && !screen.classList.contains('active')) ||
+                    (binding && (currentChatId !== binding.chat.id || currentChatType !== binding.type || !VoiceDirector.isCurrent(identity)))) stop(session);
+            });
+            session.observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        }
         session.onEnded = () => { if (activeSession === session && !session.streamPending) stop(session); };
         session.onError = () => {
             if (activeSession !== session) return;
@@ -468,7 +477,9 @@ const MiniMaxTTS = (() => {
                 manual => play(bubble, text, settings, { manual }), ttsSettings.model || 'speech-2.8-hd');
             session.streamPending = false;
             if (session.progressive && !session.progressive.failed && session.progressiveStarted) {
-                session.progressive.end(); setLoading(session, false); return;
+                session.progressive.end();
+                if (session.audio.ended) { stop(session); return; }
+                setLoading(session, false); return;
             }
             return playComplete(session);
         } catch (error) {
@@ -482,6 +493,7 @@ const MiniMaxTTS = (() => {
         if (!session) return;
         if (activeSession === session) activeSession = null;
         session.phase = 'stopped';
+        session.observer?.disconnect();
         session.controller.abort();
         session.progressive?.dispose(); session.progressive = null;
         if (session.onEnded) session.audio.removeEventListener('ended', session.onEnded);
@@ -736,15 +748,18 @@ function handleReceivedTransferClick(messageId) {
     document.getElementById('receive-transfer-actionsheet').classList.add('visible');
 }
 
+let transferResponsePending = false;
 async function respondToTransfer(action) {
-    if (!currentTransferMessageId) return;
+    if (transferResponsePending || !currentTransferMessageId || !['received','returned'].includes(action)) return;
     const character = db.characters.find(c => c.id === currentChatId);
     if (character && typeof relationshipCanChat === 'function' && !relationshipCanChat(character)) {
         showToast('请先恢复好友关系，再处理转账');
         return;
     }
     const message = character?.history.find(m => m.id === currentTransferMessageId);
-    if (message) {
+    if (message && message.transferStatus === 'pending') {
+        transferResponsePending = true;
+        try {
         const mutation = beginChatMutation(character, 'private', [message]);
         const transferId = currentTransferMessageId;
         message.transferStatus = action;
@@ -768,7 +783,8 @@ async function respondToTransfer(action) {
         if (!await saveChatMutation(mutation)) return;
         renderChatList();
         if (currentChatId !== character.id || currentChatType !== 'private' || currentTransferMessageId !== transferId) return;
-    }
+        } finally { transferResponsePending = false; }
+    } else return;
     document.getElementById('receive-transfer-actionsheet').classList.remove('visible');
     currentTransferMessageId = null;
 }

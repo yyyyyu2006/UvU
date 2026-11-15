@@ -2,6 +2,34 @@
 
 let generatingChatId = null;
 
+function captureJournalTarget(chat) {
+    return { chat, chatId: chat.id, chatType: currentChatType, archiveId: chat.activeArchiveId,
+        history: chat.history, journals: chat.memoryJournals };
+}
+function assertJournalTarget(target) {
+    const chats = target.chatType === 'private' ? db.characters : db.groups;
+    if (!chats.includes(target.chat) || target.chat.activeArchiveId !== target.archiveId ||
+        target.chat.history !== target.history || target.chat.memoryJournals !== target.journals) {
+        throw new Error('角色或存档已变化，本次日记未写入，请回原存档重试。');
+    }
+}
+async function saveGeneratedJournal(target, journal) {
+    assertJournalTarget(target);
+    const journals = target.chat.memoryJournals || (target.chat.memoryJournals = []);
+    journals.push(journal);
+    const applied = JSON.stringify(journal);
+    try { await saveData(); }
+    catch (error) {
+        const collections = new Set([journals, target.chat.archives?.find(a => a.id === target.archiveId)?.data?.memoryJournals]);
+        for (const collection of collections) {
+            if (!Array.isArray(collection)) continue;
+            const index = collection.findIndex(item => item.id === journal.id && JSON.stringify(item) === applied);
+            if (index !== -1) collection.splice(index, 1);
+        }
+        throw error;
+    }
+}
+
 function setupMemoryJournalScreen() {
     const generateNewJournalBtn = document.getElementById('generate-new-journal-btn');
     const generateJournalModal = document.getElementById('generate-journal-modal');
@@ -108,6 +136,7 @@ function setupMemoryJournalScreen() {
     async function mergeJournals(journalIds) {
         const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
         if (!chat) return;
+        const target = captureJournalTarget(chat);
 
         // 1. 获取选中的日记对象并排序
         const selectedJournals = chat.memoryJournals
@@ -118,7 +147,10 @@ function setupMemoryJournalScreen() {
 
         // 2. 计算合并后的范围
         const mergedStart = selectedJournals[0].range.start;
-        const mergedEnd = selectedJournals[selectedJournals.length - 1].range.end;
+        const mergedEnd = Math.max(...selectedJournals.map(j => j.range.end));
+        if (selectedJournals.some(j => !Number.isInteger(j.range.start) || !Number.isInteger(j.range.end) || j.range.start < 1 || j.range.end < j.range.start || j.range.end > target.history.length)) {
+            showToast('日记的消息范围已失效，请核对原存档后重试'); return;
+        }
 
         // 3. 拼接内容
         const combinedContent = selectedJournals.map(j => `【${j.title}】\n${j.content}`).join('\n\n---\n\n');
@@ -168,6 +200,7 @@ function setupMemoryJournalScreen() {
             );
 
             const rawContent = await fetchAiResponse(apiConfig, requestBody, headers, endpoint);
+            assertJournalTarget(target);
 
             const titleMatch = rawContent.match(/<title>([\s\S]*?)<\/title>/i);
             const contentMatch = rawContent.match(/<content>([\s\S]*?)<\/content>/i);
@@ -183,18 +216,14 @@ function setupMemoryJournalScreen() {
                 title: parsedTitle,
                 content: parsedContent,
                 createdAt: Date.now(),
-                chatId: currentChatId,
-                chatType: currentChatType,
+                chatId: target.chatId,
+                chatType: target.chatType,
                 isFavorited: false 
             };
 
-            if (!chat.memoryJournals) {
-                chat.memoryJournals = [];
-            }
-            chat.memoryJournals.push(newJournal);
-            await saveData();
+            await saveGeneratedJournal(target, newJournal);
 
-            renderJournalList();
+            if (currentChatId === target.chatId && currentChatType === target.chatType) renderJournalList();
             showToast('日记合并完成！');
 
         } catch (error) {
@@ -352,8 +381,8 @@ function setupMemoryJournalScreen() {
         const titleEl = document.getElementById('journal-detail-title');
         const contentEl = document.getElementById('journal-detail-content');
 
-        titleEl.isContentEditable = false;
-        contentEl.isContentEditable = false;
+        titleEl.contentEditable = "false";
+        contentEl.contentEditable = "false";
         titleEl.style.border = 'none';
         contentEl.style.border = 'none';
         titleEl.style.padding = '0';
@@ -385,8 +414,8 @@ function setupMemoryJournalScreen() {
             await saveData();
             renderMessages(false, false);
 
-            titleEl.isContentEditable = false;
-            contentEl.isContentEditable = false;
+            titleEl.contentEditable = "false";
+            contentEl.contentEditable = "false";
             titleEl.style.border = 'none';
             contentEl.style.border = 'none';
             titleEl.style.padding = '0';
@@ -759,6 +788,7 @@ async function generateJournal(start, end, includeFavorited = false) {
         if (!chat) {
             throw new Error("未找到当前聊天。");
         }
+        const target = captureJournalTarget(chat);
 
         const startIndex = start - 1;
         const endIndex = end;
@@ -805,6 +835,7 @@ async function generateJournal(start, end, includeFavorited = false) {
         );
 
         const rawContent = await fetchAiResponse(apiConfig, requestBody, headers, endpoint);
+        assertJournalTarget(target);
 
         const titleMatch = rawContent.match(/<title>([\s\S]*?)<\/title>/i);
         const contentMatch = rawContent.match(/<content>([\s\S]*?)<\/content>/i);
@@ -820,18 +851,14 @@ async function generateJournal(start, end, includeFavorited = false) {
             title: parsedTitle,
             content: parsedContent,
             createdAt: Date.now(),
-            chatId: currentChatId,
-            chatType: currentChatType,
+            chatId: target.chatId,
+            chatType: target.chatType,
             isFavorited: false 
         };
 
-        if (!chat.memoryJournals) {
-            chat.memoryJournals = [];
-        }
-        chat.memoryJournals.push(newJournal);
-        await saveData();
+        await saveGeneratedJournal(target, newJournal);
 
-        renderJournalList();
+        if (currentChatId === target.chatId && currentChatType === target.chatType) renderJournalList();
         showToast('新日记已生成！');
 
     } catch (error) {

@@ -1441,10 +1441,10 @@ function setupCleanImageCache() {
         stickers: 0
     };
 
-    function isBase64Image(str) {
+    function isBase64Image(str, imageField = true) {
         if (typeof str !== 'string') return false;
         if (str.startsWith('data:image/')) return true;
-        if (str.length > 1000 && !str.startsWith('http') && !str.includes(' ')) return true;
+        if (imageField && str.length > 1000 && str.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(str)) return true;
         return false;
     }
 
@@ -1482,7 +1482,7 @@ function setupCleanImageCache() {
             if (!history) return;
             history.forEach(msg => {
                 if (msg.content) {
-                    if (isBase64Image(msg.content)) {
+                    if (isBase64Image(msg.content, false)) {
                         cacheSizes.chat += getStringSize(msg.content);
                     } else {
                         const imgRegex = /!\[.*?\]\((data:image\/[^)]+)\)/g;
@@ -1564,6 +1564,9 @@ function setupCleanImageCache() {
         confirmBtn.textContent = '清理中...';
 
         let stickerCleanup = null;
+        const changedObjects = [], galleryChanges = [], generatedDeletes = [];
+        const archiveTargets = [...(db.characters || []), ...(db.groups || [])].map(chat => ({ chat, history: chat.history, archiveId: chat.activeArchiveId }));
+        const remember = (object, history) => { const before = JSON.parse(JSON.stringify(object)); const record = { object, history, before }; changedObjects.push(record); return record; };
         try {
             let dataChanged = false;
             let removedStickerIds = [];
@@ -1572,20 +1575,20 @@ function setupCleanImageCache() {
                 const workshopItems = await dexieDB.workshopHistory.toArray();
                 const workshopIdsToDelete = workshopItems.filter(item => isBase64Image(item.image)).map(item => item.id);
                 if (workshopIdsToDelete.length > 0) {
-                    await dexieDB.workshopHistory.bulkDelete(workshopIdsToDelete);
+                    generatedDeletes.push([dexieDB.workshopHistory, workshopIdsToDelete]);
                 }
 
                 const photoItems = await dexieDB.characterPhotos.toArray();
                 const photoIdsToDelete = photoItems.filter(item => isBase64Image(item.image)).map(item => item.id);
                 if (photoIdsToDelete.length > 0) {
-                    await dexieDB.characterPhotos.bulkDelete(photoIdsToDelete);
+                    generatedDeletes.push([dexieDB.characterPhotos, photoIdsToDelete]);
                 }
 
                 if (dexieDB.reader_comments) {
                     const comments = await dexieDB.reader_comments.toArray();
                     const commentIdsToDelete = comments.filter(item => item.content && item.content.startsWith('[ILLUSTRATION]')).map(item => item.id);
                     if (commentIdsToDelete.length > 0) {
-                        await dexieDB.reader_comments.bulkDelete(commentIdsToDelete);
+                        generatedDeletes.push([dexieDB.reader_comments, commentIdsToDelete]);
                     }
                 }
             }
@@ -1594,8 +1597,9 @@ function setupCleanImageCache() {
                 const cleanHistory = (history) => {
                     if (!history) return;
                     history.forEach(msg => {
+                        remember(msg, history);
                         if (msg.content) {
-                            if (isBase64Image(msg.content)) {
+                            if (isBase64Image(msg.content, false)) {
                                 msg.content = '[图片已清理]';
                                 dataChanged = true;
                             } else {
@@ -1619,13 +1623,16 @@ function setupCleanImageCache() {
                     });
                 };
                 storageChatHistories().forEach(cleanHistory);
+                changedObjects.forEach(record => record.applied = JSON.parse(JSON.stringify(record.object)));
             }
 
             if (selectedCategories.includes('gallery')) {
                 (db.characters || []).forEach(char => {
                     if (char.gallery) {
                         const originalLength = char.gallery.length;
-                        char.gallery = char.gallery.filter(item => !isBase64Image(item.url));
+                        const before = char.gallery;
+                        char.gallery = before.filter(item => !isBase64Image(item.url));
+                        galleryChanges.push({ char, before, after: char.gallery });
                         if (originalLength !== char.gallery.length) dataChanged = true;
                     }
                 });
@@ -1642,8 +1649,9 @@ function setupCleanImageCache() {
                 }
             }
 
-            if (dataChanged) {
+            if (dataChanged || generatedDeletes.length) {
                 await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.tables, async () => {
+                    for (const [table, ids] of generatedDeletes) await table.bulkDelete(ids);
                     if (removedStickerIds.length) await deleteGuardedRecords(dexieDB.myStickers, removedStickerIds);
                     await saveData();
                 }));
@@ -1659,6 +1667,31 @@ function setupCleanImageCache() {
             }
 
         } catch (error) {
+            // Restore only unchanged results from this cleanup, preserving later user edits.
+            changedObjects.forEach(({ object, history, before, applied }) => {
+                if (!applied) return;
+                const copies = new Set([object]);
+                if (object.id != null) for (const target of archiveTargets) {
+                    if (target.history !== history) continue;
+                    const archive = target.chat.archives?.find(item => item.id === target.archiveId);
+                    const copy = archive?.data?.history?.find(item => item.id === object.id);
+                    if (copy) copies.add(copy);
+                    if (target.chat.activeArchiveId === target.archiveId) {
+                        const current = target.chat.history?.find(item => item.id === object.id);
+                        if (current) copies.add(current);
+                    }
+                }
+                for (const copy of copies) for (const key of ['content', 'parts']) {
+                    if (JSON.stringify(copy[key]) !== JSON.stringify(applied[key])) continue;
+                    if (key in before) copy[key] = before[key]; else delete copy[key];
+                }
+            });
+            galleryChanges.forEach(({ char, before, after }) => {
+                if (char.gallery !== after) return;
+                before.forEach((item, index) => {
+                    if (!after.some(current => current === item || (item.id != null && current.id === item.id))) after.splice(Math.min(index, after.length), 0, item);
+                });
+            });
             // Restore this deletion only; keep newer lists, edits and additions intact.
             if (stickerCleanup && db.myStickers === stickerCleanup.after) {
                 const { before, removed } = stickerCleanup;

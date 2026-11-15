@@ -42,6 +42,10 @@ async function applyPresetToCurrentChat(presetName) {
     const preset = presets.find(p => p.name === presetName);
     if (!preset) { showToast('未找到该预设'); return; }
     
+    const target = captureChatSendTarget();
+    if (!target) return;
+    const fields = ['customBubbleCss','useCustomBubbleCss','theme','chatBg','bilingualModeEnabled','bilingualBubbleStyle','avatarMode','avatarRadius','bubbleBlurEnabled','titleLayout','showTimestamp','timestampStyle'];
+    const mutation = beginChatMutation(target.chat, target.type, [], fields);
     let textarea;
     let authorNoteDiv;
     if (currentChatType === 'private') {
@@ -51,6 +55,7 @@ async function applyPresetToCurrentChat(presetName) {
         textarea = document.getElementById('setting-group-custom-bubble-css');
         authorNoteDiv = document.getElementById('group-bubble-author-note');
     }
+    const previousNote = authorNoteDiv && { text: authorNoteDiv.textContent, display: authorNoteDiv.style.display };
     if (textarea) textarea.value = preset.css;
     
     if (authorNoteDiv) {
@@ -127,8 +132,19 @@ async function applyPresetToCurrentChat(presetName) {
             const themeKey = (currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId).theme : db.groups.find(g => g.id === currentChatId).theme) || 'white_pink';
             updateBubbleCssPreview(previewBox, preset.css, false, colorThemes[themeKey]);
         }
+        const saved = await saveChatMutation(mutation, '预设未保存，已恢复，请重试');
+        if (!isChatTargetVisible(target)) return;
+        if (!saved) {
+            if (target.type === 'private' && typeof loadSettingsToSidebar === 'function') loadSettingsToSidebar();
+            else if (typeof loadGroupSettingsToSidebar === 'function') loadGroupSettingsToSidebar();
+            if (textarea) textarea.value = target.chat.customBubbleCss || '';
+            if (authorNoteDiv && previousNote) { authorNoteDiv.textContent = previousNote.text; authorNoteDiv.style.display = previousNote.display; }
+            if (previewBox) updateBubbleCssPreview(previewBox, target.chat.customBubbleCss || '', false, colorThemes[target.chat.theme || 'white_pink']);
+            const room = document.getElementById('chat-room-screen');
+            if (room) room.style.backgroundImage = target.chat.chatBg ? 'url(' + target.chat.chatBg + ')' : '';
+            return;
+        }
         showToast('预设已应用到当前聊天并保存');
-        await saveData();
     } catch(e){
         console.error('applyPresetToCurrentChat error', e);
     }
