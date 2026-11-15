@@ -437,7 +437,7 @@ function setupRedPacketSystem() {
         sendRedPacketForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const amount = parseFloat(document.getElementById('red-packet-amount-input').value);
-            const count = parseInt(document.getElementById('red-packet-count-input').value, 10);
+            const count = Number(document.getElementById('red-packet-count-input').value);
             const remark = document.getElementById('red-packet-remark-input').value.trim() || '恭喜发财，大吉大利';
             
             if (isNaN(amount) || amount <= 0) return showToast('请输入有效的金额');
@@ -447,7 +447,12 @@ function setupRedPacketSystem() {
             if (!group) return;
 
             // 生成金额池
-            const pool = distributeRedPacket(amount, count);
+            let pool;
+            try {
+                pool = distributeRedPacket(amount, count);
+            } catch (error) {
+                return showToast(error.message);
+            }
 
             const messageContent = `[${group.me.nickname}发出了一个拼手气红包：${amount}元；个数：${count}个；留言：${remark}]`;
             const message = {
@@ -484,24 +489,36 @@ function setupRedPacketSystem() {
  * @returns {number[]} 分配金额数组
  */
 function distributeRedPacket(total, count) {
-    let remain = total;
+    const cents = Math.round(total * 100);
+    if (!Number.isFinite(total) || total <= 0 || !Number.isSafeInteger(cents) || Math.abs(total * 100 - cents) > 0.000001) {
+        throw new RangeError('请输入有效的金额，最多保留两位小数');
+    }
+    if (!Number.isSafeInteger(count) || count <= 0 || count > 10000) {
+        throw new RangeError('红包个数须为1到10000之间的整数');
+    }
+    if (cents < count) throw new RangeError('金额不足，每个红包至少需要0.01元');
+    let remain = cents;
     let remainCount = count;
     const result = [];
     for (let i = 0; i < count - 1; i++) {
-        // 每次分配范围：[0.01, 剩余平均值的2倍)
-        let amount = Math.random() * (remain / remainCount * 2 - 0.01) + 0.01;
-        amount = Math.floor(amount * 100) / 100;
-        if (amount < 0.01) amount = 0.01;
-        result.push(amount);
+        // 以分为单位分配，并为每个尚未领取的红包保留至少一分钱。
+        const maximum = Math.min(remain - (remainCount - 1), Math.max(1, Math.ceil(remain / remainCount * 2) - 1));
+        const amount = 1 + Math.floor(Math.random() * maximum);
+        result.push(amount / 100);
         remain -= amount;
         remainCount--;
     }
-    result.push(Math.round(remain * 100) / 100);
+    result.push(remain / 100);
     return result;
 }
 
 // --- Gossip Mode UI Logic ---
-let activePrivateSessionId = null; // Now stores "NameA_NameB"
+let activePrivateSessionId = null; // 页面内使用的双人会话标识，不写入聊天历史。
+
+function getPrivateChatSessionId(memberNames) {
+    // 姓名可以含下划线；编码完整数组，避免两组不同姓名拼成同一个标识。
+    return encodeURIComponent(JSON.stringify([...memberNames].sort()));
+}
 
 // 迁移旧的 privateSessions 数据到 history
 window.migratePrivateSessionsToHistory = function(group) {
@@ -603,12 +620,9 @@ function setupGossipUI() {
     }
 }
 
-function renderPrivateChatMonitor() {
-    const group = db.groups.find(g => g.id === currentChatId);
-    if (!group) return;
-
+function collectPrivateChatSessions(group) {
     // 动态解析私聊会话
-    const sessions = {}; // key: "NameA_NameB" (sorted)
+    const sessions = Object.create(null);
     
     const privateRegex = /^\[Private: (.*?) -> (.*?): ([\s\S]+?)\]$/;
     const privateEndRegex = /^\[Private-End: (.*?) -> (.*?)\]$/;
@@ -632,7 +646,7 @@ function renderPrivateChatMonitor() {
         }
         
         const members = [sender, receiver].sort();
-        const key = members.join('_');
+        const key = getPrivateChatSessionId(members);
         
         if (!sessions[key]) {
             sessions[key] = {
@@ -658,6 +672,14 @@ function renderPrivateChatMonitor() {
         }
     });
 
+    return sessions;
+}
+
+function renderPrivateChatMonitor() {
+    const group = db.groups.find(g => g.id === currentChatId);
+    if (!group) return;
+    const sessions = collectPrivateChatSessions(group);
+    const privateRegex = /^\[Private: (.*?) -> (.*?): ([\s\S]+?)\]$/;
     const sessionList = Object.values(sessions).sort((a, b) => b.lastTime - a.lastTime);
 
     const tabsContainer = document.getElementById('private-chat-tabs');
@@ -744,11 +766,9 @@ function closePrivateSession(sessionId) {
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group) return;
     
-    // sessionId is "NameA_NameB"
-    const members = sessionId.split('_');
-    if (members.length !== 2) return;
-    
-    const [sender, receiver] = members;
+    const session = collectPrivateChatSessions(group)[sessionId];
+    if (!session || session.status === 'ended') return;
+    const [sender, receiver] = session.memberNames;
     
     // 添加结束消息
     const endContent = `[Private-End: ${sender} -> ${receiver}]`;
@@ -784,8 +804,10 @@ function sendGossipMessage(content) {
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group || !activePrivateSessionId) return;
 
-    const sessionMembers = activePrivateSessionId.split('_');
+    const session = collectPrivateChatSessions(group)[activePrivateSessionId];
     const myName = group.me.nickname;
+    if (!session || session.status === 'ended' || !session.memberNames.includes(myName)) return;
+    const sessionMembers = session.memberNames;
     
     // 确定接收者
     const targetName = sessionMembers.find(n => n !== myName);
@@ -925,7 +947,7 @@ function handleGossipMessage(group, content) {
         const sender = privateMatch[1];
         const receiver = privateMatch[2];
         const members = [sender, receiver].sort();
-        const sessionId = members.join('_');
+        const sessionId = getPrivateChatSessionId(members);
         
         const overlay = document.getElementById('private-chat-overlay');
         const isOverlayVisible = overlay.classList.contains('visible');
