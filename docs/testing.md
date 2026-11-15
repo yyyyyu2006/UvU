@@ -49,6 +49,8 @@ npm run test:browser -- --match "chat_thinking_forward_browser|derived_panels_br
 
 `browser_derived_features.cjs` 等旧脚本自行搭建简化HTML，仅作为局部功能测试。其截图不能代表当前完整UI。视觉验收应采用真实页面脚本，例如 `derived_panels_browser.cjs`、`chat_thinking_forward_browser.cjs`。桌面触屏模拟不等于安卓或iOS真机；测试成功也不证明公网音乐扫码和实际模型可用。
 
+`theme_focus_compat_browser.cjs` 使用真实页面核对聊天输入区的尺寸、间距与1900原版一致，检查二改输入框的浅蓝聚焦提示，以及自定义主题在回复中仍能保留图标大小和位置。它复用 `UVU_1900_ROOT` 的严格预检；正常验收不能省略基线。默认用不含玩家数据的主题样例，可另外设置 `UVU_THEME_CSS` 指向本地美化文本，再运行 `node tests/theme_focus_compat_browser.cjs` 检查该主题。文本只读取，不能把玩家的美化文件和截图放进提交；有限样例不代表兼容所有主题。
+
 ## 思考内容来源
 
 头像入口只读取当前角色、当前存档里已经保存的 `<thinking>…</thinking>` 文本。它不生成、不总结、不请求额外思考；复制的也是这份原文。旧记录没有精确回复关联时标注“该段聊天保存的思考”，避免冒充某次回复。未返回、未保存或已清理的内容无法恢复；本面板不提取接口未公开的内部推理，也未扩展原版解析器去捕获独立的 `reasoning_content` 等字段。

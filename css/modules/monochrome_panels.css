@@ -61,7 +61,7 @@
 .uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mcp-actions,.mono-bridge-footer,.panel-editor-actions),#auto-memory-modal.uvu-mono-panel .auto-memory-actions.draft-fixed-actions { flex-shrink:0;display:flex;align-items:center;gap:12px;padding:16px 20px max(20px,env(safe-area-inset-bottom)) !important;margin:0;border:0;border-top:1px solid var(--draft-line);background:#fff;position:static; }
 .uvu-mono-panel.mono-page > :is(footer,.shared-document-actions,.mono-bridge-footer) > button,#auto-memory-modal.uvu-mono-panel .draft-fixed-actions > button { flex:1;min-height:40px;border-radius:20px; }
 .uvu-mono-panel :is(.mcp-status,.shared-document-status,.calendar-feedback,.panel-operation-status):empty { display:none; }
-.uvu-mono-panel :is(button,input,textarea,select,summary):focus-visible { outline:2px solid #788898;outline-offset:3px; }
+.uvu-mono-panel :is(button,summary):focus-visible { outline:2px solid #788898;outline-offset:3px; }
 .uvu-mono-panel .mono-route-hidden { display:none !important; }
 .model-picker-card.uvu-mono-panel .model-picker-list { display:flex;flex-direction:column;gap:0;padding:0;background:#fff;border:1px solid var(--draft-line);border-radius:20px;overflow:auto; }
 .model-picker-card.uvu-mono-panel .model-picker-list > button { position:relative;flex-shrink:0;text-align:left;justify-content:flex-start;min-height:56px;width:100%;border:0;border-bottom:1px solid #edf0f3;border-radius:0;padding:16px 20px 16px 44px;background:#fff;color:var(--draft-ink);font-size:14px; }

@@ -43,9 +43,11 @@
     line-height: 1.5;
     color-scheme: light;
 }
-:is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,:where(#auto-memory-modal,#uvu-story-bridge-screen)) :is(input,select,textarea):focus-visible {
-    outline: 2px solid #8db4d5;
-    outline-offset: 2px;
+/* Text entry focus belongs to derivative panels only, never the original chat
+   input or third-party themes. Keep a gentle inset cue without an outer box. */
+:is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,.uvu-panel-layout,.uvu-mono-panel,.uvu-lenso-panel,.worldbook-advanced,.relationship-settings,.storage-backup-extras,:where(#auto-memory-modal,#uvu-story-bridge-screen,#uvu-notification-preferences)) :is(input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=button],[type=submit],[type=reset]),select,textarea):focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px #c9eaf8;
 }
 :is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,:where(#auto-memory-modal,#uvu-story-bridge-screen)) :is(button,summary) { border-radius: 999px; }
 :is(.feature-dialog,.shared-document-dialog,.relationship-dialog,.derived-settings,.mcp-settings,.resource-health,.model-picker-overlay,.minimax-tts-settings,:where(#auto-memory-modal,#uvu-story-bridge-screen)) button {
@@ -255,7 +257,8 @@
 #tutorial-screen .gh-backup-branch input::placeholder { color:#8b929b; }
 #tutorial-screen .gh-backup-option-actions { display:flex; justify-content:flex-end; margin-top:8px; }
 #tutorial-screen .gh-backup-option-actions button { box-sizing:border-box; flex:0 0 auto; width:auto; min-height:32px; margin:0; padding:6px 12px; border:1px solid #e8eaee; border-radius:999px; background:#f5f6f8; color:#626b78; font:inherit; font-size:12px; line-height:1.5; cursor:pointer; }
-#tutorial-screen .gh-backup-options :is(input,button):focus-visible { outline:2px solid #8fb4de; outline-offset:3px; }
+#tutorial-screen .gh-backup-options button:focus-visible { outline:2px solid #8fb4de; outline-offset:3px; }
+#tutorial-screen .gh-backup-options input:focus-visible { outline:none; box-shadow:inset 0 0 0 1px #c9eaf8; }
 #tutorial-screen .gh-backup-notice { margin:16px 0 0; font-size:12px; line-height:1.65; color:#7b838e; overflow-wrap:anywhere; }
 @media(pointer:coarse) { #tutorial-screen .gh-backup-branch input { font-size:16px; } }
 .model-picker-card { gap: 16px; }

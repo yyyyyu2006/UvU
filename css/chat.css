@@ -1442,12 +1442,12 @@
 .message-input-area {
     display: flex;
     align-items: center;
-    padding: 7px 10px;
-    padding-bottom: 7px;
+    padding: 8px 12px;
+    padding-bottom: 8px;
     border-top: none;
     background: var(--chat-bottom-bar-bg);
     flex-shrink: 0;
-    gap: 6px;
+    gap: 8px;
     border-bottom-left-radius: var(--phone-corner-radius);
     border-bottom-right-radius: var(--phone-corner-radius);
     overflow: visible;
@@ -1491,8 +1491,8 @@
 .message-input-area .icon-btn.circle-bg {
     background-color: #f2f2f2;
     color: var(--func-icon-color);
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
 }
 
@@ -1505,8 +1505,8 @@
     right: 4px;
     background: transparent;
     color: #666;
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
 }
 
 .message-input-area .icon-btn svg {
@@ -1525,8 +1525,8 @@
 }
 
 /* 图标大小自定义 */
-#sticker-toggle-btn img { width: 22px; height: 22px; }
-#get-reply-btn svg { width: 30px; height: 30px; stroke: none; }
+#sticker-toggle-btn img { width: 24px; height: 24px; }
+#get-reply-btn svg { width: 32px; height: 32px; stroke: none; }
 
 #toggle-expansion-btn {
     transition: transform 0.3s ease, background-color 0.2s;
@@ -1538,9 +1538,11 @@
 
 #send-message-btn { display: none; }
 #message-input-default { position: relative; }
-#get-reply-btn[data-generating="true"] { position: relative; }
-#get-reply-btn[data-generating="true"] > * { visibility: hidden; }
-#get-reply-btn[data-generating="true"]::after { content: ""; position: absolute; inset: 50% auto auto 50%; width: 10px; height: 10px; border-radius: 2px; background: currentColor; transform: translate(-50%, -50%); pointer-events: none; }
+/* Keep theme-owned button geometry and pseudo-elements untouched. Only the
+   built-in SVG changes its drawing while the same button cancels a reply. */
+#get-reply-btn > svg[data-uvu-reply-icon] > .uvu-reply-stop-mark { display: none; }
+#get-reply-btn[data-generating="true"] > svg[data-uvu-reply-icon] > g { display: none; }
+#get-reply-btn[data-generating="true"] > svg[data-uvu-reply-icon] > .uvu-reply-stop-mark { display: block; }
 #incoming-message-notifications { position: fixed; z-index: 50000; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; pointer-events: none; }
 .incoming-message-toast { pointer-events: auto; width: min(420px, 100%); min-height: 72px; box-sizing: border-box; margin: 0 auto; padding: 12px 16px; border: 1px solid #e4e6e8; border-radius: 16px; background: #f7f8fa; color: #191919; box-shadow: 0 5px 18px #0002; display: flex; align-items: center; gap: 12px; text-align: left; animation: incomingMessageDrop .2s ease-out; }
 .incoming-message-avatar { width: 47px; height: 47px; flex: 0 0 47px; border-radius: 12px; object-fit: cover; background: #e8e8e8; }

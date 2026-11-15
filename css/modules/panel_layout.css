@@ -26,7 +26,7 @@
 .uvu-panel-layout .panel-error { color: #a6332c; }
 .uvu-panel-layout [hidden] { display: none !important; }
 .uvu-panel-layout :is(input,select,textarea) { scroll-margin-block: 24px; }
-.uvu-panel-layout :is(button,summary,input,select,textarea):focus-visible { outline: 2px solid #8fb4de; outline-offset: 3px; }
+.uvu-panel-layout :is(button,summary):focus-visible { outline: 2px solid #8fb4de; outline-offset: 3px; }
 .uvu-panel-layout button { transition: background-color var(--panel-quick) ease, color var(--panel-quick) ease, border-color var(--panel-quick) ease; }
 .uvu-panel-layout button:active:not(:disabled) { filter: brightness(.96); }
 .uvu-panel-layout button.panel-primary { color: #fff; background: #1b1d21; border-color: #1b1d21; }

@@ -67,7 +67,7 @@ const chatRoomHtml = `
                     </button>
                 </div>
                 <button id="get-reply-btn" type="button" class="icon-btn" title="AI 回复" aria-label="AI 回复">
-                    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <svg data-uvu-reply-icon width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="12" cy="12" r="12" fill="#F0F0F0"/>
                         <g fill="#191919">
                             <rect x="11.25" y="5.85" width="1.5" height="12.3" rx="0.2"/>
@@ -76,6 +76,7 @@ const chatRoomHtml = `
                             <rect x="5.85" y="10.5" width="1.5" height="3" rx="0.2"/>
                             <rect x="16.65" y="10.5" width="1.5" height="3" rx="0.2"/>
                         </g>
+                        <rect class="uvu-reply-stop-mark" x="8" y="8" width="8" height="8" rx="1.2" fill="#191919"/>
                     </svg>
                 </button>
                 <button id="send-message-btn" class="icon-btn send-btn circle-bg" style="display: none;">

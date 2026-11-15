@@ -77,7 +77,7 @@
     background:var(--lenso-blue) !important;color:var(--lenso-action-ink) !important;border:0 !important;
     box-shadow:none;
 }
-.uvu-lenso-panel button:focus-visible,.uvu-lenso-panel input:focus-visible,.uvu-lenso-panel select:focus-visible,.uvu-lenso-panel textarea:focus-visible {
+.uvu-lenso-panel button:focus-visible {
     outline:2px solid var(--lenso-blue-ink);outline-offset:3px;
 }
 .uvu-lenso-panel button:disabled { opacity:.45; }
