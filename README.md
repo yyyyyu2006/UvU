@@ -4,6 +4,8 @@
 
 分类备份、JSON / .ee 兼容性与保存优化说明见 [数据管理说明](docs/storage-performance.md)。开发回归、浏览器准备与1900严格兼容检查见 [测试说明](docs/testing.md)；开发依赖不参与页面运行。
 
+当前仓库使用 `test` 测试、`main` 正式发布的流程，两个站的部署地址、数据隔离和合并规则见 [测试与发布说明](docs/test-release.md)。下方手动上传与分支发布步骤供新建独立仓库参考，不适用于当前双站的 Actions 部署配置。
+
 好友关系使用方式见 [好友关系说明](docs/chat-relationship.md)，完成任务后的额外问题见 [只读排查清单](docs/audit-2026-11-03.md)。清单中的问题尚未修改。
 
 ## 上传到 GitHub
