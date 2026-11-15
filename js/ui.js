@@ -43,7 +43,10 @@ function setupAirDropPanelBtn() {
             }
 
             try {
+                const target = captureAirDropTarget(chat);
                 const photos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse().sortBy('timestamp');
+                if (!isAirDropTargetAvailable(target) || currentChatId !== chat.id || currentChatType !== target.type ||
+                    chat.activeArchiveId !== target.archiveId || !document.getElementById('chat-room-screen').classList.contains('active')) return;
                 if (photos.length > 0) {
                     showAirDropPreview(photos[0], chat);
                 } else {

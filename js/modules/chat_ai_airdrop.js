@@ -1,4 +1,75 @@
 // --- 隔空投送 (AirDrop) 生图逻辑 ---
+let airDropCurrentView = null;
+let airDropDetailsView = null;
+let airDropHistoryView = null;
+const airDropPendingTasks = new Set();
+let airDropCooldownRevision = 0;
+
+function captureAirDropTarget(chat) {
+    return { chat, type: db.groups.includes(chat) ? 'group' : 'private', archiveId: chat.activeArchiveId };
+}
+
+function isAirDropTargetAvailable(target) {
+    const items = target.type === 'group' ? db.groups : db.characters;
+    return items.includes(target.chat) && (target.archiveId === undefined ||
+        target.chat.activeArchiveId === target.archiveId ||
+        target.chat.archives?.some(archive => archive.id === target.archiveId));
+}
+
+function isAirDropViewVisible(view) {
+    return airDropCurrentView === view && isAirDropTargetAvailable(view) &&
+        currentChatId === view.chat.id && currentChatType === view.type &&
+        view.chat.activeArchiveId === view.archiveId &&
+        document.getElementById('chat-room-screen').classList.contains('active') &&
+        document.getElementById('airdrop-modal').classList.contains('visible');
+}
+
+function closeAirDropView(view) {
+    if (airDropCurrentView !== view) return;
+    airDropCurrentView = null;
+    airDropDetailsView = null;
+    document.getElementById('airdrop-details-modal').classList.remove('visible');
+    document.getElementById('airdrop-modal').classList.remove('visible');
+    document.getElementById('airdrop-result-area').style.display = 'none';
+    document.getElementById('airdrop-loading').style.display = 'none';
+    document.getElementById('airdrop-window').classList.remove('collapsed');
+}
+
+function beginAirDropView(chat) {
+    const view = { ...captureAirDropTarget(chat), busy: false };
+    airDropCurrentView = view;
+    airDropDetailsView = null;
+    airDropHistoryView = null;
+    document.getElementById('airdrop-history-modal').classList.remove('visible');
+    document.getElementById('airdrop-details-modal').classList.remove('visible');
+    document.getElementById('airdrop-close-btn').onclick = () => closeAirDropView(view);
+    document.getElementById('airdrop-header').onclick = () => {
+        if (isAirDropViewVisible(view) && view.busy) {
+            document.getElementById('airdrop-window').classList.toggle('collapsed');
+        }
+    };
+    // The original collapsed style hides the header; the visible loading pill is the expand target.
+    document.getElementById('airdrop-loading').onclick = () => {
+        if (isAirDropViewVisible(view) && view.busy) {
+            document.getElementById('airdrop-window').classList.remove('collapsed');
+        }
+    };
+    return view;
+}
+
+function showAirDropTaskError(view, label, error) {
+    console.error(label, error.message);
+    if (isAirDropViewVisible(view)) {
+        document.getElementById('airdrop-window').classList.remove('collapsed');
+        document.getElementById('airdrop-loading').style.display = 'none';
+        document.getElementById('airdrop-error').style.display = 'block';
+        document.getElementById('airdrop-error-text').textContent = `${label}: ${error.message}`;
+    } else {
+        closeAirDropView(view);
+        showToast(`${label}: ${error.message}`);
+    }
+}
+
 async function receiveAirDropPhoto(messageId, isAuto = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat) return;
@@ -19,6 +90,12 @@ async function receiveAirDropPhoto(messageId, isAuto = false) {
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
     const photoArchiveId = chat.activeArchiveId;
+    const taskKey = JSON.stringify(['receive', currentChatType, chat.id, photoArchiveId, messageId]);
+    if (airDropPendingTasks.has(taskKey)) {
+        showToast('这张照片正在接收中');
+        return;
+    }
+    const view = beginAirDropView(chat);
 
     const charName = chat.remarkName || chat.name;
 
@@ -29,39 +106,35 @@ async function receiveAirDropPhoto(messageId, isAuto = false) {
     const loading = document.getElementById('airdrop-loading');
     const loadingText = document.getElementById('airdrop-loading-text');
     const errorDiv = document.getElementById('airdrop-error');
-    const errorText = document.getElementById('airdrop-error-text');
 
     subtitle.textContent = `${charName} 想要共享1张照片`;
     actions.style.display = 'flex';
     loading.style.display = 'none';
     errorDiv.style.display = 'none';
+    document.getElementById('airdrop-result-area').style.display = 'none';
+    document.getElementById('airdrop-window').classList.remove('collapsed');
     modal.classList.add('visible');
 
     // 绑定拒绝按钮
     const rejectBtn = document.getElementById('airdrop-reject-btn');
     rejectBtn.onclick = () => {
-        modal.classList.remove('visible');
+        closeAirDropView(view);
     };
 
     // 绑定关闭按钮 (错误时显示)
     const closeBtn = document.getElementById('airdrop-close-btn');
     closeBtn.onclick = () => {
-        modal.classList.remove('visible');
+        closeAirDropView(view);
     };
 
-    // 绑定头部点击折叠/展开
-    const header = document.getElementById('airdrop-header');
     const windowEl = document.getElementById('airdrop-window');
-    header.onclick = () => {
-        // 只有在接收中状态才允许折叠
-        if (loading.style.display === 'block') {
-            windowEl.classList.toggle('collapsed');
-        }
-    };
 
     // 绑定接受按钮
     const acceptBtn = document.getElementById('airdrop-accept-btn');
     acceptBtn.onclick = async () => {
+        if (!isAirDropViewVisible(view) || view.busy || airDropPendingTasks.has(taskKey)) return;
+        view.busy = true;
+        airDropPendingTasks.add(taskKey);
         actions.style.display = 'none';
         loading.style.display = 'flex';
         errorDiv.style.display = 'none';
@@ -77,55 +150,46 @@ async function receiveAirDropPhoto(messageId, isAuto = false) {
             if (!tags || tags.trim() === '') {
                 throw new Error("LLM 未返回有效的提示词，已取消生图");
             }
+            if (!isAirDropTargetAvailable(view)) throw new Error('原角色或存档已移除，已取消接收');
             
             // 阶段 2: NovelAI 生图
-            loadingText.textContent = '正在接收中';
+            if (isAirDropViewVisible(view)) loadingText.textContent = '正在接收中';
             const base64Image = await generateImageFromTags(tags, chat);
 
             // 阶段 3: 保存并展示
-            await saveAirDropPhoto(chat.id, base64Image, tags, { archiveId: photoArchiveId, messageId });
+            if (!isAirDropTargetAvailable(view)) throw new Error('原角色或存档已移除，未保存照片');
+            const savedPhoto = await saveAirDropPhoto(chat.id, base64Image, tags, { archiveId: photoArchiveId, messageId });
             if (chat.activeArchiveId === photoArchiveId && typeof checkCharacterAvatar === 'function' && db.characters.includes(chat)) {
                 checkCharacterAvatar(chat).catch(error => console.warn('Generated avatar check failed:', error.message));
             }
             
             // 更新最后生图时间
             if (!db.workshopSettings) db.workshopSettings = {};
-            db.workshopSettings.lastGenerationTime = Date.now();
-            await saveData();
+            const settingsToSave = db.workshopSettings;
+            const previousTime = settingsToSave.lastGenerationTime;
+            const completedTime = Date.now();
+            const cooldownRevision = ++airDropCooldownRevision;
+            settingsToSave.lastGenerationTime = completedTime;
+            try { await saveData(); }
+            catch (error) {
+                if (airDropCooldownRevision === cooldownRevision && settingsToSave.lastGenerationTime === completedTime) settingsToSave.lastGenerationTime = previousTime;
+                console.warn('照片已保存，但冷却时间保存失败:', error.message);
+                showToast('照片已存入相册，但冷却时间保存失败');
+            }
             
             // 检查是否还在当前聊天室
-            if (currentChatId === chat.id && document.getElementById('chat-room-screen').classList.contains('active')) {
-                // 自动展开并显示结果
-                windowEl.classList.remove('collapsed');
-                loading.style.display = 'none';
-                
-                // 获取刚保存的记录（为了拿到 ID）
-                const latestPhotos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse().sortBy('timestamp');
-                if (latestPhotos.length > 0) {
-                    showAirDropPreview(latestPhotos[0], chat);
-                }
+            if (isAirDropViewVisible(view)) {
+                showAirDropPreview(savedPhoto, chat);
             } else {
-                // 不在当前聊天室，隐藏 modal 并显示 Toast
-                modal.classList.remove('visible');
-                windowEl.classList.remove('collapsed');
-                loading.style.display = 'none';
+                closeAirDropView(view);
                 showToast(`已收到 ${charName} 的隔空投送照片，已存入TA相册`);
             }
 
         } catch (error) {
-            console.error("AirDrop Error:", error);
-            windowEl.classList.remove('collapsed');
-            loading.style.display = 'none';
-            
-            // 检查是否还在当前聊天室
-            if (currentChatId === chat.id && document.getElementById('chat-room-screen').classList.contains('active')) {
-                errorDiv.style.display = 'block';
-                errorText.textContent = `接收失败: ${error.message}`;
-            } else {
-                // 不在当前聊天室，隐藏 modal 并显示 Toast 报错
-                modal.classList.remove('visible');
-                showToast(`隔空投送失败: ${error.message}`);
-            }
+            showAirDropTaskError(view, '接收失败', error);
+        } finally {
+            view.busy = false;
+            airDropPendingTasks.delete(taskKey);
         }
     };
 
@@ -263,7 +327,7 @@ async function generateTagsFromDescription(chat, messageId) {
         ];
     }
 
-    console.log('【生图 LLM 预设请求参数】:\n' + messages.map(m => `[${m.role.toUpperCase()}]\n${m.content}`).join('\n\n------------------------\n\n'));
+    console.log('AirDrop 提示词扩写请求', { provider, messageCount: messages.length });
 
     const requestBody = {
         model: model,
@@ -280,7 +344,7 @@ async function generateTagsFromDescription(chat, messageId) {
         delete requestBody.messages;
     }
 
-    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:generateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;
+    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:generateContent?key=${getRandomValue(key)}` : resolveChatCompletionsEndpoint(url);
     const headers = (provider === 'gemini') ? {'Content-Type': 'application/json'} : {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`
@@ -296,15 +360,10 @@ async function generateTagsFromDescription(chat, messageId) {
         throw new Error(`LLM API 请求失败 (${response.status})`);
     }
 
-    const data = await response.json();
-    let text = "";
-    if (provider === 'gemini') {
-        text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    } else {
-        text = data.choices[0].message.content;
-    }
+    const data = parseAiResponseJson(await response.text());
+    let text = extractAiResponseText(data, provider);
     
-    console.log('【生图 LLM 原始返回内容】:', text);
+    console.log('AirDrop 提示词扩写完成', { textLength: text.length });
     
     // 尝试提取 <image> 标签内的内容
     const imageTagMatch = text.match(/<image>([\s\S]*?)<\/image>/i);
@@ -344,7 +403,8 @@ async function generateImageFromTags(llmTags, chat) {
 }
 
 async function saveAirDropPhoto(charId, base64Image, prompt = '', scope = {}) {
-    if (!dexieDB) return;
+    if (!dexieDB) throw new Error('相册数据库尚未就绪，请稍后重试');
+    if (typeof base64Image !== 'string' || !base64Image.trim()) throw new Error('生图接口没有返回有效图片');
     const photoItem = {
         charId: charId,
         timestamp: Date.now(),
@@ -352,11 +412,13 @@ async function saveAirDropPhoto(charId, base64Image, prompt = '', scope = {}) {
         ...(scope.archiveId !== undefined ? { archiveId: scope.archiveId, messageId: scope.messageId } : {}),
         prompt: prompt
     };
-    await dexieDB.characterPhotos.add(photoItem);
+    const id = await dexieDB.characterPhotos.add(photoItem);
+    return { ...photoItem, id };
 }
 
 // 统一的 AirDrop 预览窗口逻辑
 function showAirDropPreview(photoItem, chat) {
+    const view = beginAirDropView(chat);
     const modal = document.getElementById('airdrop-modal');
     const subtitle = document.getElementById('airdrop-subtitle');
     const actions = document.getElementById('airdrop-actions');
@@ -410,66 +472,96 @@ function showAirDropPreview(photoItem, chat) {
     // 绑定重新生成按钮
     const regenerateBtn = document.getElementById('airdrop-regenerate-btn');
     regenerateBtn.onclick = async () => {
+        const taskKey = JSON.stringify(['regenerate', view.type, chat.id, photoItem.id]);
+        if (!isAirDropViewVisible(view) || view.busy || airDropPendingTasks.has(taskKey)) return;
+        view.busy = true;
+        airDropPendingTasks.add(taskKey);
         resultArea.style.display = 'none';
         loading.style.display = 'flex';
         windowEl.classList.add('collapsed');
         const loadingText = document.getElementById('airdrop-loading-text');
         
         try {
+            const photoTarget = { ...view, archiveId: photoItem.archiveId ?? view.archiveId };
+            if (!isAirDropTargetAvailable(photoTarget)) throw new Error('原角色或存档已移除，无法重新生成');
             loadingText.textContent = '正在重新生成';
             const currentPrompt = photoItem.prompt || '';
             if (!currentPrompt) throw new Error("缺少提示词，无法重新生成");
             
             const base64Image = await generateImageFromTags(currentPrompt, chat);
-            await saveAirDropPhoto(chat.id, base64Image, currentPrompt, { archiveId: photoItem.archiveId, messageId: photoItem.messageId });
+            if (!isAirDropTargetAvailable(photoTarget)) throw new Error('原角色或存档已移除，未保存照片');
+            const savedPhoto = await saveAirDropPhoto(chat.id, base64Image, currentPrompt, { archiveId: photoItem.archiveId, messageId: photoItem.messageId });
             
-            const latestPhotos = await dexieDB.characterPhotos.where('charId').equals(chat.id).reverse().sortBy('timestamp');
-            if (latestPhotos.length > 0) {
-                showAirDropPreview(latestPhotos[0], chat);
+            if (isAirDropViewVisible(view)) {
+                showAirDropPreview(savedPhoto, chat);
+            } else {
+                closeAirDropView(view);
+                showToast(`${charName} 的新照片已存入TA相册`);
             }
         } catch (error) {
-            console.error("Regenerate Error:", error);
-            windowEl.classList.remove('collapsed');
-            loading.style.display = 'none';
-            errorDiv.style.display = 'block';
-            document.getElementById('airdrop-error-text').textContent = `生成失败: ${error.message}`;
+            showAirDropTaskError(view, '生成失败', error);
+        } finally {
+            view.busy = false;
+            airDropPendingTasks.delete(taskKey);
         }
     };
 
     // 绑定详情按钮
     const detailsBtn = document.getElementById('airdrop-details-btn');
     detailsBtn.onclick = () => {
+        if (!isAirDropViewVisible(view) || view.busy) return;
+        const detailsView = { busy: false };
+        airDropDetailsView = detailsView;
         const detailsModal = document.getElementById('airdrop-details-modal');
         const textarea = document.getElementById('airdrop-prompt-textarea');
+        const promptSaveBtn = document.getElementById('airdrop-prompt-save-btn');
+        promptSaveBtn.disabled = false;
         textarea.value = photoItem.prompt || '';
         detailsModal.classList.add('visible');
 
         document.getElementById('airdrop-prompt-close-btn').onclick = () => {
+            if (airDropDetailsView !== detailsView) return;
+            airDropDetailsView = null;
             detailsModal.classList.remove('visible');
         };
 
-        document.getElementById('airdrop-prompt-save-btn').onclick = async () => {
+        promptSaveBtn.onclick = async () => {
+            if (airDropDetailsView !== detailsView || detailsView.busy) return;
             const newPrompt = textarea.value.trim();
-            photoItem.prompt = newPrompt;
-            await dexieDB.characterPhotos.put(photoItem);
-            detailsModal.classList.remove('visible');
-            showToast('提示词已保存');
+            detailsView.busy = true;
+            promptSaveBtn.disabled = true;
+            try {
+                if (!isAirDropTargetAvailable(view)) throw new Error('原角色或存档已移除，无法保存提示词');
+                // Only update an existing row; do not resurrect a concurrently deleted photo.
+                const updated = await dexieDB.characterPhotos.update(photoItem.id, { prompt: newPrompt });
+                if (!updated) throw new Error('照片已移除，请重新打开相册');
+                photoItem.prompt = newPrompt;
+                if (airDropDetailsView === detailsView) {
+                    airDropDetailsView = null;
+                    detailsModal.classList.remove('visible');
+                }
+                showToast('提示词已保存');
+            } catch (error) {
+                console.error('AirDrop 提示词保存失败:', error.message);
+                showToast(`提示词保存失败: ${error.message}`);
+            } finally {
+                detailsView.busy = false;
+                if (airDropDetailsView === detailsView) promptSaveBtn.disabled = false;
+            }
         };
     };
 
     // 绑定相册按钮
     const galleryBtn = document.getElementById('airdrop-gallery-btn');
     galleryBtn.onclick = () => {
-        modal.classList.remove('visible');
-        resultArea.style.display = 'none';
+        closeAirDropView(view);
         openAirDropHistory(chat.id);
     };
 
     // 绑定结果关闭按钮
     const resultCloseBtn = document.getElementById('airdrop-result-close-btn');
     resultCloseBtn.onclick = () => {
-        modal.classList.remove('visible');
-        resultArea.style.display = 'none';
+        closeAirDropView(view);
     };
 }
 
@@ -477,16 +569,26 @@ async function openAirDropHistory(charId) {
     const modal = document.getElementById('airdrop-history-modal');
     const grid = document.getElementById('airdrop-history-grid');
     const closeBtn = document.getElementById('airdrop-history-close-btn');
+    const chat = (currentChatType === 'group' ? db.groups : db.characters).find(item => item.id === charId);
+    if (!chat) return;
+    const view = { ...captureAirDropTarget(chat) };
+    airDropHistoryView = view;
+    const ownsHistory = () => airDropHistoryView === view && modal.classList.contains('visible') &&
+        (view.type === 'group' ? db.groups : db.characters).includes(chat);
 
-    closeBtn.onclick = () => modal.classList.remove('visible');
+    closeBtn.onclick = () => {
+        if (airDropHistoryView !== view) return;
+        airDropHistoryView = null;
+        modal.classList.remove('visible');
+    };
 
     grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #999;">加载中...</div>';
     modal.classList.add('visible');
 
-    if (!dexieDB) return;
-
     try {
+        if (!dexieDB) throw new Error('相册数据库尚未就绪');
         const photos = await dexieDB.characterPhotos.where('charId').equals(charId).reverse().sortBy('timestamp');
+        if (!ownsHistory()) return;
         
         grid.innerHTML = '';
         if (photos.length === 0) {
@@ -512,11 +614,10 @@ async function openAirDropHistory(charId) {
             img.style.backgroundPosition = 'center';
             img.style.cursor = 'pointer';
             img.onclick = () => {
+                if (!ownsHistory()) return;
+                airDropHistoryView = null;
                 modal.classList.remove('visible');
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === charId) : db.groups.find(g => g.id === charId);
-                if (chat) {
-                    showAirDropPreview(photo, chat);
-                }
+                showAirDropPreview(photo, chat);
             };
 
             const delBtn = document.createElement('button');
@@ -536,11 +637,21 @@ async function openAirDropHistory(charId) {
             
             delBtn.onclick = async (e) => {
                 e.stopPropagation();
+                if (!ownsHistory() || delBtn.disabled) return;
                 if (confirm('确定要删除这张照片吗？')) {
-                    await dexieDB.characterPhotos.delete(photo.id);
-                    wrapper.remove();
-                    if (grid.children.length === 0) {
-                        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #999;">相册空空如也</div>';
+                    delBtn.disabled = true;
+                    try {
+                        await dexieDB.characterPhotos.delete(photo.id);
+                        if (!ownsHistory()) return;
+                        wrapper.remove();
+                        if (grid.children.length === 0) {
+                            grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #999;">相册空空如也</div>';
+                        }
+                    } catch (error) {
+                        console.error('AirDrop 照片删除失败:', error.message);
+                        showToast(`照片删除失败: ${error.message}`);
+                    } finally {
+                        delBtn.disabled = false;
                     }
                 }
             };
@@ -551,7 +662,7 @@ async function openAirDropHistory(charId) {
         });
 
     } catch (error) {
-        console.error("Load AirDrop History Error:", error);
-        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #ff4d4f;">加载失败</div>';
+        console.error("Load AirDrop History Error:", error.message);
+        if (ownsHistory()) grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #ff4d4f;">加载失败</div>';
     }
 }

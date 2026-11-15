@@ -1,6 +1,7 @@
 (function() {
     const MAX_LOGS = 50;
     const logs = [];
+    let nextLogId = 0;
 
     const originalLog = console.log;
     const originalWarn = console.warn;
@@ -24,7 +25,7 @@
         const now = new Date();
         const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}`;
         
-        logs.push({ type, message, timestamp });
+        logs.push({ id: ++nextLogId, type, message, timestamp });
         if (logs.length > MAX_LOGS) {
             logs.shift();
         }
@@ -60,8 +61,8 @@
             return true;
         });
 
-        container.innerHTML = filteredLogs.map((log, index) => `
-            <div class="console-log-item ${log.type}" data-index="${index}">
+        container.innerHTML = filteredLogs.map(log => `
+            <div class="console-log-item ${log.type}" data-log-id="${log.id}">
                 <div class="console-msg-wrapper">
                     <span class="console-msg">${log.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
                     <span class="console-time">${log.timestamp}</span>
@@ -148,8 +149,8 @@
                 const copyBtn = e.target.closest('.console-item-copy-btn');
                 if (copyBtn) {
                     const logItem = copyBtn.closest('.console-log-item');
-                    const index = logItem.dataset.index;
-                    const log = logs[index];
+                    const id = Number(logItem.dataset.logId);
+                    const log = logs.find(item => item.id === id);
                     if (log) {
                         const textToCopy = `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`;
                         
