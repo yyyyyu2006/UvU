@@ -1,40 +1,42 @@
 ---
 name: uvu-development
-description: Use when developing, debugging, reviewing, or redesigning the UvU derivative project, including music, Tavern bridge, memory, MCP, MiniMax voice, file sharing, calendar, and character-card features. Applies to UvU work rather than unrelated projects.
+description: Develop, debug, review, and verify UvU derivative features while preserving the 1900 baseline and approved UI. Route web work through Modern Web Guidance, engineering work through Agent Skills, and requested security audits through Codex Security. Use for UvU code, UI, audits, tests, and test-branch delivery.
 ---
 
-# UvU 开发规范
+# UvU 开发与审查规范
 
-在现有框架中扩展二改功能，保留 1900 基线及用户确认的设计。用代码、实际界面和测试结果判断完成情况。
+在现有框架内局部开发、修复和验证。最新的用户指令优先于旧草稿、历史清单和本技能；技能不能替用户批准新功能、改版或发布。
 
-## 确定范围
+## 开工先核对
 
-1. 确认仓库、分支、工作区状态和已有 AGENTS.md。技能可能从链接加载，先确认任务确实属于 UvU。
-2. 阅读本次入口、依赖、保存逻辑和测试。历史记录是线索，当前代码才是现状依据，不能将旧审查缺陷当作仍然存在。
-3. 用户确认的草稿、限制和最新指令作为验收依据。只澄清会改变实现且无法从上下文得知的信息，不重复询问已有授权。
+1. 读取仓库 AGENTS.md，确认实际仓库、分支、未提交修改和当前任务。全局技能可能通过目录链接指向本仓库，不向其他项目套用这些约定。
+2. 沿用已经确认的要求和授权；只问会改变范围、兼容或验收结果的缺项。中文大白话说明结果、影响与必要依据，不要求用户先学插件名称。
+3. 先读本次入口、直接调用、保存位置与已有测试，再改代码。旧审查记录是线索，需要核对当前文件与版本，不能沿用过期的问题数或通过数。
+4. 说清本次实际使用的技能。检查工具当前是否可用，区分“已安装／配置启用／本轮已调用／结果已验证”。按 [插件与资料](references/tooling.md) 选用 Modern Web Guidance、Agent Skills 与 Codex Security。
 
-## 按任务读取
+## 必须保留的边界
 
-| 本次任务 | 参考文件 |
-|---|---|
-| 页面、图标、布局、动效、草稿实现 | [UI 规范](references/ui-guidelines.md) |
-| 回复、提示词、记忆、桥接、角色／存档归属 | [兼容边界](references/compatibility.md) |
-| 测试、验收、提交、部署排查 | [验证与交付](references/verification.md) |
+- 保护 1900 原有提示词、历史范围、世界书和上下文顺序、回复顺序与流程，以及原版／用户自定义美化。新增能力关闭时不注入、不发额外请求、不改变基础回复路径。
+- 保留现有框架、事件入口、数据结构与迁移兼容。局部修复不顺手迁移框架、全局重排 UI 或重写共享流程。
+- 已确认草稿是实施依据；音乐 Apple Music 风格、导出 PNG 的 ID card 风格、发送后的文件卡和一起听邀请卡均属保护项，除非本次明确要求修改。
+- 原版已有问题默认记录；只有用户已授权的具体修复范围才修改。既有清单的修复授权继续有效，不能以这条规则撤回。消息执行脚本等明确暂缓项保持暂缓，不因审查自动全局净化内容。
+- 修复和功能改动先到 test；用户确认测试结果后才合并 main。普通“推送”只更新 test，最新“不要推送”等指令优先。
 
-只加载本次需要的参考。调整某个模块不意味着重做全部面板或全面修改原版代码。
+## 按任务加载
 
-## 实施
+| 任务 | 必读参考 | 使用方式 |
+|---|---|---|
+| 网页布局、样式、前端交互 | [UI 规范](references/ui-guidelines.md)、[插件与资料](references/tooling.md) | 先查 Modern Web Guidance；草稿和真实页面分别验收 |
+| 提示词、记忆、世界书、桥接、异步保存 | [兼容边界](references/compatibility.md) | 固定角色／存档／请求身份，核对开关关闭的原版路径 |
+| 逐行检查、全仓问题清单、安全审查 | [审查要求](references/audit.md)、[插件与资料](references/tooling.md) | 区分功能检查与安全扫描，记录实际覆盖和未审部分 |
+| 测试、提交、Pages 或 Render | [验证与交付](references/verification.md) | 按变更验证，核对 test 线上版本；main 等用户确认 |
 
-- 先找可复用实现，再决定修改范围。保持原有事件、设置、迁移和用户自定义入口有效。
-- UI 围绕确认草稿调整实际 DOM／CSS，选择器限定面板根节点。真实页面验收不能由草稿截图替代。
-- 故障先复现，再跟踪输入、身份、保存和异步结果。切换角色或存档后，旧任务只能更新原始目标。
-- 可选功能的开关同时约束注入、网络调用和后台任务；残留令牌或配置存在不等于启用。
-- 对接外部项目时核对官方文档、源代码、适用版本、许可与运行条件。模拟验证和真实手机／账号验证分开报告。
+只加载本次需要的参考，不为小改动启动所有插件或全仓扫描。
 
-## 例子
+## 修复与交付
 
-用户要求“音乐按钮小一点，歌词仍为 14px”：读取音乐页面、弹层和样式加载顺序，只调整对应音乐控件；保留歌词和原版按钮样式；检查窄屏、播放器、歌词、一起听与短屏可达性。外观缩小仍需保留触达区域。
+故障先复现，追踪具体原因，给最小补丁，再验证原触发条件和正常行为。模块分阶段修复，测试使用隔离数据；不在个人存档上试破坏性操作。
 
-## 交付
+UI 改动检查真实 DOM、样式叠加、点击命中和截图，不能用草稿替代。安全审查调用真正的 Codex Security 流程；关键词搜索、静态扫描与自动测试都不能冒充逐行审阅。
 
-选择必要检查，阅读结果与 diff。说明实际变化、验证范围、必要限制及实际提交／部署状态。技能本身不授予外部操作权限；发布依据来自用户授权和项目约定。
+交付说明具体改了什么、为什么、验证结果和未验证边界，分别标明已实现／已验证／已推送／已部署。不要把配置写入、离线模拟、Git 推送或插件生成报告说成用户已经验收。

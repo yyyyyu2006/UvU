@@ -1,8 +1,8 @@
 interface:
-  default_prompt: "使用 $uvu-development 完成本次 UvU 修改，遵循已确认设计和兼容要求，并验证实际结果。"
+  default_prompt: "使用 $uvu-development 完成本次 UvU 开发或审查，按任务调用 Modern Web Guidance、Agent Skills 和 Codex Security，保护 1900 基线与已确认 UI，修复先验证并推送 test。"
 
-  display_name: "UvU 开发规范"
+  display_name: "UvU 开发与审查规范"
 
-  short_description: "用于 UvU 二改功能开发、界面调整、1900版兼容保护和针对性验收"
+  short_description: "UvU 二改开发、逐行审查、插件协作、1900 兼容保护与 test 分支验收"
 policy:
   allow_implicit_invocation: true
