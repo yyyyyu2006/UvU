@@ -466,7 +466,13 @@ function calculatePagesFromIds(ids, allItemsHtmlMap) {
     return pages;
 }
 
+let homeScreenEventController = null;
+let homeDragCleanup = null;
 function setupHomeScreen() {
+    homeDragCleanup?.();
+    homeScreenEventController?.abort();
+    homeScreenEventController = new AbortController();
+    const homeEventOptions = { signal: homeScreenEventController.signal };
     const getIcon = (id) => db.customIcons[id] || defaultIcons[id].url;
     if (!db.insWidgetSettings) {
         db.insWidgetSettings = {
@@ -706,7 +712,7 @@ function setupHomeScreen() {
         }
         // 否则阻止默认菜单弹出，确保顺利进入编辑模式
         e.preventDefault();
-    });
+    }, homeEventOptions);
 
     // 监听滑动事件更新指示器
     const swiper = document.getElementById('home-screen-swiper');
@@ -835,13 +841,13 @@ function setupHomeScreen() {
     if (closeWidgetAddModalBtn && widgetAddModal) {
         closeWidgetAddModalBtn.addEventListener('click', () => {
             widgetAddModal.classList.remove('visible');
-        });
+        }, homeEventOptions);
         // 点击遮罩层关闭
         widgetAddModal.addEventListener('click', (e) => {
             if (e.target === widgetAddModal) {
                 widgetAddModal.classList.remove('visible');
             }
-        });
+        }, homeEventOptions);
     }
 
     const finishEditBtn = document.getElementById('finish-edit-btn');
@@ -926,7 +932,7 @@ function setupHomeScreen() {
                  }
             }
         }
-    }, true); 
+    }, { ...homeEventOptions, capture: true });
     
     const signatureWidget = document.getElementById('widget-signature');
     if (signatureWidget) {
@@ -959,7 +965,7 @@ function setupHomeScreen() {
         if (isHomeEditMode && !e.target.closest('.home-grid-layout > div')) {
             exitHomeEditMode();
         }
-    }, true); // 使用捕获阶段以确保最高优先级拦截
+    }, { ...homeEventOptions, capture: true }); // 使用捕获阶段以确保最高优先级拦截
 
     homeScreen.querySelectorAll('.satellite-emoji').forEach(span => {
         span.addEventListener('input', (e) => {
@@ -986,6 +992,7 @@ let edgeFlipInterval = null;
 let currentDragX = 0;
 
 function initHomeSortables() {
+    homeDragCleanup?.();
     const gridLayouts = document.querySelectorAll('.home-grid-layout');
     const swiper = document.getElementById('home-screen-swiper');
     
@@ -1001,6 +1008,16 @@ function initHomeSortables() {
     const handleGlobalDrag = (e) => {
         currentDragX = e.clientX || (e.touches && e.touches[0].clientX) || 0;
     };
+    const cleanupDrag = () => {
+        window.removeEventListener('mousemove', handleGlobalDrag);
+        window.removeEventListener('touchmove', handleGlobalDrag);
+        if (homeDragCleanup !== cleanupDrag) return;
+        if (edgeFlipInterval) clearInterval(edgeFlipInterval);
+        edgeFlipInterval = null;
+        currentDragX = 0;
+        homeDragCleanup = null;
+    };
+    homeDragCleanup = cleanupDrag;
 
     gridLayouts.forEach(layout => {
         const sortable = new Sortable(layout, {
@@ -1118,13 +1135,7 @@ function initHomeSortables() {
                 if (swiper) swiper.style.scrollSnapType = 'x mandatory';
 
                 // 清理全局监听和定时器
-                window.removeEventListener('mousemove', handleGlobalDrag);
-                window.removeEventListener('touchmove', handleGlobalDrag);
-                if (edgeFlipInterval) {
-                    clearInterval(edgeFlipInterval);
-                    edgeFlipInterval = null;
-                }
-                currentDragX = 0;
+                cleanupDrag();
             }
         });
         homeSortables.push(sortable);

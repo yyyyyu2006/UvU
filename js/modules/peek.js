@@ -2097,6 +2097,12 @@ function renderPeekBag(data) {
     });
 }
 
+function getPeekLoadingPlaceholders(appType) {
+    const id = appType === 'transfer' ? 'peek-transfer-station-screen' : `peek-${appType}-screen`;
+    return [...(document.getElementById(id)?.querySelectorAll('.placeholder-text, #activity-track-list .activity-track-item, #steps-annotation-content') || [])]
+        .filter(node => /^正在生成/.test(node.textContent.trim()));
+}
+
 async function generateAndRenderPeekContent(appType, options = {}) {
     const { forceRefresh = false } = options;
 
@@ -2168,6 +2174,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
                switchScreen('peek-bag-screen');
                break;
             }
+            getPeekLoadingPlaceholders(appType).filter(node => node.classList.contains('placeholder-text')).forEach(node => { node.textContent = '暂无内容'; });
             return; 
         }
     }
@@ -2234,6 +2241,12 @@ async function generateAndRenderPeekContent(appType, options = {}) {
            return;
    }
 
+    // Keep the original nodes: a late failure must not replace a newly opened view.
+    const loadingPlaceholders = getPeekLoadingPlaceholders(appType);
+    const finishLoading = () => {
+        if (!isChatTargetVisible(generationTarget)) return;
+        loadingPlaceholders.filter(node => node.isConnected).forEach(node => { node.textContent = '内容生成失败，请刷新重试。'; });
+    };
     try {
         let historySlice = char.history.slice(-30);
         historySlice = filterHistoryForAI(char, historySlice);
@@ -2275,7 +2288,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
         if (!isChatSendTargetValid(generationTarget)) return;
         const mutation = beginChatMutation(char, 'private', [], ['peekData']);
         char.peekData[appType] = generatedData;
-        if (!await saveChatMutation(mutation, '生成内容未保存，请重试')) return;
+        if (!await saveChatMutation(mutation, '生成内容未保存，请重试')) { finishLoading(); return; }
         if (!isChatTargetVisible(generationTarget)) return;
 
         if (appType === 'messages') {
@@ -2299,20 +2312,12 @@ async function generateAndRenderPeekContent(appType, options = {}) {
         } else if (appType === 'bag') {
             renderPeekBag(generatedData);
         }
+        getPeekLoadingPlaceholders(appType).filter(node => node.classList.contains('placeholder-text')).forEach(node => { node.textContent = '暂无内容'; });
 
     } catch (error) {
         if (!isChatTargetVisible(generationTarget)) return;
         showApiError(error);
-        const errorMessage = "内容生成失败，请刷新重试。";
-        if (appType === 'album') {
-            document.querySelector('#peek-album-screen .album-grid').innerHTML = `<p class="placeholder-text">${errorMessage}</p>`;
-        } else if (appType === 'unlock') {
-            document.getElementById('peek-unlock-screen').innerHTML = `<header class="app-header"><button class="back-btn" data-target="peek-screen">‹</button><div class="title-container"><h1 class="title">错误</h1></div><button class="action-btn">···</button></header><main class="content"><p class="placeholder-text">${errorMessage}</p></main>`;
-        } else if (appType === 'bag') {
-            document.getElementById('peek-bag-screen').innerHTML = `<header class="app-header" style="background: transparent; border: none;"><button class="back-btn" data-target="peek-screen" style="color: #fff;">‹</button><div class="title-container"><h1 class="title" style="color: #fff;">错误</h1></div></header><main class="content" style="display: flex; align-items: center; justify-content: center; background: #1a1a1a;"><p class="placeholder-text" style="color: #888;">${errorMessage}</p></main>`;
-        } else if (targetContainer) {
-            targetContainer.innerHTML = `<p class="placeholder-text">${errorMessage}</p>`;
-        }
+        finishLoading();
     } finally {
         generatingPeekApps.delete(appType); 
     }

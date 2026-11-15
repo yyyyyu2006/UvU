@@ -600,18 +600,20 @@ function populateGPTModels(modelSelect) {
     }
 }
 
-async function fetchGPTModels(apiUrl, apiKey, modelSelect, selectedModel = '') {
+async function fetchGPTModels(apiUrl, apiKey, modelSelect, selectedModel = '', { signal, isCurrent = () => true } = {}) {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener('abort', cancel, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30000);
     try {
-        let baseUrl = apiUrl;
-        if (baseUrl.endsWith('/images/generations')) {
-            baseUrl = baseUrl.replace('/images/generations', '');
-        }
-        if (!baseUrl.endsWith('/')) {
-            baseUrl += '/';
-        }
-        
-        const response = await fetch(`${baseUrl}models`, {
+        const baseUrl = apiUrl.trim().replace(/\/+$/, '').replace(/\/images\/generations$/, '');
+        const endpoint = new URL(baseUrl.endsWith('/models') ? baseUrl : `${baseUrl}/models`);
+        if (!['http:', 'https:'].includes(endpoint.protocol)) throw new Error('请填写有效的 HTTP 或 HTTPS API 地址');
+        const response = await fetch(endpoint.href, {
             method: 'GET',
+            signal: controller.signal,
             headers: {
                 'Authorization': `Bearer ${apiKey}`
             }
@@ -621,15 +623,44 @@ async function fetchGPTModels(apiUrl, apiKey, modelSelect, selectedModel = '') {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
-        const models = data.data || [];
+        const limit = 2 * 1024 * 1024;
+        if (Number(response.headers.get('content-length')) > limit) {
+            void response.body?.cancel().catch(() => {});
+            throw new Error('模型列表响应过大');
+        }
+        const reader = response.body?.getReader();
+        let text = '';
+        if (reader) {
+            const decoder = new TextDecoder(); let size = 0;
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    size += value.byteLength;
+                    if (size > limit) throw new Error('模型列表响应过大');
+                    text += decoder.decode(value, { stream: true });
+                }
+                text += decoder.decode();
+            } finally { void reader.cancel().catch(() => {}); reader.releaseLock(); }
+        } else {
+            text = await response.text();
+            if (new TextEncoder().encode(text).byteLength > limit) throw new Error('模型列表响应过大');
+        }
+        let data;
+        try { data = JSON.parse(text); } catch (_) { throw new Error('模型列表不是有效的 JSON'); }
+        if (!data || data.error || !Array.isArray(data.data) || data.data.length > 10000 ||
+            data.data.some(model => !model || typeof model.id !== 'string' || !model.id.trim() || model.id.length > 1024)) {
+            throw new Error('模型列表格式无效，未更新现有列表');
+        }
+        const models = [...new Set(data.data.map(model => model.id))];
+        if (controller.signal.aborted || !isCurrent()) return false;
         
         modelSelect.innerHTML = '<option value="">请选择模型</option>';
         
-        models.forEach(m => {
+        models.forEach(id => {
             const option = document.createElement('option');
-            option.value = m.id;
-            option.textContent = m.id;
+            option.value = id;
+            option.textContent = id;
             modelSelect.appendChild(option);
         });
         
@@ -639,8 +670,12 @@ async function fetchGPTModels(apiUrl, apiKey, modelSelect, selectedModel = '') {
         
         return true;
     } catch (error) {
-        console.error('Fetch GPT models error:', error);
+        if (timedOut) throw new Error('拉取模型超时，请重试');
         throw error;
+    } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', cancel);
+        controller.abort();
     }
 }
 
@@ -648,9 +683,27 @@ function initWorkshopModels() {
     const fetchBtn = document.getElementById('workshop-fetch-models-btn');
     const modelSelect = document.getElementById('workshop-api-model');
     if (!fetchBtn || !modelSelect) return;
+    // Reinitialization and settings changes retire only this model-list request.
+    fetchBtn._disposeModelRequest?.();
+    const bindings = new AbortController();
+    let activeRequest = null;
+    const cancelRequest = () => {
+        if (!activeRequest) return;
+        const request = activeRequest; activeRequest = null;
+        request.controller.abort();
+        fetchBtn.textContent = request.buttonText;
+        fetchBtn.disabled = false;
+    };
+    fetchBtn._disposeModelRequest = () => { cancelRequest(); bindings.abort(); };
+    const listen = (target, type, handler) => target?.addEventListener(type, handler, { signal: bindings.signal });
+    for (const id of ['workshop-api-url', 'workshop-api-key', 'workshop-api-preset-select', 'workshop-api-protocol']) {
+        listen(document.getElementById(id), 'input', cancelRequest);
+        listen(document.getElementById(id), 'change', cancelRequest);
+    }
     
     // 绑定模型选择事件
-    modelSelect.addEventListener('change', async (e) => {
+    listen(modelSelect, 'change', async (e) => {
+        cancelRequest();
         if (!db.workshopSettings) return;
         const activeRadio = document.querySelector('input[name="workshop-provider"]:checked');
         const provider = activeRadio ? activeRadio.value : 'novelai';
@@ -666,6 +719,9 @@ function initWorkshopModels() {
     const providerRadios = document.querySelectorAll('input[name="workshop-provider"]');
     if (providerRadios.length > 0) {
         const updateModels = () => {
+            // Saving an unchanged API can emit this event after a new fetch has begun.
+            if (activeRequest?.isCurrent()) return;
+            cancelRequest();
             const activeRadio = document.querySelector('input[name="workshop-provider"]:checked');
             const provider = activeRadio ? activeRadio.value : 'novelai';
             if (provider === 'novelai') {
@@ -678,66 +734,41 @@ function initWorkshopModels() {
         };
         
         updateModels();
-        providerRadios.forEach(radio => radio.addEventListener('change', updateModels));
-        document.addEventListener('workshop-api-protocol-change', updateModels);
+        providerRadios.forEach(radio => listen(radio, 'change', updateModels));
+        listen(document, 'workshop-api-protocol-change', updateModels);
     }
     
-    fetchBtn.addEventListener('click', async () => {
+    listen(fetchBtn, 'click', async () => {
+        if (activeRequest) return;
         const activeRadio = document.querySelector('input[name="workshop-provider"]:checked');
         const provider = activeRadio ? activeRadio.value : 'novelai';
         const apiUrl = document.getElementById('workshop-api-url').value;
         const apiKey = document.getElementById('workshop-api-key').value;
         
-        if (provider === 'novelai') {
-            if (!apiUrl || !apiKey) {
-                showToast('请先填写 API 地址和密钥');
-                return;
-            }
-            
-            const originalText = fetchBtn.textContent;
-            fetchBtn.textContent = '拉取中...';
-            fetchBtn.disabled = true;
-            
-            try {
-                const preset = getActiveWorkshopApiPreset();
-                const protocol = preset?.protocol || 'novelai';
-                if (protocol === 'openai') {
-                    await fetchGPTModels(apiUrl, apiKey, modelSelect, db.workshopSettings.novelaiModel || '');
-                } else {
-                    populateNovelAIModels(modelSelect);
-                }
-                showToast('模型列表已更新');
-            } catch (error) {
-                console.error('Fetch models error:', error);
-                showToast('拉取模型失败: ' + error.message);
-            } finally {
-                fetchBtn.textContent = originalText;
-                fetchBtn.disabled = false;
-            }
-        } else if (provider === 'gpt') {
-            if (!apiUrl || !apiKey) {
-                showToast('请先填写 API 地址和密钥');
-                return;
-            }
-            
-            const originalText = fetchBtn.textContent;
-            fetchBtn.textContent = '拉取中...';
-            fetchBtn.disabled = true;
-            
-            try {
-                await fetchGPTModels(apiUrl, apiKey, modelSelect);
-                showToast('模型列表已更新');
-            } catch (error) {
-                console.error('Fetch models error:', error);
-                showToast('拉取模型失败: ' + error.message);
-                // 失败时回退到默认模型
-                populateGPTModels(modelSelect);
-            } finally {
-                fetchBtn.textContent = originalText;
-                fetchBtn.disabled = false;
-            }
-        } else {
-            showToast('未知的服务商');
+        if (!['novelai', 'gpt'].includes(provider)) return showToast('未知的服务商');
+        if (!apiUrl || !apiKey) return showToast('请先填写 API 地址和密钥');
+        const targetDb = db, settings = db.workshopSettings, preset = getActiveWorkshopApiPreset();
+        const presetId = settings.activeApiPresetId?.[provider];
+        const protocol = preset?.protocol;
+        const request = { controller: new AbortController(), buttonText: fetchBtn.textContent };
+        activeRequest = request;
+        const isCurrent = () => activeRequest === request && db === targetDb && db.workshopSettings === settings &&
+            (settings.provider || 'novelai') === provider && settings.activeApiPresetId?.[provider] === presetId &&
+            getActiveWorkshopApiPreset() === preset && preset?.protocol === protocol && modelSelect.isConnected &&
+            document.querySelector('input[name="workshop-provider"]:checked')?.value === provider &&
+            document.getElementById('workshop-api-url').value === apiUrl && document.getElementById('workshop-api-key').value === apiKey;
+        request.isCurrent = isCurrent;
+        fetchBtn.textContent = '拉取中...'; fetchBtn.disabled = true;
+        try {
+            if (provider === 'novelai' && preset?.protocol !== 'openai') {
+                populateNovelAIModels(modelSelect);
+            } else if (!await fetchGPTModels(apiUrl, apiKey, modelSelect, settings[provider === 'gpt' ? 'gptModel' : 'novelaiModel'] || '',
+                { signal: request.controller.signal, isCurrent })) return;
+            if (isCurrent()) showToast('模型列表已更新');
+        } catch (error) {
+            if (isCurrent()) showToast('拉取模型失败: ' + error.message);
+        } finally {
+            if (activeRequest === request) cancelRequest();
         }
     });
 }
