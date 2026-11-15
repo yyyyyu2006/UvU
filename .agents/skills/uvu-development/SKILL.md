@@ -31,7 +31,7 @@ description: Develop, debug, review, and verify UvU derivative features while pr
 | 逐行检查、全仓问题清单、安全审查 | [审查要求](references/audit.md)、[插件与资料](references/tooling.md) | 区分功能检查与安全扫描，记录实际覆盖和未审部分 |
 | 测试、提交、Pages 或 Render | [验证与交付](references/verification.md) | 按变更验证，核对 test 线上版本；main 等用户确认 |
 
-只加载本次需要的参考，不为小改动启动所有插件或全仓扫描。
+只加载本次需要的参考，不为小改动启动所有插件或全仓扫描。Modern Web Guidance 的“按需查知识库”和“扫描已有代码”是两条独立流程，按 [插件与资料](references/tooling.md) 中的条件选择；不一次性加载全部知识库。
 
 ## 修复与交付
 
