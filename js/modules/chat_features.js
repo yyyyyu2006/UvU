@@ -364,6 +364,10 @@ const MiniMaxTTS = (() => {
                 speed: Number.isFinite(Number(override.manual.speed)) ? Math.max(.5, Math.min(2, Number(override.manual.speed))) : 1 };
             const boundVoice = !settings && hasDirector ? VoiceDirector.voiceIdFor(bubble) : null;
             ttsSettings = { ...savedSettings, voiceId: resolveVoiceId(settings ? '' : boundVoice ?? bubble.dataset.voiceId, savedSettings) };
+            if (!settings && (!String(ttsSettings.apiKey || '').trim() || !ttsSettings.voiceId)) {
+                stop();
+                return;
+            }
             ({ cacheKey } = describeRequest(text, ttsSettings));
             if (hasDirector) {
                 identity = VoiceDirector.identity(bubble, text);

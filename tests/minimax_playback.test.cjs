@@ -64,6 +64,29 @@ function harness() {
     return state;
 }
 
+test('unconfigured chat voice stays text-only without requests, audio, or configuration toasts', async () => {
+    for (const settings of [{}, { apiKey: 'test-key' }, { voiceId: 'voice' }, { apiKey: ' ', voiceId: 'voice' }]) {
+        const h = harness(), b = bubble(); let musicHolds = 0;
+        h.db.minimaxTtsSettings = settings;
+        h.window.UvUMusic = { player: { suspendVoice() { musicHolds++; return () => {}; } } };
+        await h.tts.play(b, '只查看这条语音的文字。');
+        assert.equal(h.requests, 0);
+        assert.equal(h.sounds.length, 0);
+        assert.equal(musicHolds, 0);
+        assert.deepEqual(h.toasts, [], 'viewing text is not a request to configure voice synthesis');
+        assert.equal(b.classes.has('voice-playing'), false);
+        assert.equal(b.attributes.has('aria-busy'), false);
+    }
+});
+
+test('explicit voice preview still explains missing configuration', async () => {
+    const h = harness(), b = bubble();
+    await h.tts.play(b, '试听', {});
+    assert.equal(h.requests, 0);
+    assert.equal(h.sounds.length, 0);
+    assert.match(h.toasts[0], /MiniMax.*密钥.*音色/);
+});
+
 test('director preview never synthesizes or plays audio and reuses its plan on later playback',async()=>{
     const h=harness(),b=bubble();h.db.minimaxTtsSettings.director={enabled:true,endpoint:'https://director.test/v1',apiKey:'fake-director',model:'test'};
     let directorCalls=0,speechCalls=0;h.fetch=async url=>{if(String(url).includes('director.test')){directorCalls++;return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({emotion:'calm',speedMultiplier:.9,pauses:[{after:'你好，',seconds:.4}]})}}],usage:{prompt_tokens:7,completion_tokens:3}})};}speechCalls++;return reply();};

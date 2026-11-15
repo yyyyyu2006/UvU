@@ -830,6 +830,16 @@
 .voice-bubble.voice-playing .play-icon { transform: scale(0.9); }
 @keyframes voice-loading-pulse { to { opacity: 0.35; } }
 
+/* Opening the transcript is not audio playback, including in custom skins. */
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading),
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading)::before,
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading)::after,
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading) *,
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading) *::before,
+#chat-room-screen #message-area .voice-bubble:not(.voice-playing):not(.voice-loading) *::after {
+    animation-play-state: paused !important;
+}
+
 .message-wrapper.sent .voice-transcript {
     align-self: flex-end;
     margin-right: 44px;
