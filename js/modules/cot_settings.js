@@ -39,6 +39,19 @@ const DEFAULT_CALL_COT_ITEMS_TT = [
 let currentCotMode = 'chat'; // 'chat' or 'call'
 
 // 初始化 CoT 设置
+let cotItemEditTarget = null;
+
+function getCotPresetTarget() {
+    const settings = db.cotSettings;
+    const presets = db.cotPresets;
+    const key = currentCotMode === 'chat' ? 'activePresetId' : 'activeCallPresetId';
+    return {settings, presets, key, mode:currentCotMode, preset:presets?.find(p => p.id === settings?.[key])};
+}
+
+function isCotPresetTargetValid(target) {
+    return target && db.cotSettings === target.settings && db.cotPresets === target.presets && target.presets.includes(target.preset);
+}
+
 function initCotSettings() {
     // 绑定入口按钮事件 (在更多菜单中)
     const cotEntryBtn = document.querySelector('.menu-item[data-action="cot-settings"]');
@@ -58,8 +71,7 @@ function initCotSettings() {
             currentCotMode = tab.dataset.mode;
             
             if (currentCotMode === 'call' && db.cotSettings.promptVersion === 'tt' && !db.cotSettings.hasShownTTCallToast) {
-                db.cotSettings.hasShownTTCallToast = true;
-                saveData();
+                void saveLocalSettingsFields([{target:db.cotSettings,values:{hasShownTTCallToast:true}}]);
                 showToast('已自动为您切换至 T.T 专属通话思维链');
             }
             
@@ -75,53 +87,58 @@ function initCotSettings() {
             
             const oldVersion = db.cotSettings.promptVersion || 'uwu';
             const newVersion = e.target.value;
+            const settings = db.cotSettings;
+            const next = {...settings};
+            let message;
             
             // 保存当前版本使用的预设
             if (oldVersion === 'uwu') {
-                db.cotSettings.lastPresetUwU = db.cotSettings.activePresetId;
-                db.cotSettings.lastCallPresetUwU = db.cotSettings.activeCallPresetId;
+                next.lastPresetUwU = next.activePresetId;
+                next.lastCallPresetUwU = next.activeCallPresetId;
             } else if (oldVersion === 'tt') {
-                db.cotSettings.lastPresetTT = db.cotSettings.activePresetId;
-                db.cotSettings.lastCallPresetTT = db.cotSettings.activeCallPresetId;
+                next.lastPresetTT = next.activePresetId;
+                next.lastCallPresetTT = next.activeCallPresetId;
             }
 
-            db.cotSettings.promptVersion = newVersion;
+            next.promptVersion = newVersion;
             
             if (newVersion === 'tt') {
                 let showMsg = false;
-                if (!db.cotSettings.hasSwitchedToTT) {
-                    db.cotSettings.hasSwitchedToTT = true;
-                    db.cotSettings.activePresetId = 'default_tt';
-                    db.cotSettings.lastPresetTT = 'default_tt';
+                if (!next.hasSwitchedToTT) {
+                    next.hasSwitchedToTT = true;
+                    next.activePresetId = 'default_tt';
+                    next.lastPresetTT = 'default_tt';
                     showMsg = true;
                 } else {
-                    db.cotSettings.activePresetId = db.cotSettings.lastPresetTT || 'default_tt';
+                    next.activePresetId = next.lastPresetTT || 'default_tt';
                 }
 
-                if (!db.cotSettings.hasSwitchedToTTCall) {
-                    db.cotSettings.hasSwitchedToTTCall = true;
-                    db.cotSettings.activeCallPresetId = 'default_call_tt';
-                    db.cotSettings.lastCallPresetTT = 'default_call_tt';
-                    db.cotSettings.hasShownTTCallToast = true;
+                if (!next.hasSwitchedToTTCall) {
+                    next.hasSwitchedToTTCall = true;
+                    next.activeCallPresetId = 'default_call_tt';
+                    next.lastCallPresetTT = 'default_call_tt';
+                    next.hasShownTTCallToast = true;
                     showMsg = true;
                 } else {
-                    db.cotSettings.activeCallPresetId = db.cotSettings.lastCallPresetTT || 'default_call_tt';
+                    next.activeCallPresetId = next.lastCallPresetTT || 'default_call_tt';
                 }
 
                 if (showMsg) {
-                    showToast('已自动为您切换至 T.T 专属思维链');
+                    message = '已自动为您切换至 T.T 专属思维链';
                 } else {
-                    showToast('提示词版本已切换');
+                    message = '提示词版本已切换';
                 }
             } else {
                 // 切换回 uwu
-                db.cotSettings.activePresetId = db.cotSettings.lastPresetUwU || 'default_uwu';
-                db.cotSettings.activeCallPresetId = db.cotSettings.lastCallPresetUwU || 'default_call_uwu';
-                showToast('提示词版本已切换');
+                next.activePresetId = next.lastPresetUwU || 'default_uwu';
+                next.activeCallPresetId = next.lastCallPresetUwU || 'default_call_uwu';
+                message = '提示词版本已切换';
             }
             
-            await saveData();
-            loadCotSettings(); // 重新加载界面
+            const values = Object.fromEntries(Object.entries(next).filter(([key,value]) => value !== settings[key]));
+            const saved = await saveLocalSettingsFields([{target:settings,values}]);
+            if (db.cotSettings === settings) renderCotSettingsControls();
+            if (saved) showToast(message);
         });
     }
 
@@ -176,25 +193,27 @@ function initCotSettings() {
     if (presetSelect) {
         presetSelect.addEventListener('change', async (e) => {
             const presetId = e.target.value;
-            if (presetId) {
+            if (presetId && db.cotPresets.some(p => p.id === presetId)) {
+                const settings = db.cotSettings;
+                const values = {};
                 if (currentCotMode === 'chat') {
-                    db.cotSettings.activePresetId = presetId;
+                    values.activePresetId = presetId;
                     if (db.cotSettings.promptVersion === 'tt') {
-                        db.cotSettings.lastPresetTT = presetId;
+                        values.lastPresetTT = presetId;
                     } else {
-                        db.cotSettings.lastPresetUwU = presetId;
+                        values.lastPresetUwU = presetId;
                     }
                 } else {
-                    db.cotSettings.activeCallPresetId = presetId;
+                    values.activeCallPresetId = presetId;
                     if (db.cotSettings.promptVersion === 'tt') {
-                        db.cotSettings.lastCallPresetTT = presetId;
+                        values.lastCallPresetTT = presetId;
                     } else {
-                        db.cotSettings.lastCallPresetUwU = presetId;
+                        values.lastCallPresetUwU = presetId;
                     }
                 }
-                await saveData();
-                renderCotItems();
-                showToast('已切换预设');
+                const saved = await saveLocalSettingsFields([{target:settings,values}]);
+                if (db.cotSettings === settings) renderCotSettingsControls();
+                if (saved) showToast('已切换预设');
             }
         });
     }
@@ -316,7 +335,14 @@ function openXmlHelpModal() {
 }
 
 // 加载设置到界面
-function loadCotSettings() {
+// Plan default-data migrations before applying them; rendering never retries a failed write.
+function migrateCotSettings(owner = db) {
+    const originalPresets = owner.cotPresets || [];
+    const originalSettings = owner.cotSettings || {};
+    const db = {
+        cotSettings: owner.cotSettings ? {...originalSettings} : undefined,
+        cotPresets: originalPresets.map(preset => ({...preset,items:preset.items?.map(item => ({...item}))}))
+    };
     if (!db.cotSettings) db.cotSettings = { enabled: false, activePresetId: 'default_uwu', promptVersion: 'uwu' };
     if (!db.cotPresets) db.cotPresets = [];
 
@@ -337,7 +363,6 @@ function loadCotSettings() {
             };
             db.cotPresets.push(uwuPreset);
         }
-        saveData();
     }
 
     // 确保 tt 预设存在
@@ -349,7 +374,6 @@ function loadCotSettings() {
             items: JSON.parse(JSON.stringify(DEFAULT_COT_ITEMS_TT))
         };
         db.cotPresets.push(ttPreset);
-        saveData();
     }
 
     // 确保通话预设存在
@@ -369,7 +393,6 @@ function loadCotSettings() {
             };
             db.cotPresets.push(callPresetUwU);
         }
-        saveData();
     }
 
     let callPresetTT = db.cotPresets.find(p => p.id === 'default_call_tt');
@@ -380,19 +403,16 @@ function loadCotSettings() {
             items: JSON.parse(JSON.stringify(DEFAULT_CALL_COT_ITEMS_TT))
         };
         db.cotPresets.push(callPresetTT);
-        saveData();
     }
 
     // 确保 activePresetId 存在
     if (!db.cotSettings.activePresetId) {
         db.cotSettings.activePresetId = db.cotSettings.promptVersion === 'tt' ? 'default_tt' : 'default_uwu';
-        saveData();
     }
 
     // 确保 activeCallPresetId 存在
     if (!db.cotSettings.activeCallPresetId) {
         db.cotSettings.activeCallPresetId = db.cotSettings.promptVersion === 'tt' ? 'default_call_tt' : 'default_call_uwu';
-        saveData();
     }
 
     // 兼容：如果当前是 T.T 版本，但从未自动切换过 T.T 通话预设
@@ -400,29 +420,58 @@ function loadCotSettings() {
         db.cotSettings.hasSwitchedToTTCall = true;
         db.cotSettings.activeCallPresetId = 'default_call_tt';
         db.cotSettings.lastCallPresetTT = 'default_call_tt';
-        saveData();
     }
 
     // 数据库修复逻辑：强制解锁历史数据中的“引子”和“尾声”
     if (db.cotPresets && db.cotPresets.length > 0) {
-        let hasChanges = false;
         const targetIds = ['cot_item_1', 'cot_item_7', 'cot_call_item_1', 'cot_call_item_6'];
         db.cotPresets.forEach(preset => {
             if (preset.items) {
                 preset.items.forEach(item => {
                     if (targetIds.includes(item.id) && item.locked) {
                         item.locked = false;
-                        hasChanges = true;
                     }
                 });
             }
         });
-        if (hasChanges) {
-            console.log('[CoT] 已自动解锁历史数据中的引子/尾声条目');
-            saveData();
-        }
     }
 
+    for (const key of ['activePresetId','activeCallPresetId']) {
+        if (db.cotPresets.length && !db.cotPresets.some(p => p.id === db.cotSettings[key])) db.cotSettings[key] = db.cotPresets[0].id;
+    }
+    const changes = [];
+    const different = (before, after) => JSON.stringify(before) !== JSON.stringify(after);
+    const settingValues = Object.fromEntries(Object.entries(db.cotSettings).filter(([key,value]) => different(originalSettings[key],value)));
+    if (!owner.cotSettings) changes.push({target:owner,values:{cotSettings:db.cotSettings}});
+    else if (Object.keys(settingValues).length) changes.push({target:originalSettings,values:settingValues});
+    originalPresets.forEach((preset,index) => {
+        const planned = db.cotPresets[index];
+        const values = Object.fromEntries(['id','name'].filter(key => different(preset[key],planned[key])).map(key => [key,planned[key]]));
+        if (Object.keys(values).length) changes.push({target:preset,values});
+        preset.items?.forEach((item,itemIndex) => {
+            if (item.locked !== planned.items[itemIndex].locked) changes.push({target:item,values:{locked:planned.items[itemIndex].locked}});
+        });
+    });
+    if (!owner.cotPresets || db.cotPresets.length !== originalPresets.length) {
+        changes.push({target:owner,values:{cotPresets:[...originalPresets,...db.cotPresets.slice(originalPresets.length)]}});
+    }
+    return changes.length ? saveLocalSettingsFields(changes) : Promise.resolve(true);
+}
+
+function loadCotSettings() {
+    const owner = db;
+    void migrateCotSettings().then(saved => {
+        if (!saved && db === owner) renderCotSettingsControls();
+    });
+    renderCotSettingsControls();
+}
+
+function renderCotSettingsControls() {
+    if (!db.cotSettings || !db.cotPresets) {
+        document.getElementById('cot-preset-select')?.replaceChildren();
+        document.getElementById('cot-items-list')?.replaceChildren();
+        return;
+    }
     // 加载提示词版本
     const promptVersionSelect = document.getElementById('cot-prompt-version-select');
     if (promptVersionSelect) {
@@ -494,20 +543,7 @@ function renderCotPresetSelect() {
         activeId = db.cotSettings.activeCallPresetId;
     }
 
-    if (activeId) {
-        // 检查 activePresetId 是否存在，不存在则默认第一个
-        const exists = db.cotPresets.find(p => p.id === activeId);
-        if (!exists && db.cotPresets.length > 0) {
-            activeId = db.cotPresets[0].id;
-            if (currentCotMode === 'chat') {
-                db.cotSettings.activePresetId = activeId;
-            } else {
-                db.cotSettings.activeCallPresetId = activeId;
-            }
-            saveData();
-        }
-        select.value = activeId;
-    }
+    select.value = activeId || '';
 }
 
 // 渲染条目列表
@@ -565,12 +601,12 @@ function renderCotItems() {
         btnGroup.className = 'cot-btn-group';
 
         // 编辑按钮
-        const editBtn = createIconBtn('✎', () => openEditCotItemModal(item));
+        const editBtn = createIconBtn('✎', () => openEditCotItemModal(item, getCotPresetTarget()));
         btnGroup.appendChild(editBtn);
         
         // 删除按钮 (锁定条目不可删除)
         if (!item.locked) {
-            const deleteBtn = createIconBtn('×', () => deleteCotItem(index), true);
+            const deleteBtn = createIconBtn('×', () => deleteCotItem(index, activePreset, item), true);
             btnGroup.appendChild(deleteBtn);
         }
 
@@ -589,6 +625,8 @@ function renderCotItems() {
 
 // 绑定长按拖拽事件
 function bindDragEvents(el, index, items) {
+    const target = getCotPresetTarget();
+    const draggedItem = items[index];
     let pressTimer = null;
     let isDragging = false;
     let startY = 0;
@@ -598,6 +636,7 @@ function bindDragEvents(el, index, items) {
     let listContainer = document.getElementById('cot-items-list');
     let itemHeight = 0;
     let currentIndex = index;
+    let previousOverflow = '';
 
     const startPress = (e) => {
         // 如果点击的是按钮或开关，不触发拖拽
@@ -606,6 +645,10 @@ function bindDragEvents(el, index, items) {
         const touch = e.touches ? e.touches[0] : e;
         startY = touch.clientY;
         startX = touch.clientX;
+        if (e.type === 'mousedown') {
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onEnd);
+        }
 
         pressTimer = setTimeout(() => {
             initDrag(e);
@@ -617,6 +660,8 @@ function bindDragEvents(el, index, items) {
     };
 
     const initDrag = (e) => {
+        if (el.parentNode !== listContainer || !isCotPresetTargetValid(target)
+            || target.mode !== currentCotMode || target.settings[target.key] !== target.preset.id || target.preset.items !== items) return;
         isDragging = true;
         if (navigator.vibrate) navigator.vibrate(50); // 震动反馈
 
@@ -642,6 +687,7 @@ function bindDragEvents(el, index, items) {
         document.body.appendChild(clone);
 
         // 阻止默认滚动
+        previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         if (e.cancelable) e.preventDefault();
     };
@@ -697,10 +743,12 @@ function bindDragEvents(el, index, items) {
 
     const onEnd = async (e) => {
         cancelPress();
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onEnd);
         if (!isDragging) return;
 
         isDragging = false;
-        document.body.style.overflow = '';
+        document.body.style.overflow = previousOverflow;
 
         // 移除克隆元素
         if (clone && clone.parentNode) {
@@ -718,38 +766,18 @@ function bindDragEvents(el, index, items) {
         const newElements = [...listContainer.children].filter(c => c.classList.contains('cot-item-card'));
         const finalIndex = newElements.indexOf(el);
 
-        if (finalIndex !== currentIndex && finalIndex !== -1) {
-            // 检查边界：不能移动到锁定条目之外
-            let canMove = true;
-            
-            // 简单的边界检查：如果目标位置的前一个或后一个是锁定的，且跨越了锁定边界
-            // 为了简化，我们直接在数据层进行移动，如果发现移动后破坏了锁定规则，则重新渲染恢复
-            
-            let activeId;
-            if (currentCotMode === 'chat') {
-                activeId = db.cotSettings.activePresetId;
-            } else {
-                activeId = db.cotSettings.activeCallPresetId;
-            }
-            const activePreset = db.cotPresets.find(p => p.id === activeId);
-            
-            if (activePreset) {
-                const itemToMove = activePreset.items.splice(currentIndex, 1)[0];
-                activePreset.items.splice(finalIndex, 0, itemToMove);
-                
-                // 验证锁定规则：引子必须在最前，尾声必须在最后
-                // 这里做一个简单的验证，如果第一个不是引子，或者最后一个不是尾声（假设它们是锁定的）
-                const firstItem = activePreset.items[0];
-                const lastItem = activePreset.items[activePreset.items.length - 1];
-                
-                // 如果移动导致锁定条目位置不对，撤销移动
-                // 更好的做法是精确判断，这里为了稳妥，只要移动后发现锁定条目不在两端，就撤销
-                // 实际上，只要不让非锁定条目跑到锁定条目外面就行
-                
-                await saveData();
+        if (e.type !== 'touchcancel' && finalIndex !== currentIndex && finalIndex !== -1 && isCotPresetTargetValid(target)
+            && target.mode === currentCotMode && target.settings[target.key] === target.preset.id && target.preset.items === items
+            && items.indexOf(draggedItem) === currentIndex && newElements.length === items.length) {
+            const nextItems = [...items];
+            nextItems.splice(currentIndex, 1);
+            nextItems.splice(finalIndex, 0, draggedItem);
+            // Locked entries retain their original positions.
+            if (items.every((item,i) => !item.locked || nextItems[i] === item)) {
+                await saveLocalSettingsFields([{target:target.preset,values:{items:nextItems}}]);
             }
         }
-        
+
         // 无论是否移动成功，都重新渲染以确保状态正确
         renderCotItems();
     };
@@ -761,8 +789,6 @@ function bindDragEvents(el, index, items) {
     el.addEventListener('touchcancel', onEnd);
 
     el.addEventListener('mousedown', startPress);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onEnd);
 }
 
 function createIconBtn(text, onClick, isDanger = false) {
@@ -798,6 +824,7 @@ async function moveCotItem(index, direction) {
     if (!activePreset) return;
 
     const item = activePreset.items[index];
+    if (!item) return;
     if (item.locked) return showToast('锁定条目无法移动');
 
     const newIndex = index + direction;
@@ -806,37 +833,24 @@ async function moveCotItem(index, direction) {
     const targetItem = activePreset.items[newIndex];
     if (targetItem.locked) return showToast('无法移动到锁定条目之外');
 
-    const temp = activePreset.items[index];
-    activePreset.items[index] = activePreset.items[newIndex];
-    activePreset.items[newIndex] = temp;
-
-    await saveData();
+    const items = [...activePreset.items];
+    [items[index],items[newIndex]] = [items[newIndex],items[index]];
+    await saveLocalSettingsFields([{target:activePreset,values:{items}}]);
     renderCotItems();
 }
 
 // 删除条目
-async function deleteCotItem(index) {
-    let activeId;
-    if (currentCotMode === 'chat') {
-        activeId = db.cotSettings.activePresetId;
-    } else {
-        activeId = db.cotSettings.activeCallPresetId;
-    }
-    const activePreset = db.cotPresets.find(p => p.id === activeId);
-    if (!activePreset) return;
-
-    const item = activePreset.items[index];
+async function deleteCotItem(index, preset = getCotPresetTarget().preset, item = preset?.items[index]) {
+    if (!preset || !db.cotPresets.includes(preset) || !item || !preset.items.includes(item)) return;
     if (item.locked) return showToast('锁定条目无法删除');
-
     if (!confirm('确定要删除这个条目吗？')) return;
-
-    activePreset.items.splice(index, 1);
-    await saveData();
+    await saveLocalSettingsFields([{target:preset,values:{items:preset.items.filter(entry => entry !== item)}}]);
     renderCotItems();
 }
 
 // 打开添加条目模态框
 function openAddCotItemModal() {
+    cotItemEditTarget = getCotPresetTarget();
     document.getElementById('cot-item-id').value = ''; // 空ID表示新建
     document.getElementById('cot-item-name').value = '';
     document.getElementById('cot-item-content').value = '';
@@ -858,7 +872,8 @@ function openAddCotItemModal() {
 }
 
 // 打开编辑条目模态框
-function openEditCotItemModal(item) {
+function openEditCotItemModal(item, target = getCotPresetTarget()) {
+    cotItemEditTarget = {...target,item};
     document.getElementById('cot-item-id').value = item.id;
     document.getElementById('cot-item-name').value = item.name;
     document.getElementById('cot-item-content').value = item.content;
@@ -904,45 +919,39 @@ async function saveCotItem(e) {
 
     if (!name) return showToast('请输入条目名称');
 
-    let activeId;
-    if (currentCotMode === 'chat') {
-        activeId = db.cotSettings.activePresetId;
-    } else {
-        activeId = db.cotSettings.activeCallPresetId;
-    }
-    const activePreset = db.cotPresets.find(p => p.id === activeId);
-    if (!activePreset) return;
-
+    const target = cotItemEditTarget;
+    if (!isCotPresetTargetValid(target)) return showToast('预设已变化，请重新打开条目');
+    if (target.saving) return;
+    const activePreset = target.preset;
+    let changes;
     if (id) {
         // 编辑现有
-        const item = activePreset.items.find(i => i.id === id);
-        if (item) {
-            if (item.locked) return showToast('锁定条目无法修改');
-            item.name = name;
-            item.content = content;
-        }
+        const item = target.item;
+        if (!item || item.id !== id || !activePreset.items.includes(item)) return showToast('条目已变化，请重新打开');
+        if (item.locked) return showToast('锁定条目无法修改');
+        changes = [{target:item,values:{name,content}}];
     } else {
         // 新建：插入到倒数第二个位置（即尾声之前），如果存在尾声的话
         const newItem = {
-            id: `cot_item_${Date.now()}`,
+            id: `cot_item_${crypto.randomUUID()}`,
             name: name,
             content: content,
             enabled: true
         };
         
-        // 查找最后一个锁定条目（通常是尾声）
-        const lastLockedIndex = activePreset.items.map(i => i.locked).lastIndexOf(true);
-        
-        if (lastLockedIndex !== -1 && lastLockedIndex === activePreset.items.length - 1) {
-            // 如果最后一个是锁定的，插入到它前面
-            activePreset.items.splice(lastLockedIndex, 0, newItem);
-        } else {
-            // 否则追加到末尾
-            activePreset.items.push(newItem);
-        }
+        const items = [...activePreset.items];
+        const lastLockedIndex = items.map(i => i.locked).lastIndexOf(true);
+        if (lastLockedIndex !== -1 && lastLockedIndex === items.length - 1) items.splice(lastLockedIndex, 0, newItem);
+        else items.push(newItem);
+        changes = [{target:activePreset,values:{items}}];
     }
 
-    await saveData();
+    target.saving = true;
+    let saved;
+    try { saved = await saveLocalSettingsFields(changes); }
+    finally { target.saving = false; }
+    if (!saved) return;
+    if (cotItemEditTarget !== target) return;
     document.getElementById('cot-item-edit-modal').classList.remove('visible');
     renderCotItems();
     showToast('条目已保存');
@@ -964,20 +973,18 @@ async function createNewCotPreset() {
     const newItems = activePreset ? JSON.parse(JSON.stringify(activePreset.items)) : [];
     
     const newPreset = {
-        id: `cot_preset_${Date.now()}`,
+        id: `cot_preset_${crypto.randomUUID()}`,
         name: name,
         items: newItems
     };
 
-    db.cotPresets.push(newPreset);
-    
-    if (currentCotMode === 'chat') {
-        db.cotSettings.activePresetId = newPreset.id;
-    } else {
-        db.cotSettings.activeCallPresetId = newPreset.id;
-    }
-    await saveData();
-    
+    const settings = db.cotSettings;
+    const key = currentCotMode === 'chat' ? 'activePresetId' : 'activeCallPresetId';
+    if (!await saveLocalSettingsFields([
+        {target:db,values:{cotPresets:[...db.cotPresets,newPreset]}},
+        {target:settings,values:{[key]:newPreset.id}}
+    ])) { renderCotSettingsControls(); return; }
+
     loadCotSettings(); // 重新加载以更新下拉框和列表
     showToast('新预设已创建');
 }
@@ -995,22 +1002,23 @@ async function resetCotPreset() {
 
     if (!confirm(`确定要将预设“${activePreset.name}”重置为默认思维链吗？\n此操作将覆盖当前所有条目。`)) return;
 
+    let items;
     // 深度复制默认条目
     if (currentCotMode === 'chat') {
         if (db.cotSettings.promptVersion === 'tt') {
-            activePreset.items = JSON.parse(JSON.stringify(DEFAULT_COT_ITEMS_TT));
+            items = JSON.parse(JSON.stringify(DEFAULT_COT_ITEMS_TT));
         } else {
-            activePreset.items = JSON.parse(JSON.stringify(DEFAULT_COT_ITEMS_UWU));
+            items = JSON.parse(JSON.stringify(DEFAULT_COT_ITEMS_UWU));
         }
     } else {
         if (db.cotSettings.promptVersion === 'tt') {
-            activePreset.items = JSON.parse(JSON.stringify(DEFAULT_CALL_COT_ITEMS_TT));
+            items = JSON.parse(JSON.stringify(DEFAULT_CALL_COT_ITEMS_TT));
         } else {
-            activePreset.items = JSON.parse(JSON.stringify(DEFAULT_CALL_COT_ITEMS_UWU));
+            items = JSON.parse(JSON.stringify(DEFAULT_CALL_COT_ITEMS_UWU));
         }
     }
     
-    await saveData();
+    if (!await saveLocalSettingsFields([{target:activePreset,values:{items}}])) { renderCotItems(); return; }
     renderCotItems();
     showToast('预设已重置为默认状态');
 }

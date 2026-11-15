@@ -99,9 +99,16 @@ function initDrawingWorkshop() {
                 
                 // 触发预设更新
                 if (db.workshopSettings) {
-                    db.workshopSettings.provider = provider;
-                    await saveData();
-                    updateApiPresetList();
+                    const settings = db.workshopSettings;
+                    if (settings.provider !== provider && !await saveLocalSettingsFields([{target:settings,values:{provider}}])) {
+                        if (db.workshopSettings === settings) {
+                            providerRadios.forEach(radio => radio.checked = radio.value === settings.provider);
+                            const restored = [...providerRadios].find(radio => radio.checked);
+                            if (restored) restored.dispatchEvent(new Event('change'));
+                        }
+                        return;
+                    }
+                    if (db.workshopSettings === settings && settings.provider === provider) updateApiPresetList();
                 }
             });
         });

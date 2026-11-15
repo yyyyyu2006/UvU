@@ -38,9 +38,10 @@ function setupPeekFeature() {
         if (confirm('确定要清空该角色的所有偷看数据吗？清空后下次进入各应用将重新生成。')) {
             const char = db.characters.find(c => c.id === currentChatId);
             if (char) {
-                char.peekData = {}; 
-                await saveData();   
-                showToast('偷看数据已清空');
+                if (!Array.isArray(char.history)) char.history = [];
+                const mutation = beginChatMutation(char, 'private', [], ['peekData']);
+                char.peekData = {};
+                if (await saveChatMutation(mutation, '偷看数据未清空，请重试')) showToast('偷看数据已清空');
             }
         }
     });
@@ -230,6 +231,7 @@ function setupMomentsFeature() {
     coverUploadInput.accept = 'image/*';
     coverUploadInput.style.display = 'none';
     document.body.appendChild(coverUploadInput);
+    let coverUploadRevision = 0;
 
     let currentActionMomentId = null;
     let currentActionReplyTo = null; // 新增：用于存储回复对象
@@ -282,17 +284,28 @@ function setupMomentsFeature() {
     coverUploadInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        e.target.value = '';
         const char = db.characters.find(c => c.id === currentChatId);
         if (!char) return;
+        if (!Array.isArray(char.history)) char.history = [];
+        const target = captureChatSendTarget(char.id, 'private');
+        const settings = char.peekScreenSettings;
+        const revision = ++coverUploadRevision;
 
         try {
             const compressedUrl = await compressImage(file, { quality: 0.8, maxWidth: 1080 });
+            if (revision !== coverUploadRevision) return;
+            if (!isChatSendTargetValid(target) || char.peekScreenSettings !== settings) {
+                showToast('角色或存档已变化，请重新选择封面');
+                return;
+            }
+            const mutation = beginChatMutation(char, 'private', [], ['peekScreenSettings']);
             if (!char.peekScreenSettings) {
                 char.peekScreenSettings = {};
             }
             char.peekScreenSettings.momentsCover = compressedUrl;
-            await saveData();
-            renderMomentsScreen();
+            if (!await saveChatMutation(mutation, '封面未保存，请重试')) return;
+            if (isChatTargetVisible(target)) renderMomentsScreen();
             showToast('朋友圈封面已更换');
         } catch (error) {
             showToast('封面更换失败');
@@ -455,8 +468,10 @@ async function updateMomentsSignature(newSignature) {
     const char = db.characters.find(c => c.id === currentChatId);
     if (!char) return;
 
+    if (!Array.isArray(char.history)) char.history = [];
+    const mutation = beginChatMutation(char, 'private', [], ['momentsSignature']);
+    const target = captureChatSendTarget(char.id, 'private');
     char.momentsSignature = newSignature;
-    if (!char.history) char.history = [];
 
     const timestamp = Date.now();
     const noticeText = `${char.myName || '我'}更改了${char.realName}的个性签名为：${newSignature}`;
@@ -479,7 +494,8 @@ async function updateMomentsSignature(newSignature) {
         }
     );
 
-    await saveData();
+    if (!await saveChatMutation(mutation, '个性签名未保存，请重试')) return;
+    if (!isChatTargetVisible(target)) return;
     renderMomentsScreen();
     if (typeof renderMessages === 'function') renderMessages(false, false);
     if (typeof renderChatList === 'function') renderChatList();

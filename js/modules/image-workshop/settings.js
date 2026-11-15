@@ -4,9 +4,12 @@ async function initWorkshopSettings() {
 
     const settings = db.workshopSettings;
     
+    const planned = {...settings,
+        apiPresets:settings.apiPresets ? JSON.parse(JSON.stringify(settings.apiPresets)) : undefined,
+        activeApiPresetId:settings.activeApiPresetId ? {...settings.activeApiPresetId} : undefined};
     // 初始化 API 预设数据结构
-    if (!settings.apiPresets) {
-        settings.apiPresets = {
+    if (!planned.apiPresets) {
+        planned.apiPresets = {
             novelai: [
                 { id: 'official', name: '官方默认', url: 'https://image.novelai.net/ai/generate-image-stream', key: '', protocol: 'novelai', responseFormat: 'auto' }
             ],
@@ -15,15 +18,15 @@ async function initWorkshopSettings() {
             ]
         };
     }
-    if (!settings.activeApiPresetId) {
-        settings.activeApiPresetId = {
+    if (!planned.activeApiPresetId) {
+        planned.activeApiPresetId = {
             novelai: 'official',
             gpt: 'official'
         };
     }
 
     // 旧预设没有协议字段：NovelAI 保持原生逻辑，GPT 保持 OpenAI 逻辑。
-    Object.entries(settings.apiPresets).forEach(([provider, presets]) => {
+    Object.entries(planned.apiPresets).forEach(([provider, presets]) => {
         (presets || []).forEach(preset => {
             if (!preset.protocol) preset.protocol = provider === 'novelai' ? 'novelai' : 'openai';
             if (!preset.responseFormat) preset.responseFormat = 'auto';
@@ -31,44 +34,49 @@ async function initWorkshopSettings() {
     });
     
     // 迁移旧数据到预设
-    if (settings.novelaiApiUrl && settings.novelaiApiUrl !== 'https://image.novelai.net/ai/generate-image-stream') {
-        const existing = settings.apiPresets.novelai.find(p => p.url === settings.novelaiApiUrl);
+    if (planned.novelaiApiUrl && planned.novelaiApiUrl !== 'https://image.novelai.net/ai/generate-image-stream') {
+        const existing = planned.apiPresets.novelai.find(p => p.url === planned.novelaiApiUrl);
         if (!existing) {
             const newId = 'preset_' + Date.now();
-            settings.apiPresets.novelai.push({
+            planned.apiPresets.novelai.push({
                 id: newId,
                 name: '自定义节点',
-                url: settings.novelaiApiUrl,
-                key: settings.novelaiApiKey || '',
+                url: planned.novelaiApiUrl,
+                key: planned.novelaiApiKey || '',
                 protocol: 'novelai',
                 responseFormat: 'auto'
             });
-            settings.activeApiPresetId.novelai = newId;
+            planned.activeApiPresetId.novelai = newId;
         }
-    } else if (settings.novelaiApiKey) {
-        const official = settings.apiPresets.novelai.find(p => p.id === 'official');
-        if (official) official.key = settings.novelaiApiKey;
+    } else if (planned.novelaiApiKey) {
+        const official = planned.apiPresets.novelai.find(p => p.id === 'official');
+        if (official) official.key = planned.novelaiApiKey;
     }
 
-    if (settings.gptApiUrl && settings.gptApiUrl !== 'https://api.openai.com/v1/images/generations') {
-        const existing = settings.apiPresets.gpt.find(p => p.url === settings.gptApiUrl);
+    if (planned.gptApiUrl && planned.gptApiUrl !== 'https://api.openai.com/v1/images/generations') {
+        const existing = planned.apiPresets.gpt.find(p => p.url === planned.gptApiUrl);
         if (!existing) {
             const newId = 'preset_' + Date.now();
-            settings.apiPresets.gpt.push({
+            planned.apiPresets.gpt.push({
                 id: newId,
                 name: '自定义节点',
-                url: settings.gptApiUrl,
-                key: settings.gptApiKey || '',
+                url: planned.gptApiUrl,
+                key: planned.gptApiKey || '',
                 protocol: 'openai',
                 responseFormat: 'auto'
             });
-            settings.activeApiPresetId.gpt = newId;
+            planned.activeApiPresetId.gpt = newId;
         }
-    } else if (settings.gptApiKey) {
-        const official = settings.apiPresets.gpt.find(p => p.id === 'official');
-        if (official) official.key = settings.gptApiKey;
+    } else if (planned.gptApiKey) {
+        const official = planned.apiPresets.gpt.find(p => p.id === 'official');
+        if (official) official.key = planned.gptApiKey;
     }
     
+    const migration = Object.fromEntries(['apiPresets','activeApiPresetId']
+        .filter(key => JSON.stringify(settings[key]) !== JSON.stringify(planned[key])).map(key => [key,planned[key]]));
+    if (Object.keys(migration).length && !await saveLocalSettingsFields([{target:settings,values:migration}])) return;
+    if (db.workshopSettings !== settings) return;
+
     // 辅助函数：绑定输入框
     const bindInput = (id, key, isNumber = false) => {
         const el = document.getElementById(id);
@@ -127,7 +135,7 @@ async function initWorkshopSettings() {
     };
 
     // 绑定基础设置
-    bindRadioGroup('workshop-provider', 'provider');
+    // Provider persistence is owned by workshop.js, alongside its dependent UI.
     
     // 初始化 API 预设逻辑
     initApiPresets();
@@ -196,48 +204,42 @@ async function initWorkshopSettings() {
 }
 
 function populateWorkshopLlmApiPresets() {
-    if (!db.workshopSettings) return;
-
+    const settings = db.workshopSettings;
+    if (!settings) return;
     const presets = Array.isArray(db.apiPresets) ? db.apiPresets : [];
     const selectConfigs = [
-        { id: 'workshop-llm-api-preset', settingKey: 'llmApiPresetId' },
-        { id: 'workshop-gpt-llm-api-preset', settingKey: 'gptLlmApiPresetId' }
+        {id:'workshop-llm-api-preset',settingKey:'llmApiPresetId'},
+        {id:'workshop-gpt-llm-api-preset',settingKey:'gptLlmApiPresetId'}
     ];
-    let settingsChanged = false;
-
-    selectConfigs.forEach(({ id, settingKey }) => {
-        const select = document.getElementById(id);
-        if (!select) return;
-
-        let selectedId = db.workshopSettings[settingKey] || '';
-        // 兼容曾经手动写入预设名称的旧数据。
-        const legacyPreset = presets.find(p => p && p.name === selectedId);
-        if (legacyPreset && typeof _createApiPresetId === 'function') {
-            if (!legacyPreset.id) legacyPreset.id = _createApiPresetId();
-            selectedId = legacyPreset.id;
-            db.workshopSettings[settingKey] = selectedId;
-            settingsChanged = true;
+    const changes = [], values = {};
+    selectConfigs.forEach(({settingKey}) => {
+        const selected = settings[settingKey] || '';
+        const preset = presets.find(p => p && (p.id === selected || p.name === selected));
+        let id = preset?.id || '';
+        if (preset && !id && typeof _createApiPresetId === 'function') {
+            id = _createApiPresetId();
+            changes.push({target:preset,values:{id}});
         }
-
-        select.innerHTML = '<option value="">请选择</option>';
-        presets.forEach(preset => {
-            if (!preset || !preset.id || !preset.name || !preset.data) return;
-            const option = document.createElement('option');
-            option.value = preset.id;
-            option.textContent = preset.name;
-            select.appendChild(option);
-        });
-
-        if (selectedId && presets.some(p => p.id === selectedId)) {
-            select.value = selectedId;
-        } else if (selectedId) {
-            db.workshopSettings[settingKey] = '';
-            select.value = '';
-            settingsChanged = true;
-        }
+        if (selected !== id) values[settingKey] = id;
     });
-
-    if (settingsChanged) saveData();
+    if (Object.keys(values).length) changes.push({target:settings,values});
+    const render = () => {
+        if (db.workshopSettings !== settings) return;
+        selectConfigs.forEach(({id,settingKey}) => {
+            const select = document.getElementById(id);
+            if (!select) return;
+            select.innerHTML = '<option value="">请选择</option>';
+            presets.forEach(preset => {
+                if (!preset || !preset.id || !preset.name || !preset.data) return;
+                const option = document.createElement('option');
+                option.value = preset.id; option.textContent = preset.name;
+                select.appendChild(option);
+            });
+            select.value = settings[settingKey] || '';
+        });
+    };
+    if (changes.length) void saveLocalSettingsFields(changes).then(render);
+    render();
 }
 
 // --- API 预设逻辑 ---
@@ -310,7 +312,6 @@ function updateApiProtocolUI() {
         if (jsonOption) jsonOption.hidden = protocol === 'novelai';
         if (protocol === 'novelai' && responseFormatSelect.value === 'json') {
             responseFormatSelect.value = 'auto';
-            if (preset) preset.responseFormat = 'auto';
         }
     }
     if (modelListRow) modelListRow.style.display = protocol === 'custom' ? 'none' : 'flex';
@@ -339,135 +340,89 @@ function initApiPresets() {
     const protocolSelect = document.getElementById('workshop-api-protocol');
     const responseFormatSelect = document.getElementById('workshop-response-format');
     const customModelInput = document.getElementById('workshop-custom-model');
-    
     if (!select || !saveBtn || !urlInput || !keyInput) return;
-    
     updateApiPresetList();
-    
-    // 切换预设
-    select.addEventListener('change', async (e) => {
-        const provider = db.workshopSettings.provider || 'novelai';
-        db.workshopSettings.activeApiPresetId[provider] = e.target.value;
-        await saveData();
-        updateApiPresetList();
-    });
-    
-    // 实时保存 URL 和 Key 到当前预设
-    const saveCurrentPreset = async () => {
-        const provider = db.workshopSettings.provider || 'novelai';
-        const activeId = db.workshopSettings.activeApiPresetId[provider];
-        const presets = db.workshopSettings.apiPresets[provider];
-        const preset = presets.find(p => p.id === activeId);
-        
-        if (preset) {
-            preset.url = urlInput.value.trim();
-            preset.key = keyInput.value.trim();
-            
-            // 同步更新旧的全局字段以兼容旧代码
-            db.workshopSettings[provider + 'ApiUrl'] = preset.url;
-            db.workshopSettings[provider + 'ApiKey'] = preset.key;
-            
-            await saveData();
-        }
-    };
-    
-    urlInput.addEventListener('input', saveCurrentPreset);
-    keyInput.addEventListener('input', saveCurrentPreset);
-    
-    // 新建预设
-    const newBtn = document.getElementById('workshop-new-api-preset-btn');
-    if (newBtn) {
-        newBtn.addEventListener('click', async () => {
-            const provider = db.workshopSettings.provider || 'novelai';
-            const name = prompt('请输入新预设名称：');
-            if (!name) return;
-            
-            const newPreset = {
-                id: 'preset_' + Date.now(),
-                name: name,
-                url: '',
-                key: '',
-                protocol: provider === 'novelai' ? 'novelai' : 'openai',
-                responseFormat: 'auto'
-            };
-            
-            db.workshopSettings.apiPresets[provider].push(newPreset);
-            db.workshopSettings.activeApiPresetId[provider] = newPreset.id;
-            await saveData();
-            updateApiPresetList();
-            showToast('已创建新预设');
-        });
-    }
 
-    // 另存为新预设
-    saveBtn.addEventListener('click', async () => {
-        const provider = db.workshopSettings.provider || 'novelai';
+    const persist = async (changes, settings, provider, preset = null) => {
+        const saved = await saveLocalSettingsFields(changes);
+        if (db.workshopSettings === settings && (settings.provider || 'novelai') === provider
+            && (!preset || getActiveWorkshopApiPreset() === preset)) updateApiPresetList();
+        return saved;
+    };
+    select.onchange = async e => {
+        const settings = db.workshopSettings;
+        const provider = settings.provider || 'novelai';
+        if (!(settings.apiPresets[provider] || []).some(p => p.id === e.target.value)) return;
+        const saving = persist([{target:settings.activeApiPresetId,values:{[provider]:e.target.value}}],settings,provider);
+        updateApiPresetList();
+        await saving;
+    };
+    const saveCurrentPreset = async () => {
+        const settings = db.workshopSettings;
+        const provider = settings.provider || 'novelai';
+        const preset = getActiveWorkshopApiPreset();
+        if (!preset) return;
+        const url = urlInput.value.trim(), key = keyInput.value.trim();
+        await persist([
+            {target:preset,values:{url,key}},
+            {target:settings,values:{[provider+'ApiUrl']:url,[provider+'ApiKey']:key}}
+        ],settings,provider,preset);
+    };
+    urlInput.oninput = saveCurrentPreset;
+    keyInput.oninput = saveCurrentPreset;
+
+    const createPreset = async copyCurrent => {
+        const settings = db.workshopSettings;
+        const provider = settings.provider || 'novelai';
         const name = prompt('请输入新预设名称：');
         if (!name) return;
-        
-        const newPreset = {
-            id: 'preset_' + Date.now(),
-            name: name,
-            url: urlInput.value.trim(),
-            key: keyInput.value.trim(),
-            protocol: provider === 'novelai' ? (protocolSelect?.value || 'novelai') : 'openai',
-            responseFormat: responseFormatSelect?.value || 'auto'
+        const preset = {
+            id:'preset_' + crypto.randomUUID(),name,
+            url:copyCurrent ? urlInput.value.trim() : '',
+            key:copyCurrent ? keyInput.value.trim() : '',
+            protocol:provider === 'novelai' ? (copyCurrent ? protocolSelect?.value || 'novelai' : 'novelai') : 'openai',
+            responseFormat:copyCurrent ? responseFormatSelect?.value || 'auto' : 'auto'
         };
-        
-        db.workshopSettings.apiPresets[provider].push(newPreset);
-        db.workshopSettings.activeApiPresetId[provider] = newPreset.id;
-        await saveData();
-        updateApiPresetList();
-        showToast('预设保存成功');
-    });
-
-    if (protocolSelect) {
-        protocolSelect.addEventListener('change', async (e) => {
-            const preset = getActiveWorkshopApiPreset();
-            if (!preset) return;
-            preset.protocol = e.target.value;
-            if (!preset.responseFormat) preset.responseFormat = 'auto';
-            await saveData();
-            updateApiProtocolUI();
-        });
-    }
-
-    if (responseFormatSelect) {
-        responseFormatSelect.addEventListener('change', async (e) => {
-            const preset = getActiveWorkshopApiPreset();
-            if (!preset) return;
-            preset.responseFormat = e.target.value;
-            await saveData();
-        });
-    }
-
-    if (customModelInput) {
-        customModelInput.addEventListener('input', async (e) => {
-            db.workshopSettings.novelaiModel = e.target.value.trim();
-            await saveData();
-        });
-    }
-    
-    // 删除预设
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', async () => {
-            const provider = db.workshopSettings.provider || 'novelai';
-            const activeId = db.workshopSettings.activeApiPresetId[provider];
-            
-            if (activeId === 'official') {
-                showToast('官方预设不可删除');
-                return;
-            }
-            
-            if (confirm('确定要删除当前预设吗？')) {
-                db.workshopSettings.apiPresets[provider] = db.workshopSettings.apiPresets[provider].filter(p => p.id !== activeId);
-                db.workshopSettings.activeApiPresetId[provider] = 'official';
-                await saveData();
-                updateApiPresetList();
-                showToast('预设已删除');
-            }
-        });
-    }
+        const saved = await persist([
+            {target:settings.apiPresets,values:{[provider]:[...settings.apiPresets[provider],preset]}},
+            {target:settings.activeApiPresetId,values:{[provider]:preset.id}}
+        ],settings,provider);
+        if (saved) showToast(copyCurrent ? '预设保存成功' : '已创建新预设');
+    };
+    const newBtn = document.getElementById('workshop-new-api-preset-btn');
+    if (newBtn) newBtn.onclick = () => createPreset(false);
+    saveBtn.onclick = () => createPreset(true);
+    if (protocolSelect) protocolSelect.onchange = async e => {
+        const settings = db.workshopSettings;
+        const provider = settings.provider || 'novelai';
+        const preset = getActiveWorkshopApiPreset();
+        if (!preset) return;
+        const protocol = e.target.value;
+        const responseFormat = protocol === 'novelai' && preset.responseFormat === 'json' ? 'auto' : preset.responseFormat || 'auto';
+        await persist([{target:preset,values:{protocol,responseFormat}}],settings,provider,preset);
+    };
+    if (responseFormatSelect) responseFormatSelect.onchange = async e => {
+        const settings = db.workshopSettings;
+        const preset = getActiveWorkshopApiPreset();
+        if (preset) await persist([{target:preset,values:{responseFormat:e.target.value}}],settings,settings.provider || 'novelai',preset);
+    };
+    if (customModelInput) customModelInput.oninput = async e => {
+        const settings = db.workshopSettings;
+        await persist([{target:settings,values:{novelaiModel:e.target.value.trim()}}],settings,settings.provider || 'novelai');
+    };
+    if (deleteBtn) deleteBtn.onclick = async () => {
+        const settings = db.workshopSettings;
+        const provider = settings.provider || 'novelai';
+        const preset = getActiveWorkshopApiPreset();
+        if (!preset) return;
+        if (preset.id === 'official') return showToast('官方预设不可删除');
+        if (!confirm('确定要删除当前预设吗？')) return;
+        const saved = await persist([
+            {target:settings.apiPresets,values:{[provider]:settings.apiPresets[provider].filter(p => p !== preset)}},
+            {target:settings.activeApiPresetId,values:{[provider]:'official'}}
+        ],settings,provider);
+        if (saved) showToast('预设已删除');
+    };
 }
 
 // --- 提示词预设逻辑 ---
@@ -516,14 +471,16 @@ function initPromptPresets() {
             if (characterInput) characterInput.value = preset.character || '';
             negativeInput.value = preset.negative;
             
-            // 手动触发 input 和 change 事件以保存到 settings
-            positiveInput.dispatchEvent(new Event('input'));
-            if (characterInput) characterInput.dispatchEvent(new Event('input'));
-            negativeInput.dispatchEvent(new Event('input'));
-            positiveInput.dispatchEvent(new Event('change'));
-            if (characterInput) characterInput.dispatchEvent(new Event('change'));
-            negativeInput.dispatchEvent(new Event('change'));
-            
+            const settings = db.workshopSettings;
+            if (!await saveLocalSettingsFields([{target:settings,values:{positivePrompt:preset.positive,
+                characterPrompt:preset.character || '',negativePrompt:preset.negative}}])) {
+                if (db.workshopSettings === settings) {
+                    positiveInput.value = settings.positivePrompt || '';
+                    if (characterInput) characterInput.value = settings.characterPrompt || '';
+                    negativeInput.value = settings.negativePrompt || '';
+                }
+                return;
+            }
             showToast('已应用预设: ' + preset.name);
         }
     });
@@ -547,15 +504,14 @@ function initPromptPresets() {
         }
 
         const newPreset = {
-            id: 'prompt_preset_' + Date.now(),
+            id: 'prompt_preset_' + crypto.randomUUID(),
             name: name,
             positive: positive,
             character: character,
             negative: negative
         };
 
-        db.workshopPromptPresets.push(newPreset);
-        await saveData();
+        if (!await saveLocalSettingsFields([{target:db,values:{workshopPromptPresets:[...db.workshopPromptPresets,newPreset]}}])) return;
         
         renderPresets();
         presetSelect.value = newPreset.id;
@@ -571,11 +527,9 @@ function initPromptPresets() {
 
             const presetIndex = db.workshopPromptPresets.findIndex(p => p.id === presetId);
             if (presetIndex !== -1) {
-                db.workshopPromptPresets[presetIndex].positive = positiveInput.value.trim();
-                db.workshopPromptPresets[presetIndex].character = characterInput ? characterInput.value.trim() : '';
-                db.workshopPromptPresets[presetIndex].negative = negativeInput.value.trim();
-                
-                await saveData();
+                const preset = db.workshopPromptPresets[presetIndex];
+                if (!await saveLocalSettingsFields([{target:preset,values:{positive:positiveInput.value.trim(),
+                    character:characterInput ? characterInput.value.trim() : '',negative:negativeInput.value.trim()}}])) return;
                 showToast('预设已更新');
             }
         });
@@ -588,8 +542,7 @@ function initPromptPresets() {
             if (!presetId) return;
 
             if (confirm('确定要删除这个预设吗？')) {
-                db.workshopPromptPresets = db.workshopPromptPresets.filter(p => p.id !== presetId);
-                await saveData();
+                if (!await saveLocalSettingsFields([{target:db,values:{workshopPromptPresets:db.workshopPromptPresets.filter(p => p.id !== presetId)}}])) return;
                 
                 renderPresets();
                 presetSelect.value = '';
@@ -702,14 +655,11 @@ function initWorkshopModels() {
         const activeRadio = document.querySelector('input[name="workshop-provider"]:checked');
         const provider = activeRadio ? activeRadio.value : 'novelai';
         
-        if (provider === 'novelai') {
-            db.workshopSettings.novelaiModel = e.target.value;
-        } else if (provider === 'gpt') {
-            db.workshopSettings.gptModel = e.target.value;
-        }
-        if (typeof saveData === 'function') {
-            await saveData();
-        }
+        const settings = db.workshopSettings;
+        const key = provider === 'novelai' ? 'novelaiModel' : provider === 'gpt' ? 'gptModel' : null;
+        if (!key) return;
+        if (!await saveLocalSettingsFields([{target:settings,values:{[key]:e.target.value}}])
+            && db.workshopSettings === settings) modelSelect.value = settings[key] || '';
     });
     
     // 自动填充模型列表

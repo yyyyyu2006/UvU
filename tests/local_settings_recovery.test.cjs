@@ -38,3 +38,35 @@ test('local settings success waits for persistence before reporting success', as
     await Promise.resolve();assert.equal(settled,false);resolve();
     assert.equal(await saving,true);assert.equal(target.enabled,true);assert.equal(runtime.toasts.length,0);
 });
+
+for (const order of [[0, 1], [1, 0]]) {
+    test(`consecutive failed edits restore the saved value (${order.join(',')})`, async () => {
+        const failures = [];
+        const runtime = settingsRuntime(() => new Promise((_, reject) => failures.push(reject)));
+        const target = {name:'saved'};
+        const pending = ['first', 'second'].map(name => runtime.save([{target,values:{name}}]));
+        for (const index of order) { failures[index](Error('disk unavailable')); await pending[index]; }
+        assert.equal(target.name, 'saved');
+    });
+}
+
+test('failed older edit cannot undo a newer successful edit with the same value', async () => {
+    const settles=[];
+    const runtime=settingsRuntime(()=>new Promise((resolve,reject)=>settles.push({resolve,reject})));
+    const target={name:'saved'};
+    const first=runtime.save([{target,values:{name:'same'}}]);
+    const second=runtime.save([{target,values:{name:'same'}}]);
+    settles[1].resolve();assert.equal(await second,true);
+    settles[0].reject(Error('disk unavailable'));assert.equal(await first,false);
+    assert.equal(target.name,'same');
+});
+
+test('one failed operation restores both nested fields and their containing list', async () => {
+    const runtime=settingsRuntime(async()=>{throw Error('disk unavailable');});
+    const item={id:'old',locked:true},target={items:[item]};
+    assert.equal(await runtime.save([
+        {target:item,values:{id:'migrated',locked:false}},
+        {target,values:{items:[item,{id:'new'}]}}
+    ]),false);
+    assert.deepEqual(JSON.parse(JSON.stringify(target)),{items:[{id:'old',locked:true}]});
+});

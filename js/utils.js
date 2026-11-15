@@ -1,24 +1,42 @@
 // --- 工具函数库 (js/utils.js) ---
 // Local settings only. Chat/archive changes use beginChatMutation instead.
+const pendingLocalSettingsFields = new WeakMap();
 async function saveLocalSettingsFields(changes) {
     const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
     const fields = changes.flatMap(({ target, values }) => Object.entries(values).map(([key, value]) => {
-        const field = { target, key, before: clone(target[key]), applied: clone(value) };
-        target[key] = value;
+        let keys = pendingLocalSettingsFields.get(target);
+        if (!keys) pendingLocalSettingsFields.set(target, keys = new Map());
+        let chain = keys.get(key);
+        if (!chain) keys.set(key, chain = []);
+        const field = { target, key, before: clone(target[key]), value, chain, pending: true };
+        chain.push(field);
         return field;
     }));
+    for (const field of fields) field.target[field.key] = field.value;
+    for (const field of fields) field.applied = clone(field.target[field.key]);
     try {
         await saveData();
         return true;
     } catch (error) {
-        for (const field of fields) {
-            if (JSON.stringify(field.target[field.key]) !== JSON.stringify(field.applied)) continue;
+        for (const field of [...fields].reverse()) {
+            const index = field.chain.indexOf(field);
+            const later = field.chain.slice(index + 1);
+            // A later edit may have taken its previous value from this failed save.
+            const next = later[0];
+            if (next && JSON.stringify(next.before) === JSON.stringify(field.applied)) next.before = clone(field.before);
+            field.chain.splice(index, 1);
+            if (later.length || JSON.stringify(field.target[field.key]) !== JSON.stringify(field.applied)) continue;
             if (field.before === undefined) delete field.target[field.key];
             else field.target[field.key] = clone(field.before);
         }
         console.error('保存本地设置失败:', error);
         showToast('设置未保存，已恢复本次修改，请重试');
         return false;
+    } finally {
+        for (const field of fields) {
+            field.pending = false;
+            if (!field.chain.some(entry => entry.pending)) pendingLocalSettingsFields.get(field.target).delete(field.key);
+        }
     }
 }
 

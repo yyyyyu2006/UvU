@@ -154,9 +154,11 @@ function initWorkshopGPTLLMPrompts() {
 
     // 初始化数据结构
     if (!db.workshopSettings) db.workshopSettings = {};
-    if (!db.workshopSettings.gptLlmPresetGroups || db.workshopSettings.gptLlmPresetGroups.length === 0) {
+    const settings = db.workshopSettings;
+    const planned = {...settings};
+    if (!planned.gptLlmPresetGroups || planned.gptLlmPresetGroups.length === 0) {
         const defaultGroupId = 'gpt_llm_preset_group_' + Date.now();
-        db.workshopSettings.gptLlmPresetGroups = [
+        planned.gptLlmPresetGroups = [
             {
                 id: defaultGroupId,
                 name: '默认预设',
@@ -290,17 +292,23 @@ function initWorkshopGPTLLMPrompts() {
                 ]
             }
         ];
-        db.workshopSettings.activeGptLlmPresetGroupId = defaultGroupId;
+        planned.activeGptLlmPresetGroupId = defaultGroupId;
     }
     
     // 确保有激活的组
-    if (!db.workshopSettings.activeGptLlmPresetGroupId || !db.workshopSettings.gptLlmPresetGroups.find(g => g.id === db.workshopSettings.activeGptLlmPresetGroupId)) {
-        db.workshopSettings.activeGptLlmPresetGroupId = db.workshopSettings.gptLlmPresetGroups[0].id;
+    if (!planned.activeGptLlmPresetGroupId || !planned.gptLlmPresetGroups.find(g => g.id === planned.activeGptLlmPresetGroupId)) {
+        planned.activeGptLlmPresetGroupId = planned.gptLlmPresetGroups[0].id;
     }
+
+    const migration = Object.fromEntries(['gptLlmPresetGroups','activeGptLlmPresetGroupId']
+        .filter(key => planned[key] !== settings[key]).map(key => [key,planned[key]]));
+    if (Object.keys(migration).length) void saveLocalSettingsFields([{target:settings,values:migration}]).then(saved => {
+        if (!saved && db.workshopSettings === settings) { renderGroups(); renderList(); }
+    });
 
     const renderGroups = () => {
         groupSelect.innerHTML = '';
-        db.workshopSettings.gptLlmPresetGroups.forEach(group => {
+        (db.workshopSettings.gptLlmPresetGroups || []).forEach(group => {
             const option = document.createElement('option');
             option.value = group.id;
             option.textContent = group.name;
@@ -312,7 +320,7 @@ function initWorkshopGPTLLMPrompts() {
     };
 
     const getActiveGroup = () => {
-        return db.workshopSettings.gptLlmPresetGroups.find(g => g.id === db.workshopSettings.activeGptLlmPresetGroupId);
+        return db.workshopSettings.gptLlmPresetGroups?.find(g => g.id === db.workshopSettings.activeGptLlmPresetGroupId);
     };
 
     const renderList = () => {
@@ -602,8 +610,11 @@ function initWorkshopGPTLLMPrompts() {
 
     // 切换预设组
     groupSelect.addEventListener('change', async (e) => {
-        db.workshopSettings.activeGptLlmPresetGroupId = e.target.value;
-        await saveData();
+        const settings = db.workshopSettings;
+        if (!settings.gptLlmPresetGroups.some(group => group.id === e.target.value)) return;
+        await saveLocalSettingsFields([{target:settings,values:{activeGptLlmPresetGroupId:e.target.value}}]);
+        if (db.workshopSettings !== settings) return;
+        renderGroups();
         renderList();
     });
 
@@ -613,13 +624,16 @@ function initWorkshopGPTLLMPrompts() {
         if (!name) return;
         
         const newGroup = {
-            id: 'gpt_llm_preset_group_' + Date.now(),
+            id: 'gpt_llm_preset_group_' + crypto.randomUUID(),
             name: name,
             prompts: []
         };
-        db.workshopSettings.gptLlmPresetGroups.push(newGroup);
-        db.workshopSettings.activeGptLlmPresetGroupId = newGroup.id;
-        await saveData();
+        const settings = db.workshopSettings;
+        const saved = await saveLocalSettingsFields([{target:settings,values:{
+            gptLlmPresetGroups:[...(settings.gptLlmPresetGroups || []),newGroup], activeGptLlmPresetGroupId:newGroup.id
+        }}]);
+        if (db.workshopSettings !== settings) return;
+        if (!saved) { renderGroups(); renderList(); return; }
         renderGroups();
         renderList();
     });
@@ -632,14 +646,13 @@ function initWorkshopGPTLLMPrompts() {
         const name = prompt('请输入新的预设组名称：', activeGroup.name);
         if (!name || name === activeGroup.name) return;
         
-        activeGroup.name = name;
-        await saveData();
+        await saveLocalSettingsFields([{target:activeGroup,values:{name}}]);
         renderGroups();
     });
 
     // 删除预设组
     deleteGroupBtn.addEventListener('click', async () => {
-        if (db.workshopSettings.gptLlmPresetGroups.length <= 1) {
+        if ((db.workshopSettings.gptLlmPresetGroups || []).length <= 1) {
             showToast('至少保留一个预设组');
             return;
         }
@@ -648,9 +661,10 @@ function initWorkshopGPTLLMPrompts() {
         if (!activeGroup) return;
         
         if (confirm(`确定要删除预设组 "${activeGroup.name}" 吗？`)) {
-            db.workshopSettings.gptLlmPresetGroups = db.workshopSettings.gptLlmPresetGroups.filter(g => g.id !== activeGroup.id);
-            db.workshopSettings.activeGptLlmPresetGroupId = db.workshopSettings.gptLlmPresetGroups[0].id;
-            await saveData();
+            const settings = db.workshopSettings;
+            const groups = settings.gptLlmPresetGroups.filter(g => g !== activeGroup);
+            await saveLocalSettingsFields([{target:settings,values:{gptLlmPresetGroups:groups,activeGptLlmPresetGroupId:groups[0].id}}]);
+            if (db.workshopSettings !== settings) return;
             renderGroups();
             renderList();
         }
@@ -677,7 +691,7 @@ function initWorkshopGPTLLMPrompts() {
                 const activeGroup = getActiveGroup();
                 if (!activeGroup) return;
 
-                activeGroup.prompts = [
+                const prompts = [
                     {
                         id: 'gpt_llm_prompt_' + Date.now() + '_1',
                         role: 'system',
@@ -805,9 +819,9 @@ function initWorkshopGPTLLMPrompts() {
                         enabled: true
                     }
                 ];
-                await saveData();
-                renderList();
-                showToast('已重置为默认预设');
+                const saved = await saveLocalSettingsFields([{target:activeGroup,values:{prompts}}]);
+                if (getActiveGroup() === activeGroup) renderList();
+                if (saved) showToast('已重置为默认预设');
             }
         });
     }
@@ -821,31 +835,40 @@ function initWorkshopGPTLLMPrompts() {
         const file = e.target.files[0];
         if (!file) return;
         
+        const settings = db.workshopSettings;
+        const activeId = groupSelect.value;
         const reader = new FileReader();
+        reader.onerror = () => { importGroupInput.value = ''; showToast('读取预设失败，请重试'); };
         reader.onload = async (event) => {
             try {
                 const importedGroup = JSON.parse(event.target.result);
-                if (!importedGroup.name || !Array.isArray(importedGroup.prompts)) {
+                if (!importedGroup || typeof importedGroup.name !== 'string' || !importedGroup.name.trim()
+                    || !Array.isArray(importedGroup.prompts) || importedGroup.prompts.some(p => !p || typeof p.title !== 'string'
+                    || typeof p.content !== 'string' || !['system','user','assistant'].includes(p.role)
+                    || (p.enabled !== undefined && typeof p.enabled !== 'boolean'))) {
                     throw new Error('无效的预设文件格式');
                 }
                 
                 // 生成新的 ID 避免冲突
-                importedGroup.id = 'gpt_llm_preset_group_' + Date.now();
+                importedGroup.id = 'gpt_llm_preset_group_' + crypto.randomUUID();
                 importedGroup.prompts.forEach(p => {
                     p.id = 'gpt_llm_prompt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 });
                 
-                db.workshopSettings.gptLlmPresetGroups.push(importedGroup);
-                db.workshopSettings.activeGptLlmPresetGroupId = importedGroup.id;
-                await saveData();
+                if (db.workshopSettings !== settings) return;
+                const values = {gptLlmPresetGroups:[...(settings.gptLlmPresetGroups || []),importedGroup]};
+                if (settings.activeGptLlmPresetGroupId === activeId) values.activeGptLlmPresetGroupId = importedGroup.id;
+                if (!await saveLocalSettingsFields([{target:settings,values}])) return;
+                if (db.workshopSettings !== settings) return;
                 renderGroups();
                 renderList();
                 showToast('导入成功');
             } catch (error) {
                 console.error('Import error:', error);
                 showToast('导入失败: ' + error.message);
+            } finally {
+                if (importGroupInput.files[0] === file) importGroupInput.value = '';
             }
-            importGroupInput.value = ''; // 重置 input
         };
         reader.readAsText(file);
     });
@@ -855,14 +878,15 @@ function initWorkshopGPTLLMPrompts() {
         const activeGroup = getActiveGroup();
         if (!activeGroup) return;
         
-        activeGroup.prompts.push({
-            id: 'gpt_llm_prompt_' + Date.now(),
+        const prompt = {
+            id: 'gpt_llm_prompt_' + crypto.randomUUID(),
             role: 'user',
             title: '新条目',
             content: '',
             enabled: true
-        });
-        await saveData();
+        };
+        if (!await saveLocalSettingsFields([{target:activeGroup,values:{prompts:[...activeGroup.prompts,prompt]}}])) return;
+        if (getActiveGroup() !== activeGroup) return;
         renderList();
         
         // 自动展开最后一个（新添加的）条目
@@ -891,9 +915,11 @@ function initWorkshopLLMPrompts() {
 
     // 初始化数据结构
     if (!db.workshopSettings) db.workshopSettings = {};
-    if (!db.workshopSettings.llmPresetGroups || db.workshopSettings.llmPresetGroups.length === 0) {
+    const settings = db.workshopSettings;
+    const planned = {...settings};
+    if (!planned.llmPresetGroups || planned.llmPresetGroups.length === 0) {
         const defaultGroupId = 'llm_preset_group_' + Date.now();
-        db.workshopSettings.llmPresetGroups = [
+        planned.llmPresetGroups = [
             {
                 id: defaultGroupId,
                 name: '默认预设',
@@ -1027,17 +1053,23 @@ function initWorkshopLLMPrompts() {
                 ]
             }
         ];
-        db.workshopSettings.activeLlmPresetGroupId = defaultGroupId;
+        planned.activeLlmPresetGroupId = defaultGroupId;
     }
     
     // 确保有激活的组
-    if (!db.workshopSettings.activeLlmPresetGroupId || !db.workshopSettings.llmPresetGroups.find(g => g.id === db.workshopSettings.activeLlmPresetGroupId)) {
-        db.workshopSettings.activeLlmPresetGroupId = db.workshopSettings.llmPresetGroups[0].id;
+    if (!planned.activeLlmPresetGroupId || !planned.llmPresetGroups.find(g => g.id === planned.activeLlmPresetGroupId)) {
+        planned.activeLlmPresetGroupId = planned.llmPresetGroups[0].id;
     }
+
+    const migration = Object.fromEntries(['llmPresetGroups','activeLlmPresetGroupId']
+        .filter(key => planned[key] !== settings[key]).map(key => [key,planned[key]]));
+    if (Object.keys(migration).length) void saveLocalSettingsFields([{target:settings,values:migration}]).then(saved => {
+        if (!saved && db.workshopSettings === settings) { renderGroups(); renderList(); }
+    });
 
     const renderGroups = () => {
         groupSelect.innerHTML = '';
-        db.workshopSettings.llmPresetGroups.forEach(group => {
+        (db.workshopSettings.llmPresetGroups || []).forEach(group => {
             const option = document.createElement('option');
             option.value = group.id;
             option.textContent = group.name;
@@ -1049,7 +1081,7 @@ function initWorkshopLLMPrompts() {
     };
 
     const getActiveGroup = () => {
-        return db.workshopSettings.llmPresetGroups.find(g => g.id === db.workshopSettings.activeLlmPresetGroupId);
+        return db.workshopSettings.llmPresetGroups?.find(g => g.id === db.workshopSettings.activeLlmPresetGroupId);
     };
 
     const renderList = () => {
@@ -1339,8 +1371,11 @@ function initWorkshopLLMPrompts() {
 
     // 切换预设组
     groupSelect.addEventListener('change', async (e) => {
-        db.workshopSettings.activeLlmPresetGroupId = e.target.value;
-        await saveData();
+        const settings = db.workshopSettings;
+        if (!settings.llmPresetGroups.some(group => group.id === e.target.value)) return;
+        await saveLocalSettingsFields([{target:settings,values:{activeLlmPresetGroupId:e.target.value}}]);
+        if (db.workshopSettings !== settings) return;
+        renderGroups();
         renderList();
     });
 
@@ -1350,13 +1385,16 @@ function initWorkshopLLMPrompts() {
         if (!name) return;
         
         const newGroup = {
-            id: 'llm_preset_group_' + Date.now(),
+            id: 'llm_preset_group_' + crypto.randomUUID(),
             name: name,
             prompts: []
         };
-        db.workshopSettings.llmPresetGroups.push(newGroup);
-        db.workshopSettings.activeLlmPresetGroupId = newGroup.id;
-        await saveData();
+        const settings = db.workshopSettings;
+        const saved = await saveLocalSettingsFields([{target:settings,values:{
+            llmPresetGroups:[...(settings.llmPresetGroups || []),newGroup], activeLlmPresetGroupId:newGroup.id
+        }}]);
+        if (db.workshopSettings !== settings) return;
+        if (!saved) { renderGroups(); renderList(); return; }
         renderGroups();
         renderList();
     });
@@ -1369,14 +1407,13 @@ function initWorkshopLLMPrompts() {
         const name = prompt('请输入新的预设组名称：', activeGroup.name);
         if (!name || name === activeGroup.name) return;
         
-        activeGroup.name = name;
-        await saveData();
+        await saveLocalSettingsFields([{target:activeGroup,values:{name}}]);
         renderGroups();
     });
 
     // 删除预设组
     deleteGroupBtn.addEventListener('click', async () => {
-        if (db.workshopSettings.llmPresetGroups.length <= 1) {
+        if ((db.workshopSettings.llmPresetGroups || []).length <= 1) {
             showToast('至少保留一个预设组');
             return;
         }
@@ -1385,9 +1422,10 @@ function initWorkshopLLMPrompts() {
         if (!activeGroup) return;
         
         if (confirm(`确定要删除预设组 "${activeGroup.name}" 吗？`)) {
-            db.workshopSettings.llmPresetGroups = db.workshopSettings.llmPresetGroups.filter(g => g.id !== activeGroup.id);
-            db.workshopSettings.activeLlmPresetGroupId = db.workshopSettings.llmPresetGroups[0].id;
-            await saveData();
+            const settings = db.workshopSettings;
+            const groups = settings.llmPresetGroups.filter(g => g !== activeGroup);
+            await saveLocalSettingsFields([{target:settings,values:{llmPresetGroups:groups,activeLlmPresetGroupId:groups[0].id}}]);
+            if (db.workshopSettings !== settings) return;
             renderGroups();
             renderList();
         }
@@ -1414,7 +1452,7 @@ function initWorkshopLLMPrompts() {
                 const activeGroup = getActiveGroup();
                 if (!activeGroup) return;
 
-                activeGroup.prompts = [
+                const prompts = [
                     {
                         id: 'llm_prompt_' + Date.now() + '_1',
                         role: 'system',
@@ -1542,9 +1580,9 @@ function initWorkshopLLMPrompts() {
                         enabled: true
                     }
                 ];
-                await saveData();
-                renderList();
-                showToast('已重置为默认预设');
+                const saved = await saveLocalSettingsFields([{target:activeGroup,values:{prompts}}]);
+                if (getActiveGroup() === activeGroup) renderList();
+                if (saved) showToast('已重置为默认预设');
             }
         });
     }
@@ -1558,31 +1596,40 @@ function initWorkshopLLMPrompts() {
         const file = e.target.files[0];
         if (!file) return;
         
+        const settings = db.workshopSettings;
+        const activeId = groupSelect.value;
         const reader = new FileReader();
+        reader.onerror = () => { importGroupInput.value = ''; showToast('读取预设失败，请重试'); };
         reader.onload = async (event) => {
             try {
                 const importedGroup = JSON.parse(event.target.result);
-                if (!importedGroup.name || !Array.isArray(importedGroup.prompts)) {
+                if (!importedGroup || typeof importedGroup.name !== 'string' || !importedGroup.name.trim()
+                    || !Array.isArray(importedGroup.prompts) || importedGroup.prompts.some(p => !p || typeof p.title !== 'string'
+                    || typeof p.content !== 'string' || !['system','user','assistant'].includes(p.role)
+                    || (p.enabled !== undefined && typeof p.enabled !== 'boolean'))) {
                     throw new Error('无效的预设文件格式');
                 }
                 
                 // 生成新的 ID 避免冲突
-                importedGroup.id = 'llm_preset_group_' + Date.now();
+                importedGroup.id = 'llm_preset_group_' + crypto.randomUUID();
                 importedGroup.prompts.forEach(p => {
                     p.id = 'llm_prompt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 });
                 
-                db.workshopSettings.llmPresetGroups.push(importedGroup);
-                db.workshopSettings.activeLlmPresetGroupId = importedGroup.id;
-                await saveData();
+                if (db.workshopSettings !== settings) return;
+                const values = {llmPresetGroups:[...(settings.llmPresetGroups || []),importedGroup]};
+                if (settings.activeLlmPresetGroupId === activeId) values.activeLlmPresetGroupId = importedGroup.id;
+                if (!await saveLocalSettingsFields([{target:settings,values}])) return;
+                if (db.workshopSettings !== settings) return;
                 renderGroups();
                 renderList();
                 showToast('导入成功');
             } catch (error) {
                 console.error('Import error:', error);
                 showToast('导入失败: ' + error.message);
+            } finally {
+                if (importGroupInput.files[0] === file) importGroupInput.value = '';
             }
-            importGroupInput.value = ''; // 重置 input
         };
         reader.readAsText(file);
     });
@@ -1592,14 +1639,15 @@ function initWorkshopLLMPrompts() {
         const activeGroup = getActiveGroup();
         if (!activeGroup) return;
         
-        activeGroup.prompts.push({
-            id: 'llm_prompt_' + Date.now(),
+        const prompt = {
+            id: 'llm_prompt_' + crypto.randomUUID(),
             role: 'user',
             title: '新条目',
             content: '',
             enabled: true
-        });
-        await saveData();
+        };
+        if (!await saveLocalSettingsFields([{target:activeGroup,values:{prompts:[...activeGroup.prompts,prompt]}}])) return;
+        if (getActiveGroup() !== activeGroup) return;
         renderList();
         
         // 自动展开最后一个（新添加的）条目
