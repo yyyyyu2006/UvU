@@ -109,7 +109,7 @@ for (const provider of ['newapi', 'gemini']) test('sticker vision uses secondary
     c.AbortSignal = AbortSignal; c.getRandomValue = v => v;
     c.db.apiSettings = { url: 'https://primary.invalid', key: 'primary-key', model: 'primary', secondary: { enabled: true, routes: { imageRecognition: true }, provider, url: 'https://vision.invalid', key: 'vision-key', model: 'vision' } };
     const utils = fs.readFileSync(path.join(__dirname, '../js/utils.js'), 'utf8');
-    for (const name of ['resolveAuxiliaryApiConfig','buildChatApiRequest']) {
+    for (const name of ['resolveAuxiliaryApiConfig','resolveChatCompletionsEndpoint','buildChatApiRequest']) {
         const start = utils.indexOf('function ' + name + '('), end = utils.indexOf('\n}',start) + 2;
         vm.runInContext(utils.slice(start,end),c);
     }

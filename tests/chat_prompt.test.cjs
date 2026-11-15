@@ -16,6 +16,7 @@ function fixture(history = []) {
         fetch: async (url, init) => { requests.push(JSON.parse(init.body)); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: '回复' }] } }] }) }; },
         handleAiReplyContent: async () => {}, showApiError: error => errors.push(error.message),
     });
+    require('./helpers/api_transport.cjs')(context);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/chat_ai.js'), 'utf8'), context);
     context.handleAiReplyContent = async () => {};
     return { context, chat, requests, errors };

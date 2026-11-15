@@ -681,18 +681,12 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             try {
                 result = await response.json();
                 console.log('[聊天响应]', { provider, received: true });
-                reportedUsage = result.usage || result.usageMetadata || null;
+                reportedUsage = result?.usage || result?.usageMetadata || null;
             } catch (e) {
                 throw new Error('API返回了无法解析的JSON数据，请检查API地址及响应格式。');
             }
 
-            let fullResponse = "";
-            if (provider === 'gemini') {
-                fullResponse = (Array.isArray(result) ? result : [result]).map(item =>
-                    (item.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')).join('');
-            } else {
-                fullResponse = result.choices[0].message.content;
-            }
+            let fullResponse = extractAiResponseText(result, provider);
             
             // === 【补丁：把被吃掉的开头补回来】 ===
             // 仅在 CoT 开启且检测到闭合标签时补全

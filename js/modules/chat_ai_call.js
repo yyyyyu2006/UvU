@@ -372,13 +372,13 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
         delete requestBody.messages;
     }
 
-    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:streamGenerateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;
+    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:${streamEnabled ? 'streamGenerateContent' : 'generateContent'}?key=${getRandomValue(key)}` : resolveChatCompletionsEndpoint(url);
     const headers = (provider === 'gemini') ? {'Content-Type': 'application/json'} : {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`
     };
 
-    console.log('[VideoCall] Request Body:', JSON.stringify(requestBody, null, 2));
+    console.log('[VideoCall] Request:', { provider, stream: streamEnabled, messages: messages.length });
 
     try {
         const response = await fetch(endpoint, {
@@ -395,18 +395,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
 
         if (!streamEnabled) {
             const data = await response.json();
-            console.log('[VideoCall] Response Data:', data);
-            
-            let text = "";
-            if (provider === 'gemini') {
-                text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            } else {
-                if (!data.choices || !data.choices.length || !data.choices[0].message) {
-                    console.error("Invalid API Response Structure:", data);
-                    throw new Error("API返回数据格式异常，缺少 choices 或 message 字段");
-                }
-                text = data.choices[0].message.content;
-            }
+            let text = extractAiResponseText(data, provider);
 
             // === CoT 处理：补全开头，提取思考，净化输出 ===
             if (cotEnabled && text) {
@@ -418,8 +407,6 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
                 // 2. 提取并移除思考内容
                 const lastThinkingIndex = text.lastIndexOf('</thinking>');
                 if (lastThinkingIndex !== -1) {
-                    const thinkingContent = text.substring(0, lastThinkingIndex + 11);
-                    console.log('[VideoCall CoT] Thinking:', thinkingContent);
                     // 移除思考标签及内容
                     text = text.substring(lastThinkingIndex + 11).trim();
                 }
@@ -429,62 +416,14 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
             }
             // =============================================
 
-            console.log('[VideoCall] Cleaned AI Response:', text);
+            console.log('[VideoCall] Reply received:', { characters: text.length });
             // 一次性回调
             if (signal?.aborted) return null;
             onStreamUpdate(text);
             return text;
         } else {
             console.log('[VideoCall] Stream started (Background Mode)...');
-            // 流式处理 (照搬 processStream 逻辑)
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            let accumulatedChunk = ""; // 引入累积缓冲区处理跨包数据
-            
-            while (true) {
-                const {done, value} = await reader.read();
-                if (done) break;
-                accumulatedChunk += decoder.decode(value, {stream: true});
-                
-                // OpenAI / DeepSeek / Claude / NewAPI 解析逻辑 (处理跨包)
-                if (provider === "openai" || provider === "deepseek" || provider === "claude" || provider === "newapi") {
-                    const parts = accumulatedChunk.split("\n\n");
-                    accumulatedChunk = parts.pop(); // 保留未完成的部分
-                    for (const part of parts) {
-                        if (part.startsWith("data: ")) {
-                            const data = part.substring(6);
-                            if (data.trim() !== "[DONE]") {
-                                try {
-                                    const text = JSON.parse(data).choices[0].delta?.content || "";
-                                    if (text) {
-                                        buffer += text;
-                                    }
-                                } catch (e) { }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Gemini 解析逻辑 (在流结束后处理完整 JSON)
-            if (provider === "gemini") {
-                try {
-                    // 尝试解析累积的 chunk (Gemini 流式返回的是完整的 JSON 数组片段？需确认 processStream 逻辑)
-                    // processStream 中 Gemini 解析是在循环外的，假设 accumulatedChunk 是完整的 JSON 数组
-                    // 但如果 accumulatedChunk 是多个 JSON 对象的拼接（如 OpenAI 格式），JSON.parse 会失败。
-                    // 这里假设 processStream 的逻辑是正确的：
-                    const parsedStream = JSON.parse(accumulatedChunk);
-                    buffer = parsedStream.map(item => item.candidates?.[0]?.content?.parts?.[0]?.text || "").join('');
-                } catch (e) {
-                    console.error("Error parsing Gemini stream:", e, "Chunk:", accumulatedChunk);
-                    // 兜底：如果解析失败，可能是因为 accumulatedChunk 包含了 OpenAI 格式的数据（如果用户选错 provider）
-                    // 尝试用 OpenAI 逻辑解析一下？
-                    // 暂时不加，保持与 processStream 一致
-                }
-            }
-
-            console.log('[VideoCall] Final Buffer:', buffer);
+            let buffer = await readStreamResponse(response, provider);
 
             // === CoT 处理：补全开头，提取思考，净化输出 ===
             if (cotEnabled && buffer) {
@@ -496,8 +435,6 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
                 // 2. 提取并移除思考内容
                 const lastThinkingIndex = buffer.lastIndexOf('</thinking>');
                 if (lastThinkingIndex !== -1) {
-                    const thinkingContent = buffer.substring(0, lastThinkingIndex + 11);
-                    console.log('[VideoCall CoT] Thinking:', thinkingContent);
                     // 移除思考标签及内容
                     buffer = buffer.substring(lastThinkingIndex + 11).trim();
                 }
@@ -513,7 +450,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
         }
     } catch (e) {
         if (signal?.aborted) return null;
-        console.error("Call API Error:", e);
+        console.error("Call API Error:", { name: e.name, code: e.code || null });
         showToast("通话连接不稳定...");
         return null;
     }
@@ -599,28 +536,31 @@ async function generateCallSummary(chat, callContext) {
          delete requestBody.messages;
     }
 
-    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:generateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;
+    const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:generateContent?key=${getRandomValue(key)}` : resolveChatCompletionsEndpoint(url);
     const headers = (provider === 'gemini') ? {'Content-Type': 'application/json'} : {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 300000);
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
-            body: JSON.stringify(requestBody)
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
         });
-        const data = await response.json();
-        let text = "";
-        if (provider === 'gemini') {
-            text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        } else {
-            text = data.choices[0].message.content;
+        if (!response.ok) {
+            const error = new Error('通话总结接口HTTP错误：' + response.status);
+            error.status = response.status;
+            throw error;
         }
-        return text.trim();
+        return extractAiResponseText(await response.json(), provider).trim();
     } catch (e) {
-        console.error("Summary API Error:", e);
+        console.error("Summary API Error:", { name: e.name, status: e.status || null, code: controller.signal.aborted ? "TIMEOUT" : e.code || null });
         return null;
+    } finally {
+        clearTimeout(timeout);
     }
 }

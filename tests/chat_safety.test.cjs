@@ -20,6 +20,7 @@ function fixture() {
         AudioManager: { unlock() {} }, triggerHapticFeedback() {}, showPanel() {}, renderMessages() {}, renderChatList() {}, saveData: async () => {},
         showToast: text => toasts.push(text), addMessageBubble: (...args) => bubbles.push(args), generatePrivateSystemPrompt: () => "original prompt", filterHistoryForAI: (_, history) => history, showApiError: e => toasts.push(e.message),
     });
+    require('./helpers/api_transport.cjs')(c);
     for (const file of ["modules/chat_ops.js", "modules/chat_features.js", "modules/chat_ai.js", "chat.js", "modules/chat_archives.js", "modules/storage.js", "modules/sticker.js"]) vm.runInContext(source(file), c);
     vm.runInContext("AudioManager.unlock = () => {};", c);
     c.ensureAllChatArchives();

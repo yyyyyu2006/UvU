@@ -16,6 +16,7 @@ function fixture(provider, placeholder, type, injectedRole) {
         { id:'tail', position:'chat', content:'WORLD_TAIL', rules:{advancedEnabled:true,constant:true,chatDepth:0,role:injectedRole} },
         { id:'off', position:'before', content:'SHOULD_NOT_APPEAR', rules:{advancedEnabled:true,enabled:false} }
     ], apiSettings:{provider,url:'https://test.invalid',key:'fake',model:'test',streamEnabled:false} },
+        AbortController, setTimeout, clearTimeout,
         Math: Object.assign(Object.create(Math), { random: () => { rolls++; return 0.1; } }),
         console:{log(){},error(){}}, currentChatId:chat.id,currentChatType:type,isGenerating:false,
         AudioManager:{unlock(){}},getReplyBtn:{},regenerateBtn:{},typingIndicator:{style:{}},messageArea:{},
@@ -23,6 +24,7 @@ function fixture(provider, placeholder, type, injectedRole) {
         fetch:async (url,init)=>{requests.push(JSON.parse(init.body)); return {ok:true,json:async()=>provider==='gemini'?{candidates:[{content:{parts:[{text:'reply'}]}}]}:{choices:[{message:{content:'reply'}}]}};},
         showApiError:error=>errors.push(error.message),
     });
+    require('./helpers/api_transport.cjs')(c);
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/worldbook_rules.js'),'utf8'),c);
     c.generatePrivateSystemPrompt = c.generateGroupSystemPrompt = (chat, plan) => 'ORIGINAL_RULES\n' + c.worldBookSection(plan,'before') + (placeholder ? '\n【动态插入: 聊天记录】\nORIGINAL_END' : '');
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/chat_ai.js'),'utf8'),c);c.handleAiReplyContent=async()=>{};

@@ -37,8 +37,11 @@ function fixture(root, provider, version, stream, cot) {
                 'data: ' + JSON.stringify({ choices: [{ delta: { content: reply } }] }) + '\n\ndata: [DONE]\n\n');
         } });
     c.window = c;
-    if (root === current) for (const file of ['auto_memory.js', 'worldbook_rules.js'])
-        vm.runInContext(fs.readFileSync(path.join(root, 'js/modules', file), 'utf8'), c);
+    if (root === current) {
+        require('./helpers/api_transport.cjs')(c);
+        for (const file of ['auto_memory.js', 'worldbook_rules.js'])
+            vm.runInContext(fs.readFileSync(path.join(root, 'js/modules', file), 'utf8'), c);
+    }
     vm.runInContext(fs.readFileSync(path.join(root, 'js/modules/chat_ai_call.js'), 'utf8'), c);
     return { c, chat, requests, updates };
 }
@@ -55,7 +58,14 @@ test('48 disabled-feature call combinations retain 1900 request bodies, summarie
             }
             const label = [provider, version, type, stream, cot].join('/');
             assert.equal(old.requests.length, 2, label); assert.equal(next.requests.length, 2, label);
-            assert.deepEqual(JSON.parse(JSON.stringify(next.requests)), JSON.parse(JSON.stringify(old.requests)), label);
+            const expected = JSON.parse(JSON.stringify(old.requests));
+            // Approved transport fix only: Gemini nonstream must use its nonstream endpoint.
+            // Every request body, header, summary request and reply callback remains compared.
+            if (provider === 'gemini' && !stream) {
+                assert.match(expected[0].url, /:streamGenerateContent\?/);
+                expected[0].url = expected[0].url.replace(':streamGenerateContent', ':generateContent');
+            }
+            assert.deepEqual(JSON.parse(JSON.stringify(next.requests)), expected, label);
             assert.deepEqual(next.updates, old.updates, label);
             assert.doesNotMatch(JSON.stringify(next.requests), /DISABLED_RULE|超出范围/);
             comparisons++;

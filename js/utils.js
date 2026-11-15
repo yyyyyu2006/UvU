@@ -754,6 +754,15 @@ function resolveWorkshopLlmApiConfig() {
         : primaryConfig;
 }
 
+function resolveChatCompletionsEndpoint(value) {
+    const url = String(value || '').trim();
+    const suffixAt = url.search(/[?#]/);
+    const path = (suffixAt < 0 ? url : url.slice(0, suffixAt)).replace(/\/+$/, '');
+    const suffix = suffixAt < 0 ? '' : url.slice(suffixAt);
+    if (path.endsWith('/chat/completions')) return path + suffix;
+    return path + (/\/v\d+(?:beta\d*)?$/.test(path) ? '' : '/v1') + '/chat/completions' + suffix;
+}
+
 function buildChatApiRequest(apiConfig, messages, options = {}) {
     const { provider, model } = apiConfig;
     const key = apiConfig.key || '';
@@ -791,11 +800,7 @@ function buildChatApiRequest(apiConfig, messages, options = {}) {
         };
     }
 
-    const endpoint = url.endsWith('/v1/chat/completions')
-        ? url
-        : url.endsWith('/v1')
-            ? `${url}/chat/completions`
-            : `${url}/v1/chat/completions`;
+    const endpoint = resolveChatCompletionsEndpoint(url);
     const requestBody = { model, messages };
     if (temperature !== undefined) requestBody.temperature = temperature;
     if (options.topP !== undefined) requestBody.top_p = options.topP;
@@ -810,122 +815,140 @@ function buildChatApiRequest(apiConfig, messages, options = {}) {
     };
 }
 
+// Transport-only response validation. No prompt, history or CoT decisions belong here.
+function checkAiResponseError(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('API返回数据格式异常，期待JSON对象。');
+    }
+    if (data.error) {
+        const detail = typeof data.error === 'string' ? data.error : data.error.message;
+        const code = typeof data.error === 'object' ? data.error.code || data.error.type : '';
+        const error = new Error('API返回错误' + (code ? ' [' + String(code).slice(0, 80) + ']' : '') +
+            (typeof detail === 'string' ? '：' + detail.slice(0, 300) : '，请检查接口配置。'));
+        error.code = 'AI_PROVIDER_ERROR';
+        throw error;
+    }
+}
+
+function extractAiResponseText(data, provider, stream = false) {
+    if (provider === 'gemini' && Array.isArray(data)) {
+        const text = data.map(item => extractAiResponseText(item, provider, true)).join('');
+        if (!stream && !text.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
+        return text;
+    }
+    checkAiResponseError(data);
+    let text;
+    if (provider === 'gemini') {
+        const candidate = data.candidates?.[0];
+        const blocked = data.promptFeedback?.blockReason ||
+            (['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'].includes(candidate?.finishReason) ? candidate.finishReason : '');
+        if (blocked) throw new Error('API未返回回复文本，模型拦截原因：' + String(blocked).slice(0, 80));
+        const parts = candidate?.content?.parts;
+        if (parts !== undefined && !Array.isArray(parts)) throw new Error('API返回文本格式异常，parts应为数组。');
+        text = (parts || []).map(part => {
+            if (part?.text === undefined) return '';
+            if (typeof part.text !== 'string') throw new Error('API返回文本格式异常。');
+            return part.text;
+        }).join('');
+    } else {
+        const choice = data.choices?.[0];
+        text = stream ? choice?.delta?.content ?? choice?.message?.content : choice?.message?.content;
+        if (text !== undefined && text !== null && typeof text !== 'string') {
+            throw new Error('API返回文本格式异常，content应为字符串。');
+        }
+        text = text || '';
+    }
+    if (!stream && !text.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
+    return text;
+}
+
+function parseAiResponseJson(text) {
+    try { return JSON.parse(text); }
+    catch (_) { throw new Error('API返回了无法解析的JSON数据，请检查API地址及响应格式。'); }
+}
+
 // 通用 AI 响应获取函数 (支持流式和非流式自动切换)
 async function fetchAiResponse(settings, requestBody, headers, endpoint, forceStream = false, fetchOptions = {}) {
     const { provider } = settings;
     const streamEnabled = forceStream || settings.streamEnabled;
-
-    // 1. 针对流式传输调整 Request Body 和 Endpoint
     if (streamEnabled) {
         if (provider === 'gemini') {
-            if (endpoint.includes(':generateContent')) {
-                endpoint = endpoint.replace(':generateContent', ':streamGenerateContent');
-            }
+            endpoint = endpoint.replace(':generateContent', ':streamGenerateContent');
         } else {
             requestBody.stream = true;
         }
     }
-
-    // 2. 发送请求
     const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(requestBody),
-        signal: fetchOptions.signal
+        method: 'POST', headers, body: JSON.stringify(requestBody), signal: fetchOptions.signal
     });
-
     if (!response.ok) {
         const errorText = await response.text();
         const error = new Error(`API Error: ${response.status} ${errorText}`);
         error.response = response;
         throw error;
     }
-
-    // 3. 处理响应
-    // 优先检查响应头是否指示流式，或者我们是否显式请求了流式
     const contentType = response.headers.get('content-type') || '';
-    const isStreamResponse = streamEnabled || contentType.includes('text/event-stream');
-
-    if (isStreamResponse) {
-        return await readStreamResponse(response, provider);
-    } else {
-        // 普通 JSON 响应 (带容错处理)
-        const text = await response.text();
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch (e) {
-            // JSON 解析失败。检查是否是 SSE 格式的文本 (针对未设置 header 的流式响应)
-            if (text.includes('data: ')) {
-                console.warn("Received SSE response without header, parsing as text...");
-                let fallbackContent = "";
-                const lines = text.split('\n');
-                for (const line of lines) {
-                    if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-                        try {
-                            const json = JSON.parse(line.substring(6));
-                            fallbackContent += json.choices[0].delta?.content || "";
-                        } catch (e2) {}
-                    }
-                }
-                if (fallbackContent) return fallbackContent;
-            }
-            throw new Error(`Failed to parse JSON response: ${text.substring(0, 100)}...`);
-        }
-
-        if (provider === 'gemini') {
-            return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        } else {
-            return data.choices[0].message.content;
-        }
-    }
+    if (streamEnabled || contentType.includes('text/event-stream')) return await readStreamResponse(response, provider);
+    const text = await response.text();
+    // Some compatible gateways omit the SSE header even in nonstream mode.
+    if (/^\s*(?:data:|event:|:)/.test(text)) return await readStreamResponse(new Response(text), provider);
+    return extractAiResponseText(parseAiResponseJson(text), provider);
 }
 
 async function readStreamResponse(response, provider, onUsage) {
+    if (!response.body?.getReader) throw new Error('API未返回可读取的回复文本。');
     const reader = response.body.getReader(), decoder = new TextDecoder();
-    let buffer = '', fullResponse = '';
+    let buffer = '', fullResponse = '', mode = '', ended = false, eof = false, receivedBytes = 0;
+    // A bad proxy must not grow an unbounded JSON/event buffer in the browser.
+    const maxResponseBytes = 16 * 1024 * 1024;
+    const collect = (json, stream) => {
+        const text = extractAiResponseText(json, provider, stream);
+        const items = Array.isArray(json) ? json : [json];
+        if (typeof onUsage === 'function') items.forEach(item => {
+            const usage = item.usage || item.usageMetadata;
+            if (usage) onUsage(usage);
+        });
+        fullResponse += text;
+    };
     const consume = event => {
-        const data = event.split(/\r\n|\r|\n/).filter(line => line.startsWith('data:'))
+        const lines = event.split(/\r\n|\r|\n/);
+        const data = lines.filter(line => line.startsWith('data:'))
             .map(line => line.slice(5).replace(/^ /, '')).join('\n');
-        if (!data || data.trim() === '[DONE]') return;
-        try {
-            const json = JSON.parse(data);
-            const usage = json.usage || json.usageMetadata;
-            if (usage && typeof onUsage === 'function') onUsage(usage);
-            fullResponse += provider === 'gemini'
-                ? (json.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')
-                : json.choices?.[0]?.delta?.content || '';
-        } catch (error) { console.warn('忽略无法解析的流式事件'); }
+        if (!data) return;
+        if (data.trim() === '[DONE]') { ended = true; return; }
+        const json = parseAiResponseJson(data);
+        if (lines.some(line => /^event: *error\s*$/.test(line))) {
+            checkAiResponseError(json);
+            checkAiResponseError(json.error ? json : { error: json });
+        }
+        collect(json, true);
     };
     try {
-        while (true) {
+        while (!ended) {
             const { done, value } = await reader.read();
+            eof = done;
+            receivedBytes += value?.byteLength || 0;
+            if (receivedBytes > maxResponseBytes) throw new Error('API回复数据过大，已停止读取，请缩短单次输出后重试。');
             buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-            if (provider !== 'gemini') {
+            if (!mode && buffer.trim()) mode = /^[{[]/.test(buffer.trimStart()) ? 'json' : 'sse';
+            if (mode === 'sse') {
                 let separator;
-                while ((separator = /\r\n\r\n|\n\n|\r\r/.exec(buffer))) {
+                while (!ended && (separator = /\r\n\r\n|\n\n|\r\r/.exec(buffer))) {
                     consume(buffer.slice(0, separator.index));
                     buffer = buffer.slice(separator.index + separator[0].length);
                 }
             }
             if (done) break;
         }
-        if (provider === 'gemini') {
-            if (buffer.trimStart().startsWith('data:')) {
-                buffer.split(/\r?\n\r?\n/).forEach(consume);
-            } else {
-                const data = JSON.parse(buffer);
-                const items = Array.isArray(data) ? data : [data];
-                if (typeof onUsage === 'function') items.forEach(item => {
-                    const usage = item.usage || item.usageMetadata;
-                    if (usage) onUsage(usage);
-                });
-                fullResponse = items.map(item =>
-                    (item.candidates?.[0]?.content?.parts || []).map(part => part.text || '').join('')).join('');
-            }
-        } else if (buffer.trim()) consume(buffer);
+        if (mode === 'json') collect(parseAiResponseJson(buffer), false);
+        else if (!ended && buffer.trim()) consume(buffer);
+        if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
         return fullResponse;
-    } finally { reader.releaseLock?.(); }
+    } finally {
+        // Do not wait for a proxy to close after its protocol end/error event.
+        if (!eof) { try { reader.cancel?.().catch?.(() => {}); } catch (_) {} }
+        reader.releaseLock?.();
+    }
 }
 
 // --- 图片查看器 ---
