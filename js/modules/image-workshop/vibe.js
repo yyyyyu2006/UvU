@@ -28,6 +28,12 @@ function initWorkshopVibe() {
     }
 
     const vibeData = db.workshopSettings.vibe;
+    const settingsOwner = db.workshopSettings;
+    const isOwner = () => db.workshopSettings === settingsOwner && settingsOwner.vibe === vibeData;
+    const saveVibeField = async (target, key, value) => {
+        if (!isOwner()) return false;
+        return saveLocalSettingsFields([{target,values:{[key]:value}}]);
+    };
 
     // 渲染 UI
     const renderUI = () => {
@@ -85,14 +91,12 @@ function initWorkshopVibe() {
                     
                     infoSlider.addEventListener('input', (e) => { infoVal.textContent = e.target.value; });
                     infoSlider.addEventListener('change', async (e) => {
-                        img.infoExtracted = parseFloat(e.target.value);
-                        await saveData();
+                        if (!await saveVibeField(img, 'infoExtracted', parseFloat(e.target.value))) { infoSlider.value = img.infoExtracted; infoVal.textContent = img.infoExtracted; }
                     });
                     
                     refSlider.addEventListener('input', (e) => { refVal.textContent = e.target.value; });
                     refSlider.addEventListener('change', async (e) => {
-                        img.refStrength = parseFloat(e.target.value);
-                        await saveData();
+                        if (!await saveVibeField(img, 'refStrength', parseFloat(e.target.value))) { refSlider.value = img.refStrength; refVal.textContent = img.refStrength; }
                     });
                     
                     previewContainer.appendChild(imgRow);
@@ -126,16 +130,14 @@ function initWorkshopVibe() {
                 if (infoSlider) {
                     infoSlider.addEventListener('input', (e) => { infoVal.textContent = e.target.value; });
                     infoSlider.addEventListener('change', async (e) => {
-                        vibeData.infoExtracted = parseFloat(e.target.value);
-                        await saveData();
+                        if (!await saveVibeField(vibeData, 'infoExtracted', parseFloat(e.target.value))) { infoSlider.value = vibeData.infoExtracted; infoVal.textContent = vibeData.infoExtracted; }
                     });
                 }
                 
                 if (refSlider) {
                     refSlider.addEventListener('input', (e) => { refVal.textContent = e.target.value; });
                     refSlider.addEventListener('change', async (e) => {
-                        vibeData.refStrength = parseFloat(e.target.value);
-                        await saveData();
+                        if (!await saveVibeField(vibeData, 'refStrength', parseFloat(e.target.value))) { refSlider.value = vibeData.refStrength; refVal.textContent = vibeData.refStrength; }
                     });
                 }
             }
@@ -219,25 +221,31 @@ function initWorkshopVibe() {
             delBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 if (confirm('确定要删除这张素材吗？')) {
-                    db.workshopSettings.vibeLibrary = db.workshopSettings.vibeLibrary.filter(l => l.id !== item.id);
+                    if (!isOwner()) return;
+                    const library = settingsOwner.vibeLibrary;
+                    const index = library.indexOf(item);
+                    if (index < 0) return;
+                    const previousActive = vibeData.activeImageId;
+                    library.splice(index, 1);
                     if (vibeData.activeImageId === item.id) {
                         vibeData.activeImageId = null;
                     }
-                    await saveData();
-                    renderUI();
+                    const appliedActive = vibeData.activeImageId;
+                    try { await saveData(); }
+                    catch (error) {
+                        if (!library.some(entry => entry.id === item.id)) library.splice(Math.min(index, library.length), 0, item);
+                        if (vibeData.activeImageId === appliedActive) vibeData.activeImageId = previousActive;
+                        showToast('素材未删除，请重试');
+                    }
+                    if (isOwner()) renderUI();
                 }
             });
 
             // 点击启用
             div.addEventListener('click', async () => {
-                if (vibeData.activeImageId === item.id) {
-                    // 如果已经选中，则取消选中
-                    vibeData.activeImageId = null;
-                } else {
-                    vibeData.activeImageId = item.id;
-                }
-                await saveData();
-                renderUI();
+                if (!isOwner() || !settingsOwner.vibeLibrary.includes(item)) return;
+                await saveVibeField(vibeData, 'activeImageId', vibeData.activeImageId === item.id ? null : item.id);
+                if (isOwner()) renderUI();
             });
 
             div.appendChild(delBtn);
@@ -267,15 +275,20 @@ function initWorkshopVibe() {
     renderUI();
 
     // 事件绑定
-    toggle.addEventListener('change', async (e) => {
-        vibeData.enabled = e.target.checked;
-        body.style.display = vibeData.enabled ? 'block' : 'none';
-        await saveData();
-    });
+    toggle.onchange = async (e) => {
+        await saveVibeField(vibeData, 'enabled', e.target.checked);
+        if (isOwner()) renderUI();
+    };
 
-    uploadInput.addEventListener('change', async (e) => {
-        const files = e.target.files;
+    uploadInput.onchange = async (e) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
         if (!files || files.length === 0) return;
+        const settings = db.workshopSettings;
+        const library = settings.vibeLibrary;
+        if (settings.vibe !== vibeData) return showToast('素材库已切换，请重新打开');
+        const isCurrent = () => db.workshopSettings === settings && settings.vibeLibrary === library && settings.vibe === vibeData;
+        const additions = [];
 
         let addedCount = 0;
         for (let i = 0; i < files.length; i++) {
@@ -285,6 +298,7 @@ function initWorkshopVibe() {
                     // 处理 JSON 预设组
                     const text = await file.text();
                     const data = JSON.parse(text);
+                    if (!isCurrent()) return showToast('素材库已切换，请重新上传');
                     
                     if (data.groups && data.vibeData) {
                         for (const groupName in data.groups) {
@@ -308,7 +322,7 @@ function initWorkshopVibe() {
                                 }
                                 
                                 if (groupImages.length > 0) {
-                                    db.workshopSettings.vibeLibrary.push({
+                                    additions.push({
                                         id: 'vibe_group_' + Date.now() + '_' + i + '_' + Math.random().toString(36).substr(2, 5),
                                         type: 'group',
                                         name: groupName,
@@ -324,7 +338,8 @@ function initWorkshopVibe() {
                 } else {
                     // 处理普通图片
                     const base64 = await compressImage(file, 800, 0.8);
-                    db.workshopSettings.vibeLibrary.push({
+                    if (!isCurrent()) return showToast('素材库已切换，请重新上传');
+                    additions.push({
                         id: 'vibe_lib_' + Date.now() + '_' + i,
                         type: 'single',
                         name: file.name || '未命名素材',
@@ -339,16 +354,25 @@ function initWorkshopVibe() {
         }
         
         if (addedCount > 0) {
-            await saveData();
-            renderUI();
-            showToast(`成功导入 ${addedCount} 个素材/预设组`);
+            if (!isCurrent()) return showToast('素材库已切换，请重新上传');
+            library.push(...additions);
+            try {
+                await saveData();
+                if (isCurrent()) { renderUI(); showToast(`成功导入 ${addedCount} 个素材/预设组`); }
+            } catch (error) {
+                for (const addition of additions) {
+                    const index = library.indexOf(addition);
+                    if (index >= 0) library.splice(index, 1);
+                }
+                console.error('保存Vibe素材失败:', error);
+                showToast('素材未保存，请重试');
+            }
         }
         uploadInput.value = '';
-    });
+    };
 
-    clearBtn.addEventListener('click', async () => {
-        vibeData.activeImageId = null;
-        await saveData();
-        renderUI();
-    });
+    clearBtn.onclick = async () => {
+        await saveVibeField(vibeData, 'activeImageId', null);
+        if (isOwner()) renderUI();
+    };
 }

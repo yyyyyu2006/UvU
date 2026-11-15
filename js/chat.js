@@ -733,16 +733,21 @@ function openChatRoom(chatId, type) {
     cancelQuoteReply();
 
     // 迁移旧的私聊数据 (仅群聊)
-    if (type === 'group' && chat.privateSessions && typeof migratePrivateSessionsToHistory === 'function') {
+    const needsMigration = type === 'group' && chat.privateSessions && typeof migratePrivateSessionsToHistory === 'function';
+    const openingMutation = (needsMigration || chat.unreadCount > 0)
+        ? beginChatMutation(chat, type, [], ['privateSessions', 'unreadCount']) : null;
+    let openingChanged = false;
+    if (needsMigration) {
         migratePrivateSessionsToHistory(chat);
-        saveData(); // 迁移后立即保存
+        openingChanged = true;
     }
 
     if (chat.unreadCount && chat.unreadCount > 0) {
         chat.unreadCount = 0;
-        saveData();
+        openingChanged = true;
         renderChatList(); 
     }
+    if (openingChanged) void saveChatMutation(openingMutation, '聊天状态未保存，已恢复，请重新进入');
     exitMultiSelectMode();
     cancelMessageEdit();
     chatRoomTitle.textContent = (type === 'private') ? chat.remarkName : chat.name;
@@ -892,7 +897,7 @@ async function sendMessage() {
     const shopOrderRegex = /\[.*?为你下单的商品：.*?\]/;
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.nickname;
 
-    if (renameRegex.test(text)) {
+    if (currentChatType === 'group' && renameRegex.test(text)) {
         const match = text.match(renameRegex);
         chat.name = match[2];
         chatRoomTitle.textContent = chat.name;

@@ -1,4 +1,27 @@
 // --- 工具函数库 (js/utils.js) ---
+// Local settings only. Chat/archive changes use beginChatMutation instead.
+async function saveLocalSettingsFields(changes) {
+    const clone = value => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+    const fields = changes.flatMap(({ target, values }) => Object.entries(values).map(([key, value]) => {
+        const field = { target, key, before: clone(target[key]), applied: clone(value) };
+        target[key] = value;
+        return field;
+    }));
+    try {
+        await saveData();
+        return true;
+    } catch (error) {
+        for (const field of fields) {
+            if (JSON.stringify(field.target[field.key]) !== JSON.stringify(field.applied)) continue;
+            if (field.before === undefined) delete field.target[field.key];
+            else field.target[field.key] = clone(field.before);
+        }
+        console.error('保存本地设置失败:', error);
+        showToast('设置未保存，已恢复本次修改，请重试');
+        return false;
+    }
+}
+
 function escapeMessageRegex(value) {
     return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -5,7 +5,23 @@ function _getBubblePresets() {
 }
 function _saveBubblePresets(arr) {
     db.bubbleCssPresets = arr || [];
-    saveData();
+    return saveData();
+}
+
+function captureBubblePresetSettings(chat, type) {
+    const prefix = type === 'private' ? 'setting-' : 'setting-group-';
+    const value = (suffix, field, kind = 'value') => {
+        const control = document.getElementById(prefix + suffix);
+        return control ? (kind === 'number' ? parseInt(control.value, 10) : kind === 'checked' ? control.checked : control.value) : chat[field];
+    };
+    return {
+        theme: value('theme-color', 'theme'), chatBg: chat.chatBg,
+        bilingualModeEnabled: value('bilingual-mode', 'bilingualModeEnabled', 'checked'),
+        bilingualBubbleStyle: value('bilingual-style', 'bilingualBubbleStyle'),
+        avatarMode: value('avatar-mode', 'avatarMode'), avatarRadius: value('avatar-radius', 'avatarRadius', 'number'),
+        bubbleBlurEnabled: value('bubble-blur', 'bubbleBlurEnabled', 'checked'), titleLayout: value('title-layout', 'titleLayout'),
+        showTimestamp: value('show-timestamp', 'showTimestamp', 'checked'), timestampStyle: value('timestamp-style', 'timestampStyle')
+    };
 }
 
 function populateBubblePresetSelect(selectId) { 
@@ -118,8 +134,8 @@ async function applyPresetToCurrentChat(presetName) {
     }
 }
 
-function saveCurrentTextareaAsPreset() {
-    const textarea = document.getElementById('setting-custom-bubble-css') || document.getElementById('setting-group-custom-bubble-css');
+async function saveCurrentTextareaAsPreset() {
+    const textarea = document.getElementById(currentChatType === 'private' ? 'setting-custom-bubble-css' : 'setting-group-custom-bubble-css');
     if (!textarea) return showToast('找不到自定义 CSS 文本框');
     const css = textarea.value.trim();
     
@@ -132,22 +148,12 @@ function saveCurrentTextareaAsPreset() {
     if (includeSettings) {
         const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
         if (chat) {
-            settings = {
-                theme: document.getElementById('setting-theme-color') ? document.getElementById('setting-theme-color').value : chat.theme,
-                chatBg: chat.chatBg,
-                bilingualModeEnabled: document.getElementById('setting-bilingual-mode') ? document.getElementById('setting-bilingual-mode').checked : chat.bilingualModeEnabled,
-                bilingualBubbleStyle: document.getElementById('setting-bilingual-style') ? document.getElementById('setting-bilingual-style').value : chat.bilingualBubbleStyle,
-                avatarMode: document.getElementById('setting-avatar-mode') ? document.getElementById('setting-avatar-mode').value : chat.avatarMode,
-                avatarRadius: document.getElementById('setting-avatar-radius') ? parseInt(document.getElementById('setting-avatar-radius').value, 10) : chat.avatarRadius,
-                bubbleBlurEnabled: document.getElementById('setting-bubble-blur') ? document.getElementById('setting-bubble-blur').checked : chat.bubbleBlurEnabled,
-                titleLayout: document.getElementById('setting-title-layout') ? document.getElementById('setting-title-layout').value : chat.titleLayout,
-                showTimestamp: document.getElementById('setting-show-timestamp') ? document.getElementById('setting-show-timestamp').checked : chat.showTimestamp,
-                timestampStyle: document.getElementById('setting-timestamp-style') ? document.getElementById('setting-timestamp-style').value : chat.timestampStyle
-            };
+            settings = captureBubblePresetSettings(chat, currentChatType);
         }
     }
 
-    const presets = _getBubblePresets();
+    const previous = _getBubblePresets();
+    const presets = previous.map(preset => ({ ...preset }));
     const idx = presets.findIndex(p => p.name === name);
     
     const presetData = { name, css };
@@ -163,7 +169,13 @@ function saveCurrentTextareaAsPreset() {
         presets.push(presetData);
     }
     
-    _saveBubblePresets(presets);
+    try { await _saveBubblePresets(presets); }
+    catch (error) {
+        if (db.bubbleCssPresets === presets) db.bubbleCssPresets = previous;
+        console.error('保存气泡预设失败:', error);
+        showToast('预设未保存，请重试');
+        return;
+    }
     populateBubblePresetSelect('bubble-preset-select'); 
     populateBubblePresetSelect('group-bubble-preset-select');
     showToast('预设已保存');
@@ -632,18 +644,7 @@ function setupPresetFeatures() {
             if (exportIncludeSettings) {
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
                 if (chat) {
-                    presetData.settings = {
-                        theme: document.getElementById('setting-theme-color') ? document.getElementById('setting-theme-color').value : chat.theme,
-                        chatBg: chat.chatBg,
-                        bilingualModeEnabled: document.getElementById('setting-bilingual-mode') ? document.getElementById('setting-bilingual-mode').checked : chat.bilingualModeEnabled,
-                        bilingualBubbleStyle: document.getElementById('setting-bilingual-style') ? document.getElementById('setting-bilingual-style').value : chat.bilingualBubbleStyle,
-                        avatarMode: document.getElementById('setting-avatar-mode') ? document.getElementById('setting-avatar-mode').value : chat.avatarMode,
-                        avatarRadius: document.getElementById('setting-avatar-radius') ? parseInt(document.getElementById('setting-avatar-radius').value, 10) : chat.avatarRadius,
-                        bubbleBlurEnabled: document.getElementById('setting-bubble-blur') ? document.getElementById('setting-bubble-blur').checked : chat.bubbleBlurEnabled,
-                        titleLayout: document.getElementById('setting-title-layout') ? document.getElementById('setting-title-layout').value : chat.titleLayout,
-                        showTimestamp: document.getElementById('setting-show-timestamp') ? document.getElementById('setting-show-timestamp').checked : chat.showTimestamp,
-                        timestampStyle: document.getElementById('setting-timestamp-style') ? document.getElementById('setting-timestamp-style').value : chat.timestampStyle
-                    };
+                    presetData.settings = captureBubblePresetSettings(chat, currentChatType);
                 }
             }
 

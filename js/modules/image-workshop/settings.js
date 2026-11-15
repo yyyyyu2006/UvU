@@ -79,13 +79,13 @@ async function initWorkshopSettings() {
         // 使用 input 事件实现实时保存，避免失去焦点才保存的问题
         el.addEventListener('input', async (e) => {
             if (!e.isTrusted) return; // 防止程序触发的事件导致死循环
-            settings[key] = isNumber ? Number(e.target.value) : e.target.value;
-            await saveData();
+            if (db.workshopSettings !== settings) return;
+            if (!await saveLocalSettingsFields([{target:settings, values:{[key]:isNumber ? Number(e.target.value) : e.target.value}}])) el.value = settings[key] ?? '';
         });
         // 保留 change 事件以兼容某些特殊情况或程序触发的更新
         el.addEventListener('change', async (e) => {
-            settings[key] = isNumber ? Number(e.target.value) : e.target.value;
-            await saveData();
+            if (db.workshopSettings !== settings) return;
+            if (!await saveLocalSettingsFields([{target:settings, values:{[key]:isNumber ? Number(e.target.value) : e.target.value}}])) el.value = settings[key] ?? '';
         });
     };
 
@@ -98,8 +98,8 @@ async function initWorkshopSettings() {
         }
         el.addEventListener('change', async (e) => {
             if (!e.isTrusted) return; // 防止程序触发的 change 事件导致死循环
-            settings[key] = e.target.checked;
-            await saveData();
+            if (db.workshopSettings !== settings) return;
+            if (!await saveLocalSettingsFields([{target:settings, values:{[key]:e.target.checked}}])) el.checked = !!settings[key];
         });
     };
 
@@ -113,8 +113,11 @@ async function initWorkshopSettings() {
             radio.addEventListener('change', async (e) => {
                 if (!e.isTrusted) return; // 防止程序触发的 change 事件导致死循环
                 if (e.target.checked) {
-                    settings[key] = e.target.value;
-                    await saveData();
+                    if (db.workshopSettings !== settings) return;
+                    if (!await saveLocalSettingsFields([{target:settings, values:{[key]:e.target.value}}])) {
+                        radios.forEach(item => item.checked = item.value === settings[key]);
+                        return;
+                    }
                     if (onChangeCallback) {
                         onChangeCallback(e.target.value);
                     }

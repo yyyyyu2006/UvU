@@ -153,7 +153,7 @@ function initShopSystem() {
 function getShopSettings() {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (chat && chat.shopSettings) {
-        return chat.shopSettings;
+        return JSON.parse(JSON.stringify(chat.shopSettings));
     }
     return { customCategories: [], itemCount: 8 };
 }
@@ -161,9 +161,23 @@ function getShopSettings() {
 async function saveShopSettings(settings) {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (!chat) return;
-    chat.shopSettings = settings;
-    if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopSettings: chat.shopSettings });
-    else await dexieDB.characters.update(chat.id, { shopSettings: chat.shopSettings });
+    const previous = chat.shopSettings;
+    const archiveId = chat.activeArchiveId;
+    const applied = JSON.parse(JSON.stringify(settings));
+    chat.shopSettings = applied;
+    try {
+        if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopSettings: applied });
+        else await dexieDB.characters.update(chat.id, { shopSettings: applied });
+    } catch (error) {
+        const restore = data => {
+            if (!data || JSON.stringify(data.shopSettings) !== JSON.stringify(applied)) return;
+            if (previous === undefined) delete data.shopSettings;
+            else data.shopSettings = JSON.parse(JSON.stringify(previous));
+        };
+        if (chat.activeArchiveId === archiveId) restore(chat);
+        restore(chat.archives?.find(item => item.id === archiveId)?.data);
+        throw error;
+    }
 }
 
 function getCustomCategories() {

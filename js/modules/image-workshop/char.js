@@ -23,7 +23,7 @@ function initWorkshopCharManagement() {
             return;
         }
 
-        boundChars.forEach((boundChar, index) => {
+        boundChars.forEach((boundChar) => {
             const char = db.characters.find(c => c.id === boundChar.charId);
             if (!char) return; // 角色可能已被删除
 
@@ -54,15 +54,25 @@ function initWorkshopCharManagement() {
 
             removeBtn.addEventListener('click', async () => {
                 if (confirm(`确定要从工坊移除角色 ${char.remarkName || char.name || '未知角色'} 吗？`)) {
-                    db.workshopSettings.boundCharacters.splice(index, 1);
-                    await saveData();
-                    renderBoundChars();
+                    const index = boundChars.findIndex(item => item.charId === boundChar.charId);
+                    if (index < 0 || db.workshopSettings.boundCharacters !== boundChars) return;
+                    const [removed] = boundChars.splice(index, 1);
+                    removeBtn.disabled = true;
+                    try {
+                        await saveData();
+                    } catch (error) {
+                        if (!boundChars.some(item => item.charId === removed.charId)) boundChars.splice(Math.min(index, boundChars.length), 0, removed);
+                        console.error('移除工坊角色失败:', error);
+                        showToast('移除失败，请重试');
+                    } finally {
+                        if (db.workshopSettings.boundCharacters === boundChars) renderBoundChars();
+                    }
                 }
             });
 
             promptInput.addEventListener('change', async (e) => {
-                boundChar.prompt = e.target.value.trim();
-                await saveData();
+                if (db.workshopSettings.boundCharacters !== boundChars || !boundChars.includes(boundChar)) return;
+                if (!await saveLocalSettingsFields([{target:boundChar,values:{prompt:e.target.value.trim()}}])) promptInput.value = boundChar.prompt || '';
             });
 
             charListContainer.appendChild(itemDiv);
@@ -104,20 +114,34 @@ function initWorkshopCharManagement() {
 
     // 确认添加角色
     confirmAddBtn.addEventListener('click', async () => {
+        if (confirmAddBtn.disabled) return;
+        const boundChars = db.workshopSettings.boundCharacters;
         const checkboxes = charSelectionList.querySelectorAll('.char-select-checkbox:checked');
-        let added = false;
+        const additions = [];
 
         checkboxes.forEach(cb => {
-            db.workshopSettings.boundCharacters.push({
+            if (boundChars.some(item => item.charId === cb.value)) return;
+            additions.push({
                 charId: cb.value,
                 prompt: ''
             });
-            added = true;
         });
 
-        if (added) {
-            await saveData();
-            renderBoundChars();
+        if (additions.length) {
+            boundChars.push(...additions);
+            confirmAddBtn.disabled = true;
+            try { await saveData(); }
+            catch (error) {
+                for (const item of additions) {
+                    const index = boundChars.indexOf(item);
+                    if (index >= 0) boundChars.splice(index, 1);
+                }
+                showToast('角色未添加，请重试');
+                return;
+            } finally {
+                confirmAddBtn.disabled = false;
+                if (db.workshopSettings.boundCharacters === boundChars) renderBoundChars();
+            }
         }
         addCharModal.classList.remove('visible');
     });

@@ -452,34 +452,41 @@ const VideoCallModule = {
     },
 
     rejectCall: async function() {
-        const modal = document.getElementById('vc-incoming-modal');
-        modal.classList.remove('visible');
-        setTimeout(() => {
-            modal.style.display = 'none';
-        }, 300);
+        if (this.state.rejectPending) return;
+        this.state.rejectPending = true;
+        try {
+            const modal = document.getElementById('vc-incoming-modal');
+            const chat = this.state.incomingChat || this.state.currentChat;
+            const target = chat && captureChatSendTarget(chat.id, db.characters.includes(chat) ? 'private' : 'group');
 
-        const chat = this.state.incomingChat || this.state.currentChat;
+            if (chat) {
+                const myName = chat.myName || (chat.me ? chat.me.nickname : '我');
+                const targetName = chat.realName || chat.name;
+                const typeText = this.state.callType === 'video' ? '视频' : '语音';
 
-        if (chat) {
-            const myName = chat.myName || (chat.me ? chat.me.nickname : '我');
-            const targetName = chat.realName || chat.name;
-            const typeText = this.state.callType === 'video' ? '视频' : '语音';
-
-            const msg = {
-                id: `msg_${Date.now()}`,
-                role: 'system',
-                content: `[${myName}拒绝了${targetName}的${typeText}通话]`,
-                timestamp: Date.now()
-            };
-            chat.history.push(msg);
-            await saveData();
+                const msg = {
+                    id: `msg_${Date.now()}`,
+                    role: 'system',
+                    content: `[${myName}拒绝了${targetName}的${typeText}通话]`,
+                    timestamp: Date.now()
+                };
+                const mutation = beginChatMutation(chat, db.characters.includes(chat) ? 'private' : 'group');
+                chat.history.push(msg);
+                if (!await saveChatMutation(mutation, '拒接记录未保存，请重试')) return;
             
-            if (typeof renderMessages === 'function' && typeof currentChatId !== 'undefined' && currentChatId === chat.id) {
-                renderMessages(false, true);
+                if (isChatTargetVisible(target) && typeof renderMessages === 'function') {
+                    renderMessages(false, true);
+                }
             }
-        }
         
-        this.state.incomingChat = null;
+            if (this.state.incomingChat === chat) {
+                this.state.incomingChat = null;
+                modal.classList.remove('visible');
+                setTimeout(() => {
+                    if (!modal.classList.contains('visible')) modal.style.display = 'none';
+                }, 300);
+            }
+        } finally { this.state.rejectPending = false; }
     },
 
     startCall: async function(type, isIncoming = false, chatObject = null) {
@@ -512,6 +519,7 @@ const VideoCallModule = {
 
         if (!chat) {
             showToast('无法获取聊天对象信息');
+            this.state.isCallActive = false;
             return;
         }
         this.state.currentChat = chat;
@@ -527,8 +535,17 @@ const VideoCallModule = {
                 content: `[${myName}向${targetName}发起了${typeText}通话]`,
                 timestamp: Date.now()
             };
+            const mutation = beginChatMutation(chat, db.characters.includes(chat) ? 'private' : 'group');
             chat.history.push(inviteMsg);
-            await saveData();
+            if (!await saveChatMutation(mutation, '通话邀请未保存，请重试')) {
+                if (this.state.callSession === scope.session) {
+                    this.cancelCallRequests();
+                    this.state.isCallActive = false;
+                    this.state.callScope = null;
+                    this.state.currentChat = null;
+                }
+                return;
+            }
             if (!this.isCallScopeCurrent(scope)) return;
             if (typeof renderMessages === 'function') {
                 renderMessages(false, true);
@@ -1480,19 +1497,31 @@ const VideoCallModule = {
 
     deleteCallRecord: async function(recordId, domElement) {
         if (!this.state.currentChat) return;
+        const chat = this.state.currentChat;
+        const callHistory = chat.callHistory;
+        if (!Array.isArray(callHistory)) return;
+        const mutation = beginChatMutation(chat, db.characters.includes(chat) ? 'private' : 'group');
 
         // 1. 从数据中移除
-        const index = this.state.currentChat.callHistory.findIndex(r => r.id === recordId);
+        const index = callHistory.findIndex(r => r.id === recordId);
         if (index !== -1) {
-            this.state.currentChat.callHistory.splice(index, 1);
+            const [removedRecord] = callHistory.splice(index, 1);
             
             // 2. 尝试删除对应的聊天消息
-            const msgIndex = this.state.currentChat.history.findIndex(m => m.callRecordId === recordId);
+            const msgIndex = chat.history.findIndex(m => m.callRecordId === recordId);
             if (msgIndex !== -1) {
-                this.state.currentChat.history.splice(msgIndex, 1);
+                chat.history.splice(msgIndex, 1);
             }
 
-            await saveData();
+            if (!await saveChatMutation(mutation, '删除未保存，已恢复通话记录')) {
+                if (!callHistory.some(record => record.id === recordId)) callHistory.splice(Math.min(index, callHistory.length), 0, removedRecord);
+                if (chat.activeArchiveId === mutation.archiveId && Array.isArray(chat.callHistory) && chat.callHistory !== callHistory && !chat.callHistory.some(record => record.id === recordId)) chat.callHistory.splice(Math.min(index, chat.callHistory.length), 0, removedRecord);
+                const archive = chat.archives?.find(item => item.id === mutation.archiveId);
+                const archivedRecords = archive?.data?.callHistory;
+                if (archivedRecords && archivedRecords !== callHistory && !archivedRecords.some(record => record.id === recordId)) archivedRecords.splice(Math.min(index, archivedRecords.length), 0, removedRecord);
+                return;
+            }
+            if (this.state.currentChat !== chat || chat.activeArchiveId !== mutation.archiveId) return;
             
             // 3. 移除 DOM
             domElement.style.height = domElement.offsetHeight + 'px';

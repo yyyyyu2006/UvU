@@ -129,6 +129,8 @@ function setupPeekFeature() {
             return;
         }
 
+        const mutation = beginChatMutation(character, 'private', [], ['peekScreenSettings']);
+        const target = captureChatSendTarget(character.id, 'private');
         if (!character.peekScreenSettings) {
             character.peekScreenSettings = {};
         }
@@ -146,7 +148,8 @@ function setupPeekFeature() {
             }
         });
 
-        await saveData();
+        if (!await saveChatMutation(mutation, '配置未保存，请重试')) return;
+        if (!isChatTargetVisible(target)) return;
         showToast('配置已保存！');
         peekWallpaperModal.classList.remove('visible');
     });
@@ -639,6 +642,8 @@ async function toggleMomentLike(momentId) {
     const moment = char.moments.find(m => m.id === momentId);
     if (!moment) return;
 
+    const mutation = beginChatMutation(char, 'private', [], ['moments']);
+    const target = captureChatSendTarget(char.id, 'private');
     if (!moment.likes) moment.likes = [];
     
     const myName = char.myName || '我';
@@ -669,7 +674,7 @@ async function toggleMomentLike(momentId) {
         });
     }
 
-    await saveData();
+    if (!await saveChatMutation(mutation, '点赞修改未保存，请重试') || !isChatTargetVisible(target)) return;
     renderMomentsScreen();
     if (typeof renderMessages === 'function') renderMessages(false, false);
 }
@@ -680,6 +685,8 @@ async function deleteMoment(momentId) {
 
     const momentIndex = char.moments.findIndex(m => m.id === momentId);
     if (momentIndex > -1) {
+        const mutation = beginChatMutation(char, 'private', [], ['moments']);
+        const target = captureChatSendTarget(char.id, 'private');
         const momentToDelete = char.moments[momentIndex];
         
         // 1. 从聊天记录中删除对应的指令消息
@@ -697,7 +704,7 @@ async function deleteMoment(momentId) {
         // 2. 删除动态本身
         char.moments.splice(momentIndex, 1);
         
-        await saveData();
+        if (!await saveChatMutation(mutation, '动态未删除，请重试') || !isChatTargetVisible(target)) return;
         renderMomentsScreen();
         if (typeof renderMessages === 'function') renderMessages(false, false);
         showToast('动态已删除');
@@ -713,6 +720,8 @@ async function deleteMomentComment(momentId, commentId) {
 
     const commentIndex = moment.comments.findIndex(c => c.id === commentId);
     if (commentIndex > -1) {
+        const mutation = beginChatMutation(char, 'private', [], ['moments']);
+        const target = captureChatSendTarget(char.id, 'private');
         const commentToDelete = moment.comments[commentIndex];
         
         // 1. 从聊天记录中删除对应的指令消息
@@ -728,7 +737,7 @@ async function deleteMomentComment(momentId, commentId) {
         // 2. 删除评论本身
         moment.comments.splice(commentIndex, 1);
         
-        await saveData();
+        if (!await saveChatMutation(mutation, '评论未删除，请重试') || !isChatTargetVisible(target)) return;
         renderMomentsScreen();
         if (typeof renderMessages === 'function') renderMessages(false, false);
         showToast('评论已删除');
@@ -742,6 +751,8 @@ async function addMomentComment(momentId, text, replyTo = null) {
     const moment = char.moments.find(m => m.id === momentId);
     if (!moment) return;
 
+    const mutation = beginChatMutation(char, 'private', [], ['moments']);
+    const target = captureChatSendTarget(char.id, 'private');
     if (!moment.comments) moment.comments = [];
     
     const myName = char.myName || '我';
@@ -776,7 +787,7 @@ async function addMomentComment(momentId, text, replyTo = null) {
         isContextDisabled: false // 评论进入上下文
     });
 
-    await saveData();
+    if (!await saveChatMutation(mutation, '评论未保存，请重试') || !isChatTargetVisible(target)) return;
     renderMomentsScreen();
     if (typeof renderMessages === 'function') renderMessages(false, false);
 }
@@ -1206,8 +1217,12 @@ function renderPeekCart(items) {
         generateAndRenderPeekContent('cart', { forceRefresh: true });
     });
     screen.querySelector('.checkout-btn').addEventListener('click', async () => {
+        const checkoutButton = screen.querySelector('.checkout-btn');
+        if (checkoutButton.disabled) return;
         const char = db.characters.find(c => c.id === currentChatId);
         if (!char) return;
+        if (currentChatType !== 'private' || (typeof relationshipCanSend === 'function' && !relationshipCanSend(char, 'private'))) return;
+        const target = captureChatSendTarget(char.id, 'private');
 
         const cartItems = char.peekData?.cart?.items;
         if (!cartItems || cartItems.length === 0) {
@@ -1218,38 +1233,51 @@ function renderPeekCart(items) {
         let totalPrice = 0;
         const itemsStrList = [];
 
-        cartItems.forEach(item => {
-            totalPrice += parseFloat(item.price);
+        for (const item of cartItems) {
+            const price = parseFloat(item.price);
+            if (!Number.isFinite(price) || price < 0) return showToast('购物车中有无效价格，请刷新后重试');
+            totalPrice += price;
             itemsStrList.push(`${item.title} x1`);
-        });
+        }
 
         const itemsStr = itemsStrList.join(', ');
         const myName = char.myName;
         const realName = char.realName;
+        const mutation = beginChatMutation(char, 'private', [], ['peekData', 'lastUserMessageTimestamp']);
+        checkoutButton.disabled = true;
 
         // 清空购物车
         char.peekData.cart.items = [];
-        await saveData();
-        
-        renderPeekCart([]);
-
-        // 跳转回聊天界面
-        switchScreen('chat-room-screen');
-
-        // 发送消息
-        const input = document.getElementById('message-input');
-        const sendBtn = document.getElementById('send-message-btn');
-
-        if (input && sendBtn) {
-            // 1. 发送系统提示
-            input.value = `[system-display:${myName}帮${realName}清空了ta的购物车]`;
-            sendBtn.click();
-
-            // 2. 延迟发送订单消息
-            setTimeout(() => {
-                input.value = `[${myName}为${realName}下单了：即时送达|${totalPrice.toFixed(2)}|${itemsStr}]`;
-                sendBtn.click();
-            }, 300);
+        const now = Date.now();
+        if (db.apiSettings?.timePerceptionEnabled) {
+            const last = char.lastUserMessageTimestamp;
+            if (last && now - last > 30 * 60 * 1000) {
+                target.history.push({id:'msg_visual_timesense_' + crypto.randomUUID(),role:'system',
+                    content:`[system-display:距离上次聊天已经过去 ${formatTimeGap(now - last)}]`,parts:[],timestamp:now - 2});
+            }
+        }
+        const texts = [
+            `[system-display:${myName}帮${realName}清空了ta的购物车]`,
+            `[${myName}的消息：[${myName}为${realName}下单了：即时送达|${totalPrice.toFixed(2)}|${itemsStr}]]`
+        ];
+        for (const [index, content] of texts.entries()) {
+            const message = {id:'msg_' + crypto.randomUUID(),role:'user',content,
+                parts:[{type:'text',text:content}],timestamp:now + index};
+            if (typeof prepareRelationshipMessage === 'function') prepareRelationshipMessage(char, message, 'private');
+            target.history.push(message);
+        }
+        if (db.apiSettings?.timePerceptionEnabled) char.lastUserMessageTimestamp = now;
+        try {
+            if (!await saveChatMutation(mutation, '下单未保存，已恢复购物车，请重试')) return;
+            if (isChatSendTargetValid(target) && typeof scheduleAutoMemory === 'function') scheduleAutoMemory(char.id, 'private');
+            if (isChatTargetVisible(target)) {
+                renderPeekCart([]);
+                switchScreen('chat-room-screen');
+                renderMessages(false, true);
+            }
+            renderChatList();
+        } finally {
+            checkoutButton.disabled = false;
         }
     });
 }
@@ -2072,6 +2100,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
     const char = db.characters.find(c => c.id === currentChatId);
     if (!char) return showToast('无法找到当前角色');
     
+    const generationTarget = captureChatSendTarget(char.id, 'private');
     if (!char.peekData) char.peekData = {};
 
     if (!forceRefresh && char.peekData[appType]) {
@@ -2227,8 +2256,11 @@ async function generateAndRenderPeekContent(appType, options = {}) {
             throw new Error("AI返回的数据格式不符合应用要求。");
         }
 
+        if (!isChatSendTargetValid(generationTarget)) return;
+        const mutation = beginChatMutation(char, 'private', [], ['peekData']);
         char.peekData[appType] = generatedData;
-        await saveData(); 
+        if (!await saveChatMutation(mutation, '生成内容未保存，请重试')) return;
+        if (!isChatTargetVisible(generationTarget)) return;
 
         if (appType === 'messages') {
             renderPeekChatList(generatedData.conversations);
@@ -2253,6 +2285,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
         }
 
     } catch (error) {
+        if (!isChatTargetVisible(generationTarget)) return;
         showApiError(error);
         const errorMessage = "内容生成失败，请刷新重试。";
         if (appType === 'album') {
@@ -2272,6 +2305,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
 async function generateBatchPeekContent(appTypes) {
     const char = db.characters.find(c => c.id === currentChatId);
     if (!char) return showToast('无法找到当前角色');
+    const generationTarget = captureChatSendTarget(char.id, 'private');
 
     const apiConfig = resolveAuxiliaryApiConfig('peek');
     let { url, key, model } = apiConfig;
@@ -2334,6 +2368,8 @@ async function generateBatchPeekContent(appTypes) {
             throw new Error("XML 解析错误");
         }
 
+        if (!isChatSendTargetValid(generationTarget)) return;
+        const mutation = beginChatMutation(char, 'private', [], ['peekData']);
         if (!char.peekData) char.peekData = {};
         let successCount = 0;
 
@@ -2372,7 +2408,8 @@ async function generateBatchPeekContent(appTypes) {
             }
         }
 
-        await saveData();
+        if (!await saveChatMutation(mutation, '批量生成内容未保存，请重试')) return;
+        if (!isChatTargetVisible(generationTarget)) return;
         
         // 退出多选模式
         // @ts-ignore
@@ -2381,6 +2418,7 @@ async function generateBatchPeekContent(appTypes) {
         showToast(`批量生成完成！成功: ${successCount}/${appTypes.length}`);
 
     } catch (error) {
+        if (!isChatTargetVisible(generationTarget)) return;
         showApiError(error);
         showToast('批量生成失败，请重试。');
     } finally {

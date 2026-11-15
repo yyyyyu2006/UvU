@@ -57,26 +57,32 @@ function initGPTTagsSystem() {
             const enableToggle = itemDiv.querySelector('.tag-enable-toggle');
 
             nameInput.addEventListener('change', async (e) => {
-                tag.name = e.target.value.trim();
-                await saveData();
+                if (db.workshopSettings.gptTags !== tags || !tags.includes(tag)) return;
+                if (!await saveLocalSettingsFields([{target:tag,values:{name:e.target.value.trim()}}])) nameInput.value = tag.name;
             });
 
             promptInput.addEventListener('change', async (e) => {
-                tag.prompt = e.target.value.trim();
-                await saveData();
+                if (db.workshopSettings.gptTags !== tags || !tags.includes(tag)) return;
+                if (!await saveLocalSettingsFields([{target:tag,values:{prompt:e.target.value.trim()}}])) promptInput.value = tag.prompt || '';
             });
 
             enableToggle.addEventListener('change', async (e) => {
-                tag.enabled = e.target.checked;
-                await saveData();
-                renderTags(); // 重新渲染以更新颜色和测试 UI
+                if (db.workshopSettings.gptTags !== tags || !tags.includes(tag)) return;
+                await saveLocalSettingsFields([{target:tag,values:{enabled:e.target.checked}}]);
+                if (db.workshopSettings.gptTags === tags) renderTags(); // 重新渲染以更新颜色和测试 UI
             });
 
             removeBtn.addEventListener('click', async () => {
                 if (confirm(`确定要删除标签 "${tag.name}" 吗？`)) {
-                    db.workshopSettings.gptTags.splice(index, 1);
-                    await saveData();
-                    renderTags();
+                    const removeIndex = tags.indexOf(tag);
+                    if (removeIndex < 0 || db.workshopSettings.gptTags !== tags) return;
+                    tags.splice(removeIndex, 1);
+                    try { await saveData(); }
+                    catch (error) {
+                        if (!tags.some(item => item.id === tag.id)) tags.splice(Math.min(removeIndex, tags.length), 0, tag);
+                        showToast('标签未删除，请重试');
+                    }
+                    if (db.workshopSettings.gptTags === tags) renderTags();
                 }
             });
 
@@ -110,13 +116,24 @@ function initGPTTagsSystem() {
     renderTags();
 
     addTagBtn.addEventListener('click', async () => {
-        db.workshopSettings.gptTags.push({
-            id: 'gpt_tag_' + Date.now(),
+        if (addTagBtn.disabled) return;
+        const tags = db.workshopSettings.gptTags;
+        const tag = {
+            id: 'gpt_tag_' + crypto.randomUUID(),
             name: '#新标签#',
             prompt: ''
-        });
-        await saveData();
-        renderTags();
+        };
+        tags.push(tag);
+        addTagBtn.disabled = true;
+        try { await saveData(); }
+        catch (error) {
+            const index = tags.indexOf(tag);
+            if (index >= 0) tags.splice(index, 1);
+            showToast('标签未添加，请重试');
+        } finally {
+            addTagBtn.disabled = false;
+            if (db.workshopSettings.gptTags === tags) renderTags();
+        }
     });
 }
 
@@ -494,7 +511,7 @@ function initWorkshopGPTLLMPrompts() {
                 }
 
                 if (placeholder) {
-                    listContainer.insertBefore(itemDiv, placeholder);
+                    if (placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
                     placeholder.remove();
                     placeholder = null;
                 }
@@ -503,15 +520,22 @@ function initWorkshopGPTLLMPrompts() {
 
                 // 保存新顺序
                 const newOrderIds = Array.from(listContainer.children).map(child => child.dataset.id).filter(id => id);
-                const activeGroup = getActiveGroup();
+                if (getActiveGroup() !== activeGroup) { renderList(); return; }
                 if (activeGroup) {
+                    if (newOrderIds.length !== activeGroup.prompts.length || new Set(newOrderIds).size !== newOrderIds.length || newOrderIds.some(id => !activeGroup.prompts.some(p => p.id === id))) { renderList(); return; }
+                    const previousPrompts = activeGroup.prompts;
                     const newPrompts = [];
                     newOrderIds.forEach(id => {
                         const p = activeGroup.prompts.find(p => p.id === id);
                         if (p) newPrompts.push(p);
                     });
                     activeGroup.prompts = newPrompts;
-                    await saveData();
+                    try { await saveData(); }
+                    catch (error) {
+                        if (activeGroup.prompts === newPrompts) activeGroup.prompts = previousPrompts;
+                        console.error('保存绘图预设排序失败:', error);
+                        showToast('排序未保存，请重试');
+                    }
                     renderList();
                 }
             };
@@ -538,29 +562,32 @@ function initWorkshopGPTLLMPrompts() {
 
             // 启用/禁用开关
             enableToggle.addEventListener('change', async (e) => {
-                prompt.enabled = e.target.checked;
-                await saveData();
-                renderList(); // 重新渲染以更新标题颜色
+                if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
+                await saveLocalSettingsFields([{target:prompt,values:{enabled:e.target.checked}}]);
+                if (getActiveGroup() === activeGroup) renderList(); // 重新渲染以更新标题颜色
             });
 
             // 保存编辑
             saveBtn.addEventListener('click', async () => {
-                prompt.role = roleSelect.value;
-                prompt.title = titleInput.value.trim();
-                prompt.content = contentInput.value.trim();
-                await saveData();
-                renderList();
+                if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
+                await saveLocalSettingsFields([{target:prompt,values:{role:roleSelect.value,title:titleInput.value.trim(),content:contentInput.value.trim()}}]);
+                if (getActiveGroup() === activeGroup) renderList();
             });
 
             // 删除条目
             deleteBtn.addEventListener('click', async () => {
                 if (confirm('确定要删除这个提示词条目吗？')) {
-                    const activeGroup = getActiveGroup();
-                    if (activeGroup) {
-                        activeGroup.prompts.splice(index, 1);
-                        await saveData();
-                        renderList();
+                    if (getActiveGroup() !== activeGroup) return;
+                    const prompts = activeGroup.prompts;
+                    const removeIndex = prompts.indexOf(prompt);
+                    if (removeIndex < 0) return;
+                    prompts.splice(removeIndex, 1);
+                    try { await saveData(); }
+                    catch (error) {
+                        if (!prompts.some(item => item.id === prompt.id)) prompts.splice(Math.min(removeIndex, prompts.length), 0, prompt);
+                        showToast('条目未删除，请重试');
                     }
+                    if (getActiveGroup() === activeGroup) renderList();
                 }
             });
 
@@ -1221,7 +1248,7 @@ function initWorkshopLLMPrompts() {
                 }
 
                 if (placeholder) {
-                    listContainer.insertBefore(itemDiv, placeholder);
+                    if (placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
                     placeholder.remove();
                     placeholder = null;
                 }
@@ -1230,15 +1257,22 @@ function initWorkshopLLMPrompts() {
 
                 // 保存新顺序
                 const newOrderIds = Array.from(listContainer.children).map(child => child.dataset.id).filter(id => id);
-                const activeGroup = getActiveGroup();
+                if (getActiveGroup() !== activeGroup) { renderList(); return; }
                 if (activeGroup) {
+                    if (newOrderIds.length !== activeGroup.prompts.length || new Set(newOrderIds).size !== newOrderIds.length || newOrderIds.some(id => !activeGroup.prompts.some(p => p.id === id))) { renderList(); return; }
+                    const previousPrompts = activeGroup.prompts;
                     const newPrompts = [];
                     newOrderIds.forEach(id => {
                         const p = activeGroup.prompts.find(p => p.id === id);
                         if (p) newPrompts.push(p);
                     });
                     activeGroup.prompts = newPrompts;
-                    await saveData();
+                    try { await saveData(); }
+                    catch (error) {
+                        if (activeGroup.prompts === newPrompts) activeGroup.prompts = previousPrompts;
+                        console.error('保存绘图预设排序失败:', error);
+                        showToast('排序未保存，请重试');
+                    }
                     renderList();
                 }
             };
@@ -1265,29 +1299,32 @@ function initWorkshopLLMPrompts() {
 
             // 启用/禁用开关
             enableToggle.addEventListener('change', async (e) => {
-                prompt.enabled = e.target.checked;
-                await saveData();
-                renderList(); // 重新渲染以更新标题颜色
+                if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
+                await saveLocalSettingsFields([{target:prompt,values:{enabled:e.target.checked}}]);
+                if (getActiveGroup() === activeGroup) renderList(); // 重新渲染以更新标题颜色
             });
 
             // 保存编辑
             saveBtn.addEventListener('click', async () => {
-                prompt.role = roleSelect.value;
-                prompt.title = titleInput.value.trim();
-                prompt.content = contentInput.value.trim();
-                await saveData();
-                renderList();
+                if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
+                await saveLocalSettingsFields([{target:prompt,values:{role:roleSelect.value,title:titleInput.value.trim(),content:contentInput.value.trim()}}]);
+                if (getActiveGroup() === activeGroup) renderList();
             });
 
             // 删除条目
             deleteBtn.addEventListener('click', async () => {
                 if (confirm('确定要删除这个提示词条目吗？')) {
-                    const activeGroup = getActiveGroup();
-                    if (activeGroup) {
-                        activeGroup.prompts.splice(index, 1);
-                        await saveData();
-                        renderList();
+                    if (getActiveGroup() !== activeGroup) return;
+                    const prompts = activeGroup.prompts;
+                    const removeIndex = prompts.indexOf(prompt);
+                    if (removeIndex < 0) return;
+                    prompts.splice(removeIndex, 1);
+                    try { await saveData(); }
+                    catch (error) {
+                        if (!prompts.some(item => item.id === prompt.id)) prompts.splice(Math.min(removeIndex, prompts.length), 0, prompt);
+                        showToast('条目未删除，请重试');
                     }
+                    if (getActiveGroup() === activeGroup) renderList();
                 }
             });
 

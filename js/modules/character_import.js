@@ -315,30 +315,43 @@ function setupImportConfirmModal() {
     const nameInput = document.getElementById('import-char-name');
 
     if (!modal || !form) return;
+    if (form.dataset.importConfirmBound === 'true') return;
+    form.dataset.importConfirmBound = 'true';
+    let submitting = false;
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!pendingImportData) return;
+        if (!pendingImportData || submitting) return;
+        const importData = pendingImportData;
 
         const newName = nameInput.value.trim();
         if (!newName) return showToast('请输入角色真名');
 
         // 更新名字
-        if (pendingImportData.data.data) {
+        if (importData.data.data) {
             // 适配 V2 格式 (data.data.name)
-            pendingImportData.data.data.name = newName;
+            importData.data.data.name = newName;
         } else {
             // 适配 V1 格式 (data.name)
-            pendingImportData.data.name = newName;
+            importData.data.name = newName;
         }
 
+        submitting = true;
+        const submitButton = form.querySelector('[type="submit"]');
+        const wasDisabled = submitButton?.disabled;
+        if (submitButton) submitButton.disabled = true;
         try {
-            await createCharacterFromData(pendingImportData.data, pendingImportData.avatar);
-            modal.classList.remove('visible');
-            pendingImportData = null;
+            await createCharacterFromData(importData.data, importData.avatar);
+            if (pendingImportData === importData) {
+                modal.classList.remove('visible');
+                pendingImportData = null;
+            }
         } catch (error) {
             console.error(error);
             showToast('创建角色失败: ' + error.message);
+        } finally {
+            submitting = false;
+            if (submitButton) submitButton.disabled = wasDisabled;
         }
     });
 

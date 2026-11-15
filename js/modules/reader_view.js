@@ -52,9 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChapterIndex = 0;
     let fontSize = 18;
     let isMenuVisible = false;
-    let scrollSaveTimer = null;
+    const scrollSaveTimers = new Map();
     let currentPage = 0;
     let totalPages = 0;
+    let bookLoadVersion = 0;
+    let chapterLoadVersion = 0;
+    let commentLoadVersion = 0;
 
     // 绑定返回键
     const backBtn = document.getElementById('reader-back-btn');
@@ -68,16 +71,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 加载书籍
     async function loadBook(bookId) {
+        const version = ++bookLoadVersion;
+        ++chapterLoadVersion;
+        ++commentLoadVersion;
+        currentCommentParagraph = null;
         try {
-            currentBook = await dexieDB.reader_books.get(bookId);
-            if (!currentBook) throw new Error("书籍不存在");
-
-            bookTitleEl.textContent = currentBook.title;
+            const book = await dexieDB.reader_books.get(bookId);
+            if (version !== bookLoadVersion) return;
+            if (!book) throw new Error("书籍不存在");
             
             // 获取所有章节（仅获取标题用于目录，正文按需加载）
-            currentChapters = await dexieDB.reader_chapters
+            const chapters = await dexieDB.reader_chapters
                 .where('bookId').equals(bookId)
                 .sortBy('index');
+            if (version !== bookLoadVersion) return;
+            currentBook = book;
+            bookTitleEl.textContent = book.title;
+            currentChapters = chapters;
 
             tocCount.textContent = `共${currentChapters.length}章`;
             
@@ -92,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await dexieDB.reader_books.update(bookId, { lastReadTime: Date.now() });
 
         } catch (error) {
+            if (version !== bookLoadVersion) return;
             console.error("加载书籍失败:", error);
             if (typeof showToast === 'function') showToast("加载书籍失败");
         }
@@ -148,6 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // 加载指定章节
     async function loadChapter(index, scrollProgress = 0) {
         if (index < 0 || index >= currentChapters.length) return;
+        const book = currentBook;
+        const version = ++chapterLoadVersion;
+        ++commentLoadVersion;
+        currentCommentParagraph = null;
 
         try {
             const chapter = currentChapters[index];
@@ -155,8 +170,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 获取该章节的所有段评
             const comments = await dexieDB.reader_comments
-                .where('bookId').equals(currentBook.id)
+                .where('bookId').equals(book.id)
                 .toArray();
+            if (currentBook !== book || version !== chapterLoadVersion) return;
             
             // 按段落索引分组统计评论数
             const commentCounts = {};
@@ -201,6 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 等待 DOM 渲染完成计算页数
             requestAnimationFrame(() => {
                 setTimeout(() => {
+                    if (currentBook !== book || version !== chapterLoadVersion) return;
                     calculatePages();
                     
                     // 根据 scrollProgress 恢复页码
@@ -223,14 +240,23 @@ document.addEventListener('DOMContentLoaded', () => {
     async function saveProgress() {
         if (!currentBook) return;
         
-        if (scrollSaveTimer) clearTimeout(scrollSaveTimer);
-        scrollSaveTimer = setTimeout(async () => {
-            const scrollProgress = totalPages > 1 ? currentPage / totalPages : 0;
-            await dexieDB.reader_books.update(currentBook.id, { 
-                currentChapterIndex: currentChapterIndex,
-                scrollProgress: scrollProgress
-            });
+        const bookId = currentBook.id;
+        const chapterIndex = currentChapterIndex;
+        const scrollProgress = totalPages > 1 ? currentPage / totalPages : 0;
+        clearTimeout(scrollSaveTimers.get(bookId));
+        const timer = setTimeout(async () => {
+            scrollSaveTimers.delete(bookId);
+            try {
+                await dexieDB.reader_books.update(bookId, {
+                    currentChapterIndex: chapterIndex,
+                    scrollProgress: scrollProgress
+                });
+            } catch (error) {
+                console.error('保存阅读进度失败:', error);
+                if (typeof showToast === 'function') showToast('阅读进度未保存，请稍后重试');
+            }
         }, 500);
+        scrollSaveTimers.set(bookId, timer);
     }
 
     // 渲染目录
@@ -467,6 +493,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 打开段评面板
     async function openCommentPanel(pElement) {
+        const book = currentBook;
+        const chapterIndex = currentChapterIndex;
+        const version = ++commentLoadVersion;
         currentCommentParagraph = pElement; // 使用专门的变量记录
         const pIndex = parseInt(pElement.dataset.index);
         
@@ -480,8 +509,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const comments = await dexieDB.reader_comments
                 .where('[bookId+chapterIndex+paragraphIndex]')
-                .equals([currentBook.id, currentChapterIndex, pIndex])
+                .equals([book.id, chapterIndex, pIndex])
                 .toArray();
+            if (version !== commentLoadVersion || currentBook !== book || currentChapterIndex !== chapterIndex) return;
             
             if (comments.length === 0) {
                 commentListEl.innerHTML = '<div style="text-align:center; color:#888; padding: 20px;">暂无评论，快来抢沙发吧！</div>';
@@ -504,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         } catch (error) {
+            if (version !== commentLoadVersion || currentBook !== book || currentChapterIndex !== chapterIndex) return;
             console.error("加载评论失败:", error);
             commentListEl.innerHTML = '<div style="text-align:center; color:red; padding: 20px;">加载评论失败</div>';
         }
@@ -551,10 +582,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 关闭段评面板
     commentCloseBtn.addEventListener('click', () => {
+        ++commentLoadVersion;
         commentOverlay.classList.remove('active');
     });
     commentOverlay.addEventListener('click', (e) => {
         if (e.target === commentOverlay) {
+            ++commentLoadVersion;
             commentOverlay.classList.remove('active');
         }
     });
@@ -577,40 +610,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const pIndex = parseInt(currentCommentParagraph.dataset.index);
+        const paragraph = currentCommentParagraph;
+        const book = currentBook;
+        const chapterIndex = currentChapterIndex;
         
         try {
             // 保存到数据库
             await dexieDB.reader_comments.add({
-                bookId: currentBook.id,
-                chapterIndex: currentChapterIndex,
+                bookId: book.id,
+                chapterIndex,
                 paragraphIndex: pIndex,
                 content: text,
                 timestamp: Date.now()
             });
             
-            commentInput.value = '';
+            if (currentBook !== book || currentChapterIndex !== chapterIndex || currentCommentParagraph !== paragraph) return;
+            if (commentInput.value.trim() === text) commentInput.value = '';
             if (typeof showToast === 'function') showToast("发送成功");
             
             // 更新 UI：添加或更新图标数字
-            let iconEl = currentCommentParagraph.querySelector('.reader-inline-comment-icon');
+            let iconEl = paragraph.querySelector('.reader-inline-comment-icon');
             if (iconEl) {
                 const countEl = iconEl.querySelector('.reader-inline-comment-count');
                 countEl.textContent = parseInt(countEl.textContent) + 1;
             } else {
                 // 移除换行和多余空格
                 const iconHtml = `<span class="reader-inline-comment-icon" contenteditable="false"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chat-square-quote" viewBox="0 0 16 16"><path d="M14 1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2.5a2 2 0 0 0-1.6.8L8 14.333 6.1 11.8a2 2 0 0 0-1.6-.8H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zM2 0a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2.5a1 1 0 0 1 .8.4l1.9 2.533a1 1 0 0 0 1.6 0l1.9-2.533a1 1 0 0 1 .8-.4H14a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2z"/><path d="M7.066 4.76A1.665 1.665 0 0 0 4 5.668a1.667 1.667 0 0 0 2.561 1.406c-.131.389-.375.804-.777 1.22a.417.417 0 1 0 .6.58c1.486-1.54 1.293-3.214.682-4.112zm4 0A1.665 1.665 0 0 0 8 5.668a1.667 1.667 0 0 0 2.561 1.406c-.131.389-.375.804-.777 1.22a.417.417 0 1 0 .6.58c1.486-1.54 1.293-3.214.682-4.112z"/></svg><span class="reader-inline-comment-count">1</span></span>`;
-                currentCommentParagraph.insertAdjacentHTML('beforeend', iconHtml);
+                paragraph.insertAdjacentHTML('beforeend', iconHtml);
                 
                 // 绑定点击事件
-                const newIcon = currentCommentParagraph.querySelector('.reader-inline-comment-icon');
+                const newIcon = paragraph.querySelector('.reader-inline-comment-icon');
                 newIcon.addEventListener('click', (e) => {
                     e.stopPropagation(); // 阻止冒泡，防止触发段落点击
-                    openCommentPanel(currentCommentParagraph);
+                    openCommentPanel(paragraph);
                 });
             }
             
             // 刷新当前面板的评论列表
-            openCommentPanel(currentCommentParagraph);
+            openCommentPanel(paragraph);
             
         } catch (error) {
             console.error("保存评论失败:", error);
@@ -981,6 +1018,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const count = parseInt(illustrationCountSelect.value);
             const chapter = currentChapters[currentChapterIndex];
             if (!chapter || !chapter.content) return;
+            const illustrationBook = currentBook;
+            const illustrationChapterIndex = currentChapterIndex;
 
             // 检查 API 配置
             const settings = db.workshopSettings;
@@ -1194,14 +1233,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (base64Image) {
                         // 存入数据库
                         await dexieDB.reader_comments.add({
-                            bookId: currentBook.id,
-                            chapterIndex: currentChapterIndex,
+                            bookId: illustrationBook.id,
+                            chapterIndex: illustrationChapterIndex,
                             paragraphIndex: bestMatchIndex,
                             content: `[ILLUSTRATION]${base64Image}`,
                             timestamp: Date.now()
                         });
 
                         // 找到对应的段落元素并更新 UI
+                        if (currentBook !== illustrationBook || currentChapterIndex !== illustrationChapterIndex) continue;
                         const pElement = document.querySelector(`#reader-text-content p[data-index="${bestMatchIndex}"]`);
                         if (pElement) {
                             let iconEl = pElement.querySelector('.reader-inline-comment-icon');

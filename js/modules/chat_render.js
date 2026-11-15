@@ -589,47 +589,55 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
 
         // 绑定点击事件
         bubbleElement.style.cursor = 'pointer';
+        let claiming = false;
+        const packetTarget = captureChatSendTarget(chat.id, currentChatType);
         bubbleElement.addEventListener('click', async () => {
-            if (!message.isRevealed) {
-                if (message.distributions && message.distributions['user_me']) {
-                    // 已经抢过，直接显示详情
-                    if (typeof showRedPacketDetails === 'function') {
-                        showRedPacketDetails(message, chat);
+            if (claiming || !isChatSendTargetValid(packetTarget) || !packetTarget.history.includes(message)) return;
+            claiming = true;
+            try {
+                if (!message.isRevealed) {
+                    if (message.distributions && message.distributions['user_me']) {
+                        // 已经抢过，直接显示详情
+                        if (typeof showRedPacketDetails === 'function') {
+                            showRedPacketDetails(message, chat);
+                        }
+                        return;
                     }
-                    return;
-                }
-                if (message.pool && message.pool.length > 0) {
-                    // 随机抽取一个金额
-                    const randomIndex = Math.floor(Math.random() * message.pool.length);
-                    const grabbedAmount = message.pool.splice(randomIndex, 1)[0];
-                    if (!message.distributions) message.distributions = {};
-                    message.distributions['user_me'] = grabbedAmount;
+                    if (message.pool && message.pool.length > 0) {
+                        const mutation = beginChatMutation(chat, packetTarget.type, [message]);
+                        // 随机抽取一个金额
+                        const randomIndex = Math.floor(Math.random() * message.pool.length);
+                        const grabbedAmount = message.pool.splice(randomIndex, 1)[0];
+                        if (!message.distributions) message.distributions = {};
+                        message.distributions['user_me'] = grabbedAmount;
                     
-                    // 如果池子空了，标记为已揭晓
-                    if (message.pool.length === 0) {
+                        // 如果池子空了，标记为已揭晓
+                        if (message.pool.length === 0) {
+                            message.isRevealed = true;
+                        }
+                    
+                        if (!await saveChatMutation(mutation, '红包领取未保存，请重试')) return;
+                    
+                        // 领取成功后显示详情
+                        if (isChatTargetVisible(packetTarget) && typeof showRedPacketDetails === 'function') {
+                            showRedPacketDetails(message, chat);
+                        }
+                    } else {
+                        showToast('手慢了，红包派完了');
+                        const mutation = beginChatMutation(chat, packetTarget.type, [message]);
                         message.isRevealed = true;
-                    }
-                    
-                    await saveData();
-                    
-                    // 领取成功后显示详情
-                    if (typeof showRedPacketDetails === 'function') {
-                        showRedPacketDetails(message, chat);
+                        if (!await saveChatMutation(mutation, '红包状态未保存，请重试')) return;
+                        if (isChatTargetVisible(packetTarget) && typeof showRedPacketDetails === 'function') {
+                            showRedPacketDetails(message, chat);
+                        }
                     }
                 } else {
-                    showToast('手慢了，红包派完了');
-                    message.isRevealed = true;
-                    await saveData();
+                    // 已揭晓，直接显示详情
                     if (typeof showRedPacketDetails === 'function') {
                         showRedPacketDetails(message, chat);
                     }
                 }
-            } else {
-                // 已揭晓，直接显示详情
-                if (typeof showRedPacketDetails === 'function') {
-                    showRedPacketDetails(message, chat);
-                }
-            }
+            } finally { claiming = false; }
         });
     } else if (forwardedChatMatch) {
         const chatContent = forwardedChatMatch[1].trim();
@@ -1124,6 +1132,9 @@ window.sendPayResponse = async function(msgId, action) {
 
     const msg = chat.history.find(m => m.id === msgId);
     if (!msg) return;
+    if (msg.payStatus && msg.payStatus !== 'pending') return;
+    const mutation = beginChatMutation(chat, 'private', [msg]);
+    const target = captureChatSendTarget(chat.id, 'private');
 
     // 1. 更新原消息状态
     msg.payStatus = action === 'pay' ? 'paid' : 'rejected';
@@ -1158,8 +1169,8 @@ window.sendPayResponse = async function(msgId, action) {
     chat.history.push(newMsg);
     
     // 5. 保存并刷新到底部
-    if (typeof saveData === 'function') await saveData(); 
-    renderMessages(false, true); 
+    if (!await saveChatMutation(mutation, '代付应答未保存，已恢复，请重试')) return;
+    if (isChatTargetVisible(target)) renderMessages(false, true);
 };
 
 
@@ -1205,8 +1216,9 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 ].join('|'));
             }
             if (!invisibleRegex.test(message.content)) {
+                const mutation = beginChatMutation(senderChat, targetChatType, [], ['unreadCount']);
                 senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
-                saveData(); 
+                void saveChatMutation(mutation, '未读状态未保存，请稍后重试');
                 renderChatList(); 
             }
             

@@ -2962,7 +2962,7 @@ node setup-server-plugin.js</code></pre>
 -->
 
 <!-- [1. 基础层] -->
-<script src="js/utils.js?v=20261103-friends"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
+<script src="js/utils.js?v=20261115-data-integrity"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
 <script src="js/db.js?v=20261113-security-local-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
@@ -2987,11 +2987,11 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/character_card_cover.js?v=20261108-author-signature"></script>
 <script src="js/modules/character_card_export.js?v=20261110-memos"></script>
 <script src="js/modules/character_card_export_ui.js?v=20261108-author-signature"></script>
-<script src="js/modules/character_import.js?v=20261113-security-local-v1"></script>
+<script src="js/modules/character_import.js?v=20261115-data-integrity"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261111-review-notification-guards"></script>
 <script src="js/modules/chat_thinking.js?v=20261115-tall-viewer"></script>
-<script src="js/modules/chat_render.js?v=20261115-avatar-forward"></script>
+<script src="js/modules/chat_render.js?v=20261115-data-integrity"></script>
 <script src="js/modules/chat_archives.js?v=20261113-audit-nine-fixes-v1"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261104-derived-features"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261105-mcp-center"></script>
@@ -3021,7 +3021,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/calendar_chat.js?v=20261114-card-modes"></script>
 <script src="js/modules/calendar_ui.js?v=20261114-import-ownership"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261113-panel-flow-v1">
-<script src="js/chat.js?v=20261115-avatar-thinking"></script>     <!-- 聊天核心入口 -->
+<script src="js/chat.js?v=20261115-data-integrity"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261103-documents"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
 <script src="js/modules/chat_room_html.js?v=20261115-theme-stop-compat"></script> <!-- 聊天室HTML注入 -->
@@ -3033,14 +3033,14 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/keep_alive.js?v=20261113-lifecycle-v2"></script> <!-- 跨平台持续运行增强 -->
 <script src="js/modules/model_picker.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/settings_api.js?v=20261113-security-local-v1"></script> <!-- API 设置与预设 -->
-<script src="js/modules/settings_presets.js"></script> <!-- 预设管理 (气泡、人设等) -->
+<script src="js/modules/settings_presets.js?v=20261115-data-integrity"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261107-music"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js?v=20261111-persistence-vector-v1"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
 <script src="js/modules/sticker.js?v=20261106-quote-sticker"></script>   <!-- 表情包管理系统 -->
 <script src="js/modules/worldbook.js?v=20261113-worldbook-actions-v3"></script> <!-- 世界书设定集 -->
-<script src="js/modules/peek.js?v=20261114-memo-navigation"></script>      <!-- 偷看手机(相册/短信等) -->
+<script src="js/modules/peek.js?v=20261115-data-integrity"></script>      <!-- 偷看手机(相册/短信等) -->
 <script src="js/modules/moments_social.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/moments_social_ai.js?v=20261112-social-identity-v1"></script>
 <script src="js/modules/moments_social_icons.js?v=20261108-social"></script>
@@ -3146,22 +3146,22 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/storage.js?v=20261114-sticker-cache-conflict"></script>
 <script src="js/modules/storage_features.js?v=20261108-playlist-public"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
-<script src="js/modules/widget_market.js"></script> <!-- 小组件市场 -->
+<script src="js/modules/widget_market.js?v=20261115-data-integrity"></script> <!-- 小组件市场 -->
 <script src="js/modules/tutorial.js?v=20261114-cloud-restore-latest"></script>  <!-- 教程、更新日志、GitHub备份 -->
 <script src="js/modules/more_menu.js?v=20261104-derived-features"></script> <!-- 更多菜单与状态栏管理 -->
 <script src="js/modules/search.js"></script> <!-- 聊天记录搜索模块 -->
 <script src="js/modules/battery_interaction.js"></script> <!-- 电量交互模块 -->
 <script src="js/modules/gallery.js"></script> <!-- 角色相册管理模块 -->
-<script src="js/modules/shop.js"></script>    <!-- 商城模块 -->
-<script src="js/modules/cot_settings.js"></script> <!-- 思维链设置模块 -->
-<script src="js/modules/video_call.js?v=20261114-call-retry"></script> <!-- 视频通话模块 -->
+<script src="js/modules/shop.js?v=20261115-data-integrity"></script>    <!-- 商城模块 -->
+<script src="js/modules/cot_settings.js?v=20261115-data-integrity"></script> <!-- 思维链设置模块 -->
+<script src="js/modules/video_call.js?v=20261115-data-integrity"></script> <!-- 视频通话模块 -->
 <script src="js/workshop_html.js"></script> <!-- 绘图工坊HTML注入 -->
-<script src="js/modules/image-workshop/settings.js"></script>
-<script src="js/modules/image-workshop/prompts.js"></script>
+<script src="js/modules/image-workshop/settings.js?v=20261115-data-integrity"></script>
+<script src="js/modules/image-workshop/prompts.js?v=20261115-data-integrity"></script>
 <script src="js/modules/image-workshop/generation.js?v=20261114-stream-packet-guard"></script>
-<script src="js/modules/image-workshop/vibe.js"></script>
+<script src="js/modules/image-workshop/vibe.js?v=20261115-data-integrity"></script>
 <script src="js/modules/image-workshop/history.js"></script>
-<script src="js/modules/image-workshop/char.js"></script>
+<script src="js/modules/image-workshop/char.js?v=20261115-data-integrity"></script>
 <script src="js/workshop.js"></script> <!-- 绘图工坊模块 -->
 <script src="js/modules/console.js"></script> <!-- 控制台模块 -->
 <script src="js/modules/community.js"></script> <!-- 社区模块 -->
@@ -3169,7 +3169,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/reader_parser.js"></script> <!-- TXT解析模块 -->
 <script src="js/modules/reader_html.js"></script> <!-- 阅读器HTML注入 -->
 <script src="js/modules/reader_bookshelf.js"></script> <!-- 阅读器书架逻辑 -->
-<script src="js/modules/reader_view.js"></script> <!-- 阅读器视图逻辑 -->
+<script src="js/modules/reader_view.js?v=20261115-data-integrity"></script> <!-- 阅读器视图逻辑 -->
 
 <!-- [4. 程序入口] -->
 <link rel="stylesheet" href="css/modules/notification_preferences.css?v=20261106-feature-audit">

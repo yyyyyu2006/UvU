@@ -131,13 +131,12 @@ function initCotSettings() {
         enabledSwitch.addEventListener('change', async (e) => {
             if (!db.cotSettings) db.cotSettings = { enabled: false, activePresetId: 'default', promptVersion: 'uwu' };
             
-            if (currentCotMode === 'chat') {
-                db.cotSettings.enabled = e.target.checked;
-            } else {
-                db.cotSettings.callEnabled = e.target.checked;
+            const settings = db.cotSettings;
+            const key = currentCotMode === 'chat' ? 'enabled' : 'callEnabled';
+            if (!await saveLocalSettingsFields([{target:settings,values:{[key]:e.target.checked}}])) {
+                if (db.cotSettings === settings) loadCotSettings();
+                return;
             }
-            
-            await saveData();
             showToast(e.target.checked ? '思维链已启用' : '思维链已禁用');
         });
     }
@@ -148,13 +147,12 @@ function initCotSettings() {
         prefillSwitch.addEventListener('change', async (e) => {
             if (!db.cotSettings) db.cotSettings = { enabled: false, activePresetId: 'default', prefillEnabled: true, callPrefillEnabled: true };
             
-            if (currentCotMode === 'chat') {
-                db.cotSettings.prefillEnabled = e.target.checked;
-            } else {
-                db.cotSettings.callPrefillEnabled = e.target.checked;
+            const settings = db.cotSettings;
+            const key = currentCotMode === 'chat' ? 'prefillEnabled' : 'callPrefillEnabled';
+            if (!await saveLocalSettingsFields([{target:settings,values:{[key]:e.target.checked}}])) {
+                if (db.cotSettings === settings) loadCotSettings();
+                return;
             }
-            
-            await saveData();
             showToast(e.target.checked ? '预填已启用' : '预填已禁用');
         });
     }
@@ -164,8 +162,11 @@ function initCotSettings() {
     if (humanRunSwitch) {
         humanRunSwitch.addEventListener('change', async (e) => {
             if (!db.cotSettings) db.cotSettings = { enabled: false, activePresetId: 'default' };
-            db.cotSettings.humanRunEnabled = e.target.checked;
-            await saveData();
+            const settings = db.cotSettings;
+            if (!await saveLocalSettingsFields([{target:settings,values:{humanRunEnabled:e.target.checked}}])) {
+                if (db.cotSettings === settings) loadCotSettings();
+                return;
+            }
             showToast(e.target.checked ? '角色活人运转已启用' : '角色活人运转已禁用');
         });
     }
@@ -536,8 +537,8 @@ function renderCotItems() {
         checkbox.type = 'checkbox';
         checkbox.checked = item.enabled;
         checkbox.addEventListener('change', async (e) => {
-            item.enabled = e.target.checked;
-            await saveData();
+            if (!db.cotPresets.includes(activePreset) || !activePreset.items.includes(item)) return;
+            if (!await saveLocalSettingsFields([{target:item,values:{enabled:e.target.checked}}])) checkbox.checked = !!item.enabled;
         });
         const slider = document.createElement('span');
         slider.className = 'kkt-slider';
@@ -1039,8 +1040,8 @@ function openCotPresetManageModal() {
         const renameBtn = createIconBtn('✎', async () => {
             const newName = prompt('请输入新名称：', preset.name);
             if (newName) {
-                preset.name = newName;
-                await saveData();
+                if (!db.cotPresets.includes(preset)) return;
+                if (!await saveLocalSettingsFields([{target:preset,values:{name:newName}}])) return;
                 openCotPresetManageModal(); // 刷新列表
                 renderCotPresetSelect(); // 刷新主界面下拉框
             }
@@ -1062,7 +1063,12 @@ function openCotPresetManageModal() {
             if (db.cotPresets.length <= 1) return showToast('至少保留一个预设');
             if (!confirm(`确定要删除预设“${preset.name}”吗？`)) return;
             
-            db.cotPresets.splice(index, 1);
+            const presets = db.cotPresets;
+            const settings = db.cotSettings;
+            const removeIndex = presets.indexOf(preset);
+            if (removeIndex < 0) return;
+            const before = {activePresetId:settings.activePresetId,activeCallPresetId:settings.activeCallPresetId};
+            presets.splice(removeIndex, 1);
             
             // 如果删除的是当前激活的，重置为第一个
             if (preset.id === db.cotSettings.activePresetId) {
@@ -1072,7 +1078,14 @@ function openCotPresetManageModal() {
                 db.cotSettings.activeCallPresetId = db.cotPresets[0].id;
             }
 
-            await saveData();
+            const applied = {activePresetId:settings.activePresetId,activeCallPresetId:settings.activeCallPresetId};
+            try { await saveData(); }
+            catch (error) {
+                if (!presets.some(item => item.id === preset.id)) presets.splice(Math.min(removeIndex, presets.length), 0, preset);
+                for (const key of Object.keys(before)) if (settings[key] === applied[key]) settings[key] = before[key];
+                showToast('预设未删除，请重试');
+            }
+            if (db.cotPresets !== presets || db.cotSettings !== settings) return;
             openCotPresetManageModal();
             loadCotSettings();
         }, true);
@@ -1093,31 +1106,57 @@ function openCotPresetManageModal() {
 async function importCotPreset(e) {
     const file = e.target.files[0];
     if (!file) return;
+    const targetDb = db;
+    const presets = db.cotPresets;
+    const settings = db.cotSettings;
+    const activeKey = currentCotMode === 'chat' ? 'activePresetId' : 'activeCallPresetId';
+    let importedPreset = null;
+    let previousActive;
+    let committed = false;
 
     try {
         const text = await file.text();
         const preset = JSON.parse(text);
         
-        if (!preset.items || !Array.isArray(preset.items)) {
+        if (!preset || typeof preset !== 'object' || !Array.isArray(preset.items)) {
             throw new Error('格式错误：缺少 items 数组');
         }
+        if (typeof preset.name !== 'string' || !preset.name.trim()) throw new Error('格式错误：缺少预设名称');
+        const ids = new Set();
+        preset.items.forEach((item, index) => {
+            if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !item.id || ids.has(item.id)
+                || typeof item.name !== 'string' || typeof item.content !== 'string'
+                || (item.enabled !== undefined && typeof item.enabled !== 'boolean')
+                || (item.locked !== undefined && typeof item.locked !== 'boolean')) {
+                throw new Error(`格式错误：第 ${index + 1} 个条目的编号、名称、正文或开关无效`);
+            }
+            ids.add(item.id);
+        });
+        if (db !== targetDb || db.cotPresets !== presets || db.cotSettings !== settings) throw new Error('设置已切换，请重新导入');
 
-        preset.id = `cot_preset_${Date.now()}`; // 重新生成ID避免冲突
+        preset.id = `cot_preset_${crypto.randomUUID()}`;
         preset.name = preset.name + ' (导入)';
         
-        db.cotPresets.push(preset);
-        
-        if (currentCotMode === 'chat') {
-            db.cotSettings.activePresetId = preset.id;
-        } else {
-            db.cotSettings.activeCallPresetId = preset.id;
-        }
+        importedPreset = preset;
+        previousActive = settings[activeKey];
+        presets.push(preset);
+        settings[activeKey] = preset.id;
         await saveData();
+        committed = true;
+        if (db !== targetDb || db.cotPresets !== presets || db.cotSettings !== settings) return;
         
         document.getElementById('cot-preset-manage-modal').classList.remove('visible');
         loadCotSettings();
         showToast('预设导入成功');
     } catch (err) {
+        if (importedPreset && !committed) {
+            const index = presets.indexOf(importedPreset);
+            if (index >= 0) presets.splice(index, 1);
+            if (settings[activeKey] === importedPreset.id) {
+                if (previousActive === undefined) delete settings[activeKey];
+                else settings[activeKey] = previousActive;
+            }
+        }
         console.error(err);
         showToast('导入失败：' + err.message);
     } finally {

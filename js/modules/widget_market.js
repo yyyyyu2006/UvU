@@ -1190,6 +1190,8 @@ document.addEventListener('DOMContentLoaded', () => {
         keyInput.value = varKey;
         typeInput.value = varType;
         input.value = currentValue;
+        fileUpload.value = '';
+        fileUpload.dataset.base64 = '';
 
         if (varType === 'image') {
             fileUploadContainer.style.display = 'block';
@@ -1212,6 +1214,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 图片预览逻辑
     input.addEventListener('input', () => {
         if (typeInput.value === 'image') {
+            fileUpload.dataset.base64 = '';
             const url = input.value.trim();
             if (url) {
                 preview.style.backgroundImage = `url("${url}")`;
