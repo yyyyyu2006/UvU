@@ -38,3 +38,11 @@ calendar_core.js、calendar_ui.js、calendar_ai.js、calendar.css；index.html�
 ## 交付关口
 
 当前本地功能和自动化已通过；受影响浏览器总结果及test提交/推送/线上部署待下方追加。main保持0385b89，用户确认test后才允许合并。Android/iOS真机、用户完整主题、浏览器关闭后的后台行为、真实收费接口/账号和超大个人存档未验；未代替用户确认。
+
+### test发布补记
+
+- 功能提交75e8ef8d24ae523783fe9cc9ebbff894d74e1ca1已常规推送test，远端refs核对一致；仅12个本任务文件，outputs未提交。远端main仍0385b89a1040c49c1d5f4580f7a0e75a3fc864ba。
+- Actions43871669642公开页面Status为Success；API限流403保留，不将API查询说成成功。test/deployment.json为test/75e8ef8，builtAt=2026-11-16T13:00:24.615Z；正式站仍main/0385b89，双站重新打包不等于main代码更新。
+- test线上calendar_core/ui/ai及calendar.css四资源SHA256与功能提交一致（统一CRLF后比较）；Chrome DevTools MCP隔离context启动完整测试App、新写入默认私有重要日、月格/近期列表、实际点击新建默认年度/共享关、Esc保留底层日历并返回按钮均通过。
+- 线上只见既有根favicon.ico404，未发现新脚本异常或新增功能资源失败；本轮未顺带修改站点图标。线上验证使用合成数据，没有读取或操作用户个人存档。
+- 本补记仅记录已观察到的75e8ef8部署，随后文档同步提交不修改业务资源；最新文档提交和部署最终标记另记Vault CURRENT。main仍须用户本批验收确认。
