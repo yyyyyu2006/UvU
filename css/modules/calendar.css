@@ -117,3 +117,11 @@
 .uvu-calendar .calendar-schedule-moods{display:grid;gap:8px;margin:8px 0}
 
 .uvu-calendar .calendar-day.has-event .calendar-face:after {content:'';position:absolute;width:5px;height:5px;background:#5f88b2;border:2px solid #fff;border-radius:50%;right:-2px;bottom:0;}
+.uvu-calendar .calendar-important-mark{position:absolute;left:2px;bottom:0;font-size:9px;line-height:12px;color:#7b5b35;max-width:100%;pointer-events:none}
+.uvu-calendar .calendar-add-important{flex-shrink:0;font-size:12px;padding:6px 10px;border-radius:16px}
+.uvu-calendar .calendar-important-list{display:grid;gap:8px;margin:8px 0}
+.uvu-calendar .calendar-important-card{width:100%;text-align:left;overflow-wrap:anywhere}
+.uvu-calendar .calendar-upcoming{margin:12px 0;display:grid;gap:6px}
+.uvu-calendar .calendar-upcoming h4{margin:0;font-size:13px}
+.uvu-calendar .calendar-upcoming-item{text-align:left;font-size:12px;white-space:normal;overflow-wrap:anywhere;padding:8px;border-radius:10px}
+.calendar-editor .calendar-share-text{white-space:pre-wrap;overflow-wrap:anywhere}

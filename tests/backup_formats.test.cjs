@@ -191,6 +191,22 @@ test('1900 and current group-only members retain null original character links',
 });
 
 
+test('important date v2 survives settings backup JSON and EE with recurrence and private permissions', async () => {
+ const f=fixture();vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/calendar_core.js'),'utf8'),f.c);
+ const C=f.c.window.UvUCalendar, data=C.state();data.version=2;
+ data.events.push({id:'important-1',owner:'user',title:'生日',start:'2000-02-29',end:'2000-02-29',time:'',endTime:'',kind:'birthday',anchorDate:'2000-02-29',yearlyMonthDay:'02-29',leapDayPolicy:'feb28',showAnniversaryCount:false,shareWithChat:false,repeat:'yearly',until:'',except:['2027-02-28'],note:'private',location:'',color:'#9bbde3',locked:false,status:'planned',source:'manual',rev:1});
+ f.c.db.calendarData=data;vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = key === "settings");',f.c);
+ for(const format of ['json','ee']) {
+  f.element('storage-export-format').value=format;await f.c.handleExport();
+  const result=await f.c.storageReadBackup(new File([f.blobs.at(-1)],'important.'+format),{settings:true});
+  assert.equal(result.calendarData.version,2);assert.equal(result.calendarData.events[0].yearlyMonthDay,'02-29');
+  assert.equal(result.calendarData.events[0].shareWithChat,false);assert.equal(result.calendarData.events[0].except[0],'2027-02-28');
+  assert.doesNotThrow(()=>f.c.storageValidateModules(result));
+  const prepared=f.c.storagePrepareImport({settings:true},result);assert.equal(prepared.calendarData.events[0].anchorDate,'2000-02-29');
+ }
+ const before=JSON.stringify(f.c.db.calendarData);const future=structuredClone(data);future.version=999;
+ assert.throws(()=>f.c.storageValidateModules({calendarData:future}),/版本/);assert.equal(JSON.stringify(f.c.db.calendarData),before);
+});
 test('calendar records export with settings and old backups preserve existing calendar', async () => {
     const f=fixture(); for(const name of ['calendar_core.js','calendar_chat.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules',name),'utf8'),f.c);
     const C=f.c.window.UvUCalendar;f.c.db.calendarData=C.state();f.c.db.calendarData.moods.push({id:'m',owner:'user',date:'2026-11-07',mood:'happy',color:'#171719',note:'test',at:10,source:'manual'});

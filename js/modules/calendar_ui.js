@@ -30,7 +30,9 @@ function calendarDayWatcher(readDay, changed) {
     }
     function check(form, label, value) { const row = node('label', undefined, 'calendar-check'), input = node('input'); input.type = 'checkbox'; input.checked = value; input.setAttribute('aria-label', label); row.append(input, node('span', label)); form.append(row); return input; }
     function editor(title, id = 'calendar-editor') {
-        const dialog = createMessageForwardDialog(title, id); dialog.panel.classList.add('calendar-editor', 'uvu-calendar-surface');
+        const managed = ['calendar-important-editor', 'calendar-share-preview'].includes(id), opener = document.activeElement;
+        const dialog = createMessageForwardDialog(title, id, managed ? () => requestAnimationFrame(() => { if (opener?.isConnected && !opener.closest('[inert]')) opener.focus({ preventScroll: true }); }) : undefined); dialog.panel.classList.add('calendar-editor', 'uvu-calendar-surface');
+        if (managed) dialog.panel.classList.add('derived-settings');
         const form = node('form', undefined, 'calendar-editor-body'), status = node('p', '', 'calendar-feedback'); status.setAttribute('aria-live', 'polite');
         const footer = node('footer', undefined, 'calendar-editor-actions'), save = button('保存'); save.type = 'submit'; footer.append(save); dialog.panel.append(form); form.append(status, footer);
         const fields = node('div', undefined, 'calendar-editor-fields'); form.prepend(fields);
@@ -38,6 +40,7 @@ function calendarDayWatcher(readDay, changed) {
         return { ...dialog, form, fields, footer, status, run };
     }
     function editEvent(key, span, original) {
+        if (original && C().isImportant(original)) return editImportant(key, span, original);
         const d = editor(original ? '编辑日程' : '添加日程'), e = original || {}, dateSpan = span || { start: e.date || e.start, end: e.occurrenceEnd || e.end };
         d.panel.dataset.calendarOwner = key;
         const title = field(d.fields, '标题', 'text', e.title || ''), dates = node('div', undefined, 'calendar-fields-row'); d.fields.append(dates);
@@ -80,6 +83,50 @@ function calendarDayWatcher(readDay, changed) {
         d.form.onsubmit = ev => { ev.preventDefault(); d.run(() => save(false)); };
         if (original) d.footer.prepend(button('删除', () => { if (confirm('删除所选范围内的日程？')) d.run(() => save(true)); }, 'calendar-danger'));
     }
+    function editImportant(key, span, original) {
+        const e = original || {}, d = editor(original ? '编辑重要日' : '添加重要日', 'calendar-important-editor');
+        d.panel.dataset.calendarOwner = key;
+        const title = field(d.fields, '名称', 'text', e.title || ''); title.required = true; title.maxLength = 120;
+        const kind = select(d.fields, '类别', Object.entries(C().importantKinds), e.kind || 'anniversary');
+        const day = field(d.fields, '日期', 'date', e.date || span?.start || e.start || C().today()); day.required = true;
+        const repeat = select(d.fields, '重复', [['none', '不重复'], ['yearly', '每年']], e.repeat || 'yearly');
+        kind.onchange = () => { if (!original) repeat.value = kind.value === 'important' ? 'none' : 'yearly'; update(); };
+        const anchor = field(d.fields, '原始纪念日期', 'date', e.anchorDate || day.value);
+        const policy = select(d.fields, '2月29日遇非闰年', [['leap-only', '仅闰年'], ['feb28', '按2月28日'], ['mar1', '按3月1日']], e.leapDayPolicy || 'leap-only');
+        const until = field(d.fields, '重复至', 'date', e.until || '');
+        const count = check(d.fields, '显示周年或年龄', e.showAnniversaryCount || false);
+        const color = field(d.fields, '颜色', 'color', e.color || '#9bbde3');
+        const note = field(d.fields, '备注', 'textarea', e.note || ''); note.maxLength = 2000; note.rows = 3;
+        const share = check(d.fields, '允许聊天引用此条重要日', e.shareWithChat || false);
+        d.fields.append(node('p', '还需在目标角色当前存档的日历设置中开启重要日引用；备注不传入聊天。', 'calendar-muted'));
+        const status = select(d.fields, '状态', [['planned', '保留'], ['done', '本次已完成'], ['cancelled', '已取消']], e.status || 'planned');
+        const scope = e.repeat === 'yearly' ? select(d.fields, '修改范围', [['one', '仅本次'], ['future', '此后所有'], ['series', '整个系列']], 'one') : null;
+        let initialDay = day.value, dateEdited = false;
+        const update = () => {
+            const annual = repeat.value === 'yearly', monthDay = dateEdited || !e.yearlyMonthDay ? day.value.slice(5) : e.yearlyMonthDay;
+            policy.closest('label').hidden = !annual || monthDay !== '02-29'; until.closest('label').hidden = !annual;
+            anchor.disabled = !!scope && scope.value !== 'series';
+            status.querySelector('option[value=done]').disabled = annual && (!scope || scope.value !== 'one');
+            if (status.value === 'done' && annual && (!scope || scope.value !== 'one')) status.value = 'planned';
+        };
+        day.oninput = () => { dateEdited = day.value !== initialDay; if (!original) anchor.value = day.value; update(); };
+        repeat.onchange = update;
+        if (scope) scope.onchange = () => { day.value = scope.value === 'series' ? e.start : e.date || e.start; initialDay = day.value; dateEdited = false; update(); };
+        if (C().state().version === 1) {
+            d.fields.append(node('p', '首次保存重要日会升级日历格式，旧版不能直接读取。建议先导出完整备份。', 'calendar-muted'), button('导出升级前备份', () => exportRecords(true)));
+        }
+        update();
+        const save = async remove => {
+            const updated = { ...e, owner: key, title: title.value, kind: kind.value, start: day.value, end: day.value, time: '', endTime: '',
+                anchorDate: anchor.value, yearlyMonthDay: dateEdited || !e.yearlyMonthDay ? day.value.slice(5) : e.yearlyMonthDay,
+                leapDayPolicy: policy.value, repeat: repeat.value, until: repeat.value === 'yearly' ? until.value : '',
+                showAnniversaryCount: count.checked, shareWithChat: share.checked, color: color.value, note: note.value, status: status.value, source: 'manual' };
+            if (original) await C().changeImportant(updated, e.rev, scope?.value || 'series', e.date || e.start, remove);
+            else await C().saveEvent(updated);
+        };
+        d.form.onsubmit = ev => { ev.preventDefault(); d.run(() => save(false)); };
+        if (original) d.footer.prepend(button('删除', () => { if (confirm('删除所选范围内的重要日？')) d.run(() => save(true)); }, 'calendar-danger'));
+    }
     function editMood(key, date, original) {
         const d = editor('记录心情'); d.panel.dataset.calendarOwner = key; let mood = original?.mood || 'happy', color = original?.color || C().moodColor;
         const picker = node('div', undefined, 'calendar-mood-picker'); d.fields.append(picker);
@@ -121,11 +168,18 @@ function calendarDayWatcher(readDay, changed) {
             controls.reviewChanges = check(automation, '自动安排先审核', profile.reviewChanges);
             automation.append(node('p', '打开日历或聊天后检查；使用当前聊天 API。锁定事项不被 AI 修改。', 'calendar-muted'));
             const sharing = node('section'); sharing.append(node('h3', '允许本角色参考')); d.fields.append(sharing);
-            for (const [flag, label] of [['shareSchedule', '分享角色日程'], ['shareUserSchedule', '分享我的日程'], ['shareMood', '分享角色心情'], ['shareUserMood', '分享我的心情'], ['shareHealth', '分享经期状态与预测']]) controls[flag] = check(sharing, label, profile[flag]);
+            for (const [flag, label] of [['shareSchedule', '分享角色日程'], ['shareUserSchedule', '分享我的日程'], ['shareMood', '分享角色心情'], ['shareUserMood', '分享我的心情'], ['shareHealth', '分享经期状态与预测'], ['shareImportantDays', '引用角色重要日'], ['shareUserImportantDays', '引用我的重要日']]) controls[flag] = check(sharing, label, profile[flag]);
             sharing.append(node('p', '仅此角色当前存档；关闭后停止后续参考。', 'calendar-muted'));
         } else d.fields.append(node('p', '选择角色后，可设置其作息、自动安排和共享。', 'calendar-muted'));
         const actions = node('div', undefined, 'calendar-inline-actions'); d.fields.append(actions);
         actions.append(button('天气与位置', () => settingsAction()), button('导出记录', () => exportRecords(false)), button('导出含经期', () => { if (confirm('导出将包含经期等私人记录，确定继续？')) exportRecords(true); }));
+        const legacyYear = field(d.fields, '兼容旧版导出年份', 'number', String(new Date().getFullYear())); legacyYear.min = '1900'; legacyYear.max = '2200';
+        actions.append(button('兼容旧版导出', () => { try {
+            const result = C().legacyExport(Number(legacyYear.value));
+            if (confirm('将重要日转换为' + legacyYear.value + '年一次性普通日程：转换' + result.converted + '项，排除' + result.excluded + '项。年度规则、类别、周年和重要日专用权限无法保留，旧版普通日程共享可能包含转换项。导出不含经期，请另存完整新版备份。继续？')) {
+                result.data.periods = []; result.data.observations = []; result.data.profiles.forEach(p => p.shareHealth = false); downloadRecords(result.data, 'uvu-calendar-v1-' + legacyYear.value + '.json');
+            }
+        } catch (e) { d.status.textContent = e.message; } }));
         const upload = node('input'); upload.type = 'file'; upload.accept = '.json'; upload.hidden = true; d.fields.append(upload);
         const importButton = button('导入记录', () => upload.click()); actions.append(importButton);
         let importing = false;
@@ -171,7 +225,8 @@ function calendarDayWatcher(readDay, changed) {
         if(original)d.footer.prepend(button('删除',()=>d.run(()=>C().removeRecord('observations',original.id,original))));
         d.form.onsubmit=e=>{e.preventDefault();d.run(()=>C().saveObservation({id:original?.id,date:date.value,kind:kind.value,result:result.value,temperature:temperature.value===''?null:Number(temperature.value),disturbed:disturbed.checked,note:note.value},original));};
     }
-    function exportRecords(health) { const value = C().state(); if (!health) { value.periods = []; value.observations = []; value.profiles.forEach(p => p.shareHealth = false); } const a = node('a'), url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); a.href = url; a.download = 'uvu-calendar' + (health ? '-private' : '') + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    function downloadRecords(value, filename) { const a = node('a'), url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    function exportRecords(health) { const value = C().state(); if (!health) { value.periods = []; value.observations = []; value.profiles.forEach(p => p.shareHealth = false); } downloadRecords(value, 'uvu-calendar' + (health ? '-private' : '') + '.json'); }
     function open() {
         const life = new AbortController(); let weatherController, clockTimer, rangeTimer, edgeTimer, drag = null, suppressClickUntil = 0, paintId = 0;
         let view; try { view = JSON.parse(localStorage.getItem('uvu-calendar-view.v1') || '{}'); } catch (_) { view = {}; }
@@ -239,6 +294,8 @@ function calendarDayWatcher(readDay, changed) {
                     if (!p && prediction?.ovulation && day >= prediction.ovulation.earliest && day <= prediction.ovulation.latest) { b.classList.add('predicted-ovulation'); b.setAttribute('aria-label', day + ' 排卵范围（估计）'); } }
                 const local = place(), holidays = holidayData?.days.filter(h => h.date === day) || [], display = environmentHolidayDisplay(holidays, local ? getEnvironmentHolidayDisplayNote(local, day) : null);
                 if (display.kind !== 'unknown') { const mark = node('small', ({ offday: '休', workday: '班', observance: '节' })[display.kind] || '注', 'calendar-holiday'); b.append(mark); b.title = display.text; }
+                const importantDays = occurrences.filter(e => C().isImportant(e) && e.status !== 'cancelled' && e.date === day);
+                if (importantDays.length) { b.append(node('small', '★' + (importantDays.length > 1 ? importantDays.length : ''), 'calendar-important-mark')); b.setAttribute('aria-label', b.getAttribute('aria-label') + ' 重要日' + importantDays.length + '项'); }
                 grid.append(b);
             }
         }
@@ -252,6 +309,7 @@ function calendarDayWatcher(readDay, changed) {
             const actions = node('div', undefined, 'calendar-inline-actions'); section.append(actions);
             actions.append(button(mode === 'mood' ? '记录心情' : mode === 'period' ? '记录经期' : '添加日程', () => { if (!valid()) return; if (mode === 'mood') editMood(key, selected); else if (mode === 'period') { if (key !== 'user') { feedback.textContent = '经期记录属于我的日历'; return; } editPeriod(span); } else editEvent(key, span); }, 'calendar-primary'));
             actions.append(button('撤销', async () => { try { await C().undo(); feedback.textContent = '已撤销'; } catch (e) { feedback.textContent = e.message; } }));
+            if (mode === 'schedule') heading.append(button('添加重要日', () => { if (valid()) editImportant(key, span); }, 'calendar-add-important'));
             if (mode === 'schedule') { const latestMood = C().state().moods.filter(m => m.owner === key && m.date === selected).sort((a,b) => b.at-a.at)[0]; actions.append(button('记录心情', () => { if (valid()) editMood(key, selected, latestMood); })); }
             if (chat && mode === 'schedule') actions.append(button('生成行程', () => generate(false)));
             if (chat && mode === 'schedule') for (const proposal of root.UvUCalendarAI?.pending(chat) || []) actions.append(button('审核安排', () => showProposal(chat, proposal)));
@@ -262,10 +320,28 @@ function calendarDayWatcher(readDay, changed) {
                 const seen = new Set(); const moodList = node('div', undefined, 'calendar-schedule-moods');
                 moods.forEach(m => { if (seen.has(m.date)) return; seen.add(m.date); const b = button('', () => editMood(key, m.date, m), 'calendar-mood-record'); b.append(face(m.mood, m.color), node('strong', C().moods[m.mood]), node('span', m.note || m.date)); moodList.append(b); });
                 if (moods.length) section.append(moodList);
-                const list = C().events(key, span.start, span.end); if (!list.length) section.append(node('p', '这天留给自由安排。', 'calendar-empty-state'));
+                const all = C().events(key, span.start, span.end), list = all.filter(e => !C().isImportant(e)), important = all.filter(e => C().isImportant(e));
+                const importantList = node('div', undefined, 'calendar-important-list');
+                important.forEach(e => { const card = button('', () => editImportant(key, { start: e.date }, e), 'calendar-event-card calendar-important-card'); card.style.setProperty('--event-color', e.color); card.append(node('strong', e.title), node('span', e.date + ' · ' + C().importantLabel(e, currentDay()) + (e.status === 'cancelled' ? ' · 已取消' : e.status === 'done' ? ' · 已完成' : ''))); if (e.note) card.append(node('p', e.note)); importantList.append(card); });
+                if (important.length) section.append(importantList);
+                if (!all.length) section.append(node('p', '这天留给自由安排。', 'calendar-empty-state'));
+                const recent = C().upcoming(key, currentDay());
+                if (recent.length) {
+                    const upcoming = node('section', undefined, 'calendar-upcoming'); upcoming.append(node('h4', '即将到来 · 30天内'));
+                    const render = limit => { upcoming.querySelectorAll('button').forEach(b => b.remove()); recent.slice(0, limit).forEach(e => upcoming.append(button(e.date + ' · ' + e.title + ' · ' + C().importantLabel(e, currentDay()), () => editImportant(key, { start: e.date }, e), 'calendar-upcoming-item'))); if (recent.length > limit) upcoming.append(button('展开全部 ' + recent.length + ' 项', () => render(recent.length))); };
+                    render(5); section.append(upcoming);
+                }
                 const timeline = node('div', undefined, 'calendar-timeline'); section.append(timeline);
                 list.forEach(e => { const row = node('div', undefined, 'calendar-timeline-row'), clock = node('time', (e.date !== selected || span.days > 1 ? e.date.slice(5) + '\n' : '') + (e.time || '全天')), card = button('', () => editEvent(key, { start: e.date, end: e.occurrenceEnd }, e), 'calendar-event-card'); card.style.setProperty('--event-color', e.color); card.append(node('strong', e.title), node('span', [e.location, e.locked ? '已锁定' : '', e.status === 'done' ? '已完成' : e.status === 'cancelled' ? '已取消' : ''].filter(Boolean).join(' · '))); if (e.note) card.append(node('p', e.note)); row.append(clock, card); timeline.append(row); });
-                if (chat) actions.append(button(span.days > 1 ? '分享所选日期' : '分享当天', () => share(chat, '日程', (span.days > 1 ? span.start + '—' + span.end + '\n' : '') + (list.map(e => (span.days > 1 ? e.date + ' ' : '') + (e.time || '全天') + ' ' + e.title + (e.location ? ' · ' + e.location : '')).join('\n') || '暂无安排'))));
+                if (chat) actions.append(button(span.days > 1 ? '分享所选日期' : '分享当天', () => {
+                    const target = chat, owner = key, sharedSpan = { ...span }, text = records => (sharedSpan.days > 1 ? sharedSpan.start + '—' + sharedSpan.end + '\n' : '') + (records.map(e => (sharedSpan.days > 1 ? e.date + ' ' : '') + (C().isImportant(e) ? C().importantKinds[e.kind] : e.time || '全天') + ' ' + e.title + (e.location ? ' · ' + e.location : '')).join('\n') || '暂无安排');
+                    const candidates = important.filter(e => e.status !== 'cancelled');
+                    if (!candidates.length) return share(target, '日程', text(list));
+                    const preview = editor('预览分享内容', 'calendar-share-preview');
+                    preview.fields.append(node('p', text(list), 'calendar-share-text'), node('p', '重要日默认不分享，请选择本次要发送的条目。', 'calendar-muted'));
+                    const selections = candidates.map(e => ({ e, input: check(preview.fields, e.date + ' ' + e.title, false) }));
+                    preview.form.onsubmit = ev => { ev.preventDefault(); preview.run(async () => { if (!valid() || key !== owner || chat !== target) throw new Error('角色或存档已变化，请重新分享'); await share(target, '日程', text([...list, ...selections.filter(s => s.input.checked).map(s => s.e)])); }); };
+                }));
             } else if (mode === 'mood') {
                 const owners = key === 'user' ? ['user'] : ['user', key];
                 owners.forEach(who => { const group = node('div', undefined, 'calendar-mood-records'); group.append(node('h4', who === 'user' ? '我' : chat.remarkName || chat.realName)); section.append(group); const records = s.moods.filter(m => m.owner === who && m.date >= span.start && m.date <= span.end).sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
@@ -344,8 +420,9 @@ function calendarDayWatcher(readDay, changed) {
         document.addEventListener('uvu-calendar-ai-status', ev => { if (valid() && ev.detail.owner === key) { feedback.textContent = ev.detail.text; paint(); } }, { signal: life.signal });
         document.addEventListener('uvu-calendar-changed', () => { if (valid()) paint(); }, { signal: life.signal });
         document.addEventListener('uvu-environment-settings-changed', () => { if (valid()) { loadWeather(); paint(); } }, { signal: life.signal });
-        const checkDay = calendarDayWatcher(currentDay, () => { paintDays(); void loadWeather(); });
+        const checkDay = calendarDayWatcher(currentDay, () => { paint(); void loadWeather(); });
+        document.addEventListener('visibilitychange', () => { if (!document.hidden && valid()) { updateClock(); checkDay(); } }, { signal: life.signal });
         clockTimer = setInterval(() => { if (valid()) { updateClock(); checkDay(); } }, 30000); body.addEventListener('scroll', saveView, { signal: life.signal, passive: true }); setOwner(false); body.scrollTop = Number(view.scroll) || 0;
     }
-    root.UvUCalendarUI = { open, face, editEvent, editMood, editPeriod };
+    root.UvUCalendarUI = { open, face, editEvent, editImportant, editMood, editPeriod };
 })(window);
