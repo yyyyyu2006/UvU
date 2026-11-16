@@ -519,6 +519,17 @@
 #uvu-feature-workspace .uvu-lenso-panel .draft-hub-group + .draft-hub-group { padding-top:0 !important; }
 #uvu-feature-workspace .uvu-lenso-panel .draft-hub-group .mono-route { min-height:44px;padding-block:10px;font-size:14px; }
 #mcp-services .uvu-lenso-panel .draft-mcp-scope { gap:8px; }
+.uvu-lenso-panel.uvu-sheet-v2 :is(.shared-document-actions,.draft-fixed-actions,.home-preset-actions) > button { border:0; }
+#shared-document-dialog .uvu-lenso-panel.uvu-mono-panel .shared-document-actions > button { border:0; }
+#edit-world-book-screen #edit-world-book-form :is(label,input,textarea,.worldbook-advanced > summary) { color:#6e6e76; }
+#edit-world-book-screen :is(#edit-world-book-title,.mono-page-title,.panel-section-title,.draft-scroll,select,summary) { color:#6e6e76; }
+#storage-analysis-screen .storage-group-title .storage-resource-check-btn { margin-left:auto;margin-right:12px;padding:6px 10px;border:0;border-radius:16px;background:transparent;color:inherit;font:inherit;font-size:13px; }
+#uvu-story-bridge-screen.uvu-lenso-panel .mono-bridge-footer { border-top:0; }
+.uvu-lenso-panel.uvu-sheet-v2.draft-preset-workspace.mono-page:not(.screen) { height:auto !important;min-height:0; }
+.uvu-lenso-panel.draft-preset-workspace > .draft-scroll { flex:0 1 auto; }
+.panel-help-source[hidden] { display:none !important; }
+#edit-world-book-screen .worldbook-editor-help { display:flex;align-items:center;justify-content:center;width:36px;min-height:36px;padding:8px;border:0;border-radius:50%;background:#f5f5f9;color:#6e6e76; }
+#edit-world-book-screen .worldbook-editor-help svg { width:20px;height:20px; }
 #mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-service-actions { justify-content:flex-start;align-items:center;gap:8px; }
 #mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-service-actions > button { position:relative;flex:0 0 auto;min-width:64px;min-height:30px;padding:5px 10px;font-size:12px;line-height:20px;gap:6px; }
 #mcp-services .uvu-lenso-panel .draft-service-actions > button svg { width:14px;height:14px; }

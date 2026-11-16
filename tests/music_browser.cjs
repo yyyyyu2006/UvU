@@ -287,7 +287,7 @@ const server = http.createServer((req,res) => {
         assert.equal(await page.evaluate(()=>UvUMusic.player.snapshot().track.id),'1','QQ identity is retained');
         await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(()=>document.getElementById('message-area')?.dataset.replyGesturesBound==='true');
         assert.equal(await page.evaluate(()=>UvUMusic.settings().playbackSource),'public','public playback preference survives reload');
-        await page.evaluate(()=>UvUMusicUI.accounts());assert.equal(await page.getByRole('checkbox',{name:'公共源播放',exact:true}).isChecked(),true);
+        await page.evaluate(()=>UvUMusicUI.accounts());await page.getByRole('tab',{name:'公共音乐',exact:true}).click();assert.equal(await page.getByRole('checkbox',{name:'公共源播放',exact:true}).isChecked(),true);
         await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).uncheck();await page.waitForFunction(()=>UvUMusic.settings().playbackSource!=='public');
         assert.equal(await page.getByRole('checkbox',{name:'公共源播放',exact:true}).isChecked(),false);
         await page.getByRole('button',{name:'关闭',exact:true}).click();await page.evaluate(()=>UvUMusicUI.open());
@@ -375,7 +375,7 @@ const server = http.createServer((req,res) => {
         await page.evaluate(()=>openChatRoom('music-char','private'));
         assert.equal(await page.locator('.uvu-music-card').last().locator('.uvu-music-continuous').evaluate(n=>n.hidden),true,'ordinary shares never display a continuous invitation control');
         await page.evaluate(()=>UvUMusicUI.open());await page.locator('#uvu-music-screen [data-um-tab="search"]').click();await page.screenshot({path:path.join(out,'public-search-390.png')});
-        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).uncheck();
+        await page.getByRole('button',{name:'音乐账号与设置',exact:true}).click();await page.getByRole('tab',{name:'公共音乐',exact:true}).click();await page.getByRole('checkbox',{name:'启用 GD 音乐台公共源'}).uncheck();
         await page.waitForFunction(()=>!UvUMusic.player.snapshot().playing);await page.getByRole('button',{name:'关闭',exact:true}).click();
         // Approved page geometry and real collection actions, with fixture artwork only.
         await page.setViewportSize({width:390,height:844});

@@ -486,7 +486,7 @@
         const list = main.querySelector('.um-search-results'); if (!list) return;
         main.querySelector('.um-search-status').textContent = searchError; list.replaceChildren(); trackRows(list, results);
         main.querySelector('.um-browse').hidden=!!query;
-        if (provider === 'gd-netease' && !M.settings().publicSources.includes('gd-netease')) empty(list, '开启公共源后即可搜索', button('开启公共源', accountsPanel));
+        if (provider === 'gd-netease' && !M.settings().publicSources.includes('gd-netease')) empty(list, '开启公共源后即可搜索', button('开启公共源', () => accountsPanel('public')));
         else if (query && !results.length && !searchError) empty(list, '没有找到歌曲');
         const more = main.querySelector('.um-search-more'); more.replaceChildren(); if (hasMore) { const b = button('加载更多', () => runSearch(false), undefined, 'um-load-more'); b.disabled = searchLoading; more.append(b); }
     }
@@ -617,15 +617,16 @@
         link.href = 'https://music.gdstudio.xyz/'; link.target = '_blank'; link.rel = 'noopener noreferrer';
         line.append(document.createTextNode('来源：'), link); return line;
     }
-    function accountsPanel() {
+    function accountsPanel(initialTab = 'account') {
         const controller = new AbortController(); let alive = true;
-        modal('音乐账号', body => {
+        modal('音乐账号', (body, overlay) => {
+            overlay.classList.add('um-settings-sheet');
             const appearanceBox=el('details',undefined,'um-appearance-settings'),choices=el('div',undefined,'um-appearance');appearanceBox.append(el('summary','外观'));
             for(const [value,label]of [['light','白色'],['dark','深色']]){const b=button(label,()=>{appearance=value;try{localStorage.setItem('uvu-music-appearance',value);}catch(_){}applyAppearance();for(const child of choices.children)child.setAttribute('aria-pressed',String(child===b));});b.setAttribute('aria-pressed',String(appearance===value));choices.append(b);}appearanceBox.append(choices);body.append(appearanceBox,button('导入音乐',()=>document.getElementById('um-local-files').click(),'plus'),button('返回小手机',returnToPhone,'house'));
             const publicBox = section('公共音乐'), publicLabel = el('label', undefined, 'um-check um-public-toggle'), publicCheck = el('input');
             publicCheck.type = 'checkbox'; publicCheck.checked = M.settings().publicSources.includes('gd-netease'); publicCheck.setAttribute('aria-label', '启用 GD 音乐台公共源');
             publicLabel.append(publicCheck, document.createTextNode('GD 音乐台 · 网易云'));
-            const publicStatus = el('p', '个人学习、非商业使用；每 5 分钟最多 50 次请求。', 'um-muted'); publicStatus.setAttribute('aria-live','polite');
+            const publicStatus = el('p', '', 'um-muted'); publicStatus.setAttribute('aria-live','polite');
             const playback = publicPlaybackControl(busy => { publicCheck.disabled = busy; if (!busy) publicCheck.checked = M.settings().publicSources.includes('gd-netease'); });
             publicBox.append(publicLabel, playback, publicStatus, publicCredit()); body.append(publicBox);
             publicCheck.onchange = async () => {
@@ -647,7 +648,25 @@
             form.append(label, button('保存并连接', () => connect())); form.onsubmit = e => { e.preventDefault(); void connect(); };
             service.append(serviceTitle, form); accountBox.append(remember, accounts, output, hostingNote, service);
             const libraryActions=el('div',undefined,'um-account-library');libraryActions.append(button('导入歌单',()=>importPlaylistPanel(),'list-plus'),button('角色歌单',()=>characterPlaylistPanel(),'headphones'));accounts.after(libraryActions);
-            body.prepend(accountBox);body.append(button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button'),tutorial());
+            body.prepend(accountBox);
+            const clearCache=button('清理缓存',()=>{M.clearMetadataCache();toast('已清理歌词与公共源临时数据');},undefined,'um-text-button'),clearRecent=button('清空播放记录',async()=>{await M.clearRecent();render();},undefined,'um-text-button');
+            const accountPane=el('div',undefined,'um-settings-pane'),publicPane=el('div',undefined,'um-settings-pane'),tablist=el('div',undefined,'um-settings-tabs');
+            accountPane.append(...[...body.children].filter(child=>child!==publicBox));publicPane.append(publicBox,clearCache,clearRecent);
+            tablist.setAttribute('role','tablist');tablist.setAttribute('aria-label','音乐设置分类');
+            const panes=[accountPane,publicPane],tabs=[];
+            function selectTab(index,focus=false){panes.forEach((pane,i)=>pane.hidden=i!==index);tabs.forEach((tab,i)=>{tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;});body.scrollTop=0;if(focus)tabs[index].focus();}
+            for(const [index,name] of ['账号音乐','公共音乐'].entries()){
+                const tab=button(name,()=>selectTab(index));tab.id='um-settings-tab-'+index;tab.setAttribute('role','tab');
+                panes[index].setAttribute('role','tabpanel');panes[index].setAttribute('aria-labelledby',tab.id);tabs.push(tab);tablist.append(tab);
+                tab.addEventListener('keydown',event=>{const next={ArrowRight:(index+1)%2,ArrowLeft:(index+1)%2,Home:0,End:1}[event.key];if(next!==undefined){event.preventDefault();selectTab(next,true);}});
+            }
+            const help=el('div',undefined,'um-settings-help'),guide=tutorial();guide.open=true;guide.querySelector('summary').hidden=true;
+            help.append(el('h3','使用说明'),el('p','公共音乐仅供个人学习、非商业使用；每 5 分钟最多 50 次请求。','um-muted'),guide);help.hidden=true;
+            const head=overlay.querySelector('.um-sheet-head'),helpButton=button('使用说明',()=>{
+                const show=help.hidden;help.hidden=!show;tablist.hidden=show;panes.forEach((pane,i)=>pane.hidden=show||tabs[i].getAttribute('aria-selected')!=='true');
+                helpButton.setAttribute('aria-label',show?'返回音乐设置':'使用说明');helpButton.title=show?'返回音乐设置':'使用说明';body.scrollTop=0;
+            },undefined,'um-icon um-settings-help-button');helpButton.innerHTML=root.UvULucide?.['circle-help']||'?';head.insertBefore(helpButton,head.lastElementChild);
+            head.after(tablist);body.append(accountPane,publicPane,help);selectTab(initialTab==='public'?1:0);
             checkbox.onchange = async () => {
                 checkbox.disabled = true;
                 try { await M.saveSettings({ remember: checkbox.checked }); }

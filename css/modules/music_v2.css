@@ -1,6 +1,21 @@
 /* Screenshot-led Apple Music layout. Only the added music app owns these rules.
  * Craft guidance: Unslop by Damir Sokolovsky, CC BY 4.0. */
 #uvu-music-screen,.uvu-music-sheet { --um-green:#fa233b;--um-nav-accent:#007aff; }
+.uvu-music-sheet.um-settings-sheet { align-items:center;padding:0; }
+.uvu-music-sheet.um-settings-sheet .um-sheet-card { width:min(398px,calc(100% - 24px));height:min(704px,calc(100dvh - 140px));max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));border-radius:28px; }
+.um-settings-sheet .um-sheet-head { min-height:60px;padding:12px 20px;gap:12px; }
+.um-settings-sheet .um-sheet-head h2 { margin:0;flex:1;font-size:22px; }
+.um-settings-sheet .um-sheet-head .um-icon { width:34px;height:34px;min-height:34px;flex:0 0 34px;padding:8px;border:0;border-radius:50%;background:var(--um-control); }
+.um-settings-sheet .um-settings-help-button svg { display:block;width:18px;height:18px; }
+.um-settings-sheet .um-settings-tabs { display:flex;flex:0 0 auto;gap:8px;margin:0 20px 12px; }
+.um-settings-sheet .um-settings-tabs > button { position:relative;flex:1;min-height:40px;border:0;border-radius:18px;background:var(--um-control);font-size:14px;color:var(--um-gray); }
+.um-settings-sheet .um-settings-tabs > [aria-selected=true] { color:var(--um-text); }
+.um-settings-sheet .um-settings-tabs > [aria-selected=true]::after { content:'';position:absolute;inset:auto 20% 3px;border-bottom:2px solid var(--um-green); }
+.um-settings-sheet .um-sheet-body { flex:1;padding:0 20px 24px; }
+.um-settings-sheet :is(.um-settings-pane,.um-settings-help,.um-settings-tabs)[hidden] { display:none; }
+.um-settings-sheet .um-settings-pane > .um-section > .um-section-head { display:none; }
+.um-settings-sheet .um-settings-help { font-size:13px;line-height:1.7; }
+.um-settings-sheet .um-settings-help .um-tutorial { padding-top:0;border:0; }
 #uvu-music-screen .um-main { padding-bottom:calc(160px + env(safe-area-inset-bottom)); }
 #uvu-music-screen .um-hero { min-height:76px;padding:16px 20px 12px; }
 #uvu-music-screen .um-hero h1 { font-size:34px; }

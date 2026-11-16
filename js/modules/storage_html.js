@@ -44,6 +44,7 @@ function injectStorageHTML() {
             <div class="ios6-grouped-card">
                 <div class="storage-group-title">
                     <span>分类备份</span>
+                    <button type="button" class="storage-resource-check-btn" data-resource-health aria-label="检查外链与资源加载">检测</button>
                     <button class="storage-select-all-btn" id="storage-select-all-btn">全不选</button>
                 </div>
                 <div style="padding: 0 12px 10px; color: #777; font-size: 12px; line-height: 1.5;">
@@ -77,7 +78,6 @@ function injectStorageHTML() {
             <label class="storage-backup-extras">脱敏备份的空白密钥
                 <select id="storage-import-credentials"><option value="preserve">保留本机相同接口的密钥</option><option value="clear">清空对应密钥</option></select>
             </label>
-            <button type="button" data-resource-health>检查外链与资源加载</button>
             <p id="storage-backup-progress" role="status" aria-live="polite"></p>
             <button type="button" id="storage-backup-cancel" hidden>取消解析</button>
             <div class="storage-action-group">

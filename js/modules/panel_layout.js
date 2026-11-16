@@ -54,6 +54,20 @@
         input.classList.add('panel-switch'); input.setAttribute('role', 'switch');
         input.closest('label')?.classList.add('panel-switch-row');
     }
+    function helpOnly(root, nodes) {
+        const notes = nodes.filter(Boolean); if (!notes.length) return;
+        let source = q(root, '.panel-help-source');
+        if (!source) { source = make('details', 'panel-help-source'); source.hidden = true; source.append(make('summary', '', '使用说明')); root.append(source); }
+        source.replaceChildren(source.firstElementChild, ...notes);
+        root.monoHelp = () => {
+            const opener = document.activeElement;
+            const dialog = createMessageForwardDialog('使用说明', 'panel-explanation-dialog', () => queueMicrotask(() => { if (opener?.isConnected) opener.focus({preventScroll:true}); }));
+            dialog.panel.classList.add('derived-settings');
+            const body = make('div', 'derived-body panel-explanation-body');
+            for (const note of [...source.children].slice(1)) { const copy = note.cloneNode(true); if (copy.tagName === 'DETAILS') copy.open = true; body.append(copy); }
+            dialog.panel.append(body); decorate(dialog.panel);
+        };
+    }
     function segment(select, labels, onChange = () => {}) {
         if (!select || select.dataset.panelSegment) return;
         select.dataset.panelSegment = 'true';
@@ -438,8 +452,8 @@
         }
     }
     function extra(root) {
-        root.querySelectorAll('.relationship-help').forEach(p => { if (!p.closest('details')) disclose([p], '规则说明', 'panel-inline-help'); });
         if (root.classList.contains('relationship-dialog')) {
+            helpOnly(root, [...root.querySelectorAll('.relationship-help')].filter(p => !p.closest('.panel-help-source')));
             const body = q(root, '.relationship-dialog-body');
             if (body && !q(body, '.draft-identity') && typeof db !== 'undefined') {
                 const chat = db.characters.find(c => c.id === currentChatId);
@@ -564,7 +578,7 @@
             help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux','fusion-file-help');
             help.setAttribute('aria-label','使用说明'); navIcon(help,'circle-help');
         } else if (help) {
-            const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .draft-scroll');
+            const body = q(panel, ':scope > .shared-document-body,:scope > .derived-body,:scope > .mcp-body,:scope > .relationship-dialog-body,:scope > .draft-scroll');
             if (body) { help.classList.remove('mono-nav-help'); help.classList.add('sheet-aux','sheet-guide'); help.setAttribute('aria-label','使用说明'); navIcon(help,'circle-help'); head.append(help); }
         }
         if (close) {
@@ -1337,7 +1351,11 @@
             const labels=[...body.querySelectorAll(':scope > label')], toggles=labels.filter(el=>q(el,'input[type=checkbox]'));
             group(toggles.slice(0,2),'','draft-card');
             const fields=labels.filter(el=>!toggles.includes(el));group(fields.slice(0,2),'触发方式','draft-card');disclose(fields.slice(2).concat(toggles.slice(2)),'匹配与扫描','draft-card');
-            const help=[...body.querySelectorAll(':scope > .feature-help')];if(help.length)disclose(help,'生效说明','draft-notice');
+            const help=[...body.querySelectorAll(':scope > .feature-help,:scope > details')].filter(el=>el.matches('.feature-help')||/导入兼容/.test(q(el,':scope > summary')?.textContent));
+            helpOnly(panel,help);
+            const show=make('button','mono-nav-help');show.type='button';show.setAttribute('aria-label','使用说明');navIcon(show,'circle-help');show.onclick=()=>panel.monoHelp();head.append(show);
+            const editor=document.getElementById('edit-world-book-screen'),editorHead=q(editor,':scope > .app-header');
+            if(editorHead&&!q(editorHead,'.worldbook-editor-help')){const editorHelp=show.cloneNode(true);editorHelp.className='worldbook-editor-help';editorHelp.onclick=()=>panel.monoHelp();q(editorHead,'.placeholder')?.replaceWith(editorHelp);}
         }
         sheetLayout(panel);
         window.UvULensoPanels?.decorate(panel);
@@ -1355,7 +1373,8 @@
         const actions=q(body,'.home-preset-actions');if(actions)footer.append(actions);
         const input=q(body,'#home-preset-name'),caption=q(body,'label[for=home-preset-name]');if(input&&caption){const field=make('label','draft-preset-name');field.append(caption,input);body.prepend(field);}
         const include=q(body,'.home-preset-option');if(include){asSwitch(q(include,'input'));group([include],'分享内容','draft-card');}
-        const help=[...body.querySelectorAll(':scope > p:not(#home-preset-status)')];if(help.length)disclose(help,'导入与分享说明','draft-notice');
+        const help=[...body.querySelectorAll(':scope > p:not(#home-preset-status)')];helpOnly(panel,help);
+        if(help.length){const show=make('button','mono-nav-help');show.type='button';show.setAttribute('aria-label','使用说明');navIcon(show,'circle-help');show.onclick=()=>panel.monoHelp();head.append(show);}
         launch.onclick=()=>{overlay.hidden=false;back.focus();};back.onclick=()=>{overlay.hidden=true;launch.focus();};
         overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();back.click();}if(event.key==='Tab'){const list=[...panel.querySelectorAll('button,input,summary')].filter(el=>!el.disabled&&el.getClientRects().length);if(event.shiftKey&&document.activeElement===list[0]){event.preventDefault();list.at(-1)?.focus();}else if(!event.shiftKey&&document.activeElement===list.at(-1)){event.preventDefault();list[0]?.focus();}}});
         sheetLayout(panel);
