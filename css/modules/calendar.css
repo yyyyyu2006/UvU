@@ -128,6 +128,15 @@
  .uvu-calendar.uvu-mono-panel .draft-calendar-primary.is-inline > button.calendar-action-button{min-height:44px}
 }
 .uvu-calendar .calendar-important-list{display:grid;gap:8px;margin:8px 0}
+/* Keep the date and its two compact actions on one row, even on narrow phones. */
+.uvu-calendar .calendar-range-bar,
+.uvu-calendar.uvu-mono-panel .calendar-range-bar{flex-wrap:nowrap}
+.uvu-calendar .calendar-range-bar .calendar-range-label{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+.uvu-calendar .calendar-range-bar button.calendar-action-button,
+.uvu-calendar.uvu-mono-panel .calendar-range-bar .draft-calendar-primary.is-inline > button.calendar-action-button{position:relative;width:72px;min-width:72px;min-height:30px;padding:5px 8px;white-space:nowrap}
+@media(pointer:coarse){
+ .uvu-calendar .calendar-range-bar button.calendar-action-button::after{content:'';position:absolute;inset:-7px 0}
+}
 .uvu-calendar .calendar-important-card{width:100%;text-align:left;overflow-wrap:anywhere}
 .uvu-calendar .calendar-upcoming{margin:12px 0;display:grid;gap:6px}
 .uvu-calendar .calendar-upcoming h4{margin:0;font-size:13px}

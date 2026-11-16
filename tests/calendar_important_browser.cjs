@@ -67,16 +67,20 @@ const { fullApp, stableUI, root } = require('./helpers/full_app_browser.cjs');
    assert.equal(await cal.evaluate(e=>e.scrollWidth<=e.clientWidth+1),true);
    const sizes = await cal.locator('button.calendar-action-button').evaluateAll(buttons => buttons.map(button => {
     const box = button.getBoundingClientRect(), style = getComputedStyle(button);
-    return {text:button.textContent,width:box.width,height:box.height,font:style.fontSize,radius:style.borderRadius,fits:button.scrollWidth<=button.clientWidth+1};
+    return {text:button.textContent,width:box.width,height:box.height,top:box.top,left:box.left,right:box.right,font:style.fontSize,radius:style.borderRadius,fits:button.scrollWidth<=button.clientWidth+1};
    }));
    assert.deepEqual(sizes.map(b=>b.text).sort(), ['选择范围','添加日程','添加重要日'].sort());
    for (const size of sizes) {
-    assert.ok(Math.abs(size.width-sizes[0].width)<1, JSON.stringify(sizes));
-    assert.ok(Math.abs(size.height-sizes[0].height)<1, JSON.stringify(sizes));
     assert.equal(size.font,sizes[0].font); assert.equal(size.radius,sizes[0].radius); assert.equal(size.fits,true);
    }
-   const minimum = await page.evaluate(()=>matchMedia('(pointer:coarse)').matches?44:36);
-   assert.ok(sizes[0].height>=minimum);
+   const chooseSize=sizes.find(b=>b.text==='选择范围'),addSize=sizes.find(b=>b.text==='添加日程');
+   for(const size of [chooseSize,addSize]){assert.equal(size.width,72);assert.equal(size.height,30);}
+   assert.ok(Math.abs(chooseSize.top-addSize.top)<1,JSON.stringify(sizes));
+   assert.ok(addSize.left>=chooseSize.right+7,JSON.stringify(sizes));
+   await cal.getByRole('button',{name:'选择范围',exact:true}).click();
+   const expanded=await cal.locator('.calendar-range-bar').evaluate(row=>{const buttons=[...row.querySelectorAll('button.calendar-action-button')].map(b=>b.getBoundingClientRect());return {tops:buttons.map(b=>b.top),fits:row.scrollWidth<=row.clientWidth+1};});
+   assert.ok(Math.abs(expanded.tops[0]-expanded.tops[1])<1,JSON.stringify(expanded));assert.equal(expanded.fits,true);
+   await cal.getByRole('button',{name:'选择范围',exact:true}).click();
    console.log('PASS calendar action sizes',viewport.width,JSON.stringify(sizes));
    await cal.getByRole('button',{name:'添加重要日',exact:true}).scrollIntoViewIfNeeded();
    await cal.screenshot({path:path.join(out,'important-'+viewport.width+'.png'),animations:'disabled'});
@@ -86,8 +90,8 @@ const { fullApp, stableUI, root } = require('./helpers/full_app_browser.cjs');
    await desktop.page.evaluate(()=>openEnvironmentCalendar());
    await stableUI(desktop.page,'#environment-calendar');
    const boxes=await desktop.page.locator('#environment-calendar button.calendar-action-button').evaluateAll(buttons=>buttons.map(b=>({width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height})));
-   assert.equal(boxes.length,3);for(const box of boxes)assert.deepEqual(box,{width:88,height:36});
-   assert.deepEqual(desktop.errors,[]);console.log('PASS mouse input calendar actions 88x36');
+   assert.equal(boxes.length,3);assert.deepEqual(boxes,[{width:72,height:30},{width:72,height:30},{width:88,height:36}]);
+   assert.deepEqual(desktop.errors,[]);console.log('PASS compact mouse input actions 72x30; important day unchanged');
   } finally { await desktop.context.close(); }
   await page.evaluate(css=>{db.globalCss=css;applyGlobalCss(css||'');},originalCss);
   await cal.getByRole('button',{name:'日历设置',exact:true}).click();

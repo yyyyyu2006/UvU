@@ -53,3 +53,9 @@ calendar_core.js、calendar_ui.js、calendar_ai.js、calendar.css；index.html�
 - Modern Web Guidance的form-factor-adaptation用于触控尺寸和320px检查；使用min-height而非固定height，保留文字放大空间，无新API或依赖。
 - 本次重新执行1526项npm test、38项真实1900严格对照，全部通过且无跳过。完整App浏览器重新验证320／390／768／1024／1440宽、触控88×44与鼠标88×36、字号圆角相等、无横向溢出及三个按钮原功能；同时通过重要日原有流程和合成主题样本。日志outputs/calendar-important/buttons-*.log未提交。
 - 本节写入时待本次提交及test部署核验；最终版本记录Vault CURRENT。main未获本批合并确认；用户真机与完整第三方主题仍待验收，历史发布不作为本批部署证据。
+
+### 用户反馈后的范围栏紧凑修正（2026-11-16）
+
+- 用户手机截图显示范围栏的添加日程换行，明确要求只缩小选择范围／添加日程并横排。上一版日期标签flex-basis为120px，加两个88px按钮和间距会挤出窄屏；等尺寸断言未覆盖同一行，本次补查并修正。
+- 两按钮视觉尺寸72×30、字号12px，范围栏禁止换行，日期标签可收缩换行；添加重要日保留原尺寸位置颜色。触控用伪元素上下各扩展7px至44px点击高度，不扩大视觉高度，不加依赖或修改1900路径。资源版本calendar-inline-v3。
+- 完整App浏览器验证320/390/768/1024/1440宽度下两个按钮同一水平线、8px间距、文字不溢出；选择范围后出现清除仍无横溢、按钮仍并排，鼠标尺寸及重要日原功能通过。截图和本批回归日志outputs/calendar-important/inline-*，最终test发布及新增执行结果见Vault CURRENT。
