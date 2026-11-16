@@ -46,3 +46,10 @@ calendar_core.js、calendar_ui.js、calendar_ai.js、calendar.css；index.html�
 - test线上calendar_core/ui/ai及calendar.css四资源SHA256与功能提交一致（统一CRLF后比较）；Chrome DevTools MCP隔离context启动完整测试App、新写入默认私有重要日、月格/近期列表、实际点击新建默认年度/共享关、Esc保留底层日历并返回按钮均通过。
 - 线上只见既有根favicon.ico404，未发现新脚本异常或新增功能资源失败；本轮未顺带修改站点图标。线上验证使用合成数据，没有读取或操作用户个人存档。
 - 本补记仅记录已观察到的75e8ef8部署，随后文档同步提交不修改业务资源；最新文档提交和部署最终标记另记Vault CURRENT。main仍须用户本批验收确认。
+
+### 三个操作按钮尺寸统一（2026-11-16）
+
+- 用户截图要求统一“选择范围／添加日程／添加重要日”。三个目标添加共用class，尺寸88px宽、鼠标36px高／触控44px高，字号12px及胶囊圆角一致；保留颜色和位置。选择器仅限日历目标，不更改心情／经期的主按钮或其他页面。更新两份资源版本以避免旧缓存。
+- Modern Web Guidance的form-factor-adaptation用于触控尺寸和320px检查；使用min-height而非固定height，保留文字放大空间，无新API或依赖。
+- 本次重新执行1526项npm test、38项真实1900严格对照，全部通过且无跳过。完整App浏览器重新验证320／390／768／1024／1440宽、触控88×44与鼠标88×36、字号圆角相等、无横向溢出及三个按钮原功能；同时通过重要日原有流程和合成主题样本。日志outputs/calendar-important/buttons-*.log未提交。
+- 本节写入时待本次提交及test部署核验；最终版本记录Vault CURRENT。main未获本批合并确认；用户真机与完整第三方主题仍待验收，历史发布不作为本批部署证据。

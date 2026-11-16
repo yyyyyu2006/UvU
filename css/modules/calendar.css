@@ -118,7 +118,15 @@
 
 .uvu-calendar .calendar-day.has-event .calendar-face:after {content:'';position:absolute;width:5px;height:5px;background:#5f88b2;border:2px solid #fff;border-radius:50%;right:-2px;bottom:0;}
 .uvu-calendar .calendar-important-mark{position:absolute;left:2px;bottom:0;font-size:9px;line-height:12px;color:#7b5b35;max-width:100%;pointer-events:none}
-.uvu-calendar .calendar-add-important{flex-shrink:0;font-size:12px;padding:6px 10px;border-radius:16px}
+/* Keep the three day actions equal after the panel layout moves the primary button. */
+.uvu-calendar button.calendar-action-button,
+.uvu-calendar.uvu-mono-panel .draft-calendar-primary > button.calendar-action-button,
+.uvu-calendar.uvu-mono-panel .draft-calendar-primary.is-inline > button.calendar-action-button{box-sizing:border-box;width:88px;min-width:88px;min-height:36px;padding:8px 12px;font-size:12px;line-height:20px;font-weight:400;border-radius:999px;flex:none}
+@media(pointer:coarse){
+ .uvu-calendar button.calendar-action-button,
+ .uvu-calendar.uvu-mono-panel .draft-calendar-primary > button.calendar-action-button,
+ .uvu-calendar.uvu-mono-panel .draft-calendar-primary.is-inline > button.calendar-action-button{min-height:44px}
+}
 .uvu-calendar .calendar-important-list{display:grid;gap:8px;margin:8px 0}
 .uvu-calendar .calendar-important-card{width:100%;text-align:left;overflow-wrap:anywhere}
 .uvu-calendar .calendar-upcoming{margin:12px 0;display:grid;gap:6px}

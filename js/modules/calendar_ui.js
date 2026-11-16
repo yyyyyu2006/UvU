@@ -248,7 +248,7 @@ function calendarDayWatcher(readDay, changed) {
         previous.setAttribute('aria-label', '上月'); next.setAttribute('aria-label', '下月'); nav.append(title, todayButton, previous, next); monthCard.append(nav);
         const weekdays = node('div', undefined, 'calendar-weekdays'); ['一', '二', '三', '四', '五', '六', '日'].forEach(t => weekdays.append(node('span', t))); monthCard.append(weekdays);
         const grid = node('div', undefined, 'calendar-month'); grid.setAttribute('aria-label', '月份日历'); monthCard.append(grid); body.append(monthCard);
-        const rangeBar = node('div', undefined, 'calendar-range-bar'), rangeLabel = node('span', '', 'calendar-range-label'), choose = button('选择范围', () => { rangeMode = !rangeMode; rangeAnchor = null; paint(); }), clear = button('清除', () => { span = C().range(selected); rangeMode = false; rangeAnchor = null; paint(); }); rangeBar.append(rangeLabel, choose, clear); body.append(rangeBar);
+        const rangeBar = node('div', undefined, 'calendar-range-bar'), rangeLabel = node('span', '', 'calendar-range-label'), choose = button('选择范围', () => { rangeMode = !rangeMode; rangeAnchor = null; paint(); }, 'calendar-action-button'), clear = button('清除', () => { span = C().range(selected); rangeMode = false; rangeAnchor = null; paint(); }); rangeBar.append(rangeLabel, choose, clear); body.append(rangeBar);
         const tabs = node('div', undefined, 'calendar-tabs'); tabs.setAttribute('role', 'tablist');
         const tabButtons = Object.entries({ schedule: '日程', mood: '心情', period: '经期' }).map(([value, text]) => { const b = button(text, () => { mode = value; paint(); }); b.setAttribute('role', 'tab'); b.dataset.mode = value; tabs.append(b); return b; }); body.insertBefore(tabs, monthCard);
         const section = node('section', undefined, 'calendar-detail'), feedback = node('p', '', 'calendar-feedback'); feedback.setAttribute('aria-live', 'polite'); body.append(section, feedback);
@@ -307,9 +307,9 @@ function calendarDayWatcher(readDay, changed) {
         function paintDetail() {
             section.replaceChildren(); const heading = node('div', undefined, 'calendar-section-heading'); heading.append(node('h3', span.days > 1 ? span.days + '天的记录' : selected)); section.append(heading);
             const actions = node('div', undefined, 'calendar-inline-actions'); section.append(actions);
-            actions.append(button(mode === 'mood' ? '记录心情' : mode === 'period' ? '记录经期' : '添加日程', () => { if (!valid()) return; if (mode === 'mood') editMood(key, selected); else if (mode === 'period') { if (key !== 'user') { feedback.textContent = '经期记录属于我的日历'; return; } editPeriod(span); } else editEvent(key, span); }, 'calendar-primary'));
+            actions.append(button(mode === 'mood' ? '记录心情' : mode === 'period' ? '记录经期' : '添加日程', () => { if (!valid()) return; if (mode === 'mood') editMood(key, selected); else if (mode === 'period') { if (key !== 'user') { feedback.textContent = '经期记录属于我的日历'; return; } editPeriod(span); } else editEvent(key, span); }, mode === 'schedule' ? 'calendar-primary calendar-action-button' : 'calendar-primary'));
             actions.append(button('撤销', async () => { try { await C().undo(); feedback.textContent = '已撤销'; } catch (e) { feedback.textContent = e.message; } }));
-            if (mode === 'schedule') heading.append(button('添加重要日', () => { if (valid()) editImportant(key, span); }, 'calendar-add-important'));
+            if (mode === 'schedule') heading.append(button('添加重要日', () => { if (valid()) editImportant(key, span); }, 'calendar-add-important calendar-action-button'));
             if (mode === 'schedule') { const latestMood = C().state().moods.filter(m => m.owner === key && m.date === selected).sort((a,b) => b.at-a.at)[0]; actions.append(button('记录心情', () => { if (valid()) editMood(key, selected, latestMood); })); }
             if (chat && mode === 'schedule') actions.append(button('生成行程', () => generate(false)));
             if (chat && mode === 'schedule') for (const proposal of root.UvUCalendarAI?.pending(chat) || []) actions.append(button('审核安排', () => showProposal(chat, proposal)));
