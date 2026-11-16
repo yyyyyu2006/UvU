@@ -11,6 +11,7 @@ function fixture(settings = {}) {
         document: { getElementById() { return null; } }, getRandomValue: x => x, saveData: async () => {},
         fetch: async (url, init) => { const body = JSON.parse(init.body); calls.push({ url, body }); const values = Array.isArray(body.input) ? body.input : [body.input];
             return { ok: true, json: async () => ({ data: values.map(() => ({ embedding: [1, 0] })) }) }; } });
+    require('./helpers/api_transport.cjs')(c);
     for (const name of ['vector_index_store', 'vector_memory_tools', 'auto_memory']) {
         const file = path.join(__dirname, `../js/modules/${name}.js`);
         if (fs.existsSync(file)) vm.runInContext(fs.readFileSync(file, 'utf8'), c);

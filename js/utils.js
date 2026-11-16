@@ -1,4 +1,146 @@
 // --- 工具函数库 (js/utils.js) ---
+// Plain display fields only; authored HTML templates keep their own rendering path.
+function escapeDisplayHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[char]);
+}
+
+function safeDisplayImageUrl(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    try {
+        const parsed = new URL(text, typeof document !== 'undefined' ? document.baseURI : undefined);
+        if (['https:', 'http:', 'blob:'].includes(parsed.protocol) ||
+            (parsed.protocol === 'data:' && /^data:image\/[a-z0-9.+-]+[;,]/i.test(text))) return text;
+    } catch (_) {}
+    return '';
+}
+
+// A blank key may inherit only from the same configured destination/provider.
+// Compare the full API base, including tenant paths, rather than a host prefix.
+function resolveDestinationKey(url, key, fallbackUrl, fallbackKey, provider, fallbackProvider, vectorEndpoints = false) {
+    if (typeof key === 'string' && key.trim()) return key;
+    if ((provider || 'newapi') !== (fallbackProvider || 'newapi')) return '';
+    if (!url) return fallbackKey || '';
+    const normalize = value => {
+        const parsed = new URL(String(value).trim());
+        if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) return null;
+        parsed.hash = '';
+        parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+        if (vectorEndpoints) parsed.pathname = parsed.pathname.replace(/\/(?:embeddings|rerank|chat\/completions)$/i, '');
+        return parsed.href;
+    };
+    try {
+        const destination = normalize(url);
+        return destination && destination === normalize(fallbackUrl) ? fallbackKey || '' : '';
+    } catch (_) { return ''; }
+}
+
+const statusRegexCache = new Map();
+let statusRegexCacheBytes = 0;
+let statusRegexWarningShown = false;
+function statusRegexKey(source, flags, text) { return JSON.stringify([source, flags, text]); }
+function statusRegexWarn() {
+    if (!statusRegexWarningShown && typeof showToast === 'function') showToast('状态正则超时或暂不可用，已保留原文；请检查状态栏设置');
+    statusRegexWarningShown = true;
+}
+function statusRegexIsLiteral(source, flags) {
+    if (source.length > 512 || /[^dgimsuy]/.test(flags)) return false;
+    let inClass = false;
+    for (let i = 0; i < source.length; i++) {
+        const char = source[i];
+        if (char === '\\') {
+            const next = source[++i];
+            if (!next || /[1-9kpP]/.test(next)) return false;
+        } else if (inClass) { if (char === ']') inClass = false; }
+        else if (char === '[') inClass = true;
+        else if ('+*?{}()|'.includes(char)) return false;
+    }
+    return !inClass;
+}
+function createStatusRegex(source, flags = '') {
+    // Construction validates syntax only. Unbounded matching stays in a worker.
+    if (source.length > 8192) throw new Error('状态正则过长');
+    const syntax = new RegExp(source, flags);
+    if (statusRegexIsLiteral(source, flags)) return syntax;
+    const result = text => {
+        const cached = statusRegexCache.get(statusRegexKey(source, flags, String(text)));
+        if (cached?.error) statusRegexWarn();
+        return cached;
+    };
+    return {
+        exec(text) { return result(text)?.match || null; },
+        [Symbol.replace](text) { return result(text)?.stripped ?? String(text); }
+    };
+}
+async function prepareStatusRegexJobs(jobs, signal) {
+    const pending = [...new Map(jobs.map(job => [statusRegexKey(job.source, job.flags, job.text), job])).values()]
+        .filter(job => !statusRegexIsLiteral(job.source, job.flags) && !statusRegexCache.has(statusRegexKey(job.source, job.flags, job.text)));
+    if (!pending.length) return;
+    const aborted = () => Object.assign(new Error('状态匹配已取消'), {name: 'AbortError'});
+    if (signal?.aborted) throw aborted();
+    const remember = (job, value) => {
+        const key = statusRegexKey(job.source, job.flags, job.text);
+        const bytes = (key.length + JSON.stringify(value).length) * 2;
+        if (bytes > 8 * 1024 * 1024) return;
+        if (statusRegexCache.has(key)) return;
+        while (statusRegexCache.size >= 1000 || statusRegexCacheBytes + bytes > 8 * 1024 * 1024) {
+            const first = statusRegexCache.keys().next().value;
+            statusRegexCacheBytes -= statusRegexCache.get(first).bytes;
+            statusRegexCache.delete(first);
+        }
+        statusRegexCache.set(key, {...value, bytes});
+        statusRegexCacheBytes += bytes;
+    };
+    // One total budget includes worker startup and every text/flag variant.
+    await new Promise((resolve, reject) => {
+        let worker, timer, settled = false;
+        const finish = error => {
+            if (settled) return;
+            settled = true; clearTimeout(timer); worker?.terminate();
+            signal?.removeEventListener('abort', cancel);
+            if (error?.name === 'AbortError') { reject(error); return; }
+            for (const job of pending) if (!statusRegexCache.has(statusRegexKey(job.source, job.flags, job.text))) remember(job, {error: '状态匹配未完成'});
+            if (error) statusRegexWarn();
+            resolve();
+        };
+        const cancel = () => finish(aborted());
+        signal?.addEventListener('abort', cancel, {once: true});
+        try {
+            if (typeof Worker === 'undefined' || pending.length > 1000 || pending.some(job => job.source.length > 8192) || pending.reduce((sum, job) => sum + job.text.length, 0) > 4 * 1024 * 1024) throw new Error('状态匹配暂不可用');
+            worker = new Worker('js/workers/status_regex_worker.js?v=20261116-status-budget');
+            worker.onmessage = event => {
+                if (settled) return;
+                const value = event.data;
+                if (value?.done) finish();
+                else if (Number.isInteger(value?.index) && pending[value.index]) remember(pending[value.index], value);
+            };
+            worker.onerror = () => finish(new Error('状态匹配失败'));
+            timer = setTimeout(() => finish(new Error('状态匹配超时')), 250);
+            worker.postMessage({jobs: pending});
+        } catch (error) { finish(error); }
+    });
+}
+async function prepareStatusRegexHistory(chat, history, signal) {
+    if (!chat?.statusPanel?.enabled || !chat.statusPanel.regexPattern) return;
+    const raw = chat.statusPanel.regexPattern, parts = raw.match(/^\/(.*?)\/([a-z]*)$/);
+    const source = parts ? parts[1] : raw, flags = [...new Set((parts?.[2] || 'gs') + 'gs')].join('');
+    const texts = normalizeHistoryForAI(chat, history, true).filter(message => message.role === 'assistant')
+        .flatMap(message => [message.content || '', ...(message.parts || []).filter(part => part.type === 'text').map(part => part.text || '')]);
+    await prepareStatusRegexJobs([...new Set(texts)].map(text => ({source, flags, text})), signal);
+}
+let statusRenderJobs = [], statusRenderPreparation;
+function prepareStatusRegexRender(job) {
+    statusRenderJobs.push(job);
+    if (!statusRenderPreparation) statusRenderPreparation = Promise.resolve().then(async () => {
+        const jobs = statusRenderJobs;
+        statusRenderJobs = []; statusRenderPreparation = null;
+        await prepareStatusRegexJobs(jobs);
+    });
+    return statusRenderPreparation;
+}
+
 // Local settings only. Chat/archive changes use beginChatMutation instead.
 const pendingLocalSettingsFields = new WeakMap();
 async function saveLocalSettingsFields(changes) {
@@ -553,7 +695,7 @@ function getMixedContent(responseData) {
 }
 
 // 过滤聊天记录用于 AI 上下文 (包含状态栏剔除和双语格式化)
-function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
+function normalizeHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
     // 1. 基础过滤：深度克隆并过滤掉被屏蔽上下文的消息
     let filteredHistory = JSON.parse(JSON.stringify(historySlice || chat.history));
     filteredHistory = filteredHistory.filter(m => !m.relationshipDelivery);
@@ -596,6 +738,11 @@ function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
         });
     }
 
+    return filteredHistory;
+}
+
+function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
+    let filteredHistory = normalizeHistoryForAI(chat, historySlice, ignoreContextDisabled);
     // 3. 状态栏移除逻辑
     if (chat.statusPanel && chat.statusPanel.enabled && chat.statusPanel.regexPattern) {
         const currentRegexStr = chat.statusPanel.regexPattern;
@@ -648,7 +795,7 @@ function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
             }
             let regex;
             try {
-                regex = new RegExp(pattern, flags);
+                regex = createStatusRegex(pattern, flags);
             } catch (e) {
                 console.error("Invalid regex in status panel settings:", e);
                 continue;
@@ -666,7 +813,7 @@ function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
                     newParts = msg.parts.map(p => {
                         if (p.type === 'text') {
                             try {
-                                const partRegex = new RegExp(pattern, flags);
+                                const partRegex = createStatusRegex(pattern, flags);
                                 const newText = p.text.replace(partRegex, '').trim();
                                 if (newText !== p.text) partsHasMatch = true;
                                 return { ...p, text: newText };

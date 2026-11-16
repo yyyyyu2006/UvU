@@ -86,10 +86,21 @@
     function validateRecovery(input,expected){
         if(typeof input!=='string' || bytes(input)>MAX_BYTES)throw new Error('恢复副本超过 16 MiB。');
         let file;try{file=JSON.parse(input,(key,value)=>{if(['__proto__','prototype','constructor'].includes(key))throw new Error();return value;});}catch{throw new Error('恢复副本 JSON 或字段无效。');}
-        if(!object(file) || file.format!=='uvu-bridge-recovery' || file.version!==1 || file.channel!==expected.channel || !Array.isArray(file.outbox) || file.outbox.length>500 || !object(file.pendingScenes) || !object(file.receipts) || !object(file.cursorByCharacter))throw new Error('恢复副本格式、通道或队列无效。');
+        const cleanup=file?.format==='uvu-bridge-cleanup-recovery';
+        if(cleanup){file.outbox=[];file.cursorByCharacter={};}
+        if(!object(file) || !['uvu-bridge-recovery','uvu-bridge-cleanup-recovery'].includes(file.format) || file.version!==1 || file.channel!==expected.channel || !Array.isArray(file.outbox) || file.outbox.length>500 || !object(file.pendingScenes) || !object(file.receipts) || !object(file.cursorByCharacter))throw new Error('恢复副本格式、通道或队列无效。');
         const targets=expected.targets || [];
         const target=(id,archive)=>{const found=targets.find(t=>t.id===id);if(!found || archive!==undefined && !found.archives.includes(archive))throw new Error('恢复副本角色或存档目标不存在，请先恢复对应角色与存档。');return found;};
         const sceneTarget=(key,archive)=>{const found=targets.filter(t=>key.startsWith(t.id+':')).sort((a,b)=>b.id.length-a.id.length)[0];if(!found || key.length>found.id.length+161 || key.length<=found.id.length+1)throw new Error('恢复副本场景目标无效。');target(found.id,archive);return found.id;};
+        if(cleanup){
+            if(!Array.isArray(file.summaryCaches) || file.summaryCaches.length>2000)throw new Error('恢复摘要缓存无效。');
+            const caches=new Set();
+            for(const cache of file.summaryCaches){
+                if(!object(cache) || typeof cache.chatId!=='string' || typeof cache.archiveId!=='string' || typeof cache.journalId!=='string' || !cache.journalId || !object(cache.resume) || cache.resume.completed!==true)throw new Error('恢复摘要缓存身份或内容无效。');
+                target(cache.chatId,cache.archiveId);const id=JSON.stringify([cache.chatId,cache.archiveId,cache.journalId]);
+                if(caches.has(id))throw new Error('恢复摘要缓存重复。');caches.add(id);
+            }
+        }
         if(Object.keys(file.pendingScenes).length>2000 || Object.keys(file.receipts).length>10000 || Object.keys(file.cursorByCharacter).length>2000)throw new Error('恢复副本条目过多。');
         const ids=new Set();
         for(const event of file.outbox){

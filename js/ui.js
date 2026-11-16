@@ -514,25 +514,33 @@ function setupHomeScreen() {
 
     // 收集需要执行的 JS 代码
     const widgetScripts = [];
+    document.querySelectorAll('style[id^="custom-widget-style-"], style[id^="preview-style-"]').forEach(style => style.remove());
 
     // 注入自定义小组件
     if (db.addedWidgets && db.widgetTemplates) {
         db.addedWidgets.forEach(instance => {
             const template = db.widgetTemplates.find(t => t.id === instance.templateId);
             if (template) {
+                const styleId = `custom-widget-style-${template.id}`;
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.textContent = template.css.replace(/{{id}}/g, template.id);
+                    document.head.appendChild(style);
+                }
                 // 修复：必须替换 {{id}} 占位符，否则 HTML 无法匹配注入的 CSS 选择器
                 let html = template.html.replace(/{{id}}/g, template.id);
                 // 替换变量
                 const vars = { ...template.defaultVars, ...instance.vars };
                 for (const [key, value] of Object.entries(vars)) {
-                    html = html.replace(new RegExp(`{{${key}}}`, 'g'), value);
+                    html = html.split(`{{${key}}}`).join(String(value));
                 }
                 
                 // 收集 JS 代码
                 if (template.js) {
                     let jsCode = template.js.replace(/{{id}}/g, template.id);
                     for (const [key, value] of Object.entries(vars)) {
-                        jsCode = jsCode.replace(new RegExp(`{{${key}}}`, 'g'), value);
+                        jsCode = jsCode.split(`{{${key}}}`).join(String(value));
                     }
                     widgetScripts.push({ id: instance.id, code: jsCode });
                 }

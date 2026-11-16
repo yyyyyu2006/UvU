@@ -3,6 +3,18 @@
 let wbViewMode = 'grid'; // 'grid' 或 'list'
 let wbPathStack = [{ id: null, name: '世界书' }];
 
+async function saveWorldBookAddition(item) {
+    const collection = db.worldBooks;
+    collection.push(item);
+    try { await saveData(); return true; }
+    catch (error) {
+        const index = collection.indexOf(item);
+        if (index >= 0) collection.splice(index, 1);
+        showToast('保存失败，已恢复本次新增，请重试');
+        return false;
+    }
+}
+
 function enterWorldBookMultiSelectMode(initialId) {
     if (isWorldBookMultiSelectMode) return;
     isWorldBookMultiSelectMode = true;
@@ -203,14 +215,9 @@ async function moveSelectedWorldBooksToCurrent() {
         if (hasError) return;
 
         // 执行移动
-        idsToMove.forEach(id => {
-            const item = db.worldBooks.find(wb => wb.id === id);
-            if (item) {
-                item.parentId = targetFolderId;
-            }
-        });
-
-        await saveData();
+        const changes = idsToMove.map(id => db.worldBooks.find(wb => wb.id === id)).filter(Boolean)
+            .map(target => ({target, values: {parentId: targetFolderId}}));
+        if (!await saveLocalSettingsFields(changes)) return;
         showToast(`已成功移动 ${count} 个项目`);
         exitWorldBookMultiSelectMode();
     }
@@ -284,8 +291,7 @@ async function setupWorldBookApp() {
                 type: 'folder',
                 name: name.trim()
             };
-            db.worldBooks.push(newFolder);
-            await saveData();
+            if (!await saveWorldBookAddition(newFolder)) return;
             renderWorldBookList();
         }
     });
@@ -316,15 +322,12 @@ async function setupWorldBookApp() {
         if (currentEditingWorldBookId) {
             const book = db.worldBooks.find(wb => wb.id === currentEditingWorldBookId);
             if (book) {
-                book.name = name;
-                book.content = content;
-                book.position = position;
-                book.category = category;
-                book.depth = depth;
-                if (rules) book.rules = rules;
-            }
+                if (!await saveLocalSettingsFields([{target: book, values: {
+                    name, content, position, category, depth, ...(rules ? {rules} : {})
+                }}])) return;
+            } else return showToast('条目已变更，请重新打开');
         } else {
-            db.worldBooks.push({
+            if (!await saveWorldBookAddition({
                 id: `wb_${Date.now()}`, 
                 parentId: currentFolderId,
                 type: 'entry',
@@ -334,9 +337,8 @@ async function setupWorldBookApp() {
                 category,
                 depth,
                 ...(rules ? { rules } : {})
-            });
+            })) return;
         }
-        await saveData();
         showToast('世界书条目已保存');
         renderWorldBookList();
         switchScreen('world-book-screen');

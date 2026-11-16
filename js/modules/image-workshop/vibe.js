@@ -1,4 +1,13 @@
 // --- Vibe 逻辑 ---
+function validateWorkshopVibeWeight(value, fallback) {
+    if (value === undefined) return fallback;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) throw new Error('Vibe 参数必须是 0 到 1 的数字');
+    return value;
+}
+function workshopVibeWeight(value, fallback) {
+    const number = typeof value === 'number' ? value : (typeof value === 'string' && value.trim() ? Number(value) : NaN);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
+}
 function initWorkshopVibe() {
     const toggle = document.getElementById('workshop-vibe-toggle');
     const body = document.getElementById('workshop-vibe-body');
@@ -68,21 +77,22 @@ function initWorkshopVibe() {
                     imgRow.style.borderBottom = index < activeLibItem.images.length - 1 ? '1px dashed #ddd' : 'none';
                     
                     imgRow.innerHTML = `
-                        <div style="width: 60px; height: 60px; border-radius: 6px; background-image: url(${img.thumbnail}); background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid #ddd;"></div>
+                        <div style="width: 60px; height: 60px; border-radius: 6px; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid #ddd;"></div>
                         <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
                             <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #666;">
                                 <span style="width: 60px;">信息提取</span>
-                                <input type="range" class="group-info-slider" data-index="${index}" min="0" max="1" step="0.05" value="${img.infoExtracted !== undefined ? img.infoExtracted : 1.0}" style="flex: 1;">
-                                <span class="group-info-val" style="width: 30px; text-align: right;">${img.infoExtracted !== undefined ? img.infoExtracted : 1.0}</span>
+                                <input type="range" class="group-info-slider" data-index="${index}" min="0" max="1" step="0.05" value="${workshopVibeWeight(img.infoExtracted, 1.0)}" style="flex: 1;">
+                                <span class="group-info-val" style="width: 30px; text-align: right;">${workshopVibeWeight(img.infoExtracted, 1.0)}</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #666;">
                                 <span style="width: 60px;">参考强度</span>
-                                <input type="range" class="group-ref-slider" data-index="${index}" min="0" max="1" step="0.05" value="${img.refStrength !== undefined ? img.refStrength : 0.6}" style="flex: 1;">
-                                <span class="group-ref-val" style="width: 30px; text-align: right;">${img.refStrength !== undefined ? img.refStrength : 0.6}</span>
+                                <input type="range" class="group-ref-slider" data-index="${index}" min="0" max="1" step="0.05" value="${workshopVibeWeight(img.refStrength, 0.6)}" style="flex: 1;">
+                                <span class="group-ref-val" style="width: 30px; text-align: right;">${workshopVibeWeight(img.refStrength, 0.6)}</span>
                             </div>
                         </div>
                     `;
                     
+                    imgRow.firstElementChild.style.backgroundImage = `url(${JSON.stringify(safeDisplayImageUrl(img.thumbnail))})`;
                     // 绑定组内滑块事件
                     const infoSlider = imgRow.querySelector('.group-info-slider');
                     const infoVal = imgRow.querySelector('.group-info-val');
@@ -105,22 +115,23 @@ function initWorkshopVibe() {
                 // 渲染单图 UI
                 previewContainer.innerHTML = `
                     <div style="display: flex; gap: 15px; align-items: center;">
-                        <div id="workshop-vibe-preview-img" style="width: 80px; height: 80px; border-radius: 6px; background-image: url(${activeLibItem.base64}); background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid #ddd;"></div>
+                        <div id="workshop-vibe-preview-img" style="width: 80px; height: 80px; border-radius: 6px; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid #ddd;"></div>
                         <div style="flex: 1; display: flex; flex-direction: column; gap: 10px;">
                             <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #666;">
                                 <span style="width: 60px;">信息提取</span>
-                                <input type="range" id="workshop-vibe-info-slider" min="0" max="1" step="0.05" value="${vibeData.infoExtracted !== undefined ? vibeData.infoExtracted : 1.0}" style="flex: 1;">
-                                <span id="workshop-vibe-info-val" style="width: 30px; text-align: right;">${vibeData.infoExtracted !== undefined ? vibeData.infoExtracted : 1.0}</span>
+                                <input type="range" id="workshop-vibe-info-slider" min="0" max="1" step="0.05" value="${workshopVibeWeight(vibeData.infoExtracted, 1.0)}" style="flex: 1;">
+                                <span id="workshop-vibe-info-val" style="width: 30px; text-align: right;">${workshopVibeWeight(vibeData.infoExtracted, 1.0)}</span>
                             </div>
                             <div style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: #666;">
                                 <span style="width: 60px;">参考强度</span>
-                                <input type="range" id="workshop-vibe-ref-slider" min="0" max="1" step="0.05" value="${vibeData.refStrength !== undefined ? vibeData.refStrength : 0.6}" style="flex: 1;">
-                                <span id="workshop-vibe-ref-val" style="width: 30px; text-align: right;">${vibeData.refStrength !== undefined ? vibeData.refStrength : 0.6}</span>
+                                <input type="range" id="workshop-vibe-ref-slider" min="0" max="1" step="0.05" value="${workshopVibeWeight(vibeData.refStrength, 0.6)}" style="flex: 1;">
+                                <span id="workshop-vibe-ref-val" style="width: 30px; text-align: right;">${workshopVibeWeight(vibeData.refStrength, 0.6)}</span>
                             </div>
                         </div>
                     </div>
                 `;
                 
+                previewContainer.querySelector('#workshop-vibe-preview-img').style.backgroundImage = `url(${JSON.stringify(safeDisplayImageUrl(activeLibItem.base64))})`;
                 // 重新绑定单图滑块事件
                 const infoSlider = document.getElementById('workshop-vibe-info-slider');
                 const infoVal = document.getElementById('workshop-vibe-info-val');
@@ -314,8 +325,8 @@ function initWorkshopVibe() {
                                                 vibeDataId: vibe.vibeDataId,
                                                 encoding: encodingData.encoding,
                                                 thumbnail: vData.thumbnail || '',
-                                                infoExtracted: encodingData.params ? encodingData.params.information_extracted : 1.0,
-                                                refStrength: vibe.strength !== undefined ? vibe.strength : 0.6
+                                                infoExtracted: validateWorkshopVibeWeight(encodingData.params?.information_extracted, 1.0),
+                                                refStrength: validateWorkshopVibeWeight(vibe.strength, 0.6)
                                             });
                                         }
                                     }

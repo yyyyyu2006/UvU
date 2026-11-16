@@ -163,6 +163,15 @@
         catch(error){for(const {key,scene} of plan.copies)state.pendingScenes[key]=scene;for(const {journal,resume} of plan.caches)journal.bridgeReview.summaryResume=resume;throw error;}
         finally{maintenanceBusy=false;reviewBusy=false;}
     }
+    function recoveryTargets(){
+        return (db.characters || []).map(chat=>({id:String(chat.id),archives:[...new Set(['default',String(chat.activeArchiveId || 'default'),...(chat.archives || []).map(a=>String(a.id))])]}));
+    }
+    function createCleanupRecovery(){
+        const state=settings();
+        const recovery=structuredClone({format:'uvu-bridge-cleanup-recovery',version:1,channel:channelId(),createdAt:Date.now(),pendingScenes:state.pendingScenes,receipts:state.receipts,summaryCaches:completedCleanupPlan().caches.map(({chat,journal,archiveId,resume})=>({chatId:String(chat.id),journalId:journal.id,archiveId,resume}))});
+        globalThis.UvUBridgeFile.validateRecovery(JSON.stringify(recovery),{channel:channelId(),targets:recoveryTargets()});
+        return recovery;
+    }
     function renderDiagnostics() {
         const parent=document.getElementById('uvu-story-bridge-settings');if(!parent?.append)return;
         let panel=document.getElementById('uvu-bridge-diagnostics');
@@ -188,7 +197,7 @@
             clean.textContent='预览并清理已完成副本';clean.title='先显示计数并导出恢复副本；只清理已存在正式日记和持久回执的完整重复分段、已失效的完成态摘要缓存。';
             clean.addEventListener('click',async()=>{clean.disabled=true;try{const preview=await cleanupCompleted();if(!preview.completedSceneCopies && !preview.completedSummaryCaches){status('没有可安全清理的已完成副本；未完成剧情、审核草稿与去重回执均保留。');return;}
                 if(!confirm('可清理完整重复场景 '+preview.completedSceneCopies+' 项、完成态旧摘要缓存 '+preview.completedSummaryCaches+' 项，约 '+preview.estimatedBytes+' 字节；保留 '+preview.protectedScenes+' 场待恢复剧情和全部去重回执。下一步先导出恢复副本，继续？'))return;
-                const state=settings();downloadBridgeFile({format:'uvu-bridge-cleanup-recovery',version:1,channel:channelId(),createdAt:Date.now(),pendingScenes:state.pendingScenes,receipts:state.receipts,summaryCaches:completedCleanupPlan().caches.map(({chat,journal,archiveId,resume})=>({chatId:chat.id,journalId:journal.id,archiveId,resume}))});
+                downloadBridgeFile(createCleanupRecovery());
                 if(!confirm('恢复副本下载已发起。请确认文件已成功保存后继续清理；取消将保留全部数据。'))return;
                 await cleanupCompleted({dryRun:false,confirmed:true,exported:true});status('已清理完成态重复资料；正式日记、未完成剧情和去重回执保留。');renderReview(true);
             }catch(error){status('清理失败，资料已保留：'+error.message,true);}finally{clean.disabled=false;renderDiagnostics();}});
@@ -1179,8 +1188,17 @@
 
     async function importRecovery(text,{confirmed=false}={}){
         if(maintenanceBusy || settingsWriteBusy || reviewBusy || syncBusy || inboxBusy || sendBusy || automaticBusy || publishingCount || pairingBusy || reconnecting || channelSwitchBusy)throw new Error('请等待当前桥接操作完成后恢复。');
-        const channel=channelId(),targets=(db.characters || []).map(chat=>({id:String(chat.id),archives:[...new Set(['default',String(chat.activeArchiveId || 'default'),...(chat.archives || []).map(a=>String(a.id))])]}));
+        const channel=channelId(),targets=recoveryTargets();
         const file=globalThis.UvUBridgeFile.validateRecovery(text,{channel,targets});
+        const cleanup=file.format==='uvu-bridge-cleanup-recovery',cacheChanges=[];
+        for(const cache of cleanup ? file.summaryCaches : []){
+            const chat=db.characters.find(item=>String(item.id)===cache.chatId);
+            const journals=String(chat.activeArchiveId || 'default')===cache.archiveId ? chat.memoryJournals : chat.archives?.find(a=>String(a.id)===cache.archiveId)?.data?.memoryJournals;
+            const journal=journals?.find(item=>item.id===cache.journalId),review=journal?.bridgeReview;
+            if(!review || journal.source!=='sillytavern' || (review.channel || 'st')!==channel || review.status!=='approved' || review.summaryDraft)throw new Error('恢复摘要的已审核日记不存在或状态已变更，请人工核对。');
+            if(review.summaryResume && JSON.stringify(review.summaryResume)!==JSON.stringify(cache.resume))throw new Error('恢复摘要与本机缓存冲突。');
+            if(!review.summaryResume)cacheChanges.push({review,resume:structuredClone(cache.resume)});
+        }
         const state=channel==='tt' ? db.uvuStoryBridgeSettings?.ttSettings || {} : db.uvuStoryBridgeSettings || {};
         const staged={outbox:structuredClone(state.outbox || []),pendingScenes:structuredClone(state.pendingScenes || {}),receipts:structuredClone(state.receipts || {})};
         for(const event of file.outbox){const old=staged.outbox.find(e=>e.eventId===event.eventId);if(old && JSON.stringify(old)!==JSON.stringify(event))throw new Error('恢复待发事件与本机同 ID 内容冲突。');if(!old)staged.outbox.push(structuredClone(event));}
@@ -1190,20 +1208,21 @@
             if(old && old.archiveId && receipt.archiveId && old.archiveId!==receipt.archiveId)throw new Error('恢复回执存档与本机冲突。');if(!old)staged.receipts[key]=structuredClone(receipt);
         }
         for(const [key,scene] of Object.entries(file.pendingScenes)){
-            if(staged.receipts[key])continue;
-            const old=staged.pendingScenes[key];if(!old){staged.pendingScenes[key]=structuredClone({...scene,imported:false});continue;}
+            if(staged.receipts[key] && !cleanup)continue;
+            const old=staged.pendingScenes[key];if(!old){staged.pendingScenes[key]=structuredClone({...scene,imported:cleanup ? Boolean(scene.imported) : false});continue;}
             for(const field of ['characterKey','archiveId','partCount','sceneFormat','stCharacterKey'])if((old[field] || '')!==(scene[field] || ''))throw new Error('恢复场景身份或分段总数与本机冲突。');
             for(const [part,value] of Object.entries(scene.parts)){if(Object.hasOwn(old.parts,part) && old.parts[part]!==value)throw new Error('恢复剧情片段与本机内容冲突。');old.parts[part]=value;
                 if(scene.floorParts?.[part]){old.floorParts ||= {};if(old.floorParts[part] && JSON.stringify(old.floorParts[part])!==JSON.stringify(scene.floorParts[part]))throw new Error('恢复楼层与本机内容冲突。');old.floorParts[part]=structuredClone(scene.floorParts[part]);}}
         }
-        const preview={outbox:file.outbox.length,pendingScenes:Object.keys(file.pendingScenes).length,receipts:Object.keys(file.receipts).length,cursorsPreserved:true};
+        const preview={outbox:file.outbox.length,pendingScenes:Object.keys(file.pendingScenes).length,receipts:Object.keys(file.receipts).length,summaryCaches:cacheChanges.length,cursorsPreserved:true};
         if(!confirmed)return preview;
         const hadRoot=Object.hasOwn(db,'uvuStoryBridgeSettings'),rootBefore=db.uvuStoryBridgeSettings,hadTT=Object.hasOwn(rootBefore || {},'ttSettings');
         const before=Object.fromEntries(Object.keys(staged).map(key=>[key,{exists:Object.hasOwn(state,key),value:state[key]}]));
         db.uvuStoryBridgeSettings ||= {};const target=channel==='tt' ? (db.uvuStoryBridgeSettings.ttSettings ||= {}) : db.uvuStoryBridgeSettings;
         maintenanceBusy=true;generation++;Object.assign(target,staged);
+        for(const {review,resume} of cacheChanges)review.summaryResume=resume;
         try{await saveData();return preview;}
-        catch(error){if(!hadRoot)delete db.uvuStoryBridgeSettings;else if(channel==='tt' && !hadTT)delete rootBefore.ttSettings;else for(const [key,old] of Object.entries(before)){if(old.exists)target[key]=old.value;else delete target[key];}throw error;}
+        catch(error){for(const {review,resume} of cacheChanges)if(review.summaryResume===resume)delete review.summaryResume;if(!hadRoot)delete db.uvuStoryBridgeSettings;else if(channel==='tt' && !hadTT)delete rootBefore.ttSettings;else for(const [key,old] of Object.entries(before)){if(old.exists)target[key]=old.value;else delete target[key];}throw error;}
         finally{maintenanceBusy=false;}
     }
 
@@ -1369,6 +1388,6 @@
         });
     }
 
-    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, importRecovery, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, memoryState, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
+    window.UvUStoryBridge = { reconnect, connectionSnapshot, isEnabled, isConnected, changeChannel, getMode, cleanupCompleted, createCleanupRecovery, diagnosticsSnapshot, readReviewDraft, writeReviewDraft, publishTurn, messageRecords, turnStart, latestHandoffRange, refreshHandoffContext, readSelectedHandoffContext, saveHandoffCharacter, handoffCurrent, createHandoffFile, importSceneFile, importRecovery, publishCharacterDirectory, syncIncoming, syncInbox, allowedMemory, memoryState, persistReview, summarizeReview, confirmSummary, renderReview, flushOutbox };
     window.setupUvUStoryBridge = setupUvUStoryBridge;
 })();

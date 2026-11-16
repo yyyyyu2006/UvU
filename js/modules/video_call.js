@@ -815,7 +815,7 @@ const VideoCallModule = {
         if (type === 'visual') {
             msgDiv.innerHTML = `
                 <div class="vc-deco-line"></div>
-                <div class="vc-text-visual ${who}">${content}</div>
+                <div class="vc-text-visual ${escapeDisplayHtml(who)}">${escapeDisplayHtml(content)}</div>
             `;
         } else {
             // --- 双语解析逻辑 ---
@@ -839,14 +839,14 @@ const VideoCallModule = {
 
             if (translation) {
                 msgDiv.innerHTML = `
-                    <div class="vc-text-voice ${who}">
-                        <span class="vc-voice-origin">${displayContent}</span>
-                        <div class="vc-voice-trans">${translation}</div>
+                    <div class="vc-text-voice ${escapeDisplayHtml(who)}">
+                        <span class="vc-voice-origin">${escapeDisplayHtml(displayContent)}</span>
+                        <div class="vc-voice-trans">${escapeDisplayHtml(translation)}</div>
                     </div>
                 `;
             } else {
                 msgDiv.innerHTML = `
-                    <div class="vc-text-voice ${who}">${content}</div>
+                    <div class="vc-text-voice ${escapeDisplayHtml(who)}">${escapeDisplayHtml(content)}</div>
                 `;
             }
         }
@@ -1285,17 +1285,17 @@ const VideoCallModule = {
                     detailContent.innerHTML += `
                         <div class="vc-detail-summary">
                             <div class="vc-summary-label">通话总结</div>
-                            <div class="vc-summary-text">${record.summary}</div>
+                            <div class="vc-summary-text">${escapeDisplayHtml(record.summary)}</div>
                         </div>
                     `;
                 } else {
                     // 如果没有总结，显示生成按钮
                     const generateBtnId = `vc-gen-summary-${record.id}`;
                     detailContent.innerHTML += `
-                        <div class="vc-detail-summary" id="vc-summary-container-${record.id}">
+                        <div class="vc-detail-summary" id="vc-summary-container-${escapeDisplayHtml(record.id)}">
                             <div class="vc-summary-label">通话总结</div>
                             <div class="vc-summary-empty-action">
-                                <button class="vc-type-btn small" id="${generateBtnId}" style="margin: 0; width: auto; padding: 4px 12px; font-size: 12px;">生成总结</button>
+                                <button class="vc-type-btn small" id="${escapeDisplayHtml(generateBtnId)}" style="margin: 0; width: auto; padding: 4px 12px; font-size: 12px;">生成总结</button>
                             </div>
                         </div>
                     `;
@@ -1347,7 +1347,7 @@ const VideoCallModule = {
                                             if (container) {
                                                 container.innerHTML = `
                                                     <div class="vc-summary-label">通话总结</div>
-                                                    <div class="vc-summary-text">${summary}</div>
+                                                    <div class="vc-summary-text">${escapeDisplayHtml(summary)}</div>
                                                 `;
                                                 // 重新计算高度以适应新内容
                                                 const detail = container.closest('.vc-history-detail');
@@ -1391,9 +1391,9 @@ const VideoCallModule = {
                         const roleClass = msg.role;
                         
                         if (msg.type === 'visual') {
-                            logHtml += `<span class="vc-log-line"><span class="vc-log-role ${roleClass}">${roleName}</span><span class="vc-log-visual">${msg.content}</span></span>`;
+                            logHtml += `<span class="vc-log-line"><span class="vc-log-role ${escapeDisplayHtml(roleClass)}">${roleName}</span><span class="vc-log-visual">${escapeDisplayHtml(msg.content)}</span></span>`;
                         } else {
-                            logHtml += `<span class="vc-log-line"><span class="vc-log-role ${roleClass}">${roleName}</span><span class="vc-log-text">${msg.content}</span></span>`;
+                            logHtml += `<span class="vc-log-line"><span class="vc-log-role ${escapeDisplayHtml(roleClass)}">${roleName}</span><span class="vc-log-text">${escapeDisplayHtml(msg.content)}</span></span>`;
                         }
                     });
                 } else {

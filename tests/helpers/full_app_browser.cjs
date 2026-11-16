@@ -17,7 +17,7 @@ async function fullApp() {
     catch(error) { await new Promise(resolve=>server.close(resolve)); throw error; }
     return {browser,origin,async page(options={}){
         const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,serviceWorkers:'block',...options});
-        await context.addInitScript(()=>{localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');});
+        await context.addInitScript(()=>{if(window!==window.top)return;localStorage.setItem('lastSeenVersion','1.8.9');localStorage.setItem('storage_persist_prompted','true');});
         await context.route('**/*',route=>{const url=route.request().url();if(libs.has(url))return route.fulfill({path:libs.get(url),contentType:'application/javascript'});return url.startsWith(origin)||url.startsWith('data:')||url.startsWith('blob:')?route.continue():route.abort();});
         const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.type()==='confirm'?dialog.dismiss():dialog.accept());
         await page.clock.setFixedTime(new Date('2026-11-12T04:00:00Z'));

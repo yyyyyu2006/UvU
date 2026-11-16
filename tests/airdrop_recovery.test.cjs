@@ -75,11 +75,41 @@ test('AirDrop full endpoint does not acquire a second v1/chat/completions suffix
     const { c, chat, config, requests } = fixture(); config.url += '/v1/chat/completions';
     await c.generateTagsFromDescription(chat, 'm'); assert.equal(requests[0].url, config.url);
 });
+
+test('AirDrop Gemini retains every enabled multi-role preset message and substituted context', async () => {
+    const {c, chat, requests} = fixture('gemini');
+    c.packet={candidates:[{content:{parts:[{text:'tags'}]}}]};
+    c.db.workshopSettings={activeLlmPresetGroupId:'g',llmPresetGroups:[{id:'g',prompts:[
+        {enabled:true,role:'system',content:'FIRST RULE'}, {enabled:true,role:'system',content:'SECOND RULE'},
+        {enabled:true,role:'user',content:'INPUT {{context}}'}, {enabled:true,role:'assistant',content:'EXAMPLE'},
+        {enabled:false,role:'user',content:'DISABLED'}, {enabled:true,role:'user',content:'FINAL'}]}]};
+    await c.generateTagsFromDescription(chat,'m');
+    const body=requests[0].body;
+    assert.equal(body.system_instruction.parts[0].text,'FIRST RULE\n\nSECOND RULE');
+    assert.deepEqual(body.contents.map(m=>m.role),['user','model','user']);
+    assert.match(body.contents[0].parts[0].text,/CONTEXT/);
+    assert.equal(body.contents[1].parts[0].text,'EXAMPLE');assert.equal(body.contents[2].parts[0].text,'FINAL');
+    assert.doesNotMatch(JSON.stringify(body),/DISABLED/);
+});
 test('saving AirDrop returns its own generated key instead of querying the latest photo', async () => {
     const { c } = fixture(); let saved;
     c.dexieDB = { characterPhotos: { add: async row => { saved = row; return 41; } } };
     const photo = await c.saveAirDropPhoto('c', 'image', 'tags', { archiveId: 'one', messageId: 'm' });
     assert.equal(photo.id, 41); assert.equal(photo.image, saved.image); assert.equal(photo.archiveId, 'one');
+});
+
+test('AirDrop Gemini system-only preset keeps its rule and the original context request', async () => {
+    const {c, chat, requests} = fixture('gemini');
+    c.packet = {candidates: [{content: {parts: [{text: 'tags'}]}}]};
+    c.db.workshopSettings = {activeLlmPresetGroupId: 'g', llmPresetGroups: [{id: 'g', prompts: [
+        {enabled: true, role: 'system', content: 'SYSTEM {{context}}'}
+    ]}]};
+    await c.generateTagsFromDescription(chat, 'm');
+    const body = requests[0].body;
+    assert.match(body.system_instruction.parts[0].text, /SYSTEM.*CONTEXT/s);
+    assert.equal(body.contents.length, 1);
+    assert.equal(body.contents[0].role, 'user');
+    assert.match(body.contents[0].parts[0].text, /CONTEXT/);
 });
 test('AirDrop cannot report success when the database or image is absent', async () => {
     const { c } = fixture(); c.dexieDB = null;

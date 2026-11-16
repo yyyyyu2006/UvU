@@ -348,13 +348,14 @@ function getTokenPreviewWorldBookPlan(chat) {
         .filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && book.rules?.advancedEnabled !== true)
         .sort((a, b) => (a.depth || 100) - (b.depth || 100));
 }
-function getWorldBookTokenDetails(chat, worldBookPlan) {
+function getWorldBookTokenDetails(chat, worldBookPlan, preview = false) {
     if (!chat) return [];
     const plan = Array.isArray(worldBookPlan) ? worldBookPlan : [];
     return plan.filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && String(book.content || '').trim()).map(book => ({
         id: book.id,
         name: book.name || '未命名世界书',
-        triggered: true,
+        triggered: !preview,
+        preview,
         tokenEstimate: countTextTokens(book.content || '')
     }));
 }
@@ -380,7 +381,7 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
     const activeWorldBookPlan = Array.isArray(worldBookPlan)
         ? worldBookPlan
         : getTokenPreviewWorldBookPlan(chat);
-    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, worldBookPlan);
+    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, activeWorldBookPlan, !Array.isArray(worldBookPlan));
 
     // 1. 获取完整的系统提示词
     let systemPrompt = '';
@@ -501,7 +502,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     const preview = !Array.isArray(worldBookPlan);
     const plan = preview ? getTokenPreviewWorldBookPlan(chat) : worldBookPlan;
     const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, environment: 0, mcp: 0, history: 0,
-        worldBookDetails: getWorldBookTokenDetails(chat, worldBookPlan) };
+        worldBookDetails: getWorldBookTokenDetails(chat, plan, preview) };
     const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
         ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
         : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, plan) : ''));

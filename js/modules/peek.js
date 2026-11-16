@@ -896,7 +896,7 @@ function renderPeekAlbum(photos) {
             const imgContainer = document.getElementById('peek-photo-image-container');
             const descriptionEl = document.getElementById('peek-photo-description');
             
-            imgContainer.innerHTML = `<div style="padding: 20px; text-align: left; color: #555; font-size: 16px; line-height: 1.6; height: 100%; overflow-y: auto;">${photo.imageDescription}</div>`;
+            imgContainer.innerHTML = `<div style="padding: 20px; text-align: left; color: #555; font-size: 16px; line-height: 1.6; height: 100%; overflow-y: auto;">${escapeDisplayHtml(photo.imageDescription)}</div>`;
             descriptionEl.textContent = `批注：${photo.description}`;
             
             modal.classList.add('visible');
@@ -1573,7 +1573,7 @@ function renderPeekSteps(data) {
     const percentage = (data.currentSteps / 6000) * 100;
     progressRingEl.style.setProperty('--steps-percentage', percentage);
 
-    trackListEl.innerHTML = data.trajectory.map(item => `<li class="activity-track-item">${item}</li>`).join('');
+    trackListEl.innerHTML = data.trajectory.map(item => `<li class="activity-track-item">${escapeDisplayHtml(item)}</li>`).join('');
     annotationEl.textContent = data.annotation;
 }
 
@@ -2249,6 +2249,7 @@ async function generateAndRenderPeekContent(appType, options = {}) {
     };
     try {
         let historySlice = char.history.slice(-30);
+        if (char.statusPanel?.enabled && char.statusPanel.regexPattern) await prepareStatusRegexHistory(char, historySlice);
         historySlice = filterHistoryForAI(char, historySlice);
         const mainChatContext = historySlice.map(m => m.content).join('\n');
 
@@ -2364,6 +2365,7 @@ async function generateBatchPeekContent(appTypes) {
 
     try {
         let historySlice = char.history.slice(-30);
+        if (char.statusPanel?.enabled && char.statusPanel.regexPattern) await prepareStatusRegexHistory(char, historySlice);
         historySlice = filterHistoryForAI(char, historySlice);
         const mainChatContext = historySlice.map(m => m.content).join('\n');
 

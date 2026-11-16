@@ -84,12 +84,18 @@ const tpl = (id, extra = {}) => ({ id, name: 'Fixture ' + id, size: '2x2', html:
             await importJson(page, [tpl('new'), tpl('existing', { name: 'replacement' })]);
             assert.deepEqual(await page.evaluate(() => fixtureWidgets()), [existing]);
         });
-        await check('duplicate replacement refreshes preview and global styles with the original CSS', async page => {
+        await check('duplicate replacement isolates preview CSS and refreshes explicitly added home widgets', async page => {
             await importJson(page, tpl('same'));
             const next = tpl('same', { css: '#{{id}} { color: rgb(40, 50, 60); }', name: 'replacement' });
             await page.evaluate(() => { window.confirm = () => true; }); await importJson(page, next);
             assert.deepEqual(await page.evaluate(() => fixtureWidgets()), [next]);
-            for (const id of ['preview-style-same', 'custom-widget-style-same']) assert.equal(await page.locator('#' + id).textContent(), '#same { color: rgb(40, 50, 60); }');
+            assert.equal(await page.locator('#preview-style-same, #custom-widget-style-same').count(), 0);
+            assert.equal(await page.locator('.widget-true-scale-wrapper iframe').first().getAttribute('sandbox'), '');
+            assert.match(await page.locator('.widget-true-scale-wrapper iframe').first().getAttribute('srcdoc'), /rgb\(40, 50, 60\)/);
+            await page.evaluate(() => { db.addedWidgets = [{id: 'fixture-instance', templateId: 'same', vars: {}}]; setupHomeScreen(); });
+            assert.equal(await page.locator('#custom-widget-style-same').textContent(), '#same { color: rgb(40, 50, 60); }');
+            await page.evaluate(() => { db.addedWidgets = []; setupHomeScreen(); });
+            assert.equal(await page.locator('#custom-widget-style-same').count(), 0);
         });
         await check('widget save failure restores memory and does not inject new styles', async page => {
             const existing = tpl('existing');

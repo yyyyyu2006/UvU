@@ -109,7 +109,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
 
     const formatTokens = value => Number(value || 0).toLocaleString();
     const worldBookDetails = Array.isArray(data.worldBookDetails)
-        ? data.worldBookDetails.filter(item => item && item.triggered !== false)
+        ? data.worldBookDetails.filter(item => item && (item.triggered !== false || item.preview))
         : [];
 
     const heading = document.createElement('div');
@@ -198,7 +198,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
             const name = document.createElement('span');
             name.textContent = item.name || '未命名世界书';
             const triggered = document.createElement('span');
-            triggered.textContent = item.triggered ? '已触发' : '未触发';
+            triggered.textContent = item.preview ? '预估包含' : item.triggered ? '已触发' : '未触发';
             const amount = document.createElement('b');
             amount.textContent = `约 ${formatTokens(item.tokenEstimate)} token`;
             row.append(name, triggered, amount);
@@ -344,14 +344,20 @@ function setupChatRoom() {
 
                 const item = slidesData[index];
                 const htmlContent = item.html;
-                if (htmlContent.includes('<!DOCTYPE html>') || htmlContent.includes('<html') || htmlContent.includes('<style')) {
-                    const iframe = document.createElement('iframe');
-                    iframe.style.cssText = "width: 100%; height: 100%; min-height: 0; border: none; background: transparent; display: block;";
-                    iframe.srcdoc = processTemplate(htmlContent, char);
-                    slideInner.appendChild(iframe);
-                } else {
-                    slideInner.innerHTML = processTemplate(htmlContent, char);
-                }
+                const iframe = document.createElement('iframe');
+                iframe.setAttribute('sandbox', 'allow-scripts');
+                iframe.setAttribute('referrerpolicy', 'no-referrer');
+                iframe.title = '角色状态';
+                iframe.style.cssText = "width: 100%; height: 100%; min-height: 0; border: none; background: transparent; display: block;";
+                const processed = processTemplate(htmlContent, char);
+                // Authored scripts/styles still work inside the status document;
+                // model captures and old saved HTML cannot read the parent app.
+                const isDocument = /<!doctype\s+html|<html\b/i.test(processed);
+                const theme = getComputedStyle(slideInner);
+                const base = '<!doctype html><meta charset="utf-8"><style>html,body{margin:0;background:transparent}body{font-family:' +
+                    theme.fontFamily.replace(/</g, '') + ';color:' + theme.color + ';font-size:' + theme.fontSize + '}</style>';
+                iframe.srcdoc = isDocument ? processed : base + processed;
+                slideInner.appendChild(iframe);
             };
 
             // Create empty slides first

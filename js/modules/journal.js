@@ -801,6 +801,7 @@ async function generateJournal(start, end, includeFavorited = false) {
         let messagesToSummarize = chat.history.slice(startIndex, endIndex);
 
         // 1. 保持原样：第三个参数设为 true，确保你想要的“高权重”隐藏消息能被读进来
+        if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) await prepareStatusRegexHistory(chat, messagesToSummarize);
         messagesToSummarize = filterHistoryForAI(chat, messagesToSummarize, true);
 
         // 2. 【新增】精准剔除 thinking 消息

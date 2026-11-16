@@ -40,7 +40,7 @@ test('failed media/text/forward messages retain data and stay excluded after rec
         c.prepareRelationshipMessage(chat, m);
         assert.equal(m.relationshipDelivery, reason);
         const utils = read('utils.js');
-        vm.runInContext(utils.slice(utils.indexOf('function filterHistoryForAI('), utils.indexOf('function resolveAuxiliaryApiConfig(')), c);
+        vm.runInContext(utils.slice(utils.indexOf('function normalizeHistoryForAI('), utils.indexOf('function resolveAuxiliaryApiConfig(')), c);
         m.isContextDisabled = false;
         assert.equal(c.filterHistoryForAI(chat, [m], true).length, 0);
         assert.match(m.parts[0].data, /^data:/);

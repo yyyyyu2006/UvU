@@ -61,13 +61,7 @@ initStatusBarPreview();
 
 // 简单的 HTML 转义函数
 function escapeHtml(text) {
-    if (!text) return text;
-    return text
-        .replace(/&/g, "&")
-        .replace(/</g, "<")
-        .replace(/>/g, ">")
-        .replace(/"/g, '"')
-        .replace(/'/g, "&#039;");
+    return escapeDisplayHtml(text);
 }
 
 // --- Status Bar Manager ---
@@ -100,18 +94,22 @@ function renderStatusBarManager() {
         };
         div.innerHTML = `
             <div class="preset-info-col">
-                <div class="preset-name">${preset.name}</div>
-                <div class="preset-desc">${preset.promptSuffix || '无 Prompt 后缀'}</div>
+                <div class="preset-name"></div>
+                <div class="preset-desc"></div>
             </div>
             <div class="preset-actions-col">
-                <button class="preset-action-btn" title="导出" onclick="exportStatusBarPreset('${preset.id}')">
+                <button class="preset-action-btn" title="导出">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                 </button>
-                <button class="preset-action-btn delete" title="删除" onclick="deleteStatusBarPreset('${preset.id}', event)">
+                <button class="preset-action-btn delete" title="删除">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                 </button>
             </div>
         `;
+        div.querySelector('.preset-name').textContent = preset.name;
+        div.querySelector('.preset-desc').textContent = preset.promptSuffix || '无 Prompt 后缀';
+        div.querySelector('[title="导出"]').onclick = () => exportStatusBarPreset(preset.id);
+        div.querySelector('.delete').onclick = event => deleteStatusBarPreset(preset.id, event);
         listContainer.appendChild(div);
     });
 }
@@ -164,7 +162,9 @@ function initStatusBarPreview() {
 }
 
 // 更新预览
-function updateStatusBarPreview() {
+let statusBarPreviewRevision = 0;
+async function updateStatusBarPreview() {
+    const revision = ++statusBarPreviewRevision;
     const testText = document.getElementById('sb-test-input').value;
     const regexStr = document.getElementById('sb-preset-regex').value;
     const htmlTpl = document.getElementById('sb-preset-html').value;
@@ -179,8 +179,11 @@ function updateStatusBarPreview() {
     }
 
     try {
-        const regex = new RegExp(regexStr);
-        const match = testText.match(regex);
+        const parts = regexStr.match(/^\/(.*?)\/([a-z]*)$/);
+        const pattern = parts ? parts[1] : regexStr, flags = parts?.[2] || '';
+        await prepareStatusRegexJobs([{source: pattern, flags, text: testText}]);
+        if (revision !== statusBarPreviewRevision) return;
+        const match = createStatusRegex(pattern, flags).exec(testText);
 
         if (match) {
             statusTag.textContent = '匹配成功';
@@ -195,10 +198,16 @@ function updateStatusBarPreview() {
             for (let i = match.length - 1; i >= 1; i--) {
                 // 对捕获内容进行 HTML 转义，防止破坏布局
                 const safeContent = escapeHtml(match[i]);
-                resultHtml = resultHtml.replace(new RegExp('\\$' + i, 'g'), safeContent);
+                resultHtml = resultHtml.replace(new RegExp('\\$' + i, 'g'), () => safeContent);
             }
             
-            previewContainer.innerHTML = resultHtml;
+            const frame = document.createElement('iframe');
+            frame.setAttribute('sandbox', '');
+            frame.setAttribute('referrerpolicy', 'no-referrer');
+            frame.title = '状态栏预览';
+            frame.style.cssText = 'width:100%;height:100%;border:0;background:transparent';
+            frame.srcdoc = resultHtml;
+            previewContainer.replaceChildren(frame);
         } else {
             statusTag.textContent = '未匹配';
             statusTag.className = 'status-tag';
@@ -207,7 +216,7 @@ function updateStatusBarPreview() {
     } catch (e) {
         statusTag.textContent = '正则错误';
         statusTag.className = 'status-tag error';
-        previewContainer.innerHTML = `<span style="color:red;">${e.message}</span>`;
+        previewContainer.textContent = e.message;
     }
 }
 

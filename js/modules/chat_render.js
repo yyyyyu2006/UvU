@@ -457,7 +457,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         wrapper.className = 'message-wrapper system-notification';
         if (message.isContextDisabled) wrapper.classList.add('context-disabled');
         const withdrawnText = (role === 'user') ? '你撤回了一条消息' : `${chat.remarkName || chat.name}撤回了一条消息`;
-        wrapper.innerHTML = `<div><span class="withdrawn-message">${withdrawnText}</span></div><div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息[：:]([\s\S]+?)\]/, '$1')) : ''}</div>`;
+        wrapper.innerHTML = `<div><span class="withdrawn-message">${escapeDisplayHtml(withdrawnText)}</span></div><div class="withdrawn-content">${originalContent ? DOMPurify.sanitize(originalContent.replace(/\[.*?的消息[：:]([\s\S]+?)\]/, '$1')) : ''}</div>`;
         const withdrawnMessageSpan = wrapper.querySelector('.withdrawn-message');
         if (withdrawnMessageSpan) {
             withdrawnMessageSpan.addEventListener('click', () => {
@@ -480,7 +480,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (updateStatusMatch) bubbleText = `${updateStatusMatch[1]} 更新状态为：${updateStatusMatch[2]}`;
         if (callInviteMatch) bubbleText = `${callInviteMatch[1]}向${callInviteMatch[2]}发起了${callInviteMatch[3]}通话`;
         if (callRejectMatch) bubbleText = `${callRejectMatch[1]}拒绝了${callRejectMatch[2]}的${callRejectMatch[3]}通话`;
-        wrapper.innerHTML = `<div class="system-notification-bubble">${bubbleText}</div>`;
+        wrapper.innerHTML = `<div class="system-notification-bubble">${escapeDisplayHtml(bubbleText)}</div>`;
         return wrapper;
     }
 
@@ -651,7 +651,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'forwarded-chat-card';
         bubbleElement.innerHTML = `
-            <div class="forwarded-chat-title">${chat.realName}的聊天记录</div>
+            <div class="forwarded-chat-title">${escapeDisplayHtml(chat.realName)}的聊天记录</div>
             <div class="forwarded-chat-preview">${DOMPurify.sanitize(previewLines)}</div>
             <div class="forwarded-chat-footer">聊天记录</div>
         `;
@@ -676,7 +676,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         // 直接设置 wrapper 内容，模仿系统通知
         wrapper.innerHTML = `
             <div class="system-notification-bubble" style="cursor: pointer;" title="点击查看详情">
-                ${title} ${durationStr} <span style="font-size: 10px; opacity: 0.6;">›</span>
+                ${title} ${escapeDisplayHtml(durationStr)} <span style="font-size: 10px; opacity: 0.6;">›</span>
             </div>
         `;
         
@@ -737,9 +737,9 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             // 已自提或普通订单：显示商品
             itemsHtml = items.map(item => `
                 <div class="receipt-item-row">
-                    <span class="receipt-item-name">${item.name}</span>
+                    <span class="receipt-item-name">${escapeDisplayHtml(item.name)}</span>
                     <span class="receipt-dots"></span>
-                    <span class="receipt-item-qty">x${item.qty}</span>
+                    <span class="receipt-item-qty">x${escapeDisplayHtml(item.qty)}</span>
                 </div>
             `).join('');
         }
@@ -755,7 +755,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
 
         let pickupCodeHtml = '';
         if (isPickup && !isPickedUp) {
-            pickupCodeHtml = `<div class="receipt-pickup-code">🔑 ${pickupCode}</div>`;
+            pickupCodeHtml = `<div class="receipt-pickup-code">🔑 ${escapeDisplayHtml(pickupCode)}</div>`;
         }
 
         bubbleElement.innerHTML = `
@@ -768,12 +768,12 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                 ${itemsHtml}
             </div>
             <div class="receipt-total-section">
-                <span class="receipt-total-price">¥${totalPrice}</span>
+                <span class="receipt-total-price">¥${escapeDisplayHtml(totalPrice)}</span>
             </div>
             <div class="receipt-footer">
                 ${pickupCodeHtml}
                 <div class="receipt-delivery-info">
-                    <span>${isPickup ? '门店自提' : deliveryType}</span>
+                    <span>${escapeDisplayHtml(isPickup ? '门店自提' : deliveryType)}</span>
                     <span>${dateStr}</span>
                 </div>
             </div>
@@ -803,9 +803,9 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         
         let itemsHtml = items.map(item => `
             <div class="receipt-item-row">
-                <span class="receipt-item-name">${item.name}</span>
+                <span class="receipt-item-name">${escapeDisplayHtml(item.name)}</span>
                 <span class="receipt-dots"></span>
-                <span class="receipt-item-qty">x${item.qty}</span>
+                <span class="receipt-item-qty">x${escapeDisplayHtml(item.qty)}</span>
             </div>
         `).join('');
 
@@ -822,8 +822,8 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (!isSent && !message.payStatus) {
             actionButtonsHtml = `
                 <div class="receipt-actions">
-                    <button class="receipt-action-btn" onclick="sendPayResponse('${id}', 'pay')">支付</button>
-                    <button class="receipt-action-btn" onclick="sendPayResponse('${id}', 'reject')">拒绝</button>
+                    <button class="receipt-action-btn" data-pay-action="pay">支付</button>
+                    <button class="receipt-action-btn" data-pay-action="reject">拒绝</button>
                 </div>
             `;
         }
@@ -838,7 +838,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                 ${itemsHtml}
             </div>
             <div class="receipt-total-section">
-                <span class="receipt-total-price">¥${totalPrice}</span>
+                <span class="receipt-total-price">¥${escapeDisplayHtml(totalPrice)}</span>
             </div>
             <div class="receipt-footer">
                 <div class="receipt-delivery-info">
@@ -892,7 +892,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         } else {
             giftText = isSent ? '您有一份礼物～' : '您有一份礼物～';
         }
-        bubbleElement.innerHTML = `<img src="https://i.postimg.cc/rp0Yg31K/chan-75.png" alt="gift" class="gift-card-icon"><div class="gift-card-text">${giftText}</div><div class="gift-card-received-stamp">已查收</div>`;
+        bubbleElement.innerHTML = `<img src="https://i.postimg.cc/rp0Yg31K/chan-75.png" alt="gift" class="gift-card-icon"><div class="gift-card-text">${escapeDisplayHtml(giftText)}</div><div class="gift-card-received-stamp">已查收</div>`;
         const description = groupGiftMatch ? groupGiftMatch[3].trim() : match[1].trim();
         const descriptionDiv = document.createElement('div');
         descriptionDiv.className = 'gift-card-description';
@@ -941,11 +941,11 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (isRealPhoto) {
             bubbleElement = document.createElement('div');
             bubbleElement.className = 'image-bubble';
-            bubbleElement.innerHTML = `<img src="${realPhotoUrl}" alt="${pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in;">`;
+            bubbleElement.innerHTML = `<img src="${escapeDisplayHtml(safeDisplayImageUrl(realPhotoUrl))}" alt="${escapeDisplayHtml(pvContent)}" onclick="openImageViewer(this.src)" style="cursor: zoom-in;">`;
         } else {
             bubbleElement = document.createElement('div');
             bubbleElement.className = 'pv-card';
-            bubbleElement.innerHTML = `<div class="pv-card-content">${pvContent}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・长按接收</span></div>`;
+            bubbleElement.innerHTML = `<div class="pv-card-content">${escapeDisplayHtml(pvContent)}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・长按接收</span></div>`;
         }
     } else if (privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch) {
         const isSentTransfer = !!privateSentTransferMatch || (groupTransferMatch && isSent);
@@ -998,12 +998,12 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if ((transferStatus !== 'pending' && currentChatType === 'private') || currentChatType === 'group') {
             bubbleElement.style.cursor = 'default';
         }
-        const remarkHTML = remarkText ? `<p class="transfer-remark">${remarkText}</p>` : '';
-        bubbleElement.innerHTML = `<div class="overlay"></div><div class="transfer-content"><p class="transfer-title">${titleText}</p><p class="transfer-amount">¥${amount}</p>${remarkHTML}<p class="transfer-status">${statusText}</p></div>`;
+        const remarkHTML = remarkText ? `<p class="transfer-remark">${escapeDisplayHtml(remarkText)}</p>` : '';
+        bubbleElement.innerHTML = `<div class="overlay"></div><div class="transfer-content"><p class="transfer-title">${escapeDisplayHtml(titleText)}</p><p class="transfer-amount">¥${escapeDisplayHtml(amount)}</p>${remarkHTML}<p class="transfer-status">${statusText}</p></div>`;
     } else if (imageRecogMatch || urlRegex.test(content)) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'image-bubble';
-        bubbleElement.innerHTML = `<img src="${content}" alt="图片消息">`;
+        bubbleElement.innerHTML = `<img src="${escapeDisplayHtml(safeDisplayImageUrl(content))}" alt="图片消息">`;
     } else if (textMatch) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
@@ -1051,8 +1051,17 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                     if (!flags.includes('g')) flags += 'g';
                 }
 
-                const regex = new RegExp(pattern, flags);
-                displayedContent = displayedContent.replace(regex, '').trim();
+                const regex = createStatusRegex(pattern, flags);
+                const sourceText = displayedContent;
+                displayedContent = sourceText.replace(regex, '').trim();
+                if (!statusRegexIsLiteral(pattern, flags) && !statusRegexCache.has(statusRegexKey(pattern, flags, sourceText))) {
+                    const panel = chat.statusPanel, configured = panel.regexPattern;
+                    prepareStatusRegexRender({source: pattern, flags, text: sourceText}).then(() => {
+                        if (chat.statusPanel !== panel || !panel.enabled || panel.regexPattern !== configured) return;
+                        const span = bubbleElement.querySelector('.bubble-content');
+                        if (span) span.innerHTML = DOMPurify.sanitize(sourceText.replace(createStatusRegex(pattern, flags), '').trim());
+                    }).catch(error => console.warn('状态显示匹配失败:', error));
+                }
             } catch (e) {
                 console.error("渲染时隐藏状态码失败:", e);
             }
@@ -1064,7 +1073,10 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.style.color = bubbleTheme.text;
         }
     }
-    const nicknameHTML = (currentChatType === 'group' && !isSent && senderNickname) ? `<div class="group-nickname">${senderNickname}</div>` : '';
+    bubbleElement?.querySelectorAll('[data-pay-action]').forEach(button => {
+        button.addEventListener('click', () => sendPayResponse(id, button.dataset.payAction));
+    });
+    const nicknameHTML = (currentChatType === 'group' && !isSent && senderNickname) ? `<div class="group-nickname">${escapeDisplayHtml(senderNickname)}</div>` : '';
 
     // Time Stamp Logic
     const timeSpan = document.createElement('span');

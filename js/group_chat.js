@@ -710,9 +710,9 @@ function renderPrivateChatMonitor() {
     tabsContainer.innerHTML = sessionList.map(s => {
         const isEnded = s.status === 'ended';
         return `
-        <div class="tab-open ${s.id === activePrivateSessionId ? 'active' : ''}" data-id="${s.id}" style="${isEnded ? 'opacity: 0.7;' : ''}">
+        <div class="tab-open ${s.id === activePrivateSessionId ? 'active' : ''}" data-id="${escapeDisplayHtml(s.id)}" style="${isEnded ? 'opacity: 0.7;' : ''}">
             <div class="rounded-l"><div class="mask-round"></div></div>
-            <span>${isEnded ? '🔒 ' : ''}${s.memberNames.join(' & ')}</span>
+            <span>${isEnded ? '🔒 ' : ''}${escapeDisplayHtml(s.memberNames.join(' & '))}</span>
             <div class="close-tab">✕</div>
             <div class="rounded-r"><div class="mask-round"></div></div>
         </div>
@@ -756,13 +756,16 @@ function renderPrivateChatMonitor() {
             }
             
             return `
-                <div class="private-msg ${alignClass}" ondblclick="window.openPrivateMsgEdit('${msg.id}')">
-                    <div class="private-msg-sender">${sender}</div>
-                    <div class="private-msg-bubble">${msg.displayContent}</div>
+                <div class="private-msg ${alignClass}" data-message-id="${escapeDisplayHtml(msg.id)}">
+                    <div class="private-msg-sender">${escapeDisplayHtml(sender)}</div>
+                    <div class="private-msg-bubble">${escapeDisplayHtml(msg.displayContent)}</div>
                 </div>
             `;
         }).join('');
         
+        contentContainer.querySelectorAll('[data-message-id]').forEach(row => {
+            row.addEventListener('dblclick', () => window.openPrivateMsgEdit(row.dataset.messageId));
+        });
         // Scroll to bottom
         contentContainer.scrollTop = contentContainer.scrollHeight;
     } else {

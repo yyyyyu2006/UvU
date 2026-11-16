@@ -63,7 +63,7 @@ function initGPTTagsSystem() {
 
             itemDiv.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <input type="text" class="tag-name-input" value="${tag.name}" placeholder="标签名 (如 #赛博朋克#)" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; font-weight: bold; color: ${tag.enabled ? 'var(--primary-color)' : '#999'};">
+                    <input type="text" class="tag-name-input" value="${escapeDisplayHtml(tag.name)}" placeholder="标签名 (如 #赛博朋克#)" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; font-weight: bold; color: ${tag.enabled ? 'var(--primary-color)' : '#999'};">
                     <label class="kkt-switch kkt-switch-small" style="margin: 0; flex-shrink: 0;">
                         <input type="checkbox" class="tag-enable-toggle" ${tag.enabled ? 'checked' : ''}>
                         <span class="kkt-slider"></span>
@@ -72,7 +72,7 @@ function initGPTTagsSystem() {
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
                 </div>
-                <textarea class="tag-prompt-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; padding: 8px; font-size: 12px;" placeholder="输入该标签对应的风格提示词...">${tag.prompt || ''}</textarea>
+                <textarea class="tag-prompt-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; padding: 8px; font-size: 12px;" placeholder="输入该标签对应的风格提示词...">${escapeDisplayHtml(tag.prompt || '')}</textarea>
             `;
 
             // 绑定事件
@@ -364,7 +364,7 @@ function initWorkshopGPTLLMPrompts() {
                     <div class="drag-handle" style="cursor: grab; touch-action: none; display: flex; align-items: center; justify-content: center; padding: 4px; flex-shrink: 0;">
                         ${roleIcon}
                     </div>
-                    <span style="font-weight: bold; font-size: 14px; color: ${prompt.enabled ? '#333' : '#999'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${prompt.title || '未命名条目'}</span>
+                    <span style="font-weight: bold; font-size: 14px; color: ${prompt.enabled ? '#333' : '#999'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeDisplayHtml(prompt.title || '未命名条目')}</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
                     <button class="icon-btn-simple edit-btn" title="编辑" style="padding: 4px;">
@@ -391,9 +391,9 @@ function initWorkshopGPTLLMPrompts() {
                         <option value="user" ${prompt.role === 'user' ? 'selected' : ''}>User</option>
                         <option value="assistant" ${prompt.role === 'assistant' ? 'selected' : ''}>AI</option>
                     </select>
-                    <input type="text" class="title-input" value="${prompt.title}" placeholder="条目标题" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
+                    <input type="text" class="title-input" value="${escapeDisplayHtml(prompt.title)}" placeholder="条目标题" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
                 </div>
-                <textarea class="content-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; padding: 6px; font-size: 12px; margin-bottom: 10px;" placeholder="提示词内容...">${prompt.content}</textarea>
+                <textarea class="content-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; padding: 6px; font-size: 12px; margin-bottom: 10px;" placeholder="提示词内容...">${escapeDisplayHtml(prompt.content)}</textarea>
                 <div style="display: flex; justify-content: flex-end; gap: 10px;">
                     <button class="icon-btn-simple delete-btn" title="删除" style="padding: 4px; color: #ff4d4f;">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -1125,7 +1125,7 @@ function initWorkshopLLMPrompts() {
                     <div class="drag-handle" style="cursor: grab; touch-action: none; display: flex; align-items: center; justify-content: center; padding: 4px; flex-shrink: 0;">
                         ${roleIcon}
                     </div>
-                    <span style="font-weight: bold; font-size: 14px; color: ${prompt.enabled ? '#333' : '#999'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${prompt.title || '未命名条目'}</span>
+                    <span style="font-weight: bold; font-size: 14px; color: ${prompt.enabled ? '#333' : '#999'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeDisplayHtml(prompt.title || '未命名条目')}</span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
                     <button class="icon-btn-simple edit-btn" title="编辑" style="padding: 4px;">
@@ -1152,9 +1152,9 @@ function initWorkshopLLMPrompts() {
                         <option value="user" ${prompt.role === 'user' ? 'selected' : ''}>User</option>
                         <option value="assistant" ${prompt.role === 'assistant' ? 'selected' : ''}>AI</option>
                     </select>
-                    <input type="text" class="title-input" value="${prompt.title}" placeholder="条目标题" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
+                    <input type="text" class="title-input" value="${escapeDisplayHtml(prompt.title)}" placeholder="条目标题" style="flex: 1; min-width: 0; padding: 6px; border-radius: 4px; border: 1px solid #ddd; font-size: 12px;">
                 </div>
-                <textarea class="content-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; padding: 6px; font-size: 12px; margin-bottom: 10px;" placeholder="提示词内容...">${prompt.content}</textarea>
+                <textarea class="content-input" rows="3" style="width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; padding: 6px; font-size: 12px; margin-bottom: 10px;" placeholder="提示词内容...">${escapeDisplayHtml(prompt.content)}</textarea>
                 <div style="display: flex; justify-content: flex-end; gap: 10px;">
                     <button class="icon-btn-simple delete-btn" title="删除" style="padding: 4px; color: #ff4d4f;">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>

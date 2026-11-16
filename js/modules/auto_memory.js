@@ -285,7 +285,7 @@ function getAutoMemoryContextHistory(chat, limit = chat.maxMemory) {
     const covered = settings.useMemory && settings.hideSummarized ? getEffectiveAutoMemoryCoverage(chat) : new Set();
     const history = (chat.history || []).filter(message => !covered.has(message.id));
     // 先排除已压缩原文，再应用原有上下文条数上限。
-    return Number(limit) === 0 ? [] : history.slice(-limit);
+    return (limit === 0 || limit === '0') ? [] : history.slice(-limit);
 }
 function getAutoMemoryPlan(chat, force = false) {
     const settings = getAutoMemorySettings(chat);
@@ -518,8 +518,9 @@ function splitMemoryIntoChunks(content, maxLength = 1200, overlap = 180) {
 
 async function rerankMemoryCandidates(query, candidates, config, signal) {
     if (!candidates.length) return candidates;
-    const api = { provider: config.provider || 'newapi', url: config.rerankUrl || config.url, key: config.rerankKey || config.key,
+    const api = { provider: config.provider || 'newapi', url: config.rerankUrl || config.url, key: resolveDestinationKey(config.rerankUrl, config.rerankKey, config.url, config.key, config.provider, config.provider, true),
         model: config.rerankModel || config.model, streamEnabled: false };
+    if (!api.key) throw new Error('请为重排 API 地址单独配置密钥');
     if (getVectorRerankMode(config) === 'native') {
         const data = await requestVectorJson(vectorApiEndpoint(api.url, 'rerank'), {
             model: api.model, query: String(query).slice(-4000),
@@ -710,6 +711,10 @@ function getVectorMemoryContext(chat, queryText, signal, options = {}) {
     const previous = vectorMemoryQueues.get(chat) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
         if (chat.activeArchiveId !== archive || chat.history !== history) { const error = new Error('存档已切换'); error.name = 'AbortError'; throw error; }
+        if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
+            await prepareStatusRegexHistory(chat, history, signal);
+            if (chat.activeArchiveId !== archive || chat.history !== history) { const error = new Error('存档已切换'); error.name = 'AbortError'; throw error; }
+        }
         const cleaning = { key: '', entries: new Map(), chars: 0, hits: 0 }; vectorCleaningSessions.set(chat, cleaning);
         try { return await retrieveVectorMemoryContext(chat, queryText, signal, options); }
         catch (error) {
@@ -1085,6 +1090,13 @@ function parseAutoMemoryResponse(raw, allowPlain = false) {
 
 async function requestAutoMemory(chat, type, sources, kind, settings, control) {
     const config = resolveAutoMemoryApi(settings);
+    if (kind === 'summary' && chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
+        const history = chat.history, archiveId = chat.activeArchiveId;
+        await prepareStatusRegexHistory(chat, sources);
+        if (control?.cancelled || chat.history !== history || chat.activeArchiveId !== archiveId) {
+            const error = new Error('总结请求已取消或存档已切换'); error.name = 'AbortError'; throw error;
+        }
+    }
     const messages = buildAutoMemoryPrompt(chat, type, sources, kind, settings);
     const request = buildChatApiRequest(config, messages, { temperature: 0.7 });
     const controller = new AbortController();

@@ -36,16 +36,16 @@ function initWorkshopCharManagement() {
 
             itemDiv.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <img src="${char.avatar}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+                    <img src="${escapeDisplayHtml(safeDisplayImageUrl(char.avatar))}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
                     <div style="flex: 1;">
-                        <div style="font-weight: bold; font-size: 14px;">${char.remarkName || char.name || '未知角色'}</div>
-                        <div style="font-size: 12px; color: #666;">变量: <code>{{${char.realName}}}</code></div>
+                        <div style="font-weight: bold; font-size: 14px;">${escapeDisplayHtml(char.remarkName || char.name || '未知角色')}</div>
+                        <div style="font-size: 12px; color: #666;">变量: <code>{{${escapeDisplayHtml(char.realName)}}}</code></div>
                     </div>
                     <button class="icon-btn-simple danger remove-char-btn" title="移除" style="padding: 4px;">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                     </button>
                 </div>
-                <textarea class="char-prompt-input" rows="3" style="width: 100%; border: 1px solid #ddd; border-radius: 6px; padding: 8px; font-size: 12px;" placeholder="输入该角色的专属跑图词...">${boundChar.prompt || ''}</textarea>
+                <textarea class="char-prompt-input" rows="3" style="width: 100%; border: 1px solid #ddd; border-radius: 6px; padding: 8px; font-size: 12px;" placeholder="输入该角色的专属跑图词...">${escapeDisplayHtml(boundChar.prompt || '')}</textarea>
             `;
 
             // 绑定事件
@@ -97,11 +97,11 @@ function initWorkshopCharManagement() {
                 li.className = 'list-item';
                 li.innerHTML = `
                     <label style="display: flex; align-items: center; width: 100%; cursor: pointer; gap: 10px;">
-                        <input type="checkbox" value="${char.id}" class="char-select-checkbox">
-                        <img src="${char.avatar}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+                        <input type="checkbox" value="${escapeDisplayHtml(char.id)}" class="char-select-checkbox">
+                        <img src="${escapeDisplayHtml(safeDisplayImageUrl(char.avatar))}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
                         <div style="flex: 1;">
-                            <div style="font-weight: bold;">${char.remarkName || char.name || '未知角色'}</div>
-                            <div style="font-size: 12px; color: #666;">${char.realName}</div>
+                            <div style="font-weight: bold;">${escapeDisplayHtml(char.remarkName || char.name || '未知角色')}</div>
+                            <div style="font-size: 12px; color: #666;">${escapeDisplayHtml(char.realName)}</div>
                         </div>
                     </label>
                 `;

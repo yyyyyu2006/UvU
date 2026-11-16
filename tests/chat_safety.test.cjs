@@ -110,6 +110,50 @@ test("failed edit restores source only and preserves newer concurrent edits and 
         assert.equal(chat.archives[0].data.history[0].content, "old");
     }
 });
+
+test('status matching cancellation saves earlier reply bubbles, including failed-save rollback', async () => {
+    for (const fail of [false, true]) {
+        const f = fixture(), chat = f.chats[0], controller = new AbortController();
+        chat.statusPanel = {enabled: true, regexPattern: '<status>(.*?)</status>', replacePattern: '$1'};
+        let waits = 0, finish, saves = 0;
+        f.c.getMixedContent = text => text.split('\n').map(content => ({type: 'text', content}));
+        f.c.escapeMessageRegex = text => text;
+        f.c.showIncomingMessageNotifications = () => {};
+        f.c.prepareStatusRegexJobs = async () => { if (++waits === 2) await new Promise(resolve => finish = resolve); };
+        f.c.saveData = async () => { saves++; if (fail) throw Error('quota'); };
+        const pending = f.c.handleAiReplyContent('[a的消息：first]\n[a的消息：second]', chat, 'a', 'private', true, controller.signal);
+        await tick();
+        assert.equal(chat.history.length, 1);
+        controller.abort(); finish(); await pending;
+        assert.equal(saves, 1);
+        assert.equal(chat.history.length, fail ? 0 : 1);
+        if (!fail) assert.match(chat.history[0].content, /first/);
+    }
+});
+
+test('status edit preparation never exposes drafts during archive switches or later edits', async () => {
+    for (const mode of ['switch-fails', 'later-edit', 'complete', 'save-fails']) {
+        const f = fixture(), chat = f.chats[0];
+        chat.history.push({id: 'edit', role: 'assistant', content: 'old'});
+        chat.statusPanel = {enabled: true, regexPattern: '<status>(.*?)</status>', replacePattern: '$1'};
+        f.c.editingMessageId = 'edit'; f.c.isRawEditMode = true;
+        f.c.escapeMessageRegex = text => text;
+        f.element('message-edit-textarea').value = 'edited';
+        let finish, saves = 0;
+        f.c.prepareStatusRegexJobs = () => new Promise(resolve => finish = resolve);
+        f.c.saveData = async () => { saves++; if (mode === 'switch-fails' || mode === 'save-fails') throw Error('quota'); };
+        const pending = f.c.saveMessageEdit(); await tick();
+        assert.equal(chat.history[0].content, 'old', 'unprepared edit stays out of shared history');
+        if (mode === 'switch-fails') {
+            f.c.ensureChatArchives(chat);
+            chat.archives.push({id: 'other', name: 'other', data: {history: []}});
+            assert.equal(await f.c.switchChatArchive('other'), false);
+        } else if (mode === 'later-edit') chat.history[0].content = 'newer';
+        finish(); await pending;
+        assert.equal(chat.history[0].content, mode === 'complete' ? 'edited' : mode === 'later-edit' ? 'newer' : 'old');
+        assert.equal(saves, mode === 'later-edit' ? 0 : 1);
+    }
+});
 test("failed save after archive switch restores original archive and leaves active archive alone", async () => {
     const f = fixture(), chat = f.chats[0]; chat.history.push({ id: "old", content: "old" }); f.c.ensureChatArchives(chat);
     const state = f.c.beginChatMutation(chat, "private", [chat.history[0]]); chat.history[0].content = "edited";
@@ -143,6 +187,20 @@ test("thinking cleanup keeps the live request associated with stop controls", as
     await tick();
     assert.equal(chat.history, history); assert.equal(chat.history.filter(m => m.isThinking).length, 50);
     assert.equal(f.c.stopAiReply(), true); await pending; assert.equal(f.c.isGenerating, false);
+});
+
+test('main reply never sends the global key to a different exclusive destination', async () => {
+    for (const mode of ['foreign-empty', 'same-empty', 'foreign-explicit']) {
+        const f = fixture(), chat = f.chats[0], requests = [];
+        chat.exclusiveApiEnabled = true; chat.exclusiveApiPreset = 'exclusive';
+        f.c.URL = URL;
+        f.c.db.apiPresets = [{name: 'exclusive', data: {apiUrl: mode === 'same-empty' ? 'https://fake.invalid/' : 'https://other.invalid', apiKey: mode === 'foreign-explicit' ? 'OWN' : ''}}];
+        f.c.fetch = async (url, init) => { requests.push({url, key: init.headers.Authorization}); return {ok: true, json: async () => ({choices: [{message: {content: 'reply'}}]})}; };
+        f.c.handleAiReplyContent = async () => true;
+        await f.c.getAiReply('a', 'private', true);
+        assert.equal(requests.length, mode === 'foreign-empty' ? 0 : 1);
+        if (requests.length) assert.equal(requests[0].key, mode === 'same-empty' ? 'Bearer fake' : 'Bearer OWN');
+    }
 });
 test("failed manually inserted message and transfer response restore source records", async () => {
     const f = fixture(), chat = f.chats[0];
@@ -204,7 +262,7 @@ test("failed AI reply save restores only its messages and status, retaining conc
         f.c.getMixedContent=text=>[{type:'text',content:text}];f.c.showIncomingMessageNotifications=()=>{};f.c.escapeMessageRegex=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
         f.c.saveData=async()=>{ f.c.syncChatActiveArchive(chat);chat.history.push({id:'during-save',role:'user',content:'new'});throw Error('quota'); };
         const reply=f.c.handleAiReplyContent('[a的消息：reply]<status>busy</status>',chat,'a','private',background);
-        if(!background){chat.history.push({id:'during-delay',role:'user',content:'new'});while(f.timers.length)f.timers.shift()();}
+        if(!background){chat.history.push({id:'during-delay',role:'user',content:'new'});await tick();while(f.timers.length)f.timers.shift()();}
         await reply;
         assert.deepEqual(chat.history.map(m=>m.id),background?['source','during-save']:['source','during-delay','during-save']);
         assert.deepEqual(plain(chat.statusPanel),oldStatus);

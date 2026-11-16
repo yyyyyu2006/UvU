@@ -8,10 +8,11 @@ function fixture() {
     const chat = { id: 'c', activeArchiveId: 'a', history: [], memoryJournals: [],
         autoMemorySettings: { vectorSearchEnabled: true, vectorThreshold: 0, keepRecent: 20 } };
     const config = { provider: 'newapi', url: 'https://embed.test/v1', key: 'private-key', embeddingModel: 'embed' };
-    const c = vm.createContext({ console, AbortController, setTimeout, clearTimeout,
+    const c = vm.createContext({ console, URL, AbortController, setTimeout, clearTimeout,
         document: { addEventListener() {}, getElementById() { return null; } }, window: {},
         db: { characters: [chat], groups: [], vectorMemoryApiSettings: config },
         getRandomValue: key => key, saveData: async () => {} });
+    require('./helpers/api_transport.cjs')(c);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/auto_memory.js'), 'utf8'), c);
     return { c, chat, config };
 }

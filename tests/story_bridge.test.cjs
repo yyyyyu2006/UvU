@@ -663,6 +663,38 @@ test('completed-only cleanup requires export and confirmation and preserves inco
  f.context.saveData=async()=>{};await f.bridge.cleanupCompleted({dryRun:false,confirmed:true,exported:true});assert.equal(state.pendingScenes['char-1:done'],undefined);assert.equal(state.pendingScenes['char-1:lost'].parts[1],'KEEP');assert.ok(state.receipts['char-1:done']);
 });
 
+test('cleanup export restores completed copies and approved summary caches with preview, rollback and no approval', async () => {
+ const f=harness(async()=>({ok:true})),state=f.db.uvuStoryBridgeSettings;
+ const resume={completed:true,sourceVersion:'a'.repeat(64),entries:[]};
+ const journal={id:'j',externalSceneId:'done',source:'sillytavern',content:'approved',bridgeReview:{channel:'st',archiveId:'default',status:'approved',items:[],summaryResume:resume}};
+ f.chat.memoryJournals=[journal];state.cursorByCharacter={'char-1':77};
+ state.receipts={'char-1:done':{archiveId:'default',at:1}};
+ state.pendingScenes={'char-1:done':{characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:'saved'},imported:true}};
+ const exported=JSON.stringify(f.bridge.createCleanupRecovery());
+ await f.bridge.cleanupCompleted({dryRun:false,confirmed:true,exported:true});
+ assert.equal(state.pendingScenes['char-1:done'],undefined);assert.equal(journal.bridgeReview.summaryResume,undefined);
+ const preview=await f.bridge.importRecovery(exported);assert.equal(preview.summaryCaches,1);assert.equal(state.pendingScenes['char-1:done'],undefined);
+ f.context.saveData=async()=>{throw Error('quota');};
+ await assert.rejects(f.bridge.importRecovery(exported,{confirmed:true}),/quota/);
+ assert.equal(state.pendingScenes['char-1:done'],undefined);assert.equal(journal.bridgeReview.summaryResume,undefined);
+ f.context.saveData=async()=>{};await f.bridge.importRecovery(exported,{confirmed:true});
+ assert.equal(state.pendingScenes['char-1:done'].parts[1],'saved');assert.equal(journal.bridgeReview.summaryResume.completed,true);
+ assert.equal(journal.content,'approved');assert.equal(journal.bridgeReview.status,'approved');assert.equal(state.cursorByCharacter['char-1'],77);
+ const malicious=JSON.parse(exported);malicious.summaryCaches[0].archiveId='missing';
+ await assert.rejects(f.bridge.importRecovery(JSON.stringify(malicious),{confirmed:true}),/存档/);
+});
+
+test('cleanup export refuses an unrestorable oversized copy before any cleanup', () => {
+ const f=harness(async()=>({ok:true})),state=f.db.uvuStoryBridgeSettings;
+ f.chat.memoryJournals=[{id:'j',externalSceneId:'done',source:'sillytavern',bridgeReview:{channel:'st',archiveId:'default',status:'approved',items:[]}}];
+ state.receipts={'char-1:done':{archiveId:'default',at:1}};
+ state.pendingScenes={'char-1:done':{characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:'saved'},imported:true}};
+ const text='a'.repeat(49152);
+ for(let i=0;i<360;i++)state.pendingScenes['char-1:pending'+i]={characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:text}};
+ assert.throws(()=>f.bridge.createCleanupRecovery(),/16 MiB/);
+ assert.equal(Object.keys(state.pendingScenes).length,361);assert.equal(state.pendingScenes['char-1:done'].parts[1],'saved');
+});
+
 test('summary group checkpoints persist independently from approval and resume only the exact source version',async()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})})),items=[{id:'f',text:'剧情',selected:true}],key='a'.repeat(64);
  const journal={id:'j',source:'sillytavern',content:'原文',bridgeReview:{channel:'st',archiveId:'default',items,status:'pending'}};f.chat.memoryJournals=[journal];

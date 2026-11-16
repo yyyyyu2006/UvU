@@ -15,7 +15,10 @@ test('opening token preview never rerolls activation or claims unsent books actu
     c.generatePrivateSystemPrompt = (_chat, plan) => plan.map(book => book.content).join('\n');
     const preview = c.getChatTokenUsageSnapshot('c');
     assert.equal(draws, 0); assert.equal(preview.preview, true);
-    assert.equal(preview.worldBookPending, 1); assert.equal(preview.worldBookDetails.length, 0);
+    assert.equal(preview.worldBookPending, 1); assert.equal(preview.worldBookDetails.length, 1);
+    assert.equal(preview.worldBookDetails[0].id, 'static');
+    assert.equal(preview.worldBookDetails[0].triggered, false);
+    assert.equal(preview.worldBookDetails[0].preview, true);
     const actualEstimate = c.estimateChatTokenUsage(chat, 'private', '静态正文', [], '', [books[0]]);
     c.recordChatTokenUsage(chat, 'private', { prompt_tokens: 25, completion_tokens: 5 }, actualEstimate);
     const frozen = c.getChatTokenUsageSnapshot('c');

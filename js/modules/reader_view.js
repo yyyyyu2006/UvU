@@ -12,6 +12,19 @@ function readerIllustrationSource(content) {
     if (/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(raw)) return raw;
     return /^[A-Za-z0-9+/]+={0,2}$/.test(raw) ? 'data:image/png;base64,' + raw : null;
 }
+function parseReaderIllustrations(text, count) {
+    if (![1, 3, 6, 9].includes(count)) throw new Error('请选择有效的插图数量');
+    const blocks = [], ids = new Set(), quotes = new Set();
+    const regex = /<image(\d{3})>([\s\S]*?)<\/image\1>/g;
+    let match;
+    while (blocks.length < count && (match = regex.exec(text)) !== null) {
+        const quote = match[2].match(/<原文段落>([\s\S]*?)<\/原文段落>/)?.[1].trim();
+        const prompt = match[2].match(/<image>([\s\S]*?)<\/image>/)?.[1].trim();
+        if (!quote || !prompt || ids.has(match[1]) || quotes.has(quote)) continue;
+        ids.add(match[1]); quotes.add(quote); blocks.push({quote, prompt});
+    }
+    return blocks;
+}
 document.addEventListener('DOMContentLoaded', () => {
     let preferenceWarningShown = false;
     const preferenceCall = (method, ...args) => {
@@ -69,11 +82,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let bookLoadVersion = 0;
     let chapterLoadVersion = 0;
     let commentLoadVersion = 0;
+    let illustrationController = null;
 
     // 绑定返回键
     const backBtn = document.getElementById('reader-back-btn');
     if (backBtn) {
         backBtn.addEventListener('click', () => {
+            illustrationController?.abort();
             if (typeof switchScreen === 'function') {
                 switchScreen('reader-bookshelf-screen');
             }
@@ -82,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 加载书籍
     async function loadBook(bookId) {
+        illustrationController?.abort();
         const version = ++bookLoadVersion;
         ++chapterLoadVersion;
         ++commentLoadVersion;
@@ -1011,9 +1027,17 @@ document.addEventListener('DOMContentLoaded', () => {
         box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     `;
     readerScreen.appendChild(floatingProgress);
+    floatingProgress.id = 'reader-illustration-floating-progress';
+    floatingProgress.setAttribute('role', 'button');
+    floatingProgress.tabIndex = 0;
+    floatingProgress.style.pointerEvents = 'auto';
+    floatingProgress.addEventListener('click', () => illustrationController?.abort());
+    floatingProgress.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); illustrationController?.abort(); }
+    });
 
     function showFloatingProgress(text) {
-        floatingProgress.textContent = text;
+        floatingProgress.textContent = text + (illustrationController && !illustrationController.signal.aborted ? ' · 点击取消' : '');
         floatingProgress.style.display = 'block';
         floatingProgress.style.opacity = '1';
     }
@@ -1027,12 +1051,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (generateIllustrationBtn) {
         generateIllustrationBtn.addEventListener('click', async () => {
+            if (generateIllustrationBtn.disabled) return;
             if (!currentBook || currentChapters.length === 0) {
                 if (typeof showToast === 'function') showToast("请先加载书籍");
                 return;
             }
 
             const count = parseInt(illustrationCountSelect.value);
+            if (![1, 3, 6, 9].includes(count)) return showToast('请选择有效的插图数量');
             const chapter = currentChapters[currentChapterIndex];
             if (!chapter || !chapter.content) return;
             const illustrationBook = currentBook;
@@ -1067,6 +1093,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             generateIllustrationBtn.disabled = true;
             generateIllustrationBtn.style.opacity = '0.5';
+            const controller = new AbortController();
+            illustrationController = controller;
+            const checkCancelled = () => {
+                if (controller.signal.aborted) throw Object.assign(new Error('插图生成已取消'), {name: 'AbortError'});
+            };
             
             // 关闭设置面板，进入后台运行
             settingsOverlay.classList.remove('active');
@@ -1152,6 +1183,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const llmResponse = await fetch(llmEndpoint, {
                     method: 'POST',
+                    signal: controller.signal,
                     headers: llmHeaders,
                     body: JSON.stringify(llmPayload)
                 });
@@ -1173,21 +1205,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("=== AI 返回的原始文本 ===\n" + llmText);
 
                 // 3. 解析 XML
-                const imageBlocks = [];
-                const regex = /<image\d{3}>([\s\S]*?)<\/image\d{3}>/g;
-                let match;
-                while ((match = regex.exec(llmText)) !== null) {
-                    const blockContent = match[1];
-                    const quoteMatch = blockContent.match(/<原文段落>([\s\S]*?)<\/原文段落>/);
-                    const promptMatch = blockContent.match(/<image>([\s\S]*?)<\/image>/);
-                    
-                    if (quoteMatch && promptMatch) {
-                        imageBlocks.push({
-                            quote: quoteMatch[1].trim(),
-                            prompt: promptMatch[1].trim()
-                        });
-                    }
-                }
+                checkCancelled();
+                const imageBlocks = parseReaderIllustrations(llmText, count);
 
                 if (imageBlocks.length === 0) {
                     throw new Error("未能解析出有效的插图指令");
@@ -1197,6 +1216,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const paragraphs = chapter.content.split('\n').filter(p => p !== '');
                 
                 for (let i = 0; i < imageBlocks.length; i++) {
+                    checkCancelled();
                     const block = imageBlocks[i];
                     showFloatingProgress(`正在绘制第 ${i + 1}/${imageBlocks.length} 张插图...`);
 
@@ -1240,9 +1260,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     let base64Image = '';
                     try {
-                        const result = await window.executeImageGeneration(tempSettings, block.prompt);
+                        const result = await window.executeImageGeneration(tempSettings, block.prompt, {signal: controller.signal});
+                        checkCancelled();
                         base64Image = result.imageData;
                     } catch (genErr) {
+                        if (controller.signal.aborted || genErr.name === 'AbortError') throw genErr;
                         console.error(`第 ${i+1} 张图生成或解析失败:`, genErr);
                         continue;
                     }
@@ -1286,9 +1308,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (error) {
                 console.error("智能插图生成失败:", error);
-                showFloatingProgress('生成失败: ' + error.message);
+                showFloatingProgress(error.name === 'AbortError' ? '插图生成已取消' : '生成失败: ' + error.message);
                 setTimeout(() => { hideFloatingProgress(); }, 3000);
             } finally {
+                if (illustrationController === controller) illustrationController = null;
                 generateIllustrationBtn.disabled = false;
                 generateIllustrationBtn.style.opacity = '1';
             }

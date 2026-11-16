@@ -33,10 +33,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     : 0;
 
                 bookEl.innerHTML = `
-                    <button class="book-delete-btn" data-id="${book.id}">✕</button>
-                    <div class="book-cover">${book.title.substring(0, 1)}</div>
-                    <div class="book-title">${book.title}</div>
-                    <div class="book-author">${book.author}</div>
+                    <button class="book-delete-btn" data-id="${escapeDisplayHtml(book.id)}">✕</button>
+                    <div class="book-cover">${escapeDisplayHtml(String(book.title ?? '').substring(0, 1))}</div>
+                    <div class="book-title">${escapeDisplayHtml(book.title)}</div>
+                    <div class="book-author">${escapeDisplayHtml(book.author)}</div>
                     <div class="book-progress">已读 ${progress}%</div>
                 `;
 
@@ -150,8 +150,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div class="modal-body">
                     <div class="book-info-summary">
-                        <span><strong>书名：</strong>${bookInfo.title}</span>
-                        <span><strong>作者：</strong>${bookInfo.author}</span>
+                        <span><strong>书名：</strong>${escapeDisplayHtml(bookInfo.title)}</span>
+                        <span><strong>作者：</strong>${escapeDisplayHtml(bookInfo.author)}</span>
                     </div>
                     
                     <div class="section-title">选择匹配规则 Tag：</div>
@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
             previewListEl.innerHTML = displayChapters.map((ch, idx) => `
                 <div class="preview-chapter-item">
                     <span class="index">${idx + 1}.</span>
-                    <span class="title">${ch.title}</span>
+                    <span class="title">${escapeDisplayHtml(ch.title)}</span>
                 </div>
             `).join('') + (currentChapters.length > 100 ? `<div class="preview-more">... 剩余 ${currentChapters.length - 100} 章</div>` : '');
         }

@@ -724,6 +724,11 @@ function initTextareaSearchReplace(toolbarId, textareaId) {
 async function saveSettingsFromSidebar() {
     const e = db.characters.find(e => e.id === currentChatId);
     if (e) {
+        const memoryValue = document.getElementById('setting-max-memory').value.trim();
+        if (memoryValue !== '' && (!Number.isSafeInteger(Number(memoryValue)) || Number(memoryValue) < 1)) {
+            showToast('历史条数请填写正整数，或留空保留全部历史');
+            return;
+        }
         e.avatar = document.getElementById('setting-char-avatar-preview').src;
         
         const oldRealName = e.realName;
@@ -759,7 +764,7 @@ async function saveSettingsFromSidebar() {
         e.myRemarkName = document.getElementById('setting-my-remark-name').value.trim();
         e.myPersona = document.getElementById('setting-my-persona').value;
         e.theme = document.getElementById('setting-theme-color').value;
-        e.maxMemory = document.getElementById('setting-max-memory').value;
+        e.maxMemory = memoryValue;
         e.replyCountEnabled = document.getElementById('setting-reply-count-enabled').checked;
         e.replyCountMin = parseInt(document.getElementById('setting-reply-count-min').value, 10) || 3;
         e.replyCountMax = parseInt(document.getElementById('setting-reply-count-max').value, 10) || 8;

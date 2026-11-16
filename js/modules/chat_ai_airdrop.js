@@ -339,8 +339,14 @@ async function generateTagsFromDescription(chat, messageId) {
     };
 
     if (provider === 'gemini') {
-        requestBody.contents = [{role: 'user', parts: [{text: `<参考资料>\n${contextText}\n</参考资料>\n请根据参考资料中最后一条消息的画面描述，结合前文语境，生成英文提示词标签。直接输出转换后的英文标签。`}]}];
-        requestBody.system_instruction = {parts: [{text: messages[0].content}]}; // Fix: use messages[0].content instead of undefined systemPrompt
+        requestBody.contents = messages.filter(message => message.role !== 'system').map(message => ({
+            role: message.role === 'assistant' ? 'model' : 'user', parts: [{text: message.content}]
+        }));
+        if (!requestBody.contents.length) requestBody.contents = [{role: 'user', parts: [{text:
+            `<参考资料>\n${contextText}\n</参考资料>\n请根据参考资料中最后一条消息的画面描述，结合前文语境，生成英文提示词标签。直接输出转换后的英文标签。`
+        }]}];
+        const systemText = messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n');
+        if (systemText) requestBody.system_instruction = {parts: [{text: systemText}]};
         delete requestBody.messages;
     }
 

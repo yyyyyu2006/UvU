@@ -530,7 +530,7 @@ async function saveMessageEdit() {
     
     if (!chat) return;
     const target = captureChatSendTarget();
-    const mutation = beginChatMutation(chat, currentChatType, chat.history.filter(message => message.id === editingMessageId));
+    let mutation = beginChatMutation(chat, currentChatType, chat.history.filter(message => message.id === editingMessageId));
     const editToken = editingMessageId;
     if (isAddingMessageMode) {
         const targetIndex = chat.history.findIndex(m => m.id === addingAfterMessageId);
@@ -590,11 +590,14 @@ async function saveMessageEdit() {
             cancelMessageEdit();
             return;
         }
+        const originalMessage = chat.history[messageIndex];
+        const originalText = JSON.stringify(originalMessage);
+        const editedMessage = mutation.clone(originalMessage);
         // 调试源码编辑转发卡片时转为普通文本，避免卡片快照与正文分离。
-        if (chat.history[messageIndex].type === 'forwarded-chat') {
+        if (editedMessage.type === 'forwarded-chat') {
             if (!isRawEditMode) { cancelMessageEdit(); return; }
-            delete chat.history[messageIndex].type;
-            delete chat.history[messageIndex].forwardedChat;
+            delete editedMessage.type;
+            delete editedMessage.forwardedChat;
         }
 
         if (isRawEditMode) {
@@ -606,12 +609,12 @@ async function saveMessageEdit() {
                 const quoteContent = match[2];
                 const replyText = match[3];
 
-                if (chat.history[messageIndex].quote) {
-                    chat.history[messageIndex].quote.content = quoteContent;
+                if (editedMessage.quote) {
+                    editedMessage.quote.content = quoteContent;
 
                     const targetContent = quoteContent.trim();
                     const originalMessage = chat.history.slice().reverse().find(m => {
-                        if (m.id === chat.history[messageIndex].id) return false;
+                        if (m.id === editedMessage.id) return false;
                         let text = m.content;
                         const plainTextMatch = text.match(/^\[.*?：([\s\S]*)\]$/);
                         if (plainTextMatch && plainTextMatch[1]) {
@@ -628,20 +631,20 @@ async function saveMessageEdit() {
                         } else {
                             newSenderId = originalMessage.senderId || (currentChatType === 'private' ? chat.id : 'unknown');
                         }
-                        chat.history[messageIndex].quote.senderId = newSenderId;
-                        chat.history[messageIndex].quote.messageId = originalMessage.id;
+                        editedMessage.quote.senderId = newSenderId;
+                        editedMessage.quote.messageId = originalMessage.id;
                     }
                 }
-                chat.history[messageIndex].content = `[${name}的消息：${replyText}]`;
+                editedMessage.content = `[${name}的消息：${replyText}]`;
             } else {
-                chat.history[messageIndex].content = newText;
+                editedMessage.content = newText;
             }
 
-            if (chat.history[messageIndex].parts) {
-                chat.history[messageIndex].parts = [{type: 'text', text: chat.history[messageIndex].content}];
+            if (editedMessage.parts) {
+                editedMessage.parts = [{type: 'text', text: editedMessage.content}];
             }
         } else {
-            const oldContent = chat.history[messageIndex].content;
+            const oldContent = editedMessage.content;
             const prefixMatch = oldContent.match(/(\[.*?的(?:消息|语音|表情包|照片\/视频)[：:])[\s\S]+\]/);
             let newContent;
 
@@ -652,27 +655,24 @@ async function saveMessageEdit() {
                 newContent = newText;
             }
 
-            chat.history[messageIndex].content = newContent;
-            if (chat.history[messageIndex].parts) {
-                chat.history[messageIndex].parts = [{type: 'text', text: newContent}];
+            editedMessage.content = newContent;
+            if (editedMessage.parts) {
+                editedMessage.parts = [{type: 'text', text: newContent}];
             }
         }
 
-        const editedMessage = chat.history[messageIndex];
         const timestampInput = document.getElementById('message-edit-timestamp');
         if (timestampInput && timestampInput.value) {
             if (timestampInput.value !== timestampInput.dataset.originalValue) {
                 const newTime = new Date(timestampInput.value).getTime();
                 if (!isNaN(newTime)) {
-                    chat.history[messageIndex].timestamp = newTime;
-                    chat.history.sort((a, b) => a.timestamp - b.timestamp);
+                    editedMessage.timestamp = newTime;
                 }
             }
         }
         
-        if (currentChatType === 'private') {
-            recalculateChatStatus(chat);
-
+        let statusUpdate = null;
+        if (target.type === 'private') {
             if (chat.statusPanel && chat.statusPanel.enabled && chat.statusPanel.regexPattern) {
                 try {
                     let pattern = chat.statusPanel.regexPattern;
@@ -685,17 +685,21 @@ async function saveMessageEdit() {
                         if (!flags.includes('s')) flags += 's';
                     }
 
-                    const regex = new RegExp(pattern, flags);
-                    const match = regex.exec(editedMessage.content);
+                    const panel = chat.statusPanel, configured = panel.regexPattern, template = panel.replacePattern;
+                    await prepareStatusRegexJobs([{source: pattern, flags, text: editedMessage.content}]);
+                    if (!isChatSendTargetValid(target) || editingMessageId !== editToken ||
+                        !target.history.includes(originalMessage) || JSON.stringify(originalMessage) !== originalText) return;
+                    const regex = createStatusRegex(pattern, flags);
+                    const match = chat.statusPanel === panel && panel.enabled && panel.regexPattern === configured && panel.replacePattern === template
+                        ? regex.exec(editedMessage.content) : null;
                     
                     if (match) {
                         const rawStatus = match[0];
-                        chat.statusPanel.currentStatusRaw = rawStatus;
                         
                         let html = chat.statusPanel.replacePattern;
                         
-                        html = html.replace(/\$(\d+)/g, (token, index) => match[Number(index)] ?? token);
-                        chat.statusPanel.currentStatusHtml = html;
+                        html = html.replace(/\$(\d+)/g, (token, index) => match[Number(index)] !== undefined ? escapeDisplayHtml(match[Number(index)]) : token);
+                        statusUpdate = {panel, raw: rawStatus, html};
                         
                         editedMessage.isStatusUpdate = true;
                         editedMessage.statusSnapshot = {
@@ -710,6 +714,18 @@ async function saveMessageEdit() {
                     console.error("编辑时解析状态栏错误:", e);
                 }
             }
+        }
+        // Finish asynchronous preparation before exposing any edit to shared history.
+        if (!isChatSendTargetValid(target) || editingMessageId !== editToken ||
+            !target.history.includes(originalMessage) || JSON.stringify(originalMessage) !== originalText) return;
+        mutation = beginChatMutation(chat, target.type, [originalMessage]);
+        Object.keys(originalMessage).forEach(key => delete originalMessage[key]);
+        Object.assign(originalMessage, editedMessage);
+        if (mutation.messages[0].before.timestamp !== editedMessage.timestamp) chat.history.sort((a, b) => a.timestamp - b.timestamp);
+        if (target.type === 'private') recalculateChatStatus(chat);
+        if (statusUpdate) {
+            statusUpdate.panel.currentStatusRaw = statusUpdate.raw;
+            statusUpdate.panel.currentStatusHtml = statusUpdate.html;
         }
     }
 

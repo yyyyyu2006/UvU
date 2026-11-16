@@ -650,18 +650,8 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
         // 修复：必须替换 {{id}} 占位符，否则 CSS 作用域会失效导致全局污染
         let previewHtml = template.html.replace(/{{id}}/g, template.id);
         for (const [key, value] of Object.entries(template.defaultVars)) {
-            previewHtml = previewHtml.replace(new RegExp(`{{${key}}}`, 'g'), value);
+            previewHtml = previewHtml.split(`{{${key}}}`).join(String(value));
         }
-
-        const styleId = `preview-style-${template.id}`;
-        let style = document.getElementById(styleId);
-        if (!style) {
-            style = document.createElement('style');
-            style.id = styleId;
-            document.head.appendChild(style);
-        }
-        // Same-ID replacements must refresh the existing preview style too.
-        style.textContent = template.css.replace(/{{id}}/g, template.id);
 
         // 真实比例缩放包装器
         const scaleWrapper = document.createElement('div');
@@ -677,16 +667,27 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
         const scale = Math.min(1, availableWidth / baseWidth);
         scaleWrapper.style.transform = `scale(${scale})`;
         
-        scaleWrapper.innerHTML = previewHtml;
+        // Importing/browsing is a preview, not permission to run template code.
+        // Keep authored markup and CSS in an opaque, script-disabled document.
+        const previewFrame = document.createElement('iframe');
+        previewFrame.setAttribute('sandbox', '');
+        previewFrame.setAttribute('referrerpolicy', 'no-referrer');
+        previewFrame.setAttribute('tabindex', '-1');
+        previewFrame.title = '组件预览';
+        previewFrame.style.cssText = 'width:100%;height:100%;border:0;pointer-events:none;display:block';
+        previewFrame.srcdoc = '<!doctype html><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%}body{font-family:sans-serif}</style><style>' +
+            template.css.replace(/{{id}}/g, template.id) + '</style>' + previewHtml;
+        scaleWrapper.appendChild(previewFrame);
         previewCanvas.appendChild(scaleWrapper);
 
         // 信息区域
         const infoBox = document.createElement('div');
         infoBox.className = 'info-area';
         infoBox.innerHTML = `
-            <div class="widget-name">${template.name}</div>
+            <div class="widget-name"></div>
             <div class="widget-meta">${template.size} 布局</div>
         `;
+        infoBox.querySelector('.widget-name').textContent = template.name;
 
         card.appendChild(previewCanvas);
         card.appendChild(infoBox);
@@ -1144,7 +1145,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (db !== targetDb) throw new Error('数据已切换，请重新导入小组件');
                 const existing = targetDb.widgetTemplates || [];
                 if (templates.some(template => existing.some(item => item.id === template.id)) &&
-                    !confirm('已存在相同的小组件，是否覆盖？')) return;
+                    !confirm(templates.some(template => (targetDb.addedWidgets || []).some(item => item.templateId === template.id))
+                        ? '将覆盖已添加到主屏幕的组件。返回主屏幕后会运行新文件中的 HTML、样式和脚本，仅信任文件来源时继续。是否覆盖并启用？'
+                        : '已存在相同的小组件，是否覆盖？')) return;
                 const next = [...existing];
                 for (const template of templates) {
                     const index = next.findIndex(item => item.id === template.id);
@@ -1155,17 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (db !== targetDb) return;
                 showToast('导入成功');
                 renderWidgetMarket();
-                for (const template of templates) {
-                    if (!db.widgetTemplates.includes(template)) continue;
-                    const styleId = `custom-widget-style-${template.id}`;
-                    let styleEl = document.getElementById(styleId);
-                    if (!styleEl) {
-                        styleEl = document.createElement('style');
-                        styleEl.id = styleId;
-                        document.head.appendChild(styleEl);
-                    }
-                    styleEl.textContent = template.css.replace(/{{id}}/g, template.id);
-                }
+
             } catch (error) {
                 console.error('小组件导入失败:', error.message);
                 showToast('导入失败：' + error.message);
@@ -1300,22 +1293,4 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.classList.remove('visible');
         fileUpload.dataset.base64 = '';
     });
-});
-
-// 初始化时注入所有模板的 CSS
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        if (db.widgetTemplates) {
-            db.widgetTemplates.forEach(template => {
-                const styleId = `custom-widget-style-${template.id}`;
-                if (!document.getElementById(styleId)) {
-                    const style = document.createElement('style');
-                    style.id = styleId;
-                    // 修复：初始化注入时也必须替换 {{id}} 占位符
-                    style.textContent = template.css.replace(/{{id}}/g, template.id);
-                    document.head.appendChild(style);
-                }
-            });
-        }
-    }, 500); // 延迟等待 db 加载
 });

@@ -1,6 +1,9 @@
 // --- 视频/语音通话专用 AI 逻辑 ---
 
 async function getCallReply(chat, callType, callContext, onStreamUpdate, signal) {
+    const archiveId = chat.activeArchiveId, history = chat.history;
+    const isCancelled = () => signal?.aborted || chat.activeArchiveId !== archiveId || chat.history !== history;
+    if (isCancelled()) return null;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
@@ -11,7 +14,8 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
             apiConfig = {
                 ...db.apiSettings,
                 url: preset.data.apiUrl || db.apiSettings.url,
-                key: preset.data.apiKey || db.apiSettings.key,
+                key: resolveDestinationKey(preset.data.apiUrl, preset.data.apiKey, db.apiSettings.url, db.apiSettings.key,
+                    preset.data.provider || db.apiSettings.provider, db.apiSettings.provider),
                 model: preset.data.model || db.apiSettings.model,
                 provider: preset.data.provider || db.apiSettings.provider,
                 temperatureEnabled: preset.data.temperatureEnabled !== undefined ? preset.data.temperatureEnabled : db.apiSettings.temperatureEnabled,
@@ -36,8 +40,10 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
     const now = new Date();
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     
+    if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) await prepareStatusRegexHistory(chat, chat.history, signal);
     const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
         ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat)), Math.random, signal) : buildWorldBookPlan(chat, filterHistoryForAI(chat, getAutoMemoryContextHistory(chat)))) : undefined;
+    if (isCancelled()) return null;
     // 获取世界书
     const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
@@ -183,6 +189,8 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
         
         // 使用通用过滤函数
         if (typeof filterHistoryForAI === 'function') {
+            if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) await prepareStatusRegexHistory(chat, recentHistory, signal);
+            if (isCancelled()) return null;
             recentHistory = filterHistoryForAI(chat, recentHistory);
         }
         // 再次过滤掉不应进入上下文的消息
@@ -381,6 +389,7 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate, signal)
     console.log('[VideoCall] Request:', { provider, stream: streamEnabled, messages: messages.length });
 
     try {
+        if (isCancelled()) return null;
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
@@ -469,7 +478,8 @@ async function generateCallSummary(chat, callContext) {
             apiConfig = {
                 ...db.apiSettings,
                 url: preset.data.apiUrl || db.apiSettings.url,
-                key: preset.data.apiKey || db.apiSettings.key,
+                key: resolveDestinationKey(preset.data.apiUrl, preset.data.apiKey, db.apiSettings.url, db.apiSettings.key,
+                    preset.data.provider || db.apiSettings.provider, db.apiSettings.provider),
                 model: preset.data.model || db.apiSettings.model,
                 provider: preset.data.provider || db.apiSettings.provider
             };

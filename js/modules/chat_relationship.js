@@ -133,6 +133,10 @@ async function checkCharacterBlacklist(chat) {
         await updateChatRelationship(chat, next => { next.autonomy.lastCheckUserCount = userCount; });
         if (!db.characters.includes(chat) || chat.activeArchiveId !== archiveId || chat.history !== history) return false;
         const snapshot = chat.friendRelationship;
+        if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
+            await prepareStatusRegexHistory(chat, history);
+            if (!db.characters.includes(chat) || chat.activeArchiveId !== archiveId || chat.history !== history) return false;
+        }
         const accepted = filterHistoryForAI(chat, (history || []).filter(message => !message.relationshipDelivery && !message.isThinking && !message.isStatusUpdate && !message.isContextDisabled && !message.isWithdrawn).slice(-30));
         const context = accepted.map(message => String(message.content || '')).filter(text => !/^data:/i.test(text)).join('\n').slice(-12000);
         const config = resolveAutoMemoryApi({ apiSource: 'follow' });
@@ -174,6 +178,10 @@ async function checkRelationshipRecovery(chat, force = false) {
         if (!db.characters.includes(chat) || chat.activeArchiveId !== archiveId || chat.history !== history) return false;
         const snapshot = chat.friendRelationship;
         const config = resolveAutoMemoryApi({ apiSource: 'follow' });
+        if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
+            await prepareStatusRegexHistory(chat, history);
+            if (!db.characters.includes(chat) || chat.activeArchiveId !== archiveId || chat.history !== history) return false;
+        }
         const accepted = filterHistoryForAI(chat, (history || []).filter(m => !m.relationshipDelivery && !m.isThinking && !m.isStatusUpdate && !m.isContextDisabled).slice(-20));
         const historySignature = relationshipHistorySignature(history);
         const context = accepted.map(m => String(m.content || '')).filter(text => !/^data:/i.test(text)).join('\n').slice(-12000);

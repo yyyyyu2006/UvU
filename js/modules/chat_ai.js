@@ -155,7 +155,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             apiConfig = {
                 ...db.apiSettings, // 继承全局设置（如 streamEnabled 等）
                 url: preset.data.apiUrl || db.apiSettings.url,
-                key: preset.data.apiKey || db.apiSettings.key,
+                key: resolveDestinationKey(preset.data.apiUrl, preset.data.apiKey, db.apiSettings.url, db.apiSettings.key,
+                    preset.data.provider || db.apiSettings.provider, db.apiSettings.provider),
                 model: preset.data.model || db.apiSettings.model,
                 provider: preset.data.provider || db.apiSettings.provider,
                 temperatureEnabled: preset.data.temperatureEnabled !== undefined ? preset.data.temperatureEnabled : db.apiSettings.temperatureEnabled,
@@ -206,6 +207,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         let historySlice = typeof getAutoMemoryContextHistory === 'function'
             ? getAutoMemoryContextHistory(chat) : chat.history.slice(-chat.maxMemory);
         if (typeof documentHistoryForRequest === 'function') historySlice = documentHistoryForRequest(historySlice);
+        if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
+            await prepareStatusRegexHistory(chat, historySlice, generationController?.signal);
+            if (!requestIsCurrent()) return;
+        }
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
         const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
             ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, historySlice, Math.random, generationController?.signal) : buildWorldBookPlan(chat, historySlice)) : undefined;
@@ -1126,8 +1131,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             if (!flags.includes('s')) flags += 's';
                         }
 
-                    const regex = new RegExp(pattern, flags);
-                    const match = regex.exec(item.content);
+                        const panel = char.statusPanel, template = panel.replacePattern, configured = panel.regexPattern;
+                        await prepareStatusRegexJobs([{source: pattern, flags, text: item.content}]);
+                        if (!replyIsCurrent()) {
+                            if (signal?.aborted && chat.activeArchiveId === replyArchiveId && chat.history === replyHistory) {
+                                if (!await savePendingReply()) return false;
+                                notifyNewMessages();
+                            }
+                            return;
+                        }
+                        const regex = createStatusRegex(pattern, flags);
+                        const match = char.statusPanel === panel && panel.enabled && panel.regexPattern === configured && panel.replacePattern === template
+                            ? regex.exec(item.content) : null;
                     
                     if (match) {
                         const rawStatus = match[0];
@@ -1138,7 +1153,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     html = html.replace(/\$(\d+)/g, (fullMatch, groupIndex) => {
         const index = parseInt(groupIndex, 10);
         // 如果捕获组存在，则返回对应内容；否则保持原样
-        return (match[index] !== undefined) ? match[index] : fullMatch;
+        return (match[index] !== undefined) ? escapeDisplayHtml(match[index]) : fullMatch;
     });
 
 
