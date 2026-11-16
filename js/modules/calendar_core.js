@@ -47,7 +47,7 @@
     function integer(value, label, min, max) { if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(label + '数值无效'); }
     const timeOK = value => value === '' || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
     function validate(raw) {
-        if (!raw || typeof raw !== 'object' || Array.isArray(raw) || ![1, 2].includes(raw.version)) throw new Error('日历数据版本或结构无效');
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw) || ![1, 2, 3].includes(raw.version)) throw new Error('日历数据版本或结构无效');
         if (Object.keys(raw).some(key => !['version', 'revision', 'events', 'moods', 'periods', 'observations', 'profiles', 'prefs'].includes(key))) throw new Error('日历包含未知字段');
         integer(raw.revision, '日历版本', 0, Number.MAX_SAFE_INTEGER);
         const list = (name, max, check) => {
@@ -65,15 +65,18 @@
             string(e.title, '日程标题', 120, true); date(e.start); date(e.end);
             if (e.end < e.start || distance(e.start, e.end) > 366) throw new Error('日程日期范围无效');
             if (!timeOK(e.time) || !timeOK(e.endTime) || (e.time && e.endTime && e.start === e.end && e.endTime <= e.time)) throw new Error('日程时间无效');
-            if (!['none', 'daily', 'weekdays', 'weekly', 'monthly', ...(raw.version === 2 ? ['yearly'] : [])].includes(e.repeat)) throw new Error('日程重复规则无效');
+            if (!['none', 'daily', 'weekdays', 'weekly', 'monthly', ...(raw.version >= 2 ? ['yearly'] : [])].includes(e.repeat)) throw new Error('日程重复规则无效');
             if (e.kind !== undefined && e.kind !== 'schedule' && !isImportant(e)) throw new Error('重要日类别无效');
             if (isImportant(e)) {
-                if (raw.version !== 2 || e.start !== e.end || e.time || e.endTime || !['none', 'yearly'].includes(e.repeat)) throw new Error('重要日须为单日全天记录，使用新版格式');
+                if (raw.version < 2 || e.start !== e.end || e.time || e.endTime || !['none', 'yearly'].includes(e.repeat)) throw new Error('重要日须为单日全天记录，使用新版格式');
                 date(e.anchorDate);
                 if (e.anchorDate > e.start) throw new Error('原始日期不能晚于发生日期');
                 if (typeof e.yearlyMonthDay !== 'string' || !/^\d{2}-\d{2}$/.test(e.yearlyMonthDay)) throw new Error('年度日期无效');
                 date('2000-' + e.yearlyMonthDay);
                 if (!['leap-only', 'feb28', 'mar1'].includes(e.leapDayPolicy) || typeof e.showAnniversaryCount !== 'boolean' || typeof e.shareWithChat !== 'boolean') throw new Error('重要日选项无效');
+                if (e.shareTargets !== undefined && (raw.version < 3 || !Array.isArray(e.shareTargets) || e.shareTargets.length > 1000 ||
+                    new Set(e.shareTargets).size !== e.shareTargets.length || e.shareTargets.some(key => key === 'user' || !validOwner(key) || e.owner !== 'user' && key !== e.owner)))
+                    throw new Error('重要日同步对象无效，请重新选择角色和存档');
                 if (e.source !== 'manual') throw new Error('重要日只能手动维护');
             } else if (e.repeat === 'yearly') throw new Error('请使用重要日设置年度重复');
             if (e.until) { date(e.until); if (e.until < e.start) throw new Error('重复结束日期无效'); }
@@ -122,7 +125,8 @@
             const store = database(), old = store.calendarData, before = state(), next = clone(before);
             if (options.expected !== undefined && before.revision !== options.expected) throw new Error('日历已变化，请重新查看');
             const result = change(next); next.revision = before.revision + 1;
-            if (next.events.some(isImportant) || next.profiles.some(p => p.shareImportantDays || p.shareUserImportantDays)) next.version = 2;
+            if (next.events.some(e => isImportant(e) && e.shareTargets !== undefined)) next.version = 3;
+            else if (next.version < 2 && (next.events.some(isImportant) || next.profiles.some(p => p.shareImportantDays || p.shareUserImportantDays))) next.version = 2;
             validate(next);
             // Join the same persistence queue as backups. Never overwrite a restored data set.
             await write(next, old, store, options.guard);
@@ -199,7 +203,8 @@
             yearlyMonthDay: input.yearlyMonthDay ?? old.yearlyMonthDay ?? input.start.slice(5),
             leapDayPolicy: input.leapDayPolicy ?? old.leapDayPolicy ?? 'leap-only',
             showAnniversaryCount: input.showAnniversaryCount ?? old.showAnniversaryCount ?? false,
-            shareWithChat: input.shareWithChat ?? old.shareWithChat ?? false };
+            shareWithChat: input.shareWithChat ?? old.shareWithChat ?? false,
+            shareTargets: input.shareTargets ?? old.shareTargets ?? [] };
     }
     function yearlyDate(e, year) {
         const candidate = String(year) + '-' + e.yearlyMonthDay;
@@ -256,7 +261,7 @@
             const day = e.repeat === 'yearly' ? yearlyDate(e, year) : e.start;
             if (!day || +day.slice(0, 4) !== year || !occurs(e, day) || e.status === 'cancelled') { report.excluded++; continue; }
             const item = { ...clone(e), id: id(), start: day, end: day, repeat: 'none', until: '', except: [] };
-            for (const field of ['kind', 'anchorDate', 'yearlyMonthDay', 'leapDayPolicy', 'showAnniversaryCount', 'shareWithChat']) delete item[field];
+            for (const field of ['kind', 'anchorDate', 'yearlyMonthDay', 'leapDayPolicy', 'showAnniversaryCount', 'shareWithChat', 'shareTargets']) delete item[field];
             result.events.push(item); report.converted++;
         }
         result.profiles.forEach(p => { delete p.shareImportantDays; delete p.shareUserImportantDays; });
@@ -302,7 +307,7 @@
         const key = owner(chat), p = profile(key); if (!['shareSchedule', 'shareUserSchedule', 'shareMood', 'shareUserMood', 'shareHealth', 'shareImportantDays', 'shareUserImportantDays'].some(flag => p[flag])) return '';
         now ||= today(timezone(chat)); const s = state(), facts = {};
         const schedule = who => events(who, now, now, s).filter(e => !isImportant(e) && e.status !== 'cancelled').slice(0, 12).map(e => ({ title: e.title, date: e.date, end: e.occurrenceEnd, time: e.time, endTime: e.endTime, location: e.location }));
-        const important = who => upcoming(who, now, 7, s).filter(e => e.shareWithChat).slice(0, 5).map(e => ({ title: e.title, kind: IMPORTANT[e.kind], date: e.date }));
+        const important = who => upcoming(who, now, 7, s).filter(e => e.shareWithChat && e.shareTargets?.includes(key)).slice(0, 5).map(e => ({ title: e.title, kind: IMPORTANT[e.kind], date: e.date }));
         if (p.shareImportantDays) facts.charImportantDays = important(key);
         if (p.shareUserImportantDays) facts.userImportantDays = important('user');
         const mood = who => s.moods.filter(m => m.owner === who && m.date === now).sort((a, b) => b.at - a.at).slice(0, 1).map(m => ({ mood: MOODS[m.mood], note: m.note.slice(0, 300) }));

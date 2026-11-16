@@ -1,12 +1,30 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 function fixture(){
  const chat={id:'c',realName:'角色',myName:'用户',persona:'PRIVATE_CHARACTER_SECRET',myPersona:'PRIVATE_USER_SECRET',activeArchiveId:'a',history:[{role:'user',content:'PRIVATE_HISTORY_SECRET'}],moments:[{id:'p',author:'角色',content:'公开动态',comments:[],likes:[]}]};
- const calls=[];const c=vm.createContext({console,structuredClone,crypto:require('node:crypto').webcrypto,DOMException,AbortController,setTimeout,clearTimeout,currentChatId:null,currentChatType:'private',db:{characters:[chat],apiSettings:{url:'https://test',key:'key',model:'model'}},showToast:()=>{},saveData:async()=>{},
+ const calls=[];const c=vm.createContext({console,structuredClone,crypto:require('node:crypto').webcrypto,DOMException,AbortController,setTimeout,clearTimeout,currentChatId:null,currentChatType:'private',db:{characters:[chat],apiSettings:{url:'https://primary.test',key:'primary-key',model:'primary-model',secondary:{enabled:true,url:'https://secondary.test',key:'secondary-key',model:'secondary-model'}}},showToast:()=>{},saveData:async()=>{},
  buildChatApiRequest:(config,messages)=>({requestBody:{messages},endpoint:'https://test',headers:{}}),fetchAiResponse:async(config,body)=>{calls.push(body);return JSON.stringify({action:'comment',content:'你好',replyToCommentId:null});}});c.window=c;
  for(const name of ['chat_ops.js','moments_social.js','moments_social_ai.js']){const file=path.join(__dirname,'../js/modules/',name);if(fs.existsSync(file))vm.runInContext(fs.readFileSync(file,'utf8'),c);}
+ const resolver=fs.readFileSync(path.join(__dirname,'../js/modules/auto_memory.js'),'utf8');
+ vm.runInContext(resolver.slice(resolver.indexOf('function resolveAutoMemoryApi('),resolver.indexOf('function autoMemoryCosine(')),c);
  return {chat,c,calls,api:c.UvUMomentsAI,data:c.UvUMoments};
 }
 const enable=async f=>{assert.ok(f.api,'AI module exists');await f.data.configure(f.chat,{enabled:true,cooldown:5});return f;};
+test('all social AI actions use configured secondary credentials independently of primary routing',async()=>{
+ for(const action of ['generate','summarize','suggestNpcs','draftPost']){
+  const f=await enable(fixture());let seen;f.c.buildChatApiRequest=(config,messages)=>{seen=config;return {requestBody:{messages},endpoint:config.url,headers:{}};};
+  f.c.fetchAiResponse=async()=>JSON.stringify(action==='generate'?{action:'none'}:{summary:'摘要',npcs:[],content:'动态草稿'});
+  await f.api[action](f.chat,action==='draftPost'?{kind:'character',id:f.chat.id}:action==='suggestNpcs'?undefined:'p');
+  assert.equal(seen.url,'https://secondary.test');assert.equal(seen.key,'secondary-key');assert.equal(seen.model,'secondary-model');assert.equal(seen.streamEnabled,false);
+ }
+});
+test('missing disabled or incomplete secondary never falls back to primary for any social action',async()=>{
+ for(const secondary of [undefined,{enabled:false},{enabled:true,url:' ',key:'k',model:'m'},{enabled:true,url:'https://s',key:'',model:'m'},{enabled:true,url:'https://s',key:'k',model:''}])
+  for(const action of ['generate','summarize','suggestNpcs','draftPost']){
+   const f=await enable(fixture());f.c.db.apiSettings.secondary=secondary;let built=0;f.c.buildChatApiRequest=()=>{built++;throw Error('unexpected primary request');};
+   await assert.rejects(f.api[action](f.chat,action==='draftPost'?{kind:'character',id:f.chat.id}:action==='suggestNpcs'?undefined:'p'),/副 API/);assert.equal(built,0);assert.equal(f.calls.length,0);assert.equal(f.chat.moments[0].comments.length,0);
+  }
+ const f=await enable(fixture());vm.runInContext('resolveAutoMemoryApi = undefined',f.c);await assert.rejects(f.api.generate(f.chat,'p'),/尚未加载/);assert.equal(f.calls.length,0);
+});
 test('NPC suggestions identify protected people and discard user, character and existing names',async()=>{
  const f=await enable(fixture());f.chat.myName='温 苡';f.chat.realName='谢濯';f.chat.name='旧角色名';await f.data.saveNpc(f.chat,{name:'陈硕',persona:'同学'});
  f.c.fetchAiResponse=async(config,body)=>{f.calls.push(body);return JSON.stringify({npcs:['温苡','谢濯','旧角色名','陈硕','林澈','林澈'].map(name=>({name,persona:'公开人设',relationship:'朋友'}))});};

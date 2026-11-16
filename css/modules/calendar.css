@@ -142,3 +142,7 @@
 .uvu-calendar .calendar-upcoming h4{margin:0;font-size:13px}
 .uvu-calendar .calendar-upcoming-item{text-align:left;font-size:12px;white-space:normal;overflow-wrap:anywhere;padding:8px;border-radius:10px}
 .calendar-editor .calendar-share-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.calendar-editor .calendar-share-targets{min-inline-size:0;margin:8px 0;padding:0;border:0}
+.calendar-editor .calendar-share-targets legend{font:inherit;color:inherit;padding:0;margin-block-end:4px}
+.calendar-editor.uvu-mono-panel .calendar-share-targets .calendar-check{min-height:48px;overflow-wrap:anywhere;flex-direction:row;justify-content:flex-start;text-align:left}
+.calendar-editor .calendar-share-targets input:focus-visible{outline:2px solid currentColor;outline-offset:3px}

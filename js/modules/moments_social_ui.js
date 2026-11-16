@@ -123,7 +123,7 @@
             review.foot.append(command('添加所选', event => work(event.currentTarget, async () => { for (const item of rows.filter(row => row.input.checked)) { guard(review.t); await M().saveNpc(chat, item.npc); } review.close(); if (valid(d.t)) redrawList(); }), 'ms-button ms-primary'));
         })));
         list.append(listHead); d.body.append(list); redrawList();
-        const help = node('details', 'ms-details'); help.append(node('summary', '', '使用说明'), node('p', '', '开启后，在评论区发送消息会触发独立互动。刷新只更新显示。NPC 只读取自己的资料、公开动态和共同信息。每条动态每天最多生成 20 次；可随时停止。记忆需单独审核保存。')); d.body.append(help);
+        const help = node('details', 'ms-details ms-settings-help'); help.append(node('summary', '', '使用说明'), node('p', '', '动态互动、人物提取和记忆草稿均使用 API 设置中的副 API；需先启用并填好地址、密钥和模型，不会回退主 API。开启后，在评论区发送消息会触发独立互动。刷新只更新显示。NPC 只读取自己的资料、公开动态和共同信息。每条动态每天最多生成 20 次；可随时停止。记忆需单独审核保存。')); d.body.append(help);
         d.foot.append(command('保存', e => work(e.currentTarget, async () => {
             guard(d.t); const patch = { publicFacts: facts.input.value, maxReplies: Number(count.input.value), cooldown: Number(cooldown.input.value) };
             for (const key of Object.keys(inputs)) patch[key] = inputs[key].checked;

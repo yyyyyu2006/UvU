@@ -8,7 +8,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
         const { page, errors } = await app.page();
         await page.evaluate(() => {
             const chat = { id: 'draft-owner', realName: '角色', myName: '用户', persona: '测试人设',
-                history: [], memoryJournals: [], moments: [{ id: 'draft-post', content: '公开动态',
+                activeArchiveId: 'draft-one', archives: [{ id: 'draft-one', name: '测试存档' }], history: [], memoryJournals: [], moments: [{ id: 'draft-post', content: '公开动态',
                     authorRef: { kind: 'character', id: 'draft-owner' }, comments: [], likes: [] }] };
             db.characters = [chat]; currentChatId = chat.id; currentChatType = 'private';
             chat.momentsSocial = UvUMoments.settings(chat); chat.momentsSocial.enabled = true;
@@ -88,7 +88,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
         // Exercise the real JSON parser, identity checks and request builder as well as UI guards.
         await page.evaluate(() => {
             Object.assign(UvUMomentsAI, window.realDraftFunctions);
-            db.apiSettings = { ...db.apiSettings, provider: 'newapi', url: location.origin, key: 'fixture', model: 'fixture' };
+            db.apiSettings = { ...db.apiSettings, provider: 'newapi', url: location.origin, key: 'fixture', model: 'fixture', secondary: { enabled: true, provider: 'newapi', url: location.origin, key: 'secondary-fixture', model: 'secondary-fixture' } };
             fetchAiResponse = async (_config, body) => {
                 window.lastDraftPayload = JSON.parse(body.messages.at(-1).content);
                 return new Promise(resolve => { window.releaseDraft = value => resolve(JSON.stringify({ content: value, summary: value })); });

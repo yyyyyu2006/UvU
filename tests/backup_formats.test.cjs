@@ -206,6 +206,15 @@ test('important date v2 survives settings backup JSON and EE with recurrence and
  }
  const before=JSON.stringify(f.c.db.calendarData);const future=structuredClone(data);future.version=999;
  assert.throws(()=>f.c.storageValidateModules({calendarData:future}),/版本/);assert.equal(JSON.stringify(f.c.db.calendarData),before);
+ data.version=3;data.events[0].shareWithChat=true;data.events[0].shareTargets=['char:["recipient","archive-one"]'];
+ for(const format of ['json','ee']) {
+  f.element('storage-export-format').value=format;await f.c.handleExport();
+  const result=await f.c.storageReadBackup(new File([f.blobs.at(-1)],'recipients.'+format),{settings:true});
+  assert.equal(result.calendarData.version,3);assert.equal(result.calendarData.events[0].shareTargets[0],'char:["recipient","archive-one"]');
+  assert.doesNotThrow(()=>f.c.storageValidateModules(result));
+  const prepared=f.c.storagePrepareImport({settings:true},result);assert.equal(prepared.calendarData.events[0].shareTargets[0],'char:["recipient","archive-one"]');
+  result.calendarData.events[0].shareTargets=['user'];assert.throws(()=>f.c.storageValidateModules(result),/同步对象/);
+ }
 });
 test('calendar records export with settings and old backups preserve existing calendar', async () => {
     const f=fixture(); for(const name of ['calendar_core.js','calendar_chat.js']) vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules',name),'utf8'),f.c);

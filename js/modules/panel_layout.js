@@ -532,6 +532,7 @@
                 const toggles = [...root.querySelectorAll('.ms-dialog-body > .ms-check')];
                 toggles.forEach(row => asSwitch(q(row, 'input')));
                 group(toggles, '', 'mono-social-switches');
+                helpOnly(root, [...root.querySelectorAll('.ms-dialog-body > .ms-settings-help')]);
             }
             if (root.classList.contains('mcp-settings') && root.closest('#mcp-services')) {
                 const toggle = q(root, '.panel-mcp-global label');

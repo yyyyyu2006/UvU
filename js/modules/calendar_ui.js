@@ -98,7 +98,26 @@ function calendarDayWatcher(readDay, changed) {
         const color = field(d.fields, '颜色', 'color', e.color || '#9bbde3');
         const note = field(d.fields, '备注', 'textarea', e.note || ''); note.maxLength = 2000; note.rows = 3;
         const share = check(d.fields, '允许聊天引用此条重要日', e.shareWithChat || false);
-        d.fields.append(node('p', '还需在目标角色当前存档的日历设置中开启重要日引用；备注不传入聊天。', 'calendar-muted'));
+        const recipients = node('fieldset', undefined, 'calendar-share-targets');
+        recipients.append(node('legend', '同步给谁看')); d.fields.append(recipients);
+        const targets = [], selectedTargets = new Set(e.shareTargets || []);
+        for (const chat of db.characters) {
+            const target = C().owner(chat); if (key !== 'user' && key !== target) continue;
+            const archive = chat.archives?.find(a => a.id === chat.activeArchiveId)?.name || '当前存档';
+            const input = check(recipients, (chat.remarkName || chat.realName || '角色') + ' · ' + archive, selectedTargets.has(target));
+            input.name = 'importantShareTargets'; input.value = target; targets.push({ input, target, chat });
+        }
+        if (!targets.length) recipients.append(node('p', '暂无可选角色，请先添加角色或重新选择存档。', 'calendar-muted'));
+        for (const target of selectedTargets) {
+            if (targets.some(item => item.target === target)) continue;
+            const [chatId, archiveId] = JSON.parse(target.slice(5)), chat = db.characters.find(c => String(c.id) === chatId);
+            const archive = chat?.archives?.find(a => String(a.id) === archiveId);
+            const input = check(recipients, (chat?.remarkName || chat?.realName || '已移除角色') + ' · ' + (archive?.name || '其他存档') + '（非当前，可取消）', true);
+            input.name = 'importantShareTargets'; input.value = target; targets.push({ input, target, inactive: true });
+        }
+        d.fields.append(node('p', '只同步给勾选角色的这个存档。还需在该角色日历设置中开启对应重要日引用；备注不传入聊天。旧记录需重新选人后才同步。', 'calendar-muted'));
+        const updateTargets = () => { recipients.hidden = !share.checked; recipients.disabled = !share.checked; };
+        share.onchange = updateTargets; updateTargets();
         const status = select(d.fields, '状态', [['planned', '保留'], ['done', '本次已完成'], ['cancelled', '已取消']], e.status || 'planned');
         const scope = e.repeat === 'yearly' ? select(d.fields, '修改范围', [['one', '仅本次'], ['future', '此后所有'], ['series', '整个系列']], 'one') : null;
         let initialDay = day.value, dateEdited = false;
@@ -112,15 +131,21 @@ function calendarDayWatcher(readDay, changed) {
         day.oninput = () => { dateEdited = day.value !== initialDay; if (!original) anchor.value = day.value; update(); };
         repeat.onchange = update;
         if (scope) scope.onchange = () => { day.value = scope.value === 'series' ? e.start : e.date || e.start; initialDay = day.value; dateEdited = false; update(); };
-        if (C().state().version === 1) {
-            d.fields.append(node('p', '首次保存重要日会升级日历格式，旧版不能直接读取。建议先导出完整备份。', 'calendar-muted'), button('导出升级前备份', () => exportRecords(true)));
+        if (C().state().version < 3) {
+            d.fields.append(node('p', '保存将升级日历格式以保护同步对象；旧版不能直接读取。建议先导出完整备份。', 'calendar-muted'), button('导出升级前备份', () => exportRecords(true)));
         }
         update();
         const save = async remove => {
+            const shareTargets = share.checked ? targets.filter(item => item.input.checked).map(item => item.target) : [];
+            if (!remove && share.checked && !shareTargets.length) {
+                targets[0]?.input.focus(); throw new Error('请勾选至少一个同步角色；不分享时请关闭聊天引用。');
+            }
+            if (!remove && targets.some(item => !item.inactive && item.input.checked && share.checked && C().resolve(item.target) !== item.chat))
+                throw new Error('同步对象的角色或存档已变化，请重新打开后选择');
             const updated = { ...e, owner: key, title: title.value, kind: kind.value, start: day.value, end: day.value, time: '', endTime: '',
                 anchorDate: anchor.value, yearlyMonthDay: dateEdited || !e.yearlyMonthDay ? day.value.slice(5) : e.yearlyMonthDay,
                 leapDayPolicy: policy.value, repeat: repeat.value, until: repeat.value === 'yearly' ? until.value : '',
-                showAnniversaryCount: count.checked, shareWithChat: share.checked, color: color.value, note: note.value, status: status.value, source: 'manual' };
+                showAnniversaryCount: count.checked, shareWithChat: share.checked, shareTargets, color: color.value, note: note.value, status: status.value, source: 'manual' };
             if (original) await C().changeImportant(updated, e.rev, scope?.value || 'series', e.date || e.start, remove);
             else await C().saveEvent(updated);
         };

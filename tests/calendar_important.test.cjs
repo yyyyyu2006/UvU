@@ -16,11 +16,11 @@ test('important dates upgrade only on save, preserve fields and leave failed mig
     await C.saveEvent({ owner: 'user', title: '旧日程', start: '2026-11-16' }); const previous = c.db.calendarData;
     assert.equal(previous.version, 1); c.fail = true;
     await assert.rejects(C.saveEvent(important()), /quota/); assert.equal(c.db.calendarData, previous);
-    c.fail = false; const e = await C.saveEvent(important()); assert.equal(C.state().version, 2);
+    c.fail = false; const e = await C.saveEvent(important()); assert.equal(C.state().version, 3);
     assert.equal(e.anchorDate, '2020-02-29'); assert.equal(e.yearlyMonthDay, '02-29'); assert.equal(e.shareWithChat, false);
     const edited = await C.saveEvent({ ...e, title: '相识日' }, e.rev); assert.equal(edited.leapDayPolicy, 'leap-only');
     assert.equal(C.state().events[0].kind, undefined);
-    const data = C.state(); data.version = 3; assert.throws(() => C.validate(data), /版本/);
+    const data = C.state(); data.version = 999; assert.throws(() => C.validate(data), /版本/);
 });
 test('yearly dates handle leap policies, century years, exclusions and range bounds', async () => {
     const C = fixture().UvUCalendar; const e = await C.saveEvent(important({ start: '1904-02-29' }));
@@ -71,12 +71,29 @@ test('legacy schedule sharing never discloses important dates and new sharing re
     let e = await C.saveEvent(important({ start: '2020-11-16', note: 'secret-note', location: 'secret-location' }));
     await C.saveProfile(owner, { shareUserSchedule: true }); assert.equal(C.context(c.chat, '2026-11-16'), '');
     await C.saveProfile(owner, { shareUserImportantDays: true }); assert.equal(C.context(c.chat, '2026-11-16'), '');
-    e = await C.saveEvent({ ...e, shareWithChat: true }, e.rev); const context = C.context(c.chat, '2026-11-16');
+    e = await C.saveEvent({ ...e, shareWithChat: true }, e.rev); assert.equal(C.context(c.chat, '2026-11-16'), '', 'legacy permission needs explicit recipient');
+    e = await C.saveEvent({ ...e, shareTargets: [owner] }, e.rev); const context = C.context(c.chat, '2026-11-16');
     assert.match(context, /相识/); assert.doesNotMatch(context, /secret-note|secret-location|2020/);
     c.chat.activeArchiveId = 'two'; assert.equal(C.context(c.chat, '2026-11-16'), '');
     Object.defineProperty(c.db.calendarData, 'events', { get() { throw Error('events traversed'); } });
     assert.equal(C.context(c.chat), '');
 });
+test('explicit recipients isolate characters and archives, survive backups, and revoke without leaking notes', async () => {
+ const c=fixture(),C=c.UvUCalendar,other={id:'other',activeArchiveId:'one'};c.db.characters.push(other);
+ const a=C.owner(c.chat),b=C.owner(other);for(const key of [a,b])await C.saveProfile(key,{shareUserImportantDays:true});
+ let e=await C.saveEvent(important({start:'2020-11-16',shareWithChat:true,shareTargets:[a],note:'PRIVATE'}));
+ assert.match(C.context(c.chat,'2026-11-16'),/相识/);assert.equal(C.context(other,'2026-11-16'),'');
+ c.chat.activeArchiveId='two';await C.saveProfile(C.owner(c.chat),{shareUserImportantDays:true});assert.equal(C.context(c.chat,'2026-11-16'),'');c.chat.activeArchiveId='one';
+ const raw=JSON.parse(JSON.stringify(C.state()));C.validate(raw);await C.mutate(s=>Object.assign(s,raw));assert.match(C.context(c.chat,'2026-11-16'),/相识/);
+ e=await C.saveEvent({...e,shareTargets:[b]},e.rev);assert.equal(C.context(c.chat,'2026-11-16'),'');assert.match(C.context(other,'2026-11-16'),/相识/);assert.doesNotMatch(C.context(other,'2026-11-16'),/PRIVATE/);
+ await C.undo();assert.match(C.context(c.chat,'2026-11-16'),/相识/);assert.equal(C.context(other,'2026-11-16'),'');
+ e=C.state().events[0];await C.saveProfile(a,{shareUserImportantDays:false});assert.equal(C.context(c.chat,'2026-11-16'),'');await C.saveProfile(a,{shareUserImportantDays:true});
+ e=await C.saveEvent({...e,shareWithChat:false,shareTargets:[]},e.rev);assert.equal(C.context(c.chat,'2026-11-16'),'');
+ for(const shareTargets of ['all',['user'],[a,a],['char:bad'],Array(1001).fill(a),[null]]){const bad=C.state();bad.events[0].shareTargets=shareTargets;assert.throws(()=>C.validate(bad),/同步对象/);}
+ const legacy=C.state();delete legacy.events[0].shareTargets;legacy.events[0].shareWithChat=true;assert.doesNotThrow(()=>C.validate(legacy));await C.mutate(s=>Object.assign(s,legacy));assert.equal(C.context(c.chat,'2026-11-16'),'');
+ await assert.rejects(C.saveEvent(important({owner:a,shareTargets:[b]})),/同步对象/);
+});
+
 test('legacy export expands one year without changing live data and strips new permissions', async () => {
     const C = fixture().UvUCalendar; await C.saveEvent(important({ leapDayPolicy: 'feb28', shareWithChat: true }));
     await C.saveEvent(important({ title: 'cancelled', status: 'cancelled' }));

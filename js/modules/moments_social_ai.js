@@ -17,8 +17,11 @@
         root.document?.dispatchEvent(new root.CustomEvent('uvu-moments-status', { detail: { chatId: chat.id, archiveId: chat.activeArchiveId, message, busy } }));
     }
     async function request(system, payload, signal) {
-        const config = typeof resolveAutoMemoryApi === 'function' ? resolveAutoMemoryApi({ apiSource: 'primary' }) : { ...db.apiSettings, streamEnabled: false };
-        if (!config.url || !config.key || !config.model) throw new Error('请先配置聊天 API，动态互动使用同一 API');
+        const secondary = db.apiSettings?.secondary;
+        if (!secondary?.enabled || !['url', 'key', 'model'].every(field => typeof secondary[field] === 'string' && secondary[field].trim()))
+            throw new Error('动态互动使用副 API，请先在 API 设置中启用副 API，并填写地址、密钥和模型。');
+        if (typeof resolveAutoMemoryApi !== 'function') throw new Error('副 API 模块尚未加载，请刷新后重试。');
+        const config = resolveAutoMemoryApi({ apiSource: 'secondary' });
         const messages = [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(payload) }];
         const built = buildChatApiRequest(config, messages, { temperature: 0.7 });
         return parse(await fetchAiResponse(config, built.requestBody, built.headers, built.endpoint, false, { signal }));
