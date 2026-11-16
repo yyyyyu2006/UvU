@@ -525,6 +525,7 @@
 #edit-world-book-screen :is(#edit-world-book-title,.mono-page-title,.panel-section-title,.draft-scroll,select,summary) { color:#6e6e76; }
 #storage-analysis-screen .storage-group-title .storage-resource-check-btn { margin-left:auto;margin-right:12px;padding:6px 10px;border:0;border-radius:16px;background:transparent;color:inherit;font:inherit;font-size:13px; }
 #uvu-story-bridge-screen.uvu-lenso-panel .mono-bridge-footer { border-top:0; }
+#uvu-story-bridge-screen.uvu-lenso-panel .mono-route-list:not(:has(> :not([hidden]))) { display:none; }
 .uvu-lenso-panel.uvu-sheet-v2.draft-preset-workspace.mono-page:not(.screen) { height:auto !important;min-height:0; }
 .uvu-lenso-panel.draft-preset-workspace > .draft-scroll { flex:0 1 auto; }
 .panel-help-source[hidden] { display:none !important; }

@@ -1,7 +1,10 @@
 /* Screenshot-led Apple Music layout. Only the added music app owns these rules.
  * Craft guidance: Unslop by Damir Sokolovsky, CC BY 4.0. */
 #uvu-music-screen,.uvu-music-sheet { --um-green:#fa233b;--um-nav-accent:#007aff; }
-.uvu-music-sheet.um-settings-sheet { align-items:center;padding:0; }
+.uvu-music-sheet.um-settings-sheet { --um-text:#6a6a72;--um-gray:var(--um-text);--um-green:var(--um-text);align-items:center;padding:0; }
+.uvu-music-sheet.um-settings-sheet.um-dark { --um-text:#b9b9c0; }
+.uvu-music-sheet.um-settings-sheet :is(.um-account,.um-gateway-settings,.um-appearance-settings,.um-wide,.um-tutorial) { border-top:0;border-bottom:0; }
+.uvu-music-sheet.um-settings-sheet .um-primary { color:var(--um-text); }
 .uvu-music-sheet.um-settings-sheet .um-sheet-card { width:min(398px,calc(100% - 24px));height:min(704px,calc(100dvh - 140px));max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));border-radius:28px; }
 .um-settings-sheet .um-sheet-head { min-height:60px;padding:12px 20px;gap:12px; }
 .um-settings-sheet .um-sheet-head h2 { margin:0;flex:1;font-size:22px; }
