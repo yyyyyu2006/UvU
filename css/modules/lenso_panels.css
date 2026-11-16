@@ -519,6 +519,16 @@
 #uvu-feature-workspace .uvu-lenso-panel .draft-hub-group + .draft-hub-group { padding-top:0 !important; }
 #uvu-feature-workspace .uvu-lenso-panel .draft-hub-group .mono-route { min-height:44px;padding-block:10px;font-size:14px; }
 #mcp-services .uvu-lenso-panel .draft-mcp-scope { gap:8px; }
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-service-actions { justify-content:flex-start;align-items:center;gap:8px; }
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-service-actions > button { position:relative;flex:0 0 auto;min-width:64px;min-height:30px;padding:5px 10px;font-size:12px;line-height:20px;gap:6px; }
+#mcp-services .uvu-lenso-panel .draft-service-actions > button svg { width:14px;height:14px; }
+@media(pointer:coarse){
+    #mcp-services .uvu-lenso-panel .draft-service-actions > button::after { content:'';position:absolute;inset:-7px 0; }
+}
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .mcp-service-list .mcp-service-item { --draft-line:#f0f0f3; }
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-mcp-scope .mono-route-list { border:0; }
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-mcp-scope .mono-route-list > .mono-route { border:0;border-bottom:1px solid #f0f0f3;box-shadow:none; }
+#mcp-services .uvu-lenso-panel.uvu-mono-panel .draft-mcp-scope .mono-route-list > .mono-route:last-child { border-bottom:0; }
 #mcp-services .uvu-lenso-panel .draft-mcp-scope > .mono-route-list { border-radius:0; }
 #mcp-services .uvu-lenso-panel .draft-mcp-scope .mono-route { min-height:44px;padding-block:10px; }
 #mcp-services .uvu-lenso-panel .draft-mcp-scope .draft-mcp-help { width:100%;align-self:stretch;font-size:14px; }
