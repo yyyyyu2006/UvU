@@ -688,6 +688,7 @@
     }
 
     async function syncIncoming(characterKey = '', pageBudget = 20, recover = false, fileBatch = null) {
+        if (!fileBatch && isFileMode()) fileBatch = {events: []};
         if (maintenanceBusy || !isEnabled() || (!fileBatch && !isConnected()) || syncBusy || !characterKey || document.visibilityState !== 'visible') return 0;
         const chat = db.characters.find(item => String(item.id) === String(characterKey));
         if (!chat) return 0;

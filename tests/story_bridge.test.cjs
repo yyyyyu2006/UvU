@@ -653,6 +653,43 @@ test('recovery never erases unrecovered scene parts just because relay has lost 
  await f.bridge.syncIncoming('char-1',20,true);assert.equal(f.db.uvuStoryBridgeSettings.pendingScenes['char-1:lost'].parts[1],'未恢复剧情');
 });
 
+test('TT file mode materializes restored complete scenes locally without pairing or changing relay cursors',async()=>{
+ const f=harness(async()=>{throw new Error('file recovery must not use the network');});
+ f.context.localStorage.removeItem('uvu-story-bridge.v1');
+ f.db.uvuStoryBridgeSettings.channel='tt';
+ f.db.uvuStoryBridgeSettings.ttSettings={transportVersion:1,transport:'file',cursorByCharacter:{'char-1':77}};
+ const recovery={format:'uvu-bridge-recovery',version:1,channel:'tt',outbox:[],receipts:{},cursorByCharacter:{},pendingScenes:{
+  'char-1:restored':{characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:'Recovered local story.'}},
+  'char-1:incomplete':{characterKey:'char-1',archiveId:'default',partCount:2,parts:{1:'Keep incomplete story.'}}
+ }};
+ await f.bridge.importRecovery(JSON.stringify(recovery),{confirmed:true});
+ assert.equal(await f.bridge.syncIncoming('char-1'),1);
+ const state=f.db.uvuStoryBridgeSettings.ttSettings;
+ assert.equal(f.chat.memoryJournals.length,1);
+ assert.equal(f.chat.memoryJournals[0].bridgeReview.channel,'tt');
+ assert.equal(f.chat.memoryJournals[0].bridgeReview.status,'pending');
+ assert.equal(f.chat.memoryJournals[0].isFavorited,false);
+ assert.equal(state.cursorByCharacter['char-1'],77);
+ assert.equal(state.pendingScenes['char-1:incomplete'].parts[1],'Keep incomplete story.');
+ assert.equal(await f.bridge.syncIncoming('char-1'),0);
+ assert.equal(f.chat.memoryJournals.length,1);
+});
+
+test('TT local scene recovery rolls back a failed save and remains retryable',async()=>{
+ const f=harness(async()=>{throw new Error('file recovery must not use the network');});
+ const state={transportVersion:1,transport:'file',cursorByCharacter:{'char-1':88},pendingScenes:{
+  'char-1:restored':{characterKey:'char-1',archiveId:'default',partCount:1,parts:{1:'Keep retryable local story.'}}
+ }};
+ f.db.uvuStoryBridgeSettings.channel='tt';f.db.uvuStoryBridgeSettings.ttSettings=state;
+ f.context.saveData=async()=>{throw new Error('quota');};
+ await assert.rejects(f.bridge.syncIncoming('char-1'),/quota/);
+ assert.equal(f.chat.memoryJournals.length,0);assert.equal(state.receipts['char-1:restored'],undefined);
+ assert.equal(state.pendingScenes['char-1:restored'].parts[1],'Keep retryable local story.');
+ assert.equal(state.cursorByCharacter['char-1'],88);
+ f.context.saveData=async()=>{};assert.equal(await f.bridge.syncIncoming('char-1'),1);
+ assert.equal(f.chat.memoryJournals.length,1);
+});
+
 test('completed-only cleanup requires export and confirmation and preserves incomplete parts and dedup receipts',async()=>{
  const f=harness(async()=>({ok:true,json:async()=>({})}));const state=f.db.uvuStoryBridgeSettings;
  f.chat.memoryJournals=[{id:'j',externalSceneId:'done',source:'sillytavern',bridgeReview:{channel:'st',archiveId:'default',status:'approved',items:[]}}];

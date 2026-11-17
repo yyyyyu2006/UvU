@@ -41,7 +41,9 @@ const root=path.join(__dirname,'..');
   assert.equal(await page.evaluate(()=>db.characters[0].journalStyleSettings.mode),'default');
   const preview=page.locator('.uvu-bridge-summary-preview');assert.equal(await preview.isVisible(),true);
   await preview.locator(':scope > summary').click();assert.equal(await page.getByLabel('编辑摘要',{exact:true}).isVisible(),false);await preview.locator(':scope > summary').click();
-  await preview.getByText('对照已选楼层的人物 / 日期 / 约定 / 待办',{exact:true}).click();assert.match(await preview.locator('pre').textContent(),/第 8 层 · 甲/);
+   await preview.getByText('对照已选楼层的人物 / 日期 / 约定 / 待办',{exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('.uvu-bridge-summary-preview pre')?.textContent.includes('第 8 层 · 甲'));
+   assert.match(await preview.locator('pre').textContent(),/第 8 层 · 甲/);
   for(const width of [320,390]){
    await page.setViewportSize({width,height:844});
    const metrics=await page.locator('#uvu-bridge-review-list').evaluate(e=>({width:e.clientWidth,scrollWidth:e.scrollWidth}));assert.ok(metrics.scrollWidth<=metrics.width,JSON.stringify(metrics));
