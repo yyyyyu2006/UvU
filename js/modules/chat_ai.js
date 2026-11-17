@@ -1509,9 +1509,14 @@ async function handleRegenerate() {
 
     const target = captureChatSendTarget();
     const lastUserId = chat.history[lastUserMessageIndex].id;
+    const sourceTurn = JSON.stringify(chat.history.slice(lastUserMessageIndex));
     const guidance = await showRegenerateGuidanceDialog();
     if (guidance === null) return;
     if (!isChatTargetVisible(target) || isGenerating || chat.history[lastUserMessageIndex]?.id !== lastUserId) return;
+    if (JSON.stringify(chat.history.slice(lastUserMessageIndex)) !== sourceTurn) {
+        showToast('聊天内容已有变化，请重新打开“重回”后再试');
+        return;
+    }
     const mutation = beginChatMutation(chat, target.type);
 
     const originalLength = chat.history.length;
