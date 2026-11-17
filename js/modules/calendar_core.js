@@ -148,7 +148,11 @@
             if (old) s.events[s.events.indexOf(old)] = e; else s.events.push(e); return e;
         }, { guard: () => input.owner === 'user' || !!resolve(input.owner) });
     }
-    function removeEvent(eventId, expectedRev) { return mutate(s => { const e = s.events.find(e => e.id === eventId); if (!e || e.rev !== expectedRev) throw new Error('日程已变化，请刷新'); s.events.splice(s.events.indexOf(e), 1); }); }
+    function removeEvent(eventId, expectedRev) {
+        let owner;
+        return mutate(s => { const e = s.events.find(e => e.id === eventId); if (!e || e.rev !== expectedRev) throw new Error('日程已变化，请刷新'); owner = e.owner; s.events.splice(s.events.indexOf(e), 1); },
+            { guard: () => owner === 'user' || !!resolve(owner) });
+    }
     function checkRecord(old, input, expected) {
         if (input.id && (!old || (expected && JSON.stringify(old) !== JSON.stringify(expected)))) throw new Error('记录已更新或删除，请重新编辑');
     }
@@ -171,8 +175,13 @@
             ...(input.kind==='lh'?{result:input.result}:{}),...(input.kind==='bbt'?{temperature:input.temperature}:{})};
         if(old)s.observations[s.observations.indexOf(old)]=value;else s.observations.push(value);return value;
     }); }
-    function removeRecord(type, recordId, expected) { if (!['moods', 'periods', 'observations'].includes(type)) return Promise.reject(new Error('记录类型无效')); return mutate(s => { const i = s[type].findIndex(r => r.id === recordId); checkRecord(s[type][i], { id: recordId }, expected); s[type].splice(i, 1); }); }
-    function saveProfile(key, changes) { return mutate(s => { if (!resolve(key)) throw new Error('角色或存档已变化，请重新选择'); const old = s.profiles.find(p => p.owner === key), next = { ...profile(key), ...changes, owner: key }; if (old) s.profiles[s.profiles.indexOf(old)] = next; else s.profiles.push(next); return next; }); }
+    function removeRecord(type, recordId, expected) {
+        if (!['moods', 'periods', 'observations'].includes(type)) return Promise.reject(new Error('记录类型无效'));
+        let owner;
+        return mutate(s => { const i = s[type].findIndex(r => r.id === recordId); checkRecord(s[type][i], { id: recordId }, expected); owner = s[type][i].owner; s[type].splice(i, 1); },
+            { guard: () => type !== 'moods' || owner === 'user' || !!resolve(owner) });
+    }
+    function saveProfile(key, changes) { return mutate(s => { if (!resolve(key)) throw new Error('角色或存档已变化，请重新选择'); const old = s.profiles.find(p => p.owner === key), next = { ...profile(key), ...changes, owner: key }; if (old) s.profiles[s.profiles.indexOf(old)] = next; else s.profiles.push(next); return next; }, { guard: () => !!resolve(key) }); }
     async function undo() {
         const entry = undoEntry; if (!entry || database().calendarData !== entry.after) throw new Error('暂无可撤销的修改');
         await mutate(s => { for (const key of Object.keys(entry.before)) if (key !== 'revision') s[key] = clone(entry.before[key]); }, { expected: entry.after.revision, undo: false }); undoEntry = null;

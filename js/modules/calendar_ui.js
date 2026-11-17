@@ -36,7 +36,7 @@ function calendarDayWatcher(readDay, changed) {
         const form = node('form', undefined, 'calendar-editor-body'), status = node('p', '', 'calendar-feedback'); status.setAttribute('aria-live', 'polite');
         const footer = node('footer', undefined, 'calendar-editor-actions'), save = button('保存'); save.type = 'submit'; footer.append(save); dialog.panel.append(form); form.append(status, footer);
         const fields = node('div', undefined, 'calendar-editor-fields'); form.prepend(fields);
-        const run = async action => { save.disabled = true; try { await action(); dialog.dismiss(); } catch (e) { status.textContent = e.message; } finally { save.disabled = false; } };
+        const run = async action => { save.disabled = true; try { await action(); dialog.dismiss(); } catch (e) { status.textContent = e.message; status.scrollIntoView({ block: 'nearest' }); } finally { save.disabled = false; } };
         return { ...dialog, form, fields, footer, status, run };
     }
     function editEvent(key, span, original) {
@@ -72,7 +72,7 @@ function calendarDayWatcher(readDay, changed) {
                     else old.until = C().addDays(occurrence, -1);
                     old.rev++;
                     if (!remove) s.events.push({ ...updated, id: C().id(), rev: 1, repeat: scope.value === 'one' ? 'none' : updated.repeat, except: scope.value === 'one' ? [] : old.except.filter(day => day >= occurrence), until: scope.value === 'one' ? '' : updated.until });
-                });
+                }, { guard: valid });
             } else if (remove) await C().removeEvent(e.id, e.rev);
             else {
                 // A series editor starts from the original anchor, not the displayed occurrence.

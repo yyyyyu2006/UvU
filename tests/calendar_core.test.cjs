@@ -4,6 +4,23 @@ function fixture(){const c=vm.createContext({console,Date,Intl,structuredClone,c
  c.dexieDB={globalSettings:{put:async row=>{if(c.fail)throw new Error('quota');c.saved.push(structuredClone(row));}},transaction:async(...args)=>args.at(-1)()};c.runDataPersistence=fn=>fn();
  const file=path.join(__dirname,'../js/modules/calendar_core.js');if(fs.existsSync(file))vm.runInContext(fs.readFileSync(file,'utf8'),c);return c;}
 const event=(patch={})=>({owner:'user',title:'散步',start:'2026-11-07',end:'2026-11-07',time:'09:00',endTime:'10:00',...patch});
+
+for (const operation of ['event deletion', 'mood deletion', 'profile update']) {
+ test('calendar queued ' + operation + ' rejects an archive switch before persistence', async () => {
+  const c=fixture(),C=c.UvUCalendar,chat={id:'queued-owner',activeArchiveId:'one'};c.db.characters=[chat];
+  const owner=C.owner(chat),e=await C.saveEvent(event({owner})),m=await C.saveMood({owner,date:'2026-11-07',mood:'happy'});
+  await C.saveProfile(owner,{shareSchedule:false});const before=JSON.stringify(C.state()),writes=c.saved.length;
+  let flush;c.runDataPersistence=fn=>new Promise((resolve,reject)=>{flush=()=>Promise.resolve().then(fn).then(resolve,reject);});
+  const pending=operation==='event deletion'?C.removeEvent(e.id,e.rev):operation==='mood deletion'?C.removeRecord('moods',m.id,m):C.saveProfile(owner,{shareSchedule:true});
+  const rejected=assert.rejects(pending,/角色|存档|变化/);await new Promise(setImmediate);assert.equal(typeof flush,'function');
+  chat.activeArchiveId='two';await flush();await rejected;
+  assert.equal(JSON.stringify(C.state()),before);assert.equal(c.saved.length,writes);
+  chat.activeArchiveId='one';c.runDataPersistence=fn=>fn();
+  if(operation==='event deletion'){await C.removeEvent(e.id,e.rev);assert.equal(C.state().events.length,0);}
+  else if(operation==='mood deletion'){await C.removeRecord('moods',m.id,m);assert.equal(C.state().moods.length,0);}
+  else {await C.saveProfile(owner,{shareSchedule:true});assert.equal(C.profile(owner).shareSchedule,true);}
+ });
+}
 test('cycle evidence separates calendar estimates, test results and observations without confirming ovulation',async()=>{
  const C=fixture().UvUCalendar;for(const start of ['2026-08-01','2026-08-29','2026-09-27','2026-10-25'])await C.savePeriod({start,end:C.addDays(start,4)});
  assert.equal(C.cycleEvidence('2026-11-07').status,'unknown');assert.ok(C.cycleEvidence('2026-11-07').calendar);
