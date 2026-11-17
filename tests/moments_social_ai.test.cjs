@@ -71,3 +71,30 @@ test('changing the user persona while NPC comments are generating discards the o
  chat.myPersona='另一位用户的人设';finish(JSON.stringify({action:'comment',content:'旧身份下的回复',replyToCommentId:null}));
  await assert.rejects(task,/变化|取消/);assert.equal(chat.moments[0].comments.length,0);
 });
+
+test('secondary configuration failures preserve quota and allow immediate retry after setup',async()=>{
+ for(const secondary of [undefined,{enabled:false},{enabled:true,url:' ',key:'k',model:'m'},{enabled:true,url:'https://s',key:'',model:'m'},{enabled:true,url:'https://s',key:'k',model:''}]){
+  const f=await enable(fixture()),configured=f.c.db.apiSettings.secondary,before=JSON.stringify(f.chat.moments);
+  f.c.db.apiSettings.secondary=secondary;
+  await assert.rejects(f.api.generate(f.chat,'p'),/副 API/);
+  assert.equal(JSON.stringify(f.chat.moments),before);assert.equal(f.calls.length,0);
+  assert.equal(f.api.inspect(f.chat).requests,0);assert.equal(f.api.inspect(f.chat).phase,'failed');
+  f.c.db.apiSettings.secondary=configured;
+  await f.api.generate(f.chat,'p');assert.equal(f.calls.length,1);assert.equal(f.chat.moments[0].socialAttempts.length,1);
+ }
+ const f=await enable(fixture()),before=JSON.stringify(f.chat.moments);
+ vm.runInContext('resolveAutoMemoryApi = undefined',f.c);
+ await assert.rejects(f.api.generate(f.chat,'p'),/尚未加载/);
+ assert.equal(JSON.stringify(f.chat.moments),before);assert.equal(f.api.inspect(f.chat).requests,0);
+});
+
+test('real secondary transport failures retain attempt limits while build failures report no request',async()=>{
+ const f=await enable(fixture());let sent=0;
+ f.c.fetchAiResponse=async()=>{sent++;throw Error('simulated network failure');};
+ await assert.rejects(f.api.generate(f.chat,'p'),/network failure/);
+ assert.equal(sent,1);assert.equal(f.api.inspect(f.chat).requests,1);assert.equal(f.chat.moments[0].socialAttempts.length,1);
+ await assert.rejects(f.api.generate(f.chat,'p'),/冷却/);assert.equal(sent,1);
+ const g=await enable(fixture());g.c.buildChatApiRequest=()=>{throw Error('simulated build failure');};
+ await assert.rejects(g.api.generate(g.chat,'p'),/build failure/);
+ assert.equal(g.calls.length,0);assert.equal(g.api.inspect(g.chat).requests,0);
+});
