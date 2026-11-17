@@ -56,6 +56,18 @@ test('a terminal MiniMax packet completes even when the transport remains open',
         assert.equal(result.data.audio, 'fffb9064'); assert.equal(result.extra_info.usage_characters, 4); assert.equal(cancelled, true);
     } finally { clearTimeout(timer); }
 });
+test('completed SSE audio ignores trailing transport markers split at arbitrary byte boundaries', async () => {
+    const s = fixture();
+    for (const suffix of ['data: [DO', ': proxy keepalive', 'data: {']) {
+        let cancelled = false;
+        const body = new ReadableStream({ start(stream) {
+            stream.enqueue(new TextEncoder().encode('data: {"data":{"audio":"fffb9064","status":2}}\n\n' + suffix));
+        }, cancel() { cancelled = true; } });
+        const result = await s.readResponse(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+        assert.equal(result.data.audio, 'fffb9064');
+        assert.equal(cancelled, true);
+    }
+});
 test('role overrides retain API defaults while dictionaries affect only synthesis parameters', () => {
     const s = fixture(); const saved = { apiKey: 'secret', voiceId: 'default', director: { enabled: true }, speech: { stream: false },
         profiles: { a: { voiceId: 'alice', directorMode: 'off', dictionary: ['晴/(qing2)'] } } };

@@ -28,6 +28,26 @@ function fixture(count = 12, settings = {}) {
 }
 const ids = items => Array.from(items, item => item.id);
 
+test('prompt build drops retrieved memory when its source changes after retrieval', async () => {
+    for (const mutate of [
+        f => { f.chat.memoryJournals[0].content = '用户已更正的事实'; },
+        f => { f.chat.history[0].content = '用户已编辑的原话'; },
+        f => { f.chat.history[0].isHidden = true; },
+        f => { f.chat.autoMemorySettings.vectorSearchEnabled = false; },
+        f => { f.chat.activeArchiveId = 'a2'; f.chat.history = []; f.chat.memoryJournals = []; }
+    ]) {
+        const f = fixture(4, { enabled: false, useMemory: false, vectorSearchEnabled: true, vectorThreshold: 0, keepRecent: 0 });
+        f.chat.memoryJournals = [{ id: 'note', title: '约定', content: '已撤回的旧事实', isFavorited: false }];
+        f.context.db.vectorMemoryApiSettings = { url: 'https://vectors.test/v1', key: 'test', embeddingModel: 'embed' };
+        f.context.fetch = async () => ({ ok: true, json: async () => ({ data: [{ embedding: [1, 0] }] }) });
+        const retrieved = await f.context.getVectorMemoryContext(f.chat, '约定');
+        assert.match(retrieved, /已撤回的旧事实/);
+        mutate(f);
+        assert.equal(f.context.buildPromptWithVectorMemory(f.chat, () => 'BASE', retrieved), 'BASE');
+        assert.equal(f.context.getInjectedVectorMemoryContext(f.chat, retrieved), '');
+    }
+});
+
 test('manual favorites survive dormant replacement markers unless the replacement is injected', () => {
     const { context: c, chat } = fixture(2, { enabled: false, useMemory: false, vectorSearchEnabled: false });
     const source = { id: 'source', content: '手动收藏', isFavorited: true, vectorSupersededBy: 'replacement' };

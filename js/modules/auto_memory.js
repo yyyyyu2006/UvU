@@ -52,6 +52,11 @@ function buildPromptWithVectorMemory(chat, build, context) {
     if (!context) return build();
     const result = vectorMemoryResults.get(chat);
     const hasResult = result?.context === context;
+    if (hasResult && !result.isCurrent()) {
+        result.injectedContext = '';
+        updateVectorMemoryDiagnostics(chat, { injectedContext: '', injectedIds: [], injectionWarning: '检索后来源、存档或设置已变化，本次未引用旧结果' });
+        return build();
+    }
     let effectiveEntries = hasResult ? result.entries.filter(item => {
         const live = (chat.memoryJournals || []).find(journal => journal.id === item.journal.id);
         return item.journal.derivedHistory || live && !live.vectorSupersededBy && memoryJournalSourcesAllowed(chat, live);
@@ -828,6 +833,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
             const error = new Error('记忆检索已取消或存档内容已变化'); error.name = 'AbortError'; throw error;
         }
     };
+    const resultIsCurrent = () => { try { assertCurrent(true); return true; } catch (_) { return false; } };
     assertCurrent();
     const candidates = getVectorMemoryCandidates(chat);
     if (!candidates.length) { recordVectorMemoryStatus(chat, getVectorMemoryDiagnostics(chat).cleaningWarning || '当前没有可索引的旧剧情或记忆', Boolean(getVectorMemoryDiagnostics(chat).cleaningWarning)); return ''; }
@@ -842,7 +848,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     const resultKey = autoMemoryFingerprint([snapshot, apiSnapshot, rawQuery, archive, candidates.map(item => item.id)]);
     const cachedResult = !options.indexOnly && !options.rebuild && tools?.cachedResult(chat, resultKey);
     if (cachedResult) {
-        assertCurrent(true); vectorMemoryResults.set(chat, { ...cachedResult.result });
+        assertCurrent(true); vectorMemoryResults.set(chat, { ...cachedResult.result, isCurrent: resultIsCurrent, injectedContext: undefined });
         updateVectorMemoryDiagnostics(chat, { ...cachedResult.diagnostics, resultCacheHit: true }); return cachedResult.context;
     }
     const external = settings.vectorExternalIndex && typeof VectorIndexStore !== 'undefined' && tools;
@@ -1033,7 +1039,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     recordVectorMemoryStatus(chat, warning || `已索引 ${Object.keys(nextIndex).length} 篇，命中 ${ranked.length} 篇相关记忆${pendingCount ? `；剩余 ${pendingCount} 个分块待续建，本轮使用已有有效记忆` : ''}`, Boolean(warning));
     if (!ranked.length) return '';
     const context = header + ranked.map(format).join('\n\n');
-    const result = { context, header, format, entries: ranked };
+    const result = { context, header, format, entries: ranked, isCurrent: resultIsCurrent };
     vectorMemoryResults.set(chat, result);
     if (!pendingCount) tools?.cachedResult(chat, resultKey, { context, result, diagnostics: getVectorMemoryDiagnostics(chat) });
     return context;

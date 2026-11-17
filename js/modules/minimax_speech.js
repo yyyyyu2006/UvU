@@ -89,12 +89,12 @@
         };
         const events = flush => {
             let boundary;
-            while ((boundary = /\r\n\r\n|\n\n|\r\r/.exec(text))) {
+            while (!final && (boundary = /\r\n\r\n|\n\n|\r\r/.exec(text))) {
                 const event = text.slice(0, boundary.index); text = text.slice(boundary.index + boundary[0].length);
                 const data = event.split(/\r\n|\r|\n/).filter(s => s.startsWith('data:')).map(s => s.slice(5).replace(/^ /, '')).join('\n');
                 if (data && data !== '[DONE]') packet(JSON.parse(data));
             }
-            if (flush && text.trim()) throw new Error('语音流响应不完整');
+            if (flush && !final && text.trim()) throw new Error('语音流响应不完整');
         };
         try {
             while (true) {

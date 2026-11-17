@@ -272,6 +272,20 @@ test('source permission revoked after retrieval is checked again before vector p
     enabled = false;
     assert.equal(c.buildPromptWithVectorMemory(chat, () => 'BASE', context), 'BASE');
 });
+test('a result cache hit validates the new request identity instead of an old aborted request', async () => {
+    const { c, chat, calls } = fixture({ vectorQueryCache: true });
+    chat.memoryJournals = [{ id: 'j', content: '缓存中的有效约定' }];
+    const old = new AbortController();
+    const first = await c.getVectorMemoryContext(chat, '约定', old.signal);
+    old.abort();
+    const count = calls.length;
+    const second = await c.getVectorMemoryContext(chat, '约定', new AbortController().signal);
+    assert.equal(calls.length, count);
+    assert.equal(second, first);
+    assert.match(c.buildPromptWithVectorMemory(chat, () => 'BASE', second), /缓存中的有效约定/);
+    chat.memoryJournals[0].content = '后来更正';
+    assert.equal(c.buildPromptWithVectorMemory(chat, () => 'BASE', second), 'BASE');
+});
 test('failed embedding model migration keeps old versioned scope usable after restoring the old model', async () => {
     const { c, chat, calls } = fixture({ vectorExternalIndex: true }); chat.memoryJournals = [{ id: 'j', content: '约定' }];
     await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
