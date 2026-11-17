@@ -117,6 +117,71 @@ test('missing local font fails export instead of creating a broken shared font',
     await assert.rejects(api.createPreset('字体', true), /字体文件缺失/);
 });
 
+for (const stage of ['font lookup', 'font reader']) {
+    for (const replaceDatabase of [false, true]) {
+        test(`export snapshots all settings before ${stage}; replace database: ${replaceDatabase}`, async () => {
+            const f = fixture();
+            f.db.fontUrl = 'CustomFont_original';
+            f.db.fontPresets = [{ id: 'original-font', fontFamily: f.db.fontUrl, isCustom: true }];
+            const before = plain(f.db);
+            let release, started;
+            const ready = new Promise(resolve => { started = resolve; });
+            const gate = new Promise(resolve => { release = resolve; });
+            const requested = [];
+            const file = { dataURL: 'data:font/woff2;base64,Zm9udA==' };
+            f.context.dexieDB.customFonts.get = async id => {
+                requested.push(id);
+                if (stage === 'font lookup') { started(); await gate; }
+                return { file };
+            };
+            if (stage === 'font reader') f.context.FileReader = class {
+                readAsDataURL(value) {
+                    started();
+                    gate.then(() => { this.result = value.dataURL; this.onload(); });
+                }
+            };
+            const pending = f.api.createPreset('snapshot', true);
+            await ready;
+            // Mutate nested objects as well as scalars while font I/O is pending.
+            f.db.homeSignature = 'changed';
+            f.db.homeLayoutPages[0].reverse();
+            f.db.addedWidgets[0].vars.caption = 'changed instance';
+            f.db.widgetTemplates[0].defaultVars.caption = 'changed default';
+            f.db.widgetTemplates[0].html = '<div>changed template</div>';
+            f.db.fontSizeScale = 1.4;
+            f.db.globalCss = '/* changed CSS */';
+            f.db.fontUrl = 'https://example.com/new.woff2';
+            f.db.fontPresets[0].id = 'changed-font';
+            if (replaceDatabase) f.context.db = { ...plain(f.db), fontSizeScale: 0.8, globalCss: '/* restored */' };
+            const after = plain(f.context.db);
+            release();
+            const preset = plain(await pending);
+            assert.equal(preset.settings.homeSignature, before.homeSignature);
+            assert.deepEqual(preset.settings.homeLayoutPages, before.homeLayoutPages);
+            assert.deepEqual(preset.settings.addedWidgets, before.addedWidgets);
+            assert.equal(preset.settings.widgetTemplates[0].html, before.widgetTemplates[0].html);
+            assert.deepEqual(preset.settings.widgetTemplates[0].defaultVars, before.widgetTemplates[0].defaultVars);
+            assert.deepEqual(preset.settings.appearance, { fontUrl: file.dataURL, fontSizeScale: before.fontSizeScale, globalCss: before.globalCss });
+            assert.deepEqual(requested, ['original-font']);
+            assert.deepEqual(plain(f.context.db), after, 'export must not restore or overwrite live settings');
+            assert.deepEqual(plain(f.api.validate(JSON.parse(JSON.stringify(preset)))).settings, preset.settings);
+            assert.equal(JSON.stringify(preset).includes('SECRET_'), false);
+        });
+    }
+}
+
+test('omitting appearance skips local font access; font read failure still rejects', async () => {
+    const f = fixture();
+    f.db.fontUrl = 'CustomFont_original';
+    f.db.fontPresets = [{ id: 'font', fontFamily: f.db.fontUrl, isCustom: true }];
+    f.context.dexieDB.customFonts.get = async () => { throw new Error('font access failed'); };
+    assert.equal(Object.hasOwn((await f.api.createPreset('home only', false)).settings, 'appearance'), false);
+    await assert.rejects(f.api.createPreset('font', true), /font access failed/);
+    f.context.dexieDB.customFonts.get = async () => ({ file: {} });
+    f.context.FileReader = class { readAsDataURL() { this.onerror(); } };
+    await assert.rejects(f.api.createPreset('font', true), /读取本地字体失败/);
+});
+
 test('import applies home settings and keeps recipient chats, credentials and template library', async () => {
     const sender = fixture();
     const preset = await sender.api.createPreset('分享', true);

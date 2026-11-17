@@ -161,11 +161,13 @@
         });
         // 仅打包桌面上实际使用的实例及模板，避免分享整个组件库。
         const visible = new Set(settings.homeLayoutPages.flat());
-        settings.addedWidgets = (db.addedWidgets || []).filter(item => visible.has(item.id));
+        settings.addedWidgets = clone((db.addedWidgets || []).filter(item => visible.has(item.id)));
         const usedTemplates = new Set(settings.addedWidgets.map(item => item.templateId));
-        settings.widgetTemplates = (db.widgetTemplates || []).filter(item => usedTemplates.has(item.id));
+        settings.widgetTemplates = clone((db.widgetTemplates || []).filter(item => usedTemplates.has(item.id)));
         if (includeAppearance) {
-            let fontUrl = db.fontUrl || '';
+            // 字体读取前固定全部导出设置，等待期间的编辑或存档恢复不混入此预设。
+            const appearance = { fontUrl: db.fontUrl || '', fontSizeScale: db.fontSizeScale || 1, globalCss: db.globalCss || '' };
+            let fontUrl = appearance.fontUrl;
             if (fontUrl.startsWith('CustomFont_')) {
                 const preset = (db.fontPresets || []).find(item => item.fontFamily === fontUrl && item.isCustom);
                 const stored = preset && await dexieDB.customFonts.get(preset.id);
@@ -174,7 +176,7 @@
                 fontUrl = await readAsDataURL(stored.file);
                 fontUrl = fontUrl.replace(/^data:;base64,/, 'data:application/octet-stream;base64,');
             }
-            settings.appearance = { fontUrl, fontSizeScale: db.fontSizeScale || 1, globalCss: db.globalCss || '' };
+            settings.appearance = { ...appearance, fontUrl };
         }
         const preset = validate({ format: FORMAT, version: VERSION, name: name.trim() || '我的主页', settings });
         preset.createdAt = new Date().toISOString();
