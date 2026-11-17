@@ -2,7 +2,8 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 function fixture(){
  const a={id:'a',history:[],activeArchiveId:'one'},b={id:'b',history:[],activeArchiveId:'one'},timers=[],pending=[],delivered=[],toasts=[];
- const node={style:{},classList:{add(){},remove(){}},textContent:''};
+ const classes=new Set();
+ const node={style:{},classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name)},textContent:''};
  const c=vm.createContext({window:{},db:{characters:[a,b],groups:[]},AbortController,console:{error(){},warn(){}},showToast:text=>toasts.push(text),
  document:{getElementById:()=>node,addEventListener(){}},setTimeout:fn=>{timers.push(fn);return timers.length},clearTimeout(){},clearInterval(){},
  getCallReply:(chat,type,context,chunk,signal)=>new Promise(resolve=>pending.push({chat,signal,finish:text=>{chunk(text);resolve(text)}}))});
@@ -25,6 +26,20 @@ test('call result is discarded after history or archive replacement',async()=>{
 test('hangup aborts the current request and ignores its eventual completion',async()=>{
  const f=fixture(),p=f.m.triggerAiReply();await f.m.endCall();assert.equal(f.pending[0].signal?.aborted,true);
  f.pending[0].finish('old');await p;assert.equal(f.delivered.length,0);
+});
+
+test('hangup clears the cancelled reply animation before the next call',async()=>{
+ const f=fixture(),job=f.m.triggerAiReply(),avatar=f.c.document.getElementById('vc-call-avatar');
+ assert.equal(avatar.classList.contains('processing'),true);
+ await f.m.endCall();await job;
+ assert.equal(avatar.classList.contains('processing'),false);
+ f.enter(f.b);
+ const next=f.m.triggerAiReply();
+ assert.equal(avatar.classList.contains('processing'),true);
+ f.pending[0].finish('old result');await Promise.resolve();
+ assert.equal(avatar.classList.contains('processing'),true);
+ f.pending[1].finish('new result');await next;
+ assert.equal(avatar.classList.contains('processing'),false);
 });
 test('queued call message bubbles retain session identity',()=>{
  const f=fixture();f.m.parseAndAddAiResponse=f.realParse;

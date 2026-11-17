@@ -47,6 +47,7 @@ const VideoCallModule = {
         this.cancelReplySegments();
         this.state.replyController?.abort();
         this.state.initialController?.abort();
+        document.getElementById('vc-call-avatar')?.classList.remove('processing');
         this.state.replyController = null;
         this.state.initialController = null;
         this.state.isGenerating = false;
