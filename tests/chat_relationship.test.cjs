@@ -272,3 +272,82 @@ test('late call opening response is discarded after relationship change', async 
     finish('late response');
     assert.equal(await pending, null);
 });
+
+test('recovery excludes already withdrawn content without mutating the stored history', async () => {
+    const f = fixture();
+    f.chat.friendRelationship = { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
+    f.chat.history.push({ id: 'withdrawn', role: 'user', content: '[撤回：WITHDRAWN_SECRET]', originalContent: 'WITHDRAWN_SECRET', isWithdrawn: true });
+    const before = plain(f.chat.history);
+    f.c.fetchAiResponse = async (_config, body) => { f.requests.push(body); return '{"restore":false}'; };
+    await f.c.checkRelationshipRecovery(f.chat, true);
+    const sent = JSON.parse(f.requests[0][1].content);
+    assert.equal(sent.acceptedHistory, 'accepted story');
+    assert.doesNotMatch(JSON.stringify(f.requests), /WITHDRAWN_SECRET/);
+    assert.deepEqual(plain(f.chat.history), before);
+});
+
+for (const mode of ['block', 'restore']) {
+    test(`${mode} discards old decisions when the submitted persona changes`, async () => {
+        const f = fixture();
+        f.chat.persona = 'old persona';
+        f.chat.friendRelationship = mode === 'block'
+            ? { autonomy: { enabled: true, everyUserMessages: 1 } }
+            : { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
+        let finish, begin; const ready = new Promise(resolve => begin = resolve);
+        f.c.fetchAiResponse = async (_config, body) => { f.requests.push(body); begin(); return new Promise(resolve => finish = resolve); };
+        const pending = mode === 'block' ? f.c.checkCharacterBlacklist(f.chat) : f.c.checkRelationshipRecovery(f.chat, true);
+        await ready;
+        assert.equal(JSON.parse(f.requests[0][1].content).persona, 'old persona');
+        f.chat.persona = 'new persona'; await f.c.saveData();
+        finish(JSON.stringify({ [mode]: true }));
+        assert.equal(await pending, false);
+        assert.equal(f.chat.friendRelationship.peer.blocked, mode === 'restore');
+        assert.equal(f.requests.length, 1);
+    });
+}
+
+test('blacklist rejects a decision for an old submitted user name', async () => {
+    const f = fixture(); f.chat.myName = 'old name';
+    f.chat.friendRelationship = { autonomy: { enabled: true, everyUserMessages: 1 } };
+    f.c.fetchAiResponse = async () => { f.chat.myName = 'new name'; return '{"block":true}'; };
+    assert.equal(await f.c.checkCharacterBlacklist(f.chat), false);
+    assert.equal(f.chat.friendRelationship.peer.blocked, false);
+});
+
+test('same-object relationship input edits invalidate pending decisions', async () => {
+    for (const mode of ['block', 'restore']) {
+        const f = fixture();
+        f.chat.friendRelationship = mode === 'block' ? { autonomy: { enabled: true, everyUserMessages: 1 } }
+            : { peer: { blocked: true }, outgoingRequest: { text: 'old request' }, recovery: { mode: 'condition', condition: 'test' } };
+        f.c.fetchAiResponse = async () => {
+            if (mode === 'block') f.chat.friendRelationship.autonomy.condition = 'new condition';
+            else f.chat.friendRelationship.outgoingRequest.text = 'new request';
+            return JSON.stringify({ [mode]: true });
+        };
+        const applied = mode === 'block' ? await f.c.checkCharacterBlacklist(f.chat) : await f.c.checkRelationshipRecovery(f.chat, true);
+        assert.equal(applied, false);
+        assert.equal(f.chat.friendRelationship.peer.blocked, mode === 'restore');
+    }
+});
+
+test('persona edits while preparing history cancel before sending either decision request', async () => {
+    for (const mode of ['block', 'restore']) {
+        const f = fixture(); f.chat.persona = 'old'; f.chat.statusPanel = { enabled: true, regexPattern: 'fixture' };
+        f.chat.friendRelationship = mode === 'block' ? { autonomy: { enabled: true, everyUserMessages: 1 } }
+            : { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
+        f.c.prepareStatusRegexHistory = async () => { f.chat.persona = 'new'; };
+        const applied = mode === 'block' ? await f.c.checkCharacterBlacklist(f.chat) : await f.c.checkRelationshipRecovery(f.chat, true);
+        assert.equal(applied, false); assert.equal(f.requests.length, 0);
+    }
+});
+
+test('unrelated avatar and unsent persona tail changes do not cancel valid decisions', async () => {
+    for (const mode of ['block', 'restore']) {
+        const f = fixture(); f.chat.persona = 'x'.repeat(8000) + 'old unsent tail';
+        f.chat.friendRelationship = mode === 'block' ? { autonomy: { enabled: true, everyUserMessages: 1 } }
+            : { peer: { blocked: true }, recovery: { mode: 'condition', condition: 'test' } };
+        f.c.fetchAiResponse = async () => { f.chat.avatar = 'new avatar'; f.chat.persona = 'x'.repeat(8000) + 'new unsent tail'; return JSON.stringify({ [mode]: true }); };
+        const applied = mode === 'block' ? await f.c.checkCharacterBlacklist(f.chat) : await f.c.checkRelationshipRecovery(f.chat, true);
+        assert.equal(applied, true);
+    }
+});
