@@ -154,6 +154,37 @@ test('status edit preparation never exposes drafts during archive switches or la
         assert.equal(saves, mode === 'later-edit' ? 0 : 1);
     }
 });
+for (const reopen of ['edit', 'debug', 'add', 'resubmit']) {
+    test('superseded status edit cannot save after ' + reopen, async () => {
+        const f = fixture(), chat = f.chats[0], waits = []; let saves = 0;
+        chat.history.push({id: 'edit', role: 'assistant', content: '[a的消息：original]', timestamp: 1});
+        chat.statusPanel = {enabled: true, regexPattern: '<status>(.*?)</status>', replacePattern: '$1'};
+        f.c.chatRoomHeaderDefault = {style: {}}; f.c.chatRoomHeaderSelect = {style: {}};
+        f.c.multiSelectBar = f.element('multi-select'); f.c.chatRoomScreen = f.element('chat-room');
+        f.c.document.querySelector = () => ({style: {}}); f.c.removeContextMenu = () => {};
+        f.c.prepareStatusRegexJobs = () => new Promise(resolve => waits.push(resolve));
+        f.c.createStatusRegex = (pattern, flags) => new RegExp(pattern, flags);
+        f.c.saveData = async () => { saves++; };
+        f.c.startMessageEdit('edit'); f.element('message-edit-textarea').value = 'obsolete';
+        const first = f.c.saveMessageEdit(); await tick();
+        let second;
+        if (reopen === 'resubmit') {
+            f.element('message-edit-textarea').value = 'newer'; second = f.c.saveMessageEdit(); await tick();
+        } else {
+            f.c.cancelMessageEdit();
+            f.c[reopen === 'edit' ? 'startMessageEdit' : reopen === 'debug' ? 'startDebugEdit' : 'startAddNewMessage']('edit');
+            f.element('message-edit-textarea').value = 'newer';
+        }
+        waits.shift()(); await first;
+        assert.equal(chat.history[0].content, '[a的消息：original]', 'superseded preparation must not commit');
+        assert.equal(saves, 0, 'superseded preparation must not persist');
+        assert.equal(f.element('message-edit-textarea').value, 'newer', 'new draft stays intact');
+        if (second) {
+            waits.shift()(); await second;
+            assert.equal(chat.history[0].content, '[a的消息：newer]'); assert.equal(saves, 1);
+        }
+    });
+}
 test("failed save after archive switch restores original archive and leaves active archive alone", async () => {
     const f = fixture(), chat = f.chats[0]; chat.history.push({ id: "old", content: "old" }); f.c.ensureChatArchives(chat);
     const state = f.c.beginChatMutation(chat, "private", [chat.history[0]]); chat.history[0].content = "edited";

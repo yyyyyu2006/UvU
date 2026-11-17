@@ -98,6 +98,7 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
 
 let currentMultiSelectMode = 'delete'; // 'delete' or 'capture'
 let isAddingMessageMode = false;
+let messageEditRevision = 0; // Invalidate work from an earlier editor opening or save.
 let addingAfterMessageId = null;
 let messageSelectionScope = null;
 
@@ -177,6 +178,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
 }
 
 function startDebugEdit(messageId) {
+    messageEditRevision++;
     exitMultiSelectMode();
     editingMessageId = messageId;
     isRawEditMode = true; 
@@ -428,6 +430,7 @@ function cancelQuoteReply() {
 }
 
 function startAddNewMessage(messageId) {
+    messageEditRevision++;
     exitMultiSelectMode();
     isAddingMessageMode = true;
     addingAfterMessageId = messageId;
@@ -471,6 +474,7 @@ function startMessageEdit(messageId) {
         showToast('合并记录保留原始内容，请编辑原消息后重新转发');
         return;
     }
+    messageEditRevision++;
     exitMultiSelectMode();
     editingMessageId = messageId;
     isRawEditMode = false;
@@ -530,6 +534,7 @@ async function saveMessageEdit() {
     
     if (!chat) return;
     const target = captureChatSendTarget();
+    const editRevision = ++messageEditRevision;
     let mutation = beginChatMutation(chat, currentChatType, chat.history.filter(message => message.id === editingMessageId));
     const editToken = editingMessageId;
     if (isAddingMessageMode) {
@@ -687,7 +692,7 @@ async function saveMessageEdit() {
 
                     const panel = chat.statusPanel, configured = panel.regexPattern, template = panel.replacePattern;
                     await prepareStatusRegexJobs([{source: pattern, flags, text: editedMessage.content}]);
-                    if (!isChatSendTargetValid(target) || editingMessageId !== editToken ||
+                    if (!isChatSendTargetValid(target) || editingMessageId !== editToken || messageEditRevision !== editRevision ||
                         !target.history.includes(originalMessage) || JSON.stringify(originalMessage) !== originalText) return;
                     const regex = createStatusRegex(pattern, flags);
                     const match = chat.statusPanel === panel && panel.enabled && panel.regexPattern === configured && panel.replacePattern === template
@@ -716,7 +721,7 @@ async function saveMessageEdit() {
             }
         }
         // Finish asynchronous preparation before exposing any edit to shared history.
-        if (!isChatSendTargetValid(target) || editingMessageId !== editToken ||
+        if (!isChatSendTargetValid(target) || editingMessageId !== editToken || messageEditRevision !== editRevision ||
             !target.history.includes(originalMessage) || JSON.stringify(originalMessage) !== originalText) return;
         mutation = beginChatMutation(chat, target.type, [originalMessage]);
         Object.keys(originalMessage).forEach(key => delete originalMessage[key]);
@@ -738,6 +743,7 @@ async function saveMessageEdit() {
 }
 
 function cancelMessageEdit() {
+    messageEditRevision++;
     editingMessageId = null;
     isRawEditMode = false; 
     isAddingMessageMode = false;
