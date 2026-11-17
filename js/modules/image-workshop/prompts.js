@@ -582,8 +582,18 @@ function initWorkshopGPTLLMPrompts() {
             // 保存编辑
             saveBtn.addEventListener('click', async () => {
                 if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
-                await saveLocalSettingsFields([{target:prompt,values:{role:roleSelect.value,title:titleInput.value.trim(),content:contentInput.value.trim()}}]);
-                if (getActiveGroup() === activeGroup) renderList();
+                if (saveBtn.disabled) return;
+                const draft = {role:roleSelect.value,title:titleInput.value,content:contentInput.value};
+                saveBtn.disabled = true;
+                try {
+                    const saved = await saveLocalSettingsFields([{target:prompt,values:{role:draft.role,title:draft.title.trim(),content:draft.content.trim()}}]);
+                    if (!saved) return;
+                    // A completed save must not replace newer input or a reopened editor.
+                    if (getActiveGroup() === activeGroup && itemDiv.parentNode === listContainer &&
+                        roleSelect.value === draft.role && titleInput.value === draft.title && contentInput.value === draft.content) renderList();
+                } finally {
+                    saveBtn.disabled = false;
+                }
             });
 
             // 删除条目
@@ -1343,8 +1353,18 @@ function initWorkshopLLMPrompts() {
             // 保存编辑
             saveBtn.addEventListener('click', async () => {
                 if (getActiveGroup() !== activeGroup || !activeGroup.prompts.includes(prompt)) return;
-                await saveLocalSettingsFields([{target:prompt,values:{role:roleSelect.value,title:titleInput.value.trim(),content:contentInput.value.trim()}}]);
-                if (getActiveGroup() === activeGroup) renderList();
+                if (saveBtn.disabled) return;
+                const draft = {role:roleSelect.value,title:titleInput.value,content:contentInput.value};
+                saveBtn.disabled = true;
+                try {
+                    const saved = await saveLocalSettingsFields([{target:prompt,values:{role:draft.role,title:draft.title.trim(),content:draft.content.trim()}}]);
+                    if (!saved) return;
+                    // A completed save must not replace newer input or a reopened editor.
+                    if (getActiveGroup() === activeGroup && itemDiv.parentNode === listContainer &&
+                        roleSelect.value === draft.role && titleInput.value === draft.title && contentInput.value === draft.content) renderList();
+                } finally {
+                    saveBtn.disabled = false;
+                }
             });
 
             // 删除条目
