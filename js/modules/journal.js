@@ -144,6 +144,7 @@ function setupMemoryJournalScreen() {
             .sort((a, b) => a.range.start - b.range.start); // 按消息范围起始排序
 
         if (selectedJournals.length === 0) return;
+        const sourceSnapshot = JSON.stringify(selectedJournals);
 
         // 2. 计算合并后的范围
         const mergedStart = selectedJournals[0].range.start;
@@ -201,6 +202,9 @@ function setupMemoryJournalScreen() {
 
             const rawContent = await fetchAiResponse(apiConfig, requestBody, headers, endpoint);
             assertJournalTarget(target);
+            if (selectedJournals.some(journal => !target.journals.includes(journal)) || JSON.stringify(selectedJournals) !== sourceSnapshot) {
+                throw new Error('来源日记已变化，本次合并未保存，请重新选择后重试。');
+            }
 
             const titleMatch = rawContent.match(/<title>([\s\S]*?)<\/title>/i);
             const contentMatch = rawContent.match(/<content>([\s\S]*?)<\/content>/i);
@@ -218,6 +222,8 @@ function setupMemoryJournalScreen() {
                 createdAt: Date.now(),
                 chatId: target.chatId,
                 chatType: target.chatType,
+                manualMergeSources: JSON.parse(sourceSnapshot).map(source => ({ ...source,
+                    memorySourceTarget: source.memorySourceTarget || { chatId: target.chatId, archiveId: String(target.archiveId || 'default') } })),
                 isFavorited: false 
             };
 

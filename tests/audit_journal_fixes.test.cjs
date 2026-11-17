@@ -19,6 +19,7 @@ function harness(failSave = false) {
         renderJournalList() {}, showApiError: e => errors.push(e.message) });
     const source = read('journal.js');
     vm.runInContext(source, ctx);
+    vm.runInContext(read('auto_memory.js'), ctx);
     vm.runInContext(between(source, '    async function mergeJournals(', '    bindWorldBookBtn.addEventListener'), ctx);
     return { ctx, chat, journals, errors, finish: () => finish('<title>合并</title><content>合并正文</content>') };
 }
@@ -47,4 +48,59 @@ test('journal merge rejects an archive switch and deleted chat', async () => {
 test('journal save failure removes only the failed generated journal', async () => {
     const h = harness(true); const pending = h.ctx.mergeJournals(['one', 'two']); h.finish(); await pending;
     assert.deepEqual(h.chat.memoryJournals.map(j => j.id), ['one', 'two', 'concurrent']); assert.deepEqual(h.errors, ['quota']);
+});
+
+test('journal screen AI merge retains nested source permissions after originals are deleted', async () => {
+    const h = harness();
+    h.ctx.UvUStoryBridge = { allowedMemory: (_chat, journal) => journal.bridgeReview?.status === 'approved' };
+    h.chat.memoryJournals[0].source = 'sillytavern';
+    h.chat.memoryJournals[0].bridgeReview = { channel: 'tt', archiveId: 'old', status: 'pending' };
+    const pending = h.ctx.mergeJournals(['one', 'two']); h.finish(); await pending;
+    const merged = h.chat.memoryJournals.at(-1);
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, merged), false);
+    assert.equal(merged.manualMergeSources[0].source, 'sillytavern');
+    h.chat.memoryJournals = [merged, { id: 'three', title: '三', content: '三', range: { start: 3, end: 6 } }];
+    h.ctx.Date = class extends Date { static now() { return 1794890001000; } };
+    const again = h.ctx.mergeJournals([merged.id, 'three']); h.finish(); await again;
+    const nested = h.chat.memoryJournals.at(-1);
+    assert.equal(nested.manualMergeSources[0].manualMergeSources[0].source, 'sillytavern');
+    nested.isFavorited = true;
+    h.chat.memoryJournals = JSON.parse(JSON.stringify([nested]));
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, h.chat.memoryJournals[0]), false);
+    assert.equal(h.ctx.getContextMemoryJournals(h.chat).length, 0);
+});
+
+test('journal screen merge follows live source revocation and channel disablement', async () => {
+    const h = harness(); let enabled = true;
+    h.ctx.UvUStoryBridge = { allowedMemory: (_chat, journal) => enabled && journal.bridgeReview?.status === 'approved' };
+    Object.assign(h.journals[0], { source: 'sillytavern', bridgeReview: { channel: 'tt', archiveId: 'old', status: 'approved' } });
+    const pending = h.ctx.mergeJournals(['one', 'two']); h.finish(); await pending;
+    const merged = h.chat.memoryJournals.at(-1);
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, merged), true);
+    h.journals[0].bridgeReview.status = 'pending';
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, merged), false);
+    h.journals[0].bridgeReview.status = 'approved'; enabled = false;
+    h.chat.memoryJournals = JSON.parse(JSON.stringify([merged]));
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, h.chat.memoryJournals[0]), false);
+});
+
+test('journal screen merge keeps ordinary favorites usable in their original archive', async () => {
+    const h = harness(); const pending = h.ctx.mergeJournals(['one', 'two']); h.finish(); await pending;
+    const merged = h.chat.memoryJournals.at(-1); merged.isFavorited = true;
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, merged), true);
+    assert.equal(h.ctx.getContextMemoryJournals(h.chat).length, 1);
+    h.chat.activeArchiveId = 'other';
+    assert.equal(h.ctx.memoryJournalSourcesAllowed(h.chat, merged), false);
+});
+
+test('journal screen AI merge discards results if a selected source changes during the request', async () => {
+    for (const change of [h => { h.journals[0].content = '更正'; },
+        h => { h.journals[0].bridgeReview = { status: 'pending' }; },
+        h => { h.journals.splice(0, 1); }]) {
+        const h = harness(); const pending = h.ctx.mergeJournals(['one', 'two']);
+        change(h); const before = JSON.stringify(h.chat.memoryJournals); h.finish(); await pending;
+        assert.equal(JSON.stringify(h.chat.memoryJournals), before);
+        assert.equal(h.errors.length, 1);
+        assert.match(h.errors[0], /来源.*变化/);
+    }
 });
