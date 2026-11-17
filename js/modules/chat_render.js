@@ -225,8 +225,8 @@ function createBaseMessageBubbleElement(message, isContinuous = false) {
 
     const isBilingualMode = chat.bilingualModeEnabled;
     let bilingualMatch = null;
-    // 增加 && !isThinking，防止思考内容被当成双语消息解析
-    if (isBilingualMode && role === 'assistant' && !isThinking) {
+    // 思考和撤回消息交给各自分支，避免双语解析把它们显示成普通气泡。
+    if (isBilingualMode && role === 'assistant' && !isThinking && !isWithdrawn) {
         // 修改正则以兼容 "的消息：" 和 "回复：" (包括 "并回复")
 const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (contentMatch) {

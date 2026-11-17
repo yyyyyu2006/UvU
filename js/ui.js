@@ -274,24 +274,25 @@ function createContextMenu(items, x, y) {
         menu.appendChild(menuItem);
     });
 
-    const rect = menu.getBoundingClientRect();
-    const winWidth = window.innerWidth;
-    const winHeight = window.innerHeight;
     const padding = 10; // 屏幕边缘间距
+    const viewport = window.visualViewport;
+    const left = (viewport?.offsetLeft || 0) + padding;
+    const top = (viewport?.offsetTop || 0) + padding;
+    const width = Math.max(1, (viewport?.width || window.innerWidth) - padding * 2);
+    const height = Math.max(1, (viewport?.height || window.innerHeight) - padding * 2);
+    // Keep every action reachable with a keyboard, zoom or a short viewport.
+    menu.style.boxSizing = 'border-box';
+    menu.style.minWidth = `${Math.min(140, width)}px`;
+    menu.style.maxWidth = `${width}px`;
+    menu.style.maxHeight = `${height}px`;
+    menu.style.overflowY = 'auto';
+    // offset sizes are not reduced by the opening scale animation.
+    const menuWidth = menu.offsetWidth;
+    const menuHeight = menu.offsetHeight;
 
-    // 水平方向调整
-    if (x + rect.width > winWidth - padding) {
-        x = winWidth - rect.width - padding;
-    }
-    if (x < padding) {
-        x = padding;
-    }
-    
-    // 垂直方向调整
-    if (y + rect.height > winHeight - padding) {
-        // 如果下方空间不足，向上弹出
-        y = y - rect.height;
-    }
+    x = Math.max(left, Math.min(x, left + width - menuWidth));
+    if (y + menuHeight > top + height) y -= menuHeight;
+    y = Math.max(top, Math.min(y, top + height - menuHeight));
 
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
