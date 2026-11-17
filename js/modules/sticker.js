@@ -34,6 +34,8 @@ async function setupStickerSystem() {
     const stickerUrlInput = document.getElementById('sticker-url-input');
     const stickerFileUpload = document.getElementById('sticker-file-upload');
     const addStickerModalTitle = document.getElementById('add-sticker-modal-title');
+    let imageRevision = 0;
+    addStickerForm.addEventListener('reset', () => { imageRevision++; });
 
     stickerMenuBtn.addEventListener('click', () => {
         if (isStickerManageMode) {
@@ -250,15 +252,20 @@ async function setupStickerSystem() {
     });
     
     stickerUrlInput.addEventListener('input', (e) => {
+        imageRevision++;
         stickerPreview.replaceChildren();
         const image = document.createElement('img'); image.src = e.target.value; image.alt = '预览'; stickerPreview.appendChild(image);
         stickerFileUpload.value = '';
     });
     stickerFileUpload.addEventListener('change', async (e) => {
+        const revision = ++imageRevision;
+        const database = db;
+        const id = stickerEditIdInput.value;
         const file = e.target.files[0];
         if (file) {
             try {
                 const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 200, maxHeight: 200});
+                if (revision !== imageRevision || db !== database || stickerEditIdInput.value !== id || !addStickerModal.classList.contains('visible')) return;
                 stickerPreview.innerHTML = `<img src="${compressedUrl}" alt="预览">`;
                 stickerUrlInput.value = '';
                 stickerUrlInput.disabled = true;

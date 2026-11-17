@@ -165,7 +165,11 @@ const VideoCallModule = {
 
             // 绑定回车发送
             inputText.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') sendHandler();
+                if (e.key === 'Enter') {
+                    if (e.isComposing || e.keyCode === 229) return;
+                    e.preventDefault();
+                    sendHandler();
+                }
             });
             
             // 点击遮罩层关闭

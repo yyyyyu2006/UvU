@@ -129,6 +129,11 @@ function setupPeekFeature() {
             showToast('错误：未找到当前角色');
             return;
         }
+        const countInputs = Array.from(document.querySelectorAll('.peek-settings-item-control input'));
+        if (countInputs.some(input => !Number.isSafeInteger(Number(input.value)) || Number(input.value) < 1 || Number(input.value) > 20)) {
+            showToast('生成数量请填写 1 到 20 的整数');
+            return;
+        }
 
         const mutation = beginChatMutation(character, 'private', [], ['peekScreenSettings']);
         const target = captureChatSendTarget(character.id, 'private');
@@ -140,10 +145,9 @@ function setupPeekFeature() {
             character.peekScreenSettings.generationCounts = {};
         }
 
-        const countInputs = document.querySelectorAll('.peek-settings-item-control input');
         countInputs.forEach(input => {
             const appId = input.dataset.appId;
-            const val = parseInt(input.value);
+            const val = Number(input.value);
             if (!isNaN(val)) {
                 character.peekScreenSettings.generationCounts[appId] = val;
             }
@@ -1379,6 +1383,8 @@ function renderPeekBrowser(historyItems) {
 
 function renderPeekDrafts(drafts) {
     const screen = document.getElementById('peek-drafts-screen');
+    screen._draftsSliderCleanup?.();
+    screen._draftsSliderCleanup = null;
     
     // 兼容旧格式：如果传入的是单个对象而非数组
     if (drafts && !Array.isArray(drafts) && typeof drafts === 'object') {
@@ -1468,6 +1474,23 @@ function renderPeekDrafts(drafts) {
 
     // Initial position
     updateTranslate();
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+        if (screen.offsetWidth > 0 && !isDragging) updateTranslate();
+    }) : null;
+    const visibilityObserver = !resizeObserver && typeof MutationObserver === 'function' ? new MutationObserver(() => {
+        if (screen.offsetWidth > 0 && !isDragging) updateTranslate();
+    }) : null;
+    screen._draftsSliderCleanup = () => {
+        resizeObserver?.disconnect();
+        visibilityObserver?.disconnect();
+        window.removeEventListener('resize', updateTranslate);
+    };
+    if (resizeObserver) resizeObserver.observe(screen);
+    else {
+        requestAnimationFrame(updateTranslate);
+        visibilityObserver?.observe(screen, { attributes: true, attributeFilter: ['class', 'style'] });
+        window.addEventListener('resize', updateTranslate);
+    }
 
     const touchStart = (event) => {
         isDragging = true;
@@ -1745,7 +1768,8 @@ function generatePeekContentPrompt(char, appType, mainChatContext) {
     const defaultCounts = {
         messages: 5, album: 6, memos: 3, cart: 4, browser: 5, transfer: 6, drafts: 1, steps: 6, unlock: 4, bag: 5
     };
-    const targetCount = genCounts[appType] || defaultCounts[appType] || 5;
+    const configuredCount = genCounts[appType];
+    const targetCount = Number.isSafeInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 20 ? configuredCount : (defaultCounts[appType] || 5);
 
     const worldBooksLimitBreak = (char.worldBookIds || [])
         .map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break'))
@@ -1873,7 +1897,8 @@ function generateBatchPeekContentPrompt(char, appTypes, mainChatContext) {
 
     appTypes.forEach(appType => {
         // 批量生成时，稍微减少每个应用的生成数量以防截断
-        let targetCount = genCounts[appType] || defaultCounts[appType] || 5;
+        const configuredCount = genCounts[appType];
+        let targetCount = Number.isSafeInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 20 ? configuredCount : (defaultCounts[appType] || 5);
         if (targetCount > 3) targetCount = Math.max(3, Math.floor(targetCount * 0.8));
         
         prompt += getAppPromptSnippet(char, appType, targetCount) + '\n';

@@ -735,7 +735,7 @@ async function saveMessageEdit() {
     }
 
     if (!await saveChatMutation(mutation)) return;
-    if (!isChatTargetVisible(target) || editingMessageId !== editToken) return;
+    if (!isChatTargetVisible(target) || editingMessageId !== editToken || messageEditRevision !== editRevision) return;
     currentPage = 1;
     renderMessages(false, true);
     renderChatList();

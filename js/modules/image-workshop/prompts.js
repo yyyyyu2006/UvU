@@ -475,6 +475,7 @@ function initWorkshopGPTLLMPrompts() {
                 document.addEventListener('touchmove', onDragMove, { passive: false });
                 document.addEventListener('mousemove', onDragMove);
                 document.addEventListener('touchend', onDragEnd);
+                document.addEventListener('touchcancel', onDragEnd);
                 document.addEventListener('mouseup', onDragEnd);
                 
                 // 震动反馈
@@ -515,6 +516,7 @@ function initWorkshopGPTLLMPrompts() {
                 document.removeEventListener('touchmove', onDragMove);
                 document.removeEventListener('mousemove', onDragMove);
                 document.removeEventListener('touchend', onDragEnd);
+                document.removeEventListener('touchcancel', onDragEnd);
                 document.removeEventListener('mouseup', onDragEnd);
 
                 if (clone) {
@@ -523,12 +525,13 @@ function initWorkshopGPTLLMPrompts() {
                 }
 
                 if (placeholder) {
-                    if (placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
+                    if (e.type !== 'touchcancel' && placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
                     placeholder.remove();
                     placeholder = null;
                 }
 
                 itemDiv.style.display = '';
+                if (e.type === 'touchcancel') return;
 
                 // 保存新顺序
                 const newOrderIds = Array.from(listContainer.children).map(child => child.dataset.id).filter(id => id);
@@ -568,6 +571,7 @@ function initWorkshopGPTLLMPrompts() {
             dragHandle.addEventListener('touchstart', handlePressStart, { passive: true });
             dragHandle.addEventListener('mousedown', handlePressStart);
             dragHandle.addEventListener('touchend', handlePressCancel);
+            dragHandle.addEventListener('touchcancel', handlePressCancel);
             dragHandle.addEventListener('mouseup', handlePressCancel);
             dragHandle.addEventListener('touchmove', handlePressCancel, { passive: true });
             dragHandle.addEventListener('mousemove', handlePressCancel);
@@ -1246,6 +1250,7 @@ function initWorkshopLLMPrompts() {
                 document.addEventListener('touchmove', onDragMove, { passive: false });
                 document.addEventListener('mousemove', onDragMove);
                 document.addEventListener('touchend', onDragEnd);
+                document.addEventListener('touchcancel', onDragEnd);
                 document.addEventListener('mouseup', onDragEnd);
                 
                 // 震动反馈
@@ -1286,6 +1291,7 @@ function initWorkshopLLMPrompts() {
                 document.removeEventListener('touchmove', onDragMove);
                 document.removeEventListener('mousemove', onDragMove);
                 document.removeEventListener('touchend', onDragEnd);
+                document.removeEventListener('touchcancel', onDragEnd);
                 document.removeEventListener('mouseup', onDragEnd);
 
                 if (clone) {
@@ -1294,12 +1300,13 @@ function initWorkshopLLMPrompts() {
                 }
 
                 if (placeholder) {
-                    if (placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
+                    if (e.type !== 'touchcancel' && placeholder.parentNode === listContainer && getActiveGroup() === activeGroup) listContainer.insertBefore(itemDiv, placeholder);
                     placeholder.remove();
                     placeholder = null;
                 }
 
                 itemDiv.style.display = '';
+                if (e.type === 'touchcancel') return;
 
                 // 保存新顺序
                 const newOrderIds = Array.from(listContainer.children).map(child => child.dataset.id).filter(id => id);
@@ -1339,6 +1346,7 @@ function initWorkshopLLMPrompts() {
             dragHandle.addEventListener('touchstart', handlePressStart, { passive: true });
             dragHandle.addEventListener('mousedown', handlePressStart);
             dragHandle.addEventListener('touchend', handlePressCancel);
+            dragHandle.addEventListener('touchcancel', handlePressCancel);
             dragHandle.addEventListener('mouseup', handlePressCancel);
             dragHandle.addEventListener('touchmove', handlePressCancel, { passive: true });
             dragHandle.addEventListener('mousemove', handlePressCancel);

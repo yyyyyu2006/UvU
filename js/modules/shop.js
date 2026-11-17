@@ -136,6 +136,9 @@ function initShopSystem() {
     }
 
     const closeCategoryBtn = document.getElementById('shop-category-close-btn');
+    document.getElementById('shop-item-count')?.addEventListener('change', () => {
+        saveItemCount().catch(error => { console.error('保存商品数量失败:', error); showToast('保存失败，请重试'); });
+    });
     if (closeCategoryBtn) {
         closeCategoryBtn.onclick = () => {
             document.getElementById('shop-category-manage-modal').classList.remove('visible');
@@ -195,9 +198,11 @@ async function saveItemCount() {
     const countInput = document.getElementById('shop-item-count');
     if (!countInput) return;
     
-    let count = parseInt(countInput.value);
-    if (isNaN(count) || count < 1) count = 8;
-    if (count > 50) count = 50; // 限制最大数量
+    const count = Number(countInput.value);
+    if (!Number.isSafeInteger(count) || count < 1 || count > 20) {
+        showToast('生成数量请填写 1 到 20 的整数');
+        return;
+    }
     
     const settings = getShopSettings();
     settings.itemCount = count;
@@ -520,7 +525,7 @@ async function openShopScreen() {
     switchScreen('shop-screen');
     
     // 1. 如果正在加载中，直接显示 Loading 状态，避免重复触发
-    if (shopState.isLoading) {
+    if (shopState.isLoading && isChatTargetVisible(shopState.loadingTarget)) {
         renderShopLoading();
         return;
     }
@@ -538,6 +543,8 @@ async function openShopScreen() {
         renderShopContent();
     } else {
         // 3. 无缓存，显示手动触发界面
+        shopState.banner = null;
+        shopState.items = {};
         renderShopInitialState();
     }
 }
@@ -554,6 +561,7 @@ async function forceRefreshShop() {
     if (hasItems && !confirm('确定要清空当前商品并重新进货吗？')) return;
 
     shopState.isLoading = true;
+    shopState.loadingTarget = target;
     shopState.currentTab = 'recommend'; // 重置回推荐页
     
     // 清空当前显示
@@ -563,16 +571,8 @@ async function forceRefreshShop() {
     updateTabsUI('recommend');
 
     try {
-        // 清空数据库中的缓存
-        const chat = target.chat;
-        if (chat) {
-            delete chat.shopData;
-            if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopData: null });
-            else await dexieDB.characters.update(chat.id, { shopData: null });
-        }
-
         if (!isChatTargetVisible(target)) return;
-        await fetchShopData();
+        await fetchShopData(target);
         if (isChatTargetVisible(target)) renderShopContent();
     } catch (e) {
         console.error("商城刷新失败", e);
@@ -676,16 +676,23 @@ function renderShopInitialState() {
 }
 
 // 获取 AI 数据
-async function fetchShopData() {
+let shopRequestVersion = 0;
+async function fetchShopData(target = captureChatSendTarget(currentChatId, 'private')) {
     // 构造 Prompt
-    const chat = db.characters.find(c => c.id === currentChatId);
+    const chat = target?.chat;
     if (!chat) return; // 应该不会发生
+    const version = ++shopRequestVersion;
+    const customCategories = (chat.shopSettings?.customCategories || []).map(category => ({ ...category }));
+    const settings = { ...chat.shopSettings };
+    const valid = () => version === shopRequestVersion && isChatSendTargetValid(target) &&
+        JSON.stringify(chat.shopSettings?.customCategories || []) === JSON.stringify(customCategories);
 
     const contextPrompt = generatePrivateSystemPrompt(chat);
 
     // 截取最近 50 条消息作为参考
     let historySlice = chat.history.slice(-50);
     if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) await prepareStatusRegexHistory(chat, historySlice);
+    if (!valid()) return;
     historySlice = filterHistoryForAI(chat, historySlice);
 
     const recentHistory = historySlice.map(m => {
@@ -696,7 +703,6 @@ async function fetchShopData() {
     const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
 
     // 获取商品数量设置
-    const settings = getShopSettings();
     const itemCount = settings.itemCount || 8;
 
     // 构建分类 Prompt
@@ -709,7 +715,6 @@ async function fetchShopData() {
     `;
 
     // 添加自定义分类
-    const customCategories = getCustomCategories();
     customCategories.forEach(cat => {
         categoryPrompt += `\n        *   **${cat.id} (${cat.name})**：${cat.prompt}`;
     });
@@ -820,6 +825,7 @@ async function fetchShopData() {
     }
 
     let content = await fetchAiResponse(apiConfig, requestBody, headers, endpoint);
+    if (!valid()) return;
 
     // 清洗 XML
     content = content.replace(/```xml/g, '').replace(/```/g, '').trim();
@@ -859,14 +865,13 @@ async function fetchShopData() {
         // 默认分类
         const categories = ['recommend', 'food', 'general', 'guess', 'character_choice'];
         // 自定义分类
-        const customCategories = getCustomCategories();
         customCategories.forEach(cat => {
             categories.push(cat.id);
         });
 
         categories.forEach(catId => {
             items[catId] = [];
-            const catNode = itemsNode?.querySelector(catId);
+            const catNode = Array.from(itemsNode?.children || []).find(node => node.tagName === catId);
             if (catNode) {
                 const itemNodes = catNode.querySelectorAll('item');
                 itemNodes.forEach(itemNode => {
@@ -881,19 +886,33 @@ async function fetchShopData() {
             }
         });
 
-        shopState.banner = banner;
-        shopState.items = items;
-
+        if (!valid()) return;
         // 保存到数据库
-        chat.shopData = {
+        const shopData = {
             banner: banner,
             items: items,
             lastUpdated: Date.now()
         };
-        if (typeof updateGuardedRecord === 'function') await updateGuardedRecord(dexieDB.characters, chat.id, { shopData: chat.shopData });
-        else await dexieDB.characters.update(chat.id, { shopData: chat.shopData });
+        const persisted = await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.characters, async () => {
+            if (!valid()) return false;
+            await assertPersistedRecordsCurrent(dexieDB.characters, [{ id: chat.id }]);
+            if (!valid()) return false;
+            const updated = await dexieDB.characters.update(chat.id, { shopData });
+            if (!updated) return false;
+            const stored = await dexieDB.characters.get(chat.id);
+            if (!valid()) throw Object.assign(new Error('商城请求已过期'), { name: 'ShopRequestExpiredError' });
+            stagePersistedRecords(dexieDB.characters, [stored]);
+            return true;
+        }));
+        if (!persisted || !valid()) return;
+        chat.shopData = shopData;
+        if (isChatTargetVisible(target)) {
+            shopState.banner = banner;
+            shopState.items = items;
+        }
 
     } catch (e) {
+        if (e.name === 'ShopRequestExpiredError') return;
         if (e.name === 'DataConflictError') throw e;
         console.error("XML Parse Error", e);
         throw new Error("XML Parse Error");

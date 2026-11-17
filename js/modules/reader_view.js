@@ -83,6 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let chapterLoadVersion = 0;
     let commentLoadVersion = 0;
     let illustrationController = null;
+    let paragraphScope = null;
 
     // 绑定返回键
     const backBtn = document.getElementById('reader-back-btn');
@@ -97,6 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 加载书籍
     async function loadBook(bookId) {
+        clearTimeout(longPressTimer);
+        hideParagraphMenu();
+        paragraphScope = null;
         illustrationController?.abort();
         const version = ++bookLoadVersion;
         ++chapterLoadVersion;
@@ -191,6 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 加载指定章节
     async function loadChapter(index, scrollProgress = 0) {
+        clearTimeout(longPressTimer);
+        hideParagraphMenu();
+        paragraphScope = null;
         if (index < 0 || index >= currentChapters.length) return;
         const book = currentBook;
         const version = ++chapterLoadVersion;
@@ -245,6 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             currentChapterIndex = index;
+            paragraphScope = { book, chapterIndex: index, version };
             updateTocHighlight();
 
             // 等待 DOM 渲染完成计算页数
@@ -526,6 +534,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 打开段评面板
     async function openCommentPanel(pElement) {
+        if (!pElement.isConnected || !textContainer.contains(pElement)) return;
+        if (!paragraphScope || paragraphScope.book !== currentBook || paragraphScope.chapterIndex !== currentChapterIndex || paragraphScope.version !== chapterLoadVersion) return;
         const book = currentBook;
         const chapterIndex = currentChapterIndex;
         const version = ++commentLoadVersion;

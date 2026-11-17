@@ -51,12 +51,20 @@ function setupApiSettingsApp() {
     });
 
     // 提取为全局函数以便复用
+    let modelRequestRevision = 0;
+    const invalidateModels = () => { modelRequestRevision++; t.disabled = false; t.classList.remove('loading'); };
+    [n, r, s, a].forEach(input => { input.addEventListener('input', invalidateModels); input.addEventListener('change', invalidateModels); });
     window.fetchAndPopulateModels = async (showToastFlag = true) => {
+        const revision = ++modelRequestRevision;
+        const database = db;
         const provider = n.value;
         let apiUrl = r.value.trim();
         const apiKey = s.value.trim();
         const modelSelect = a;
         const fetchBtn = t;
+        const selectedModel = a.value;
+        const valid = () => revision === modelRequestRevision && db === database && n.value === provider &&
+            r.value.trim().replace(/\/$/, '') === apiUrl.replace(/\/$/, '') && s.value.trim() === apiKey && a.value === selectedModel;
 
         if (!apiUrl || !apiKey) {
             if (showToastFlag) showToast('请先填写API地址和密钥！');
@@ -90,6 +98,7 @@ function setupApiSettingsApp() {
             }
 
             const data = await response.json();
+            if (!valid()) return;
             let models = [];
             
             if (provider !== 'gemini' && data.data) {
@@ -123,13 +132,14 @@ function setupApiSettingsApp() {
                 if (showToastFlag) showToast('未找到任何模型');
             }
         } catch (err) {
+            if (!valid()) return;
             console.error(err);
             if (showToastFlag) {
                 showApiError(err);
                 modelSelect.innerHTML = '<option value="">拉取失败</option>';
             }
         } finally {
-            if (fetchBtn) {
+            if (fetchBtn && revision === modelRequestRevision) {
                 fetchBtn.classList.remove('loading');
                 fetchBtn.disabled = false;
             }
@@ -373,10 +383,18 @@ function setupSecondaryApiSettings() {
         urlEl.value = providerUrls[providerEl.value] || '';
         modelEl.innerHTML = '<option value="">请重新拉取模型</option>';
     });
+    let modelRequestRevision = 0;
+    const invalidateModels = () => { modelRequestRevision++; fetchBtn.disabled = false; fetchBtn.classList.remove('loading'); };
+    [providerEl, urlEl, keyEl, modelEl, enabledEl].forEach(input => { input.addEventListener('input', invalidateModels); input.addEventListener('change', invalidateModels); });
     fetchBtn.addEventListener('click', async () => {
+        const revision = ++modelRequestRevision;
+        const database = db;
         let apiUrl = urlEl.value.trim().replace(/\/$/, '');
         const apiKey = keyEl.value.trim();
         const provider = providerEl.value;
+        const selectedModel = modelEl.value;
+        const valid = () => revision === modelRequestRevision && db === database && providerEl.value === provider &&
+            urlEl.value.trim().replace(/\/$/, '') === apiUrl && keyEl.value.trim() === apiKey && modelEl.value === selectedModel;
         if (!apiUrl || !apiKey) return showToast('请先填写副 API 地址和密钥！');
         if (BLOCKED_API_DOMAINS.some(domain => apiUrl.includes(domain))) {
             return showToast('副 API 站点已被屏蔽，无法使用！');
@@ -396,6 +414,7 @@ function setupSecondaryApiSettings() {
                 throw error;
             }
             const data = await response.json();
+            if (!valid()) return;
             const models = provider === 'gemini'
                 ? (data.models || []).map(item => item.name.replace('models/', ''))
                 : (data.data || []).map(item => item.id);
@@ -409,11 +428,14 @@ function setupSecondaryApiSettings() {
             if (!models.length) modelEl.innerHTML = '<option value="">未找到任何模型</option>';
             showToast(models.length ? '副 API 模型列表拉取成功！' : '未找到任何模型');
         } catch (error) {
+            if (!valid()) return;
             showApiError(error);
             modelEl.innerHTML = '<option value="">拉取失败</option>';
         } finally {
-            fetchBtn.disabled = false;
-            fetchBtn.classList.remove('loading');
+            if (revision === modelRequestRevision) {
+                fetchBtn.disabled = false;
+                fetchBtn.classList.remove('loading');
+            }
         }
     });
 }

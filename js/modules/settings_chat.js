@@ -1,5 +1,6 @@
 // --- 聊天设置与管理逻辑 ---
 
+let chatSettingsEditorRevision = 0;
 function setupChatSettings() {
     if (typeof injectChatSettingsHtml === 'function') {
         injectChatSettingsHtml();
@@ -106,11 +107,16 @@ function setupChatSettings() {
         }
     });
     
+    let charAvatarRevision = 0;
     document.getElementById('setting-char-avatar-upload').addEventListener('change', async (e) => {
+        const revision = ++charAvatarRevision;
+        const editor = chatSettingsEditorRevision;
+        const target = captureChatSendTarget();
         const file = e.target.files[0];
         if (file) {
             try {
                 const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 400, maxHeight: 400});
+                if (revision !== charAvatarRevision || editor !== chatSettingsEditorRevision || !isChatTargetVisible(target)) return;
                 document.getElementById('setting-char-avatar-preview').src = compressedUrl;
             } catch (error) {
                 showToast('头像压缩失败，请重试');
@@ -118,11 +124,16 @@ function setupChatSettings() {
         }
     });
     
+    let myAvatarRevision = 0;
     document.getElementById('setting-my-avatar-upload').addEventListener('change', async (e) => {
+        const revision = ++myAvatarRevision;
+        const editor = chatSettingsEditorRevision;
+        const target = captureChatSendTarget();
         const file = e.target.files[0];
         if (file) {
             try {
                 const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 400, maxHeight: 400});
+                if (revision !== myAvatarRevision || editor !== chatSettingsEditorRevision || !isChatTargetVisible(target)) return;
                 document.getElementById('setting-my-avatar-preview').src = compressedUrl;
             } catch (error) {
                 showToast('头像压缩失败，请重试');
@@ -380,6 +391,7 @@ function renderBoundWorldBooks(type, worldBookIds) {
 }
 
 function loadSettingsToSidebar() {
+    chatSettingsEditorRevision++;
     const relationshipChat = db.characters.find(c => c.id === currentChatId);
     const relationshipStatus = document.getElementById('relationship-settings-status');
     if (relationshipChat && relationshipStatus && typeof relationshipStatusText === 'function') relationshipStatus.textContent = relationshipStatusText(relationshipChat);

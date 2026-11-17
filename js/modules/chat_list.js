@@ -390,8 +390,15 @@ function handleChatListLongPress(chatId, chatType, x, y) {
         {
             label: chatItem.isPinned ? '取消置顶' : '置顶聊天',
             action: async () => {
-                chatItem.isPinned = !chatItem.isPinned;
-                await saveData();
+                const previous = chatItem.isPinned;
+                const next = !previous;
+                chatItem.isPinned = next;
+                try { await saveData(); }
+                catch (error) {
+                    if (chatItem.isPinned === next) chatItem.isPinned = previous;
+                    showToast('置顶状态未保存，请重试');
+                    return;
+                }
                 renderChatList();
             }
         },

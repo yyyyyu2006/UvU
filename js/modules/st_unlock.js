@@ -27,13 +27,33 @@ function setupStUnlock() {
 
     // 第二步：验证密钥
     verifyBtn.addEventListener('click', async () => {
+        if (verifyBtn.disabled) return;
         const key = keyInput.value.trim();
         if (!key) return showToast('请输入密钥');
 
         const result = verifyUnlockKey(key);
         if (result === true) {
+            const previous = db.stUnlocked;
+            const credential = ['st_unlock_uuid', 'st_unlock_name', 'st_unlock_time']
+                .map(name => localStorage.getItem(name));
+            verifyBtn.disabled = true;
             db.stUnlocked = true;
-            await saveData();
+            try {
+                await saveData();
+            } catch (error) {
+                db.stUnlocked = previous;
+                console.error('保存解锁状态失败:', error);
+                showToast('保存失败，密钥仍可重试');
+                return;
+            } finally {
+                verifyBtn.disabled = false;
+            }
+            if (['st_unlock_uuid', 'st_unlock_name', 'st_unlock_time']
+                .every((name, index) => localStorage.getItem(name) === credential[index])) {
+                localStorage.removeItem('st_unlock_uuid');
+                localStorage.removeItem('st_unlock_name');
+                localStorage.removeItem('st_unlock_time');
+            }
             showToast('🎉 认证成功！已永久解锁导入功能');
             modal.classList.remove('visible');
             // 自动触发真正的导入
@@ -198,9 +218,6 @@ function verifyUnlockKey(key) {
 
         // 验证 UUID 是否匹配，且角色名是否被酒馆正确替换（不等于原始宏）
         if (uuid === savedUuid && charName === savedName) {
-            localStorage.removeItem('st_unlock_uuid');
-            localStorage.removeItem('st_unlock_name');
-            localStorage.removeItem('st_unlock_time');
             return true;
         }
     } catch (e) {

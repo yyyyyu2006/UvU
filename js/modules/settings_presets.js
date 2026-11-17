@@ -268,9 +268,24 @@ function openManagePresetsModal() {
 function _getMyPersonaPresets() {
     return db.myPersonaPresets || [];
 }
-function _saveMyPersonaPresets(arr) {
-    db.myPersonaPresets = arr || [];
-    saveData();
+let myPersonaPresetSavePending = false;
+async function _saveMyPersonaPresets(arr) {
+    if (myPersonaPresetSavePending) return false;
+    const previous = db.myPersonaPresets;
+    const next = arr || [];
+    myPersonaPresetSavePending = true;
+    db.myPersonaPresets = next;
+    try {
+        await saveData();
+        return true;
+    } catch (error) {
+        if (db.myPersonaPresets === next) db.myPersonaPresets = previous;
+        console.error('保存人设预设失败:', error);
+        showToast('保存失败，请重试');
+        return false;
+    } finally {
+        myPersonaPresetSavePending = false;
+    }
 }
 
 function populateMyPersonaSelect() {
@@ -286,7 +301,7 @@ function populateMyPersonaSelect() {
     });
 }
 
-function saveCurrentMyPersonaAsPreset() {
+async function saveCurrentMyPersonaAsPreset() {
     const personaEl = document.getElementById('setting-my-persona');
     const avatarEl = document.getElementById('setting-my-avatar-preview');
     if (!personaEl || !avatarEl) return showToast('找不到我的人设或头像控件');
@@ -295,11 +310,11 @@ function saveCurrentMyPersonaAsPreset() {
     if (!persona && !avatar) return showToast('人设和头像都为空，无法保存');
     const name = prompt('请输入预设名称（将覆盖同名预设）：');
     if (!name) return;
-    const presets = _getMyPersonaPresets();
+    const presets = _getMyPersonaPresets().slice();
     const idx = presets.findIndex(p => p.name === name);
     const preset = { name, persona, avatar };
     if (idx >= 0) presets[idx] = preset; else presets.push(preset);
-    _saveMyPersonaPresets(presets);
+    if (!await _saveMyPersonaPresets(presets)) return;
     populateMyPersonaSelect();
     showToast('我的人设预设已保存');
 }
@@ -370,12 +385,12 @@ function openManageMyPersonaModal() {
         renameBtn.className = 'btn';
         renameBtn.style.padding = '6px 8px;border-radius:8px';
         renameBtn.textContent = '重命名';
-        renameBtn.onclick = function(){
+        renameBtn.onclick = async function(){
             const newName = prompt('输入新名称：', p.name);
             if (!newName) return;
-            const all = _getMyPersonaPresets();
-            all[idx].name = newName;
-            _saveMyPersonaPresets(all);
+            const all = _getMyPersonaPresets().slice();
+            all[idx] = { ...all[idx], name: newName };
+            if (!await _saveMyPersonaPresets(all)) return;
             openManageMyPersonaModal();
             populateMyPersonaSelect();
         };
@@ -384,11 +399,11 @@ function openManageMyPersonaModal() {
         deleteBtn.className = 'btn';
         deleteBtn.style.padding = '6px 8px;border-radius:8px;color:#e53935';
         deleteBtn.textContent = '删除';
-        deleteBtn.onclick = function(){
+        deleteBtn.onclick = async function(){
             if (!confirm('确认删除该预设？')) return;
-            const all = _getMyPersonaPresets();
+            const all = _getMyPersonaPresets().slice();
             all.splice(idx,1);
-            _saveMyPersonaPresets(all);
+            if (!await _saveMyPersonaPresets(all)) return;
             openManageMyPersonaModal();
             populateMyPersonaSelect();
         };

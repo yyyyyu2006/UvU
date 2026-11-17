@@ -1,6 +1,7 @@
 // --- 群聊系统逻辑 (js/group_chat.js) ---
 
 let gossipUnreadMap = {};
+let groupMemberEditorRevision = 0;
 
 function setupGroupChatSystem() {
     const createGroupForm = document.getElementById('create-group-form');
@@ -261,12 +262,19 @@ function setupGroupChatSystem() {
     }
     
     const editMemberAvatarUpload = document.getElementById('edit-member-avatar-upload');
+    let memberAvatarRevision = 0;
     if (editMemberAvatarUpload) {
         editMemberAvatarUpload.addEventListener('change', async (e) => {
+            const revision = ++memberAvatarRevision;
+            const editor = groupMemberEditorRevision;
+            const target = captureChatSendTarget();
+            const memberId = document.getElementById('editing-member-id').value;
             const file = e.target.files[0];
             if (file) {
                 try {
                     const compressedUrl = await compressImage(file, {quality: 0.8, maxWidth: 400, maxHeight: 400});
+                    if (revision !== memberAvatarRevision || editor !== groupMemberEditorRevision || !isChatTargetVisible(target) ||
+                        document.getElementById('editing-member-id').value !== memberId || !editGroupMemberModal.classList.contains('visible')) return;
                     document.getElementById('edit-member-avatar-preview').src = compressedUrl;
                 } catch (error) {
                     showToast('成员头像压缩失败，请重试');
@@ -806,6 +814,8 @@ function setupGossipInput() {
 
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
+            if (e.isComposing || e.keyCode === 229) return;
+            e.preventDefault();
             const content = input.value.trim();
             if (content) {
                 sendGossipMessage(content);
@@ -1202,6 +1212,7 @@ function renderGroupRecipientSelectionList(actionText) {
 }
 
 async function saveGroupSettingsFromSidebar(showToastFlag = true) {
+    const settingsTarget = captureChatSendTarget();
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group) return;
     const oldName = group.name;
@@ -1287,12 +1298,14 @@ async function saveGroupSettingsFromSidebar(showToastFlag = true) {
     // updateCustomBubbleStyle(currentChatId, group.customBubbleCss, group.useCustomBubbleCss); // 移除实时应用以防污染设置页
     await saveData();
     if (showToastFlag) showToast('群聊设置已保存！');
+    if (!isChatTargetVisible(settingsTarget)) return;
     chatRoomTitle.textContent = group.name;
     renderChatList();
     renderMessages(false, true);
 }
 
 function openGroupMemberEditModal(memberId) {
+    groupMemberEditorRevision++;
     const group = db.groups.find(g => g.id === currentChatId);
     const member = group.members.find(m => m.id === memberId);
     if (!member) return;
@@ -1331,7 +1344,13 @@ function renderInviteSelectionList() {
 function sendInviteNotification(group, newMemberRealName) {
     const messageContent = `[${group.me.nickname}邀请${newMemberRealName}加入了群聊]`;
     const message = {
-        id: `msg_${Date.now()}`,
+        id: (() => {
+            const base = `msg_${Date.now()}`;
+            let id = base, suffix = 0;
+            const ids = new Set(group.history.map(item => item.id));
+            while (ids.has(id)) id = `${base}_${++suffix}`;
+            return id;
+        })(),
         role: 'user',
         content: messageContent,
         parts: [{type: 'text', text: messageContent}],

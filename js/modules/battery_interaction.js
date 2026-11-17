@@ -117,7 +117,7 @@ const BatteryInteraction = {
             }
 
             // 准备最近 30 条消息
-            const recentHistory = chat.history.slice(-30).map(msg => {
+            const recentHistory = chat.history.slice(-30).filter(msg => !msg.relationshipDelivery).map(msg => {
                 let content = msg.content;
                 // 简化的内容清理
                 content = content.replace(/\[.*?的消息：([\s\S]+?)\]/, '$1');
@@ -221,16 +221,18 @@ ${recentHistory}
         container.innerHTML = `
             <div class="thought-bubble-wrapper">
                 <div class="thought-avatar-wrapper">
-                    <img src="${avatarUrl}" class="thought-avatar" alt="avatar">
+                    <img class="thought-avatar" alt="avatar">
                 </div>
                 <div class="thought-bubble">
-                    <div class="thought-content">${text}</div>
+                    <div class="thought-content"></div>
                     <div class="thought-dots">
                         <span></span><span></span><span></span>
                     </div>
                 </div>
             </div>
         `;
+        container.querySelector('.thought-content').textContent = text;
+        container.querySelector('.thought-avatar').src = safeDisplayImageUrl(avatarUrl);
 
         document.body.appendChild(container);
 

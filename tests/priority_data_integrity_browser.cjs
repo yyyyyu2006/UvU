@@ -12,7 +12,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
         finally { await fixture.context.close(); }
     }
     try {
-        await check('illustration stays in original book after navigation', async page => {
+        for (const navigate of [false, true]) await check(navigate ? 'book navigation cancels pending illustration before generation' : 'illustration saves normally in the current book', async page => {
             await page.evaluate(async () => {
                 await dexieDB.reader_books.bulkPut([{id:'a',title:'A'},{id:'b',title:'B'}]);
                 await dexieDB.reader_chapters.bulkPut([
@@ -28,19 +28,21 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
                     ? new Promise(resolve => window.releaseIllustration = () => resolve(new Response(JSON.stringify({choices:[{message:{content:
                         '<image001><原文段落>A-only paragraph</原文段落><image>fixture</image></image001>'}}]}), {status:200})))
                     : originalFetch(url, ...args);
-                window.executeImageGeneration = async () => ({imageData:'aGVsbG8='});
+                window.illustrationGenerationCalls = 0;
+                window.executeImageGeneration = async () => { illustrationGenerationCalls++; return {imageData:'aGVsbG8='}; };
                 document.getElementById('reader-generate-illustration-btn').click();
             });
             await page.waitForFunction(() => typeof releaseIllustration === 'function');
-            await page.evaluate(async () => { await readerView.loadBook('b'); releaseIllustration(); });
+            await page.evaluate(async navigate => { if (navigate) await readerView.loadBook('b'); releaseIllustration(); }, navigate);
             await page.waitForFunction(() => !document.getElementById('reader-generate-illustration-btn').disabled);
             const result = await page.evaluate(async () => ({rows:await dexieDB.reader_comments.toArray(),
                 title:document.getElementById('reader-book-title').textContent,
-                icons:document.querySelectorAll('#reader-text-content .reader-inline-comment-icon').length}));
-            assert.equal(result.rows.length, 1);
-            assert.equal(result.rows[0].bookId, 'a');
-            assert.equal(result.title, 'B');
-            assert.equal(result.icons, 0, 'A illustration must not annotate B paragraph');
+                calls:illustrationGenerationCalls, icons:document.querySelectorAll('#reader-text-content .reader-inline-comment-icon').length}));
+            assert.equal(result.rows.length, navigate ? 0 : 1);
+            assert.equal(result.calls, navigate ? 0 : 1);
+            if (!navigate) assert.equal(result.rows[0].bookId, 'a');
+            assert.equal(result.title, navigate ? 'B' : 'A');
+            assert.equal(result.icons, navigate ? 0 : 1, 'only the current book may receive its completed illustration');
         });
 
         await check('consecutive workshop removals use stable IDs', async page => {

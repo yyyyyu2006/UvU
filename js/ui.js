@@ -1128,6 +1128,11 @@ function initHomeSortables() {
                 }
             },
             onEnd: async function (evt) {
+                const database = db;
+                const previousPages = db.homeLayoutPages;
+                const previousOrder = db.homeLayoutOrder;
+                let appliedPages;
+                try {
                 // 获取所有页面的新顺序，保存为二维数组实现持久化分页
                 let newPages = [];
                 document.querySelectorAll('.home-grid-layout').forEach(grid => {
@@ -1140,6 +1145,7 @@ function initHomeSortables() {
                 if (newPages.length === 0) newPages = [[]]; // 至少保留一页
                 
                 db.homeLayoutPages = newPages;
+                appliedPages = newPages;
                 
                 // 同时更新旧的扁平化 order 以保持兼容性
                 db.homeLayoutOrder = newPages.flat();
@@ -1154,10 +1160,19 @@ function initHomeSortables() {
                 if (wasEditMode) {
                     enterHomeEditMode();
                 }
-                if (swiper) swiper.style.scrollSnapType = 'x mandatory';
-
-                // 清理全局监听和定时器
-                cleanupDrag();
+                } catch (error) {
+                    if (db === database && db.homeLayoutPages === appliedPages) {
+                        db.homeLayoutPages = previousPages;
+                        db.homeLayoutOrder = previousOrder;
+                        setupHomeScreen();
+                        if (isHomeEditMode) enterHomeEditMode();
+                    }
+                    console.error('保存主页排序失败:', error);
+                    showToast('排序未保存，请重试');
+                } finally {
+                    if (swiper) swiper.style.scrollSnapType = 'x mandatory';
+                    cleanupDrag();
+                }
             }
         });
         homeSortables.push(sortable);

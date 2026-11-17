@@ -1102,12 +1102,14 @@ async function readStreamResponse(response, provider, onUsage) {
 }
 
 // --- 图片查看器 ---
+let imageViewerCloseTimer = null;
 function openImageViewer(src) {
     const modal = document.getElementById('full-image-modal');
     const img = document.getElementById('full-image-view');
     const closeBtn = document.getElementById('close-full-image-btn');
     
     if (!modal || !img) return;
+    clearTimeout(imageViewerCloseTimer);
     
     img.src = src;
     modal.classList.add('visible');
@@ -1115,7 +1117,8 @@ function openImageViewer(src) {
     // 简单的关闭逻辑
     const closeModal = () => {
         modal.classList.remove('visible');
-        setTimeout(() => { img.src = ''; }, 300); // 动画结束后清空
+        clearTimeout(imageViewerCloseTimer);
+        imageViewerCloseTimer = setTimeout(() => { img.src = ''; }, 300); // 动画结束后清空
     };
     
     if (closeBtn) closeBtn.onclick = closeModal;

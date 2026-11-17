@@ -320,7 +320,7 @@ const extractedBuiltInTemplates = [
 #{{id}} .widget-time { color: #333; font-family: sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,0.1); position: absolute; left: 50%; transform: translateX(-50%); bottom: 5px; font-size: 25px; font-weight: 600; }
 #{{id}} .widget-date { color: #666; font-family: sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,0.1); position: absolute; width: 130px; text-align: center; bottom: 10px; left: 15%; font-size: 15px; }
 #{{id}} .widget-signature { color: #333; font-family: sans-serif; text-shadow: 0 1px 2px rgba(0,0,0,0.1); position: absolute; left: 50%; transform: translateX(-50%); bottom: -25px; font-size: 14px; font-weight: 500; width: 90%; max-width: 300px; text-align: center; padding: 5px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }`,
-        js: `function updateClock_{{id}}() {
+        js: `function updateClock() {
     const now = new Date();
     const timeEl = document.getElementById('time-display-{{id}}');
     const dateEl = document.getElementById('date-display-{{id}}');
@@ -329,8 +329,8 @@ const extractedBuiltInTemplates = [
         dateEl.innerText = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
     }
 }
-setInterval(updateClock_{{id}}, 1000);
-updateClock_{{id}}();`,
+setInterval(updateClock, 1000);
+updateClock();`,
         defaultVars: {
             "centralImage": "https://i.postimg.cc/GtbTnxhP/o-o-1.jpg",
             "tlEmoji": "❤️", "tlText": "Love",
@@ -352,8 +352,12 @@ async function initBuiltInWidgets() {
     
     // 注入提取的内置组件到“我的组件”
     extractedBuiltInTemplates.forEach(tpl => {
-        if (!db.widgetTemplates.find(t => t.id === tpl.id)) {
+        const existing = db.widgetTemplates.find(t => t.id === tpl.id);
+        if (!existing) {
             db.widgetTemplates.push(JSON.parse(JSON.stringify(tpl)));
+            changed = true;
+        } else if (tpl.id === 'builtin-top-panel-4x2' && existing.js === tpl.js.replace(/updateClock/g, 'updateClock_{{id}}')) {
+            existing.js = tpl.js;
             changed = true;
         }
     });
@@ -649,7 +653,7 @@ function renderWidgetList(container, templates, isModal = false, isTemplateLibra
         // 注入预览 HTML 和 CSS
         // 修复：必须替换 {{id}} 占位符，否则 CSS 作用域会失效导致全局污染
         let previewHtml = template.html.replace(/{{id}}/g, template.id);
-        for (const [key, value] of Object.entries(template.defaultVars)) {
+        for (const [key, value] of Object.entries(template.defaultVars || {})) {
             previewHtml = previewHtml.split(`{{${key}}}`).join(String(value));
         }
 
@@ -928,7 +932,7 @@ function openWidgetEditor(template = null) {
         htmlInput.value = template.html;
         cssInput.value = template.css;
         jsInput.value = template.js || '';
-        varsInput.value = JSON.stringify(template.defaultVars, null, 2);
+        varsInput.value = JSON.stringify(template.defaultVars || {}, null, 2);
     } else {
         title.innerText = '新建小组件';
         idInput.value = '';
@@ -1005,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelMultiSelectBtn.style.display = 'block';
             multiSelectBar.style.display = 'flex';
             
-            document.querySelectorAll('#widget-market-list .widget-market-card').forEach(card => {
+            document.querySelectorAll('#widget-my-content .widget-market-card').forEach(card => {
                 card.classList.add('multi-select-mode');
             });
             updateWidgetMultiSelectBar();
@@ -1020,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
             multiSelectBtn.style.display = 'block';
             multiSelectBar.style.display = 'none';
             
-            document.querySelectorAll('#widget-market-list .widget-market-card').forEach(card => {
+            document.querySelectorAll('#widget-my-content .widget-market-card').forEach(card => {
                 card.classList.remove('multi-select-mode', 'selected');
             });
         });
@@ -1073,6 +1077,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const varsStr = document.getElementById('widget-edit-vars').value;
                 if (varsStr.trim()) {
                     vars = JSON.parse(varsStr);
+                }
+                if (!vars || typeof vars !== 'object' || Array.isArray(vars)) {
+                    showToast('默认变量必须是 JSON 对象');
+                    return;
                 }
             } catch (err) {
                 showToast('默认变量 JSON 格式错误');
@@ -1187,6 +1195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const typeInput = document.getElementById('widget-var-type');
 
     if (!homeScreen || !modal || !form) return;
+    let imageRevision = 0;
 
     homeScreen.addEventListener('click', (e) => {
         if (isHomeEditMode) return; // 编辑模式下不触发变量修改
@@ -1207,6 +1216,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentValue = instance.vars[varKey] || '';
 
         // 填充表单
+        imageRevision++;
         instanceIdInput.value = instanceId;
         keyInput.value = varKey;
         typeInput.value = varType;
@@ -1234,6 +1244,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 图片预览逻辑
     input.addEventListener('input', () => {
+        imageRevision++;
         if (typeInput.value === 'image') {
             fileUpload.dataset.base64 = '';
             const url = input.value.trim();
@@ -1249,10 +1260,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     fileUpload.addEventListener('change', async (e) => {
+        const revision = ++imageRevision;
+        const database = db;
+        const instanceId = instanceIdInput.value;
+        const key = keyInput.value;
         const file = e.target.files[0];
         if (file) {
             try {
                 const compressedUrl = await compressImage(file, { quality: 0.8, maxWidth: 800, maxHeight: 800 });
+                if (revision !== imageRevision || db !== database || instanceIdInput.value !== instanceId || keyInput.value !== key || !modal.classList.contains('visible')) return;
                 preview.style.backgroundImage = `url("${compressedUrl}")`;
                 preview.innerHTML = '';
                 input.value = ''; // 清空 URL 输入框
@@ -1265,6 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     cancelBtn.addEventListener('click', () => {
+        imageRevision++;
         modal.classList.remove('visible');
         fileUpload.dataset.base64 = '';
     });
