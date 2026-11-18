@@ -31,11 +31,24 @@ function getSavedMessageThinking(chat, messageId) {
 function decorateMessageThinkingAvatar(element, message) {
     if (!element || currentChatType !== 'private' || message.role !== 'assistant' ||
         message.isWithdrawn || message.isThinking || message.isStatusUpdate || /^\s*<thinking>/i.test(message.content || '')) return element;
-    const avatar = element.querySelector('.message-avatar:not(.avatar-hidden):not(.avatar-invisible)');
+    let avatar = element.querySelector('.message-avatar:not(.avatar-hidden):not(.avatar-invisible)');
+    const hiddenAvatar = element.querySelector('.message-avatar.avatar-hidden');
+    if (!avatar && hiddenAvatar) {
+        // Keep the portrait hidden; only its original slot becomes interactive.
+        avatar = element.querySelector('.thinking-avatar-hit-target');
+        if (!avatar) {
+            avatar = document.createElement('button');
+            avatar.type = 'button';
+            avatar.className = 'thinking-avatar-hit-target';
+            hiddenAvatar.insertAdjacentElement('afterend', avatar);
+        }
+    }
     if (avatar) {
         avatar.dataset.thinkingAvatar = 'true';
-        avatar.setAttribute('role', 'button');
-        avatar.setAttribute('tabindex', '0');
+        if (avatar.tagName !== 'BUTTON') {
+            avatar.setAttribute('role', 'button');
+            avatar.setAttribute('tabindex', '0');
+        }
         avatar.setAttribute('aria-label', '查看已保存的思考');
         avatar.setAttribute('aria-haspopup', 'dialog');
     }
@@ -120,6 +133,8 @@ function setupMessageThinkingViewer(area) {
     area.addEventListener('click', open);
     area.addEventListener('keydown', event => {
         if (event.isComposing || !['Enter', ' '].includes(event.key) || !event.target.closest('[data-thinking-avatar]')) return;
+        // Native buttons already produce one click for Enter/Space.
+        if (event.target.closest('[data-thinking-avatar]').tagName === 'BUTTON') return;
         if (isDebugMode || isInMultiSelectMode) return;
         event.preventDefault(); open(event);
     });

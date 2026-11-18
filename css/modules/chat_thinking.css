@@ -19,4 +19,13 @@
 #char-thinking-dialog .char-thinking-copy-buffer { position:absolute;width:1px;height:1px;opacity:0; }
 #char-thinking-dialog :focus-visible { outline:2px solid #b4d0e1;outline-offset:-3px; }
 #message-area [data-thinking-avatar] { cursor:pointer; }
+#message-area .thinking-avatar-hit-target {
+    appearance:none;display:block;box-sizing:border-box;flex:0 0 36px;
+    width:36px;height:36px;min-width:36px;min-height:36px;
+    margin:0;padding:0;border:0;border-radius:var(--chat-avatar-radius);
+    background:transparent;color:inherit;box-shadow:none;
+}
+@media (pointer:coarse) {
+    #message-area .thinking-avatar-hit-target { flex-basis:44px;width:44px;height:44px;min-width:44px;min-height:44px; }
+}
 #message-area [data-thinking-avatar]:focus-visible { outline:2px solid #b4d0e1;outline-offset:2px; }
