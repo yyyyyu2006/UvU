@@ -265,18 +265,22 @@ function setupFolderManagement() {
     const folderSelectionList = document.getElementById('folder-selection-list');
     const closeMoveModalBtn = document.getElementById('close-move-folder-modal');
     let chatToMove = null;
+    let movePending = false;
+
+    function closeMoveFolderModal() {
+        chatToMove = null;
+        moveFolderModal.classList.remove('visible');
+    }
 
     window.openMoveToFolderModal = (chatId, chatType) => {
-        chatToMove = { id: chatId, type: chatType };
+        const target = { id: chatId, type: chatType };
+        chatToMove = target;
         folderSelectionList.innerHTML = '';
         
         const removeLi = document.createElement('li');
         removeLi.className = 'list-item';
         removeLi.textContent = '❌ 移出文件夹 (归入全部)';
-        removeLi.onclick = async () => {
-            await moveChatToFolder(null);
-            moveFolderModal.classList.remove('visible');
-        };
+        removeLi.onclick = () => moveChatToFolder(target, null);
         folderSelectionList.appendChild(removeLi);
 
         if (db.chatFolders && db.chatFolders.length > 0) {
@@ -284,10 +288,7 @@ function setupFolderManagement() {
                 const li = document.createElement('li');
                 li.className = 'list-item';
                 li.textContent = `📁 ${folder.name}`;
-                li.onclick = async () => {
-                    await moveChatToFolder(folder.id);
-                    moveFolderModal.classList.remove('visible');
-                };
+                li.onclick = () => moveChatToFolder(target, folder.id);
                 folderSelectionList.appendChild(li);
             });
         } else {
@@ -302,25 +303,27 @@ function setupFolderManagement() {
         moveFolderModal.classList.add('visible');
     };
 
-    closeMoveModalBtn.addEventListener('click', () => moveFolderModal.classList.remove('visible'));
+    closeMoveModalBtn.addEventListener('click', closeMoveFolderModal);
 
-    async function moveChatToFolder(folderId) {
-        if (!chatToMove) return;
-        const { id, type } = chatToMove;
+    async function moveChatToFolder(target, folderId) {
+        if (chatToMove !== target) return;
+        if (movePending) return showToast('正在保存文件夹变更，请稍候');
+        const { id, type } = target;
         const chat = (type === 'private') ? db.characters.find(c => c.id === id) : db.groups.find(g => g.id === id);
-        
-        if (chat) {
+        if (!chat) return showToast('该聊天已不存在');
+        if (folderId && !db.chatFolders?.some(folder => folder.id === folderId)) return showToast('该文件夹已不存在');
+
+        movePending = true;
+        try {
             const mutation = captureFolderMutation();
-            if (folderId) {
-                chat.folderId = folderId;
-
-            } else {
-                delete chat.folderId; 
-
-            }
+            if (folderId) chat.folderId = folderId;
+            else delete chat.folderId;
             if (!await saveFolderMutation(mutation)) return;
             showToast(folderId ? '已移动到文件夹' : '已移出文件夹');
             renderChatList();
+            if (chatToMove === target) closeMoveFolderModal();
+        } finally {
+            movePending = false;
         }
     }
 }

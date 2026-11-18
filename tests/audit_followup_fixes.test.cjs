@@ -68,3 +68,46 @@ test('turning down a transfer while acceptance is saving cannot create a second 
  const c=context({currentChatId:'c',currentChatType:'private',currentTransferMessageId:'t',messageArea:{querySelector(){return null}},db:{characters:[char],groups:[]},document:{getElementById:()=>({classList:{remove(){}}})},saveData:()=>gate.promise,showToast(){},renderMessages(){},renderChatList(){},addMessageBubble(){}});
  load(c,'js/modules/chat_ops.js','js/modules/chat_features.js');const p=c.respondToTransfer('received');await c.respondToTransfer('returned');assert.equal(char.history.length,2);assert.equal(msg.transferStatus,'received');gate.reject(Error('quota'));await p;assert.equal(msg.transferStatus,'pending');assert.equal(char.history.length,1);
 });
+
+function settingsFixture() {
+ const elements=new Map(),notices=[];
+ function node(){
+  const classes=new Set();
+  return {value:'',children:[],handlers:{},style:{},dataset:{},classList:{add:k=>classes.add(k),remove:k=>classes.delete(k),contains:k=>classes.has(k)},
+   set innerHTML(_){this.children=[];this.value='';},appendChild(child){if(!this.children.length)this.value=child.value;this.children.push(child);},
+   addEventListener(event,fn){(this.handlers[event]??=[]).push(fn);}};
+ }
+ const get=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
+ return {get,notices,c:context({document:{getElementById:get,createElement:node,querySelectorAll:()=>[]},showToast:msg=>notices.push(msg)})};
+}
+
+test('failed folder moves and removals leave the chooser open and can be retried',async()=>{
+ const {c,get}=settingsFixture(),char={id:'c'},folder={id:'f',name:'folder'};
+ Object.assign(c,{db:{chatFolders:[folder],characters:[char],groups:[]},currentFolderId:'all',saveData:async()=>{throw Error('quota');}});
+ load(c,'js/modules/chat_list.js');c.renderChatList=()=>{};c.setupFolderManagement();
+ const modal=get('move-to-folder-modal'),list=get('folder-selection-list');
+ c.window.openMoveToFolderModal('c','private');
+ await list.children[1].onclick();assert.equal(char.folderId,undefined);assert.equal(modal.classList.contains('visible'),true);
+ c.saveData=async()=>{};await list.children[1].onclick();assert.equal(char.folderId,'f');assert.equal(modal.classList.contains('visible'),false);
+ c.window.openMoveToFolderModal('c','private');c.saveData=async()=>{throw Error('quota');};
+ await list.children[0].onclick();assert.equal(char.folderId,'f');assert.equal(modal.classList.contains('visible'),true);
+});
+
+test('a folder save finishing after another chooser opens leaves the new chooser open',async()=>{
+ const {c,get}=settingsFixture(),gate=deferred(),a={id:'a'},b={id:'b'};
+ Object.assign(c,{db:{chatFolders:[{id:'f',name:'folder'}],characters:[a,b],groups:[]},currentFolderId:'all',saveData:()=>gate.promise});
+ load(c,'js/modules/chat_list.js');c.renderChatList=()=>{};c.setupFolderManagement();
+ c.window.openMoveToFolderModal('a','private');const pending=get('folder-selection-list').children[1].onclick();
+ c.window.openMoveToFolderModal('b','private');gate.resolve();await pending;
+ assert.equal(a.folderId,'f');assert.equal(b.folderId,undefined);assert.equal(get('move-to-folder-modal').classList.contains('visible'),true);
+});
+
+test('refreshing secondary models keeps the selected model or asks the user to reselect',async()=>{
+ const {c,get,notices}=settingsFixture();let models=['first','chosen'];
+ Object.assign(c,{db:{apiSettings:{secondary:{enabled:true,url:'https://example.invalid',key:'fixture',model:'chosen'}}},
+  BLOCKED_API_DOMAINS:[],fetch:async()=>({ok:true,json:async()=>({data:models.map(id=>({id}))})})});
+ load(c,'js/modules/settings_api.js');c.setupSecondaryApiSettings();
+ const refresh=get('secondary-fetch-models-btn').handlers.click[0];
+ await refresh();assert.equal(c.readSecondaryApiSettings().model,'chosen');
+ models=['first','another'];await refresh();assert.equal(c.readSecondaryApiSettings().model,'');assert.match(notices.at(-1),/重新选择/);
+});

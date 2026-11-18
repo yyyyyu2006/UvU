@@ -418,15 +418,29 @@ function setupSecondaryApiSettings() {
             const models = provider === 'gemini'
                 ? (data.models || []).map(item => item.name.replace('models/', ''))
                 : (data.data || []).map(item => item.id);
+            const keepSelection = Boolean(selectedModel) && models.includes(selectedModel);
             modelEl.innerHTML = '';
+            if (!keepSelection && models.length) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = selectedModel ? '原模型不在列表中，请重新选择' : '请选择副 API 模型';
+                placeholder.disabled = true;
+                modelEl.appendChild(placeholder);
+            }
             models.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model;
                 option.textContent = model;
                 modelEl.appendChild(option);
             });
-            if (!models.length) modelEl.innerHTML = '<option value="">未找到任何模型</option>';
-            showToast(models.length ? '副 API 模型列表拉取成功！' : '未找到任何模型');
+            if (!models.length) {
+                modelEl.innerHTML = '<option value="">未找到任何模型</option>';
+                showToast('未找到任何模型');
+            } else {
+                modelEl.value = keepSelection ? selectedModel : '';
+                showToast(keepSelection ? '副 API 模型列表拉取成功！' :
+                    selectedModel ? '原副 API 模型不在列表中，请重新选择' : '已拉取副 API 模型，请选择');
+            }
         } catch (error) {
             if (!valid()) return;
             showApiError(error);
