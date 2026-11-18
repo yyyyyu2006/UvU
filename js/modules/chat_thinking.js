@@ -1,31 +1,55 @@
 // Read saved output only. This viewer never requests or generates reasoning.
+function findMessageThinkingSource(history, index) {
+    const message = history[index];
+    if (!message || message.role !== 'assistant' || message.isWithdrawn || message.isThinking) return null;
+    if (Object.hasOwn(message, 'thinkingMessageId')) {
+        // An explicit null or pruned record must never borrow another reply's thinking.
+        if (typeof message.thinkingMessageId !== 'string') return null;
+        for (let i = index - 1; i >= 0; i--) {
+            if (history[i].id === message.thinkingMessageId) return { index: i, legacy: false };
+        }
+        return null;
+    }
+    // Legacy archives have no response link. Only look within this user segment.
+    for (let i = index - 1; i >= 0; i--) {
+        const record = history[i];
+        if (record.role === 'user' || Object.hasOwn(record, 'thinkingMessageId')) return null;
+        if (record.isThinking || /^\s*<thinking>/i.test(record.content || '')) return { index: i, legacy: true };
+    }
+    return null;
+}
+
+function readSavedThinkingText(record) {
+    if (!record || record.role !== 'assistant' || record.isWithdrawn ||
+        !(record.isThinking || /^\s*<thinking>/i.test(record.content || ''))) return '';
+    const blocks = [...String(record.content || '').matchAll(/<thinking>([\s\S]*?)<\/thinking>/gi)];
+    return blocks.map(block => block[1]).filter(text => text.trim()).join('\n\n');
+}
+
 function getSavedMessageThinking(chat, messageId) {
     const history = chat?.history;
     if (!Array.isArray(history)) return null;
-    const index = history.findIndex(message => message.id === messageId);
-    const message = history[index];
-    if (!message || message.role !== 'assistant' || message.isWithdrawn || message.isThinking) return null;
-    const read = (record, legacy = false) => {
-        if (!record || record.role !== 'assistant' || record.isWithdrawn ||
-            !(record.isThinking || /^\s*<thinking>/i.test(record.content || ''))) return null;
-        const blocks = [...String(record.content || '').matchAll(/<thinking>([\s\S]*?)<\/thinking>/gi)];
-        const text = blocks.map(block => block[1]).filter(text => text.trim()).join('\n\n');
-        return text ? { text, legacy } : null;
-    };
-    // An explicit null means this response had no saved thinking. Never borrow a
-    // previous response's reasoning, including when the referenced record was pruned.
-    if (Object.hasOwn(message, 'thinkingMessageId')) {
-        if (typeof message.thinkingMessageId !== 'string') return null;
-        return read(history.slice(0, index).find(record => record.id === message.thinkingMessageId));
+    const source = findMessageThinkingSource(history, history.findIndex(message => message.id === messageId));
+    if (!source) return null;
+    const text = readSavedThinkingText(history[source.index]);
+    return text ? { text, legacy: source.legacy } : null;
+}
+
+function isFirstHiddenThinkingBubble(history, message) {
+    if (!Array.isArray(history)) return false;
+    const index = history.lastIndexOf(message);
+    const source = findMessageThinkingSource(history, index);
+    if (!source) return false;
+    const record = history[source.index];
+    const invisible = createInvisibleMessageRegex(false);
+    // Use the full saved history so paging or a redraw cannot move the target.
+    for (let i = source.index + 1; i < index; i++) {
+        const earlier = history[i];
+        const sameReply = source.legacy || earlier.thinkingMessageId === record.id;
+        if (sameReply && earlier.role === 'assistant' && !earlier.isWithdrawn && !earlier.isThinking &&
+            !earlier.isStatusUpdate && !invisible.test(earlier.content)) return false;
     }
-    // Older archives have no response link. Limit lookup to this conversation
-    // segment and label that uncertainty rather than claiming an exact response.
-    for (let cursor = index - 1; cursor >= 0; cursor--) {
-        const record = history[cursor];
-        if (record.role === 'user' || Object.hasOwn(record, 'thinkingMessageId')) return null;
-        if (record.isThinking || /^\s*<thinking>/i.test(record.content || '')) return read(record, true);
-    }
-    return null;
+    return Boolean(readSavedThinkingText(record));
 }
 
 function decorateMessageThinkingAvatar(element, message) {
@@ -34,6 +58,8 @@ function decorateMessageThinkingAvatar(element, message) {
     let avatar = element.querySelector('.message-avatar:not(.avatar-hidden):not(.avatar-invisible)');
     const hiddenAvatar = element.querySelector('.message-avatar.avatar-hidden');
     if (!avatar && hiddenAvatar) {
+        const chat = db.characters.find(item => item.id === currentChatId);
+        if (!isFirstHiddenThinkingBubble(chat?.history, message)) return element;
         // Overlay the hidden portrait's origin without reserving layout space.
         avatar = element.querySelector('.thinking-avatar-hit-target');
         if (!avatar) {
