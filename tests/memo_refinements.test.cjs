@@ -36,3 +36,14 @@ test('semantic recall invalidates cached embeddings when effective embedding con
   await f.c.buildCharacterMemoRecallCache(f.chat);assert.equal(f.c.selectCharacterMemos(f.chat).length,1,field+' rebuild');
  }
 });
+test('memo revision and expiry renewal preserve local-only and paused state',async()=>{
+    const f=fixture(),n=await note(f,{fact:'原先的约定',expiresAt:Date.now()+3600000});
+    await f.c.changeCharacterMemo(f.chat,n.id,{fact:'修改后的约定',localOnly:true,useContext:false});
+    let row=f.chat.characterMemos.notes[0];
+    await f.c.restoreCharacterMemoRevision(f.chat,n.id,JSON.stringify(row));
+    row=f.chat.characterMemos.notes[0];assert.equal(row.fact,'原先的约定');assert.equal(row.localOnly,true);assert.equal(row.useContext,false);
+    const expected=JSON.stringify(row),until=Date.now()+7200000;
+    await f.c.renewCharacterMemo(f.chat,n.id,expected,until);
+    row=f.chat.characterMemos.notes[0];assert.equal(row.expiresAt,until);assert.equal(row.localOnly,true);assert.equal(row.useContext,false);
+    await assert.rejects(f.c.renewCharacterMemo(f.chat,n.id,expected,until+1000),/变化/);
+});

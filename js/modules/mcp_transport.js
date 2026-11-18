@@ -73,14 +73,15 @@
         if (typeof token !== 'string' || token.length > 4096 || /[\r\n]/.test(token)) throw new Error('令牌格式无效');
         const mode = config.protocol || 'auto';
         if (!['auto', MODERN, ...LEGACY].includes(mode)) throw new Error('不支持的 MCP 协议版本');
-        let version = mode === 'auto' ? MODERN : mode, session = '', ready = false, capabilities = null, recovery;
+        let version = mode === 'auto' ? MODERN : mode, session = '', ready = false, capabilities = null, recovery, toolsRevision = 0;
         const timeout = Math.max(1000, Math.min(60000, Number(config.timeoutMs) || 20000));
         async function rpc(method, params = {}, externalSignal, notification = false, paramHeaders = []) {
-            if (externalSignal?.aborted) throw aborted();
-            const controller = new AbortController(); let timedOut = false;
+            if (externalSignal?.aborted) throw Object.assign(aborted(), { requestDispatched: false });
+            const controller = new AbortController(); let timedOut = false, dispatched = false;
             const cancel = () => controller.abort(); externalSignal?.addEventListener('abort', cancel, { once: true });
             const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeout);
             const id = notification ? undefined : ++sequence;
+            try {
             const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
             if (token) headers.Authorization = 'Bearer ' + token;
             if (method !== 'initialize') headers['MCP-Protocol-Version'] = version;
@@ -99,9 +100,11 @@
                 params = { ...params, _meta: { 'io.modelcontextprotocol/protocolVersion': MODERN,
                     'io.modelcontextprotocol/clientInfo': { name: 'UvU', version: '1.0.0' }, 'io.modelcontextprotocol/clientCapabilities': {} } };
             }
-            try {
                 let response;
-                try { response = await wait(fetch(url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', ...(id !== undefined ? { id } : {}), method, params }),
+                const body = JSON.stringify({ jsonrpc: '2.0', ...(id !== undefined ? { id } : {}), method, params });
+                if (controller.signal.aborted) throw aborted();
+                dispatched = true;
+                try { response = await wait(fetch(url, { method: 'POST', headers, body,
                     signal: controller.signal, credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer', cache: 'no-store' }), controller.signal); }
                 catch (error) { if (controller.signal.aborted) throw error; throw new Error('MCP 网络请求失败：检查 HTTPS、CORS、本地网络权限及服务是否运行'); }
                 if (notification && response.ok) { await response.body?.cancel(); return {}; }
@@ -112,7 +115,10 @@
                             if (!response.ok) return value;
                             throw new Error('MCP 响应格式无效');
                         }
-                        if (value.method && value.id === undefined) return undefined;
+                        if (value.method && value.id === undefined) {
+                            if (value.method === 'notifications/tools/list_changed' && capabilities?.tools?.listChanged === true) toolsRevision++;
+                            return undefined;
+                        }
                         if (value.id !== id) { if (!response.ok && value.error && value.id === undefined) return value; throw new Error('MCP 响应 ID 不匹配或含未支持的服务端请求'); }
                         return value;
                     });
@@ -129,9 +135,8 @@
                 }
                 return packet.result;
             } catch (error) {
-                if (timedOut) throw new Error('MCP 请求超时；工具可能已执行，请先核实结果，写入操作不会自动重试');
-                if (externalSignal?.aborted) throw aborted();
-                throw error;
+                const outcome = timedOut ? new Error('MCP 请求超时') : externalSignal?.aborted ? aborted() : error;
+                throw Object.assign(outcome, { requestDispatched: dispatched });
             } finally { clearTimeout(timer); externalSignal?.removeEventListener('abort', cancel); }
         }
         async function initialize(signal, preferred) {
@@ -182,6 +187,7 @@
         return {
             get version() { return version; },
             get capabilities() { return capabilities ? { ...capabilities } : null; },
+            get toolsRevision() { return toolsRevision; },
             async listTools(signal) {
                 if (ready && capabilities && !capabilities.tools) return [];
                 let page = ready ? await safeRpc('tools/list', {}, signal) : await firstList(signal);
@@ -201,7 +207,7 @@
                 return tools;
             },
             async call(name, args, signal, paramHeaders = [], options = {}) {
-                if (!ready) await this.listTools(signal);
+                if (!ready) try { await this.listTools(signal); } catch (error) { throw Object.assign(error, { requestDispatched: false }); }
                 return safeRpc('tools/call', { name, arguments: args }, signal, paramHeaders, options.safeRead === true);
             },
             listResources(signal) { return list('resources/list', 'resources', signal); },

@@ -28,6 +28,23 @@ function fixture(count = 12, settings = {}) {
 }
 const ids = items => Array.from(items, item => item.id);
 
+test('manual range summary only uses selected floors and leaves a draft even when automatic review is disabled', async () => {
+    const f = fixture(12, { summaryQualityReviewEnabled: false, mergeEnabled: true });
+    f.context.db.apiSettings.secondary = { enabled: true, url: 'https://summary.test/v1', key: 'test', model: 'aux', provider: 'newapi' };
+    const result = await f.run({ range: {start:3,end:5,parts:1}, reviewOnly: true, focus: 'commitments' });
+    assert.equal(result.count, 1);
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests[0].config.url, 'https://summary.test/v1');
+    const draft = f.chat.memoryJournals[0];
+    assert.deepEqual(ids(draft.autoMemory.sources), ['m2','m3','m4']);
+    assert.equal(draft.autoMemory.committed, false);
+    assert.equal(draft.qualityReview.status, 'pending');
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 0);
+    const duplicate = await f.run({ range: {start:3,end:5,parts:1}, reviewOnly: true });
+    assert.equal(duplicate.count, 0);
+    assert.equal(f.requests.length, 1);
+});
+
 test('prompt build drops retrieved memory when its source changes after retrieval', async () => {
     for (const mutate of [
         f => { f.chat.memoryJournals[0].content = '用户已更正的事实'; },

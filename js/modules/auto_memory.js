@@ -25,6 +25,7 @@ const vectorMemoryStatus = new WeakMap();
 const vectorChunkPlans = new WeakMap();
 const vectorMemoryDiagnostics = new WeakMap();
 const vectorCleaningSessions = new WeakMap();
+const manualMemoryFocus = Object.freeze({ plot: '侧重事件先后、变化原因和结果。', commitments: '侧重约定、参与人、时间和完成状态。', characters: '侧重人物态度、关系或决定的变化，区分原话和推测。' });
 
 function resolveVectorMemoryApi() {
     const legacy = db.memoryApiSettings || {}, vector = db.vectorMemoryApiSettings || {};
@@ -723,10 +724,10 @@ function getVectorMemoryContext(chat, queryText, signal, options = {}) {
         const cleaning = { key: '', entries: new Map(), chars: 0, hits: 0 }; vectorCleaningSessions.set(chat, cleaning);
         try { return await retrieveVectorMemoryContext(chat, queryText, signal, options); }
         catch (error) {
-            if (error.name !== 'AbortError' && chat.activeArchiveId === archive && chat.history === history) recordVectorMemoryStatus(chat, error.message, true);
+            if (!options.trial && !options.candidateModel && error.name !== 'AbortError' && chat.activeArchiveId === archive && chat.history === history) recordVectorMemoryStatus(chat, error.message, true);
             throw error;
         }
-        finally { vectorCleaningSessions.delete(chat); if (chat.activeArchiveId === archive) updateVectorMemoryDiagnostics(chat, { cleaningCacheHits: cleaning.hits }); }
+        finally { vectorCleaningSessions.delete(chat); if (!options.trial && !options.candidateModel && chat.activeArchiveId === archive) updateVectorMemoryDiagnostics(chat, { cleaningCacheHits: cleaning.hits }); }
     });
     vectorMemoryQueues.set(chat, next);
     return next.finally(() => { if (vectorMemoryQueues.get(chat) === next) vectorMemoryQueues.delete(chat); });
@@ -819,8 +820,18 @@ async function scoreVectorMemoryChunks(query, rows, assertCurrent, signal) {
 }
 async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}) {
     const settings = getAutoMemorySettings(chat);
+    const trial = typeof options.trial === 'function' ? options.trial : null;
+    const candidate = options.candidateModel;
+    const diagnostic = fields => trial || candidate ? fields : updateVectorMemoryDiagnostics(chat, fields);
     if (!settings.vectorSearchEnabled || !String(queryText || '').trim()) return '';
     const config = resolveVectorMemoryApi();
+    if (candidate) {
+        if ((!trial && !options.indexOnly) || !settings.vectorExternalIndex || !db.vectorMemoryApiSettings?.url ||
+            candidate === config.embeddingModel || typeof candidate !== 'string' || !/^[\w./:-]{1,200}$/u.test(candidate)) {
+            throw new Error('请启用独立索引，并选择不同的候选嵌入模型');
+        }
+        config.embeddingModel = candidate;
+    }
     if (!config.url || !config.key || !config.embeddingModel) throw new Error('向量 API 的地址、密钥或嵌入模型尚未配置完整');
     const archive = chat.activeArchiveId, history = chat.history, journals = chat.memoryJournals;
     const snapshot = vectorSourceFingerprint(chat);
@@ -836,7 +847,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     const resultIsCurrent = () => { try { assertCurrent(true); return true; } catch (_) { return false; } };
     assertCurrent();
     const candidates = getVectorMemoryCandidates(chat);
-    if (!candidates.length) { recordVectorMemoryStatus(chat, getVectorMemoryDiagnostics(chat).cleaningWarning || '当前没有可索引的旧剧情或记忆', Boolean(getVectorMemoryDiagnostics(chat).cleaningWarning)); return ''; }
+    if (!candidates.length) { if (candidate && options.indexOnly) throw new Error('当前存档没有可建立索引的来源'); if (trial) trial({selected:[],excluded:[],pendingCount:0}); else recordVectorMemoryStatus(chat, getVectorMemoryDiagnostics(chat).cleaningWarning || '当前没有可索引的旧剧情或记忆', Boolean(getVectorMemoryDiagnostics(chat).cleaningWarning)); return ''; }
     const legacyIndex = chat.memoryVectorIndex || {};
     let oldIndex = legacyIndex;
     const nextIndex = {};
@@ -846,28 +857,29 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     if (!rawQuery.trim() && !options.indexOnly) return '';
     const tools = typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools : null;
     const resultKey = autoMemoryFingerprint([snapshot, apiSnapshot, rawQuery, archive, candidates.map(item => item.id)]);
-    const cachedResult = !options.indexOnly && !options.rebuild && tools?.cachedResult(chat, resultKey);
+    const cachedResult = !trial && !options.indexOnly && !options.rebuild && tools?.cachedResult(chat, resultKey);
     if (cachedResult) {
         assertCurrent(true); vectorMemoryResults.set(chat, { ...cachedResult.result, isCurrent: resultIsCurrent, injectedContext: undefined });
         updateVectorMemoryDiagnostics(chat, { ...cachedResult.diagnostics, resultCacheHit: true }); return cachedResult.context;
     }
     const external = settings.vectorExternalIndex && typeof VectorIndexStore !== 'undefined' && tools;
+    if (candidate && !external) throw new Error('独立向量索引不可用');
     const indexScope = external ? tools.indexScope(chat, apiFingerprint) : '';
     let indexRevision;
     if (external) {
         const stored = await VectorIndexStore.read(indexScope); assertCurrent(true);
         indexRevision = stored.updatedAt;
-        if (!options.rebuild) oldIndex = stored.fingerprint === snapshot ? stored.index : { ...stored.index, ...legacyIndex };
+        if (!options.rebuild) oldIndex = candidate || stored.fingerprint === snapshot ? stored.index : { ...stored.index, ...legacyIndex };
     }
-    const rewritten = options.indexOnly ? { query: '', queries: [] } : tools ? await tools.rewrite(chat, rawQuery, config, signal) : { query: rawQuery, queries: [rawQuery] };
+    const rewritten = options.indexOnly ? { query: '', queries: [] } : trial ? { query: rawQuery, queries: [rawQuery] } : tools ? await tools.rewrite(chat, rawQuery, config, signal) : { query: rawQuery, queries: [rawQuery] };
     assertCurrent();
     const query = rewritten.query;
     const queryVectors = [];
-    for (const part of rewritten.queries) queryVectors.push(await (tools ? tools.queryEmbedding(chat, part, config, () => requestMemoryEmbedding(part, config, signal, 'query')) : requestMemoryEmbedding(part, config, signal, 'query')));
+    for (const part of rewritten.queries) queryVectors.push(await (tools && !trial ? tools.queryEmbedding(chat, part, config, () => requestMemoryEmbedding(part, config, signal, 'query')) : requestMemoryEmbedding(part, config, signal, 'query')));
     let queryVector = queryVectors[0] || [];
     if (queryVectors.some(vector => vector.length !== queryVector.length)) throw new Error('多查询嵌入向量维度不一致，请检查嵌入模型');
     if (!queryVector.length && options.indexOnly) queryVector = Object.values(oldIndex).flatMap(entry => entry?.chunks || []).find(chunk => validMemoryVector(chunk.vector))?.vector || [];
-    updateVectorMemoryDiagnostics(chat, { query, queries: rewritten.queries, rewriteWarning: rewritten.warning || '', dimension: queryVector.length, selected: [], excluded: [], pendingChunks: 0 });
+    diagnostic({ query, queries: rewritten.queries, rewriteWarning: rewritten.warning || '', dimension: queryVector.length, selected: [], excluded: [], pendingChunks: 0 });
     assertCurrent();
     const embeddings = new Map();
     for (const cached of options.rebuild ? [] : Object.values(oldIndex)) {
@@ -879,15 +891,16 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     const targetArchive = chat.archives?.find(item => item.id === archive);
     const previousArchiveIndex = targetArchive?.data?.memoryVectorIndex;
     let pendingCount = 0, completedBatches = 0, progress = {}, indexCollected = false;
-    const budgeted = settings.vectorIndexBudgetEnabled && options.fullIndex !== true;
+    const budgeted = settings.vectorIndexBudgetEnabled && options.fullIndex !== true && !candidate;
     const deadline = budgeted ? Date.now() + settings.vectorIndexTimeBudgetMs : Infinity;
     const report = () => {
-        progress = updateVectorMemoryDiagnostics(chat, { ...progress, pendingChunks: pendingCount, completedBatches });
+        progress = diagnostic({ ...progress, pendingChunks: pendingCount, completedBatches });
         if (typeof options.onProgress === 'function') options.onProgress({ ...progress });
     };
     try {
     const planned = await planVectorMemoryChunks(chat, candidates, apiFingerprint, assertCurrent);
     const pending = [...new Map(planned.filter(item => !embeddings.has(item.hash)).map(item => [item.hash, item])).values()];
+    if (candidate && options.indexOnly && pending.length > 200) throw new Error('候选索引需要新建超过 200 块，本次未发请求');
     pendingCount = pending.length;
     progress = { totalSources: candidates.length, totalChunks: planned.length, pendingChunks: pendingCount, cachedChunks: planned.length - pendingCount };
     report();
@@ -903,7 +916,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         }
     };
     try {
-        for (let i = 0; i < pending.length && (!settings.vectorRetrievalOnly || options.fullIndex || options.indexOnly);) {
+        for (let i = 0; !trial && i < pending.length && (!settings.vectorRetrievalOnly || options.fullIndex || options.indexOnly);) {
             if (options.shouldPause?.()) break;
             if (budgeted && (completedBatches >= settings.vectorIndexMaxBatches || Date.now() >= deadline)) break;
             const batch = pending.slice(i, i + batchSize);
@@ -926,7 +939,10 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     } finally {
         assertCurrent(true, true);
         const committedIndex = nextIndex; // Keep only valid completed chunks, never stale sources.
-        if (indexCollected && (external || !sameMemoryVectorIndex(oldIndex, committedIndex))) {
+        if (candidate && options.indexOnly && indexCollected && pendingCount === 0 && !signal?.aborted) {
+            await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true), indexRevision);
+        }
+        if (!candidate && !trial && indexCollected && (external || !sameMemoryVectorIndex(oldIndex, committedIndex))) {
             chat.memoryVectorIndex = committedIndex;
             try {
                 if (external) await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true, true), indexRevision);
@@ -944,9 +960,10 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
             assertCurrent(true);
         }
         // Hydrate the portable in-memory mirror without rewriting whole chat records.
-        if (external && indexCollected && chat.activeArchiveId === archive) chat.memoryVectorIndex = committedIndex;
+        if (!candidate && !trial && external && indexCollected && chat.activeArchiveId === archive) chat.memoryVectorIndex = committedIndex;
     }
     if (options.indexOnly) {
+        if (candidate) { assertCurrent(true); if (pendingCount) throw new Error('候选索引未建完'); return ''; }
         updateVectorMemoryDiagnostics(chat, { dimension: queryVector.length });
         recordVectorMemoryStatus(chat, `索引已保存，剩余 ${pendingCount} 块待续建`); return '';
     }
@@ -985,7 +1002,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     ranked = tools ? tools.topK(ranked, hitLimit) : ranked.sort((a, b) => b.score - a.score).slice(0, hitLimit);
     const beforeRerank = ranked.map(item => item.journal.id);
     let warning = '';
-    if (settings.vectorRerankEnabled && ranked.length > 1) {
+    if (settings.vectorRerankEnabled && ranked.length > 1 && (!trial || options.trialRerank)) {
         try {
             if (!config.rerankModel) throw new Error('重排模型尚未配置');
             ranked = await rerankMemoryCandidates(query, ranked, config, signal);
@@ -997,7 +1014,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     }
     assertCurrent(true);
     const afterRerank = ranked.map(item => item.journal.id);
-    if (settings.vectorRerankThresholdEnabled && settings.vectorRerankEnabled && getVectorRerankMode(config) === 'native' && !warning && beforeRerank.length > 1) ranked = ranked.filter(item => Number.isFinite(item.rerankScore) && item.rerankScore >= settings.vectorRerankThreshold);
+    if (settings.vectorRerankThresholdEnabled && settings.vectorRerankEnabled && (!trial || options.trialRerank) && getVectorRerankMode(config) === 'native' && !warning && beforeRerank.length > 1) ranked = ranked.filter(item => Number.isFinite(item.rerankScore) && item.rerankScore >= settings.vectorRerankThreshold);
     const candidateIds = new Set(beforeRerank), rerankedIds = new Set(afterRerank), thresholdIds = new Set(ranked.map(item => item.journal.id));
     ranked = ranked.slice(0, settings.vectorTopK);
     const selectedIds = new Set(ranked.map(item => item.journal.id));
@@ -1032,10 +1049,11 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
             const result = { ...item, journal: { ...item.journal, content } }; selected.push(format(result, selected.length)); return [result];
         });
     }
-    updateVectorMemoryDiagnostics(chat, { beforeRerank, afterRerank, scores: [...scoreByJournal].map(([id, score]) => ({ id, score })), selected: ranked.map(item => ({ id: item.journal.id, title: item.journal.title, score: item.score,
+    const trialReport = diagnostic({ beforeRerank, afterRerank, scores: [...scoreByJournal].map(([id, score]) => ({ id, score })), selected: ranked.map(item => ({ id: item.journal.id, title: item.journal.title, score: item.score,
         timeline: item.journal.timeline || '', createdAt: item.journal.createdAt, content: item.journal.content })), excluded,
         ranking: settings.vectorRerankEnabled && !warning ? '重排' : settings.vectorHybridEnabled ? '关键词与向量融合' : '余弦相似度', warning, resultCacheHit: false,
         rankingComparison:settings.vectorHybridEnabled&&typeof compareCharacterMemoryRanking==='function'?compareCharacterMemoryRanking([...rankingComparisonRows.values()]):null });
+    if (trial) { assertCurrent(true); trial({ ...trialReport, pendingCount }); return ''; }
     recordVectorMemoryStatus(chat, warning || `已索引 ${Object.keys(nextIndex).length} 篇，命中 ${ranked.length} 篇相关记忆${pendingCount ? `；剩余 ${pendingCount} 个分块待续建，本轮使用已有有效记忆` : ''}`, Boolean(warning));
     if (!ranked.length) return '';
     const context = header + ranked.map(format).join('\n\n');
@@ -1136,8 +1154,8 @@ function refreshAutoMemoryViews(chat, type) {
 }
 
 function getPendingAutoMemoryReviewIds(chat, kind = 'summary') {
-    if (!getAutoMemorySettings(chat).summaryQualityReviewEnabled) return new Set();
-    return new Set((chat.memoryJournals || []).filter(journal => journal.qualityReview?.status === 'pending' && journal.autoMemory?.kind === kind)
+    const reviewEnabled = getAutoMemorySettings(chat).summaryQualityReviewEnabled;
+    return new Set((chat.memoryJournals || []).filter(journal => journal.qualityReview?.status === 'pending' && journal.autoMemory?.kind === kind && (reviewEnabled || journal.qualityReview.manualRange))
         .flatMap(journal => (kind === 'summary' ? journal.autoMemory.sources : journal.autoMemory.children) || []).map(source => source.id));
 }
 function inspectAutoMemoryQuality(result, sources, kind, settings) {
@@ -1170,6 +1188,10 @@ async function saveAutoMemoryReview(chat, draft, { action = 'approve', fields = 
     let next = null;
     if (action === 'retry') {
         const settings = getAutoMemorySettings(chat);
+        if (draft.qualityReview.manualRange && Object.hasOwn(manualMemoryFocus, draft.qualityReview.focus)) {
+            settings.apiSource = 'secondary';
+            settings.requirements = [settings.requirements, manualMemoryFocus[draft.qualityReview.focus]].filter(Boolean).join('\n');
+        }
         const result = await requestAutoMemory(chat, type, sources, draft.autoMemory.kind, settings, control);
         if (!isCurrent()) throw new Error('操作已取消或存档已变化，重试结果未应用');
         getAutoMemoryReviewSources(chat, draft);
@@ -1217,7 +1239,7 @@ async function saveAutoMemoryReview(chat, draft, { action = 'approve', fields = 
     return next;
 }
 
-async function runAutoMemory(chatId, type, { force = false, range = null } = {}) {
+async function runAutoMemory(chatId, type, { force = false, range = null, reviewOnly = false, focus = '', signal } = {}) {
     const chat = findAutoMemoryChat(chatId, type);
     if (!chat) return { count: 0 };
     const key = autoMemoryKey(chat, type);
@@ -1225,6 +1247,10 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
     if (autoMemoryJobs.has(key)) return autoMemoryJobs.get(key);
     if (range) force = true;
     const settings = getAutoMemorySettings(chat);
+    const selectedFocus = reviewOnly && Object.hasOwn(manualMemoryFocus, focus) ? focus : '';
+    const requestSettings = selectedFocus ? { ...settings, apiSource: 'secondary',
+        requirements: [settings.requirements, manualMemoryFocus[selectedFocus]].filter(Boolean).join('\n') } : settings;
+    const review = (reviewOnly && !!range) || settings.summaryQualityReviewEnabled;
     if (!settings.enabled && !force) return { count: 0 };
     const previous = autoMemoryStatus.get(key);
     if (!force && previous?.error && Date.now() - previous.at < 60000) return { count: 0, coolingDown: true };
@@ -1232,8 +1258,9 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
     let rangePlan;
     try { rangePlan = range ? planAutoMemoryRange(chat, range.start, range.end, range.parts) : null; }
     catch (error) { return { count: 0, error: error.message }; }
+    if (reviewOnly && !rangePlan?.batches.length) return { count: 0, error: '范围内没有可整理且未覆盖的原文。' };
     const settingsHash = JSON.stringify(settings);
-    const apiHash = () => autoMemoryFingerprint(settings.apiSource === 'memory' ? db.memoryApiSettings || {} : db.apiSettings || {});
+    const apiHash = () => autoMemoryFingerprint(requestSettings.apiSource === 'memory' ? db.memoryApiSettings || {} : db.apiSettings || {});
     const initialApiHash = apiHash();
     const stillCurrent = () => findAutoMemoryChat(chatId, type) === chat && chat.activeArchiveId === archiveId &&
         JSON.stringify(getAutoMemorySettings(chat)) === settingsHash && apiHash() === initialApiHash;
@@ -1241,13 +1268,17 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
     const job = new Promise(resolve => { finish = resolve; });
     autoMemoryJobs.set(key, job);
     const control = { cancelled: false, controller: null };
+    const stop = () => { control.cancelled = true; control.controller?.abort(); };
+    if (signal?.aborted) stop();
+    else signal?.addEventListener('abort', stop, { once: true });
     autoMemoryControls.set(key, control);
     const execute = async () => {
         let count = 0;
         let completedParts = 0;
         let retainedReview = false;
         try {
-            const steps = rangePlan ? (rangePlan.batches.length ? rangePlan.batches.flatMap(sources => [{ kind: 'summary', sources }, { kind: 'merged' }]) : [{ kind: 'merged' }])
+            const steps = reviewOnly ? rangePlan.batches.map(sources => ({ kind: 'summary', sources }))
+                : rangePlan ? (rangePlan.batches.length ? rangePlan.batches.flatMap(sources => [{ kind: 'summary', sources }, { kind: 'merged' }]) : [{ kind: 'merged' }])
                 : [{ kind: 'summary' }, { kind: 'merged' }];
             const plannedHashes = new Map((rangePlan?.sources || []).map(message => [message.id, autoMemoryMessageHash(message)]));
             for (const step of steps) {
@@ -1276,7 +1307,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
                 autoMemoryStatus.set(key, { text: (rangePlan ? `指定范围 ${rangePlan.start}–${rangePlan.end} 层 · 已完成 ${completedParts}/${rangePlan.batches.length} 份 · ` : '') +
                     (kind === 'summary' ? '正在总结旧楼层…' : '阈值已满足，正在生成大总结…'), at: Date.now() });
                 renderAutoMemoryStatus();
-                const result = await requestAutoMemory(chat, type, sources, kind, settings, control);
+                const result = await requestAutoMemory(chat, type, sources, kind, requestSettings, control);
                 if (!unchanged()) throw new Error('聊天、存档、设置或来源内容已改变，本次结果已放弃；原文保留。');
                 const positions = kind === 'summary' ? sources.map(source => chat.history.findIndex(message => message.id === source.id) + 1) : sources.flatMap(source => [source.range.start, source.range.end]);
                 const journal = { id: `auto_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`, ...result,
@@ -1287,7 +1318,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
                     createdAt: Date.now(), chatId, chatType: type, isFavorited: false,
                     autoMemory: { version: 1, kind, committed: false,
                         ...(kind === 'summary' ? { sources: sourceHashes } : { children: sourceHashes }) } };
-                if (settings.summaryQualityReviewEnabled) journal.qualityReview = { status: 'pending', archiveId, warnings: inspectAutoMemoryQuality(result, sources, kind, settings), createdAt: Date.now() };
+                if (review) journal.qualityReview = { status: 'pending', archiveId, warnings: inspectAutoMemoryQuality(result, sources, kind, requestSettings), createdAt: Date.now(), ...(reviewOnly ? { manualRange: true, focus: selectedFocus } : {}) };
                 if (!chat.memoryJournals) chat.memoryJournals = [];
                 chat.memoryJournals.push(journal);
                 autoMemoryPending.add(journal.id);
@@ -1295,12 +1326,12 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
                     // 先保存不可生效的草稿，再提交；任一保存失败均不启用覆盖。
                     await saveData();
                     if (!unchanged()) throw new Error('保存期间聊天已改变，本次结果未启用。');
-                    journal.autoMemory.committed = !settings.summaryQualityReviewEnabled;
+                    journal.autoMemory.committed = !review;
                     await saveData();
                     if (!unchanged()) throw new Error('保存期间聊天已改变，本次结果未启用。');
                 } catch (error) {
                     journal.autoMemory.committed = false;
-                    retainedReview = Boolean(settings.summaryQualityReviewEnabled && unchanged() && (chat.memoryJournals || []).includes(journal));
+                    retainedReview = Boolean(review && unchanged() && (chat.memoryJournals || []).includes(journal));
                     if (!retainedReview) {
                         if (chat.activeArchiveId === archiveId) chat.memoryJournals = (chat.memoryJournals || []).filter(item => item.id !== journal.id);
                         const archive = chat.archives?.find(item => item.id === archiveId);
@@ -1315,7 +1346,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
             }
             autoMemoryStatus.set(key, { text: rangePlan ? `范围整理完成 ${completedParts} 份 · 跳过 ${rangePlan.skipped} 条已总结楼层 · 共 ${count} 次 API 整理`
                 : count ? `完成 ${count} 次整理` : '暂无达到条件的旧楼层或总结', at: Date.now() });
-            if (settings.summaryQualityReviewEnabled && count) autoMemoryStatus.set(key, { text: `已保存 ${count} 篇待审总结；原文继续保留，请到记忆管理重试、编辑确认或保留原文。`, at: Date.now() });
+            if (review && count) autoMemoryStatus.set(key, { text: `已保存 ${count} 篇待审总结；原文继续保留，请到记忆管理重试、编辑确认或保留原文。`, at: Date.now() });
             if (count && stillCurrent()) refreshAutoMemoryViews(chat, type);
             return { count, completedParts, skipped: rangePlan?.skipped || 0 };
         } catch (error) {
@@ -1326,7 +1357,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null } = {})
             autoMemoryStatus.set(key, { text: safeError, error: true, at: Date.now() });
             if (stillCurrent()) refreshAutoMemoryViews(chat, type);
             return { count, completedParts, error: safeError, cancelled: control.cancelled, retainedReview };
-        } finally { autoMemoryJobs.delete(key); autoMemoryControls.delete(key); renderAutoMemoryStatus(); }
+        } finally { signal?.removeEventListener('abort', stop); autoMemoryJobs.delete(key); autoMemoryControls.delete(key); renderAutoMemoryStatus(); }
     };
     execute().then(finish, error => { autoMemoryJobs.delete(key); finish({ count: 0, error: error.message }); });
     return job;

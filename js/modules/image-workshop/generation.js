@@ -169,10 +169,11 @@ function initWorkshopGeneration() {
 }
 
 // --- 统一生图调用函数 ---
-window.executeImageGeneration = async function(settings, customPrompt = null, { signal } = {}) {
+window.executeImageGeneration = async function(settings, customPrompt = null, { signal, historyDraft } = {}) {
     const checkCancelled = () => { if (signal?.aborted) throw Object.assign(new Error('生图已取消'), { name: 'AbortError' }); };
     checkCancelled();
     const provider = settings.provider || 'novelai';
+    if (historyDraft && historyDraft.provider !== provider) throw new Error('生图接口已切换，请重新选择历史草稿');
     
     // 从当前激活的预设中获取 URL 和 Key
     let apiUrl = '';
@@ -190,7 +191,7 @@ window.executeImageGeneration = async function(settings, customPrompt = null, { 
     if (!apiUrl) apiUrl = settings[provider + 'ApiUrl'];
     if (!apiKey) apiKey = settings[provider + 'ApiKey'];
     
-    const model = settings[provider + 'Model'];
+    const model = historyDraft?.model || settings[provider + 'Model'];
 
     if (!apiUrl || !apiKey || !model) {
         throw new Error(`未配置 ${provider.toUpperCase()} API，请先在工坊中完成设置`);
@@ -213,7 +214,9 @@ window.executeImageGeneration = async function(settings, customPrompt = null, { 
             }
         }
         
-        payload = await buildGPTPayload(settings, customPrompt || settings.gptTestPrompt);
+        payload = historyDraft ? { model, prompt: customPrompt, n: 1, size: historyDraft.size, response_format: 'b64_json',
+            ...(historyDraft.quality ? { quality: historyDraft.quality } : {}), ...(historyDraft.style ? { style: historyDraft.style } : {}) }
+            : await buildGPTPayload(settings, customPrompt || settings.gptTestPrompt);
         checkCancelled();
         console.log('【统一生图】发送给 GPT 的完整 Payload:', JSON.stringify(payload, null, 2));
         
@@ -228,12 +231,23 @@ window.executeImageGeneration = async function(settings, customPrompt = null, { 
         });
     } else if (provider === 'novelai') {
         const protocol = activePreset?.protocol || 'novelai';
-        const novelaiPayload = await buildNovelAIPayload(settings, customPrompt);
+        if (historyDraft && Boolean(historyDraft.size) !== (protocol === 'openai')) throw new Error('生图接口已切换，请重新选择历史草稿');
+        const novelaiPayload = historyDraft?.size ? null : await buildNovelAIPayload(historyDraft ? {
+            novelaiModel: model, negativePrompt: '', aspectRatio: '1:1'
+        } : settings, customPrompt);
+        if (historyDraft && novelaiPayload) {
+            const params = novelaiPayload.parameters;
+            novelaiPayload.input = customPrompt;
+            Object.assign(params, { width: historyDraft.width, height: historyDraft.height, negative_prompt: historyDraft.negative });
+            if (historyDraft.seed !== undefined) params.seed = historyDraft.seed;
+            if (params.v4_prompt) params.v4_prompt.caption.base_caption = customPrompt;
+            if (params.v4_negative_prompt) params.v4_negative_prompt.caption.base_caption = historyDraft.negative;
+        }
         checkCancelled();
-        payload = protocol === 'openai'
+        payload = historyDraft?.size ? { model, prompt: customPrompt, n: 1, size: historyDraft.size, response_format: 'b64_json' } : protocol === 'openai'
             ? buildNovelAIOpenAICompatiblePayload(novelaiPayload)
             : novelaiPayload;
-        console.log('【统一生图】发送给 NovelAI 的最终提示词:', novelaiPayload.input);
+        console.log('【统一生图】发送给 NovelAI 的最终提示词:', novelaiPayload?.input || customPrompt);
         console.log(`【统一生图】接口协议: ${protocol}，完整 Payload:`, JSON.stringify(payload, null, 2));
 
         if (protocol === 'novelai') {

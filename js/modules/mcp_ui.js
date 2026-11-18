@@ -1,6 +1,7 @@
 (function () {
     'use strict';
     const m = () => window.MCPServices;
+    const toolDrafts = new Map();
     function node(tag, value, className) { const el = document.createElement(tag); if (value !== undefined) el.textContent = value; if (className) el.className = className; return el; }
     function button(label, action) { const el = node('button', label); el.type = 'button'; el.onclick = action; return el; }
     function field(parent, label, tag = 'input', type = 'text', value = '') {
@@ -21,7 +22,7 @@
             const controls = [...body.querySelectorAll('button,input,select,textarea')].map(el => [el, el.disabled]); controls.forEach(([el]) => el.disabled = true); cancel.disabled = false;
             d.panel.setAttribute('aria-busy', 'true');
             try { await action(current.signal); }
-            catch (error) { if (!controller.signal.aborted) status.textContent = current.signal.aborted ? '已停止等待；工具可能已执行，写入操作请先核实结果' : error.message; }
+            catch (error) { if (!controller.signal.aborted) status.textContent = error.executionState ? error.message : current.signal.aborted ? '已停止等待' : error.message; }
             finally { controls.forEach(([el, disabled]) => { if (el.isConnected) el.disabled = disabled; }); cancel.disabled = true; active = null; controller.signal.removeEventListener('abort', stop); d.panel.removeAttribute('aria-busy'); }
         }
         return { ...d, body, status, controller, run };
@@ -95,6 +96,8 @@
     }
     function toolCaller(serviceId, tool, target) {
         const svc = m().service(serviceId), scope = target ? m().scope(target.chat, target.type) : null;
+        const serviceSnapshot = JSON.stringify(svc);
+        const draftKey = JSON.stringify([serviceSnapshot, tool.name, tool.signature, target?.type, target?.chat?.id, scope?.archive]);
         const d = dialog('调用 · ' + tool.name, 'mcp-tool-call');
         d.body.append(node('p', svc.name + ' · ' + new URL(svc.url).host, 'mcp-help'), node('p', tool.description, 'mcp-help'));
         d.body.append(node('p', target ? '结果绑定：' + target.label + ' · 当前存档 ' + String(scope.archive || '默认') : '未选择接收角色：仅查看结果', 'mcp-help'));
@@ -153,6 +156,29 @@
             catch (error) { d.status.textContent = error.message; }
         }); supply.disabled = true;
         const actions = node('div', undefined, 'mcp-row');
+        actions.append(button('暂存常用选项', () => {
+            try {
+                if (!m().service(serviceId).tools[tool.name]?.readOnly || (scope && !m().valid(scope))) throw new Error('仅当前会话的只读工具可暂存选项');
+                const args = JSON.parse(raw.value);
+                const safe = Object.entries(args).filter(([key, value]) =>
+                    /^(?:limit|count|page|pageSize|page_size|top_k|topK|offset|include_metadata|includeMetadata)$/u.test(key) &&
+                    Object.hasOwn(properties, key) && (typeof value === 'boolean' || Number.isSafeInteger(value)));
+                if (!safe.length) throw new Error('没有可暂存的分页、数量或元数据选项');
+                toolDrafts.delete(draftKey);
+                if (toolDrafts.size >= 20) toolDrafts.delete(toolDrafts.keys().next().value);
+                toolDrafts.set(draftKey, Object.fromEntries(safe));
+                d.status.textContent = '已暂存常用选项，刷新页面后清除';
+            } catch (error) { d.status.textContent = error.message; }
+        }), button('填入暂存选项', () => {
+            try {
+                if ((scope && !m().valid(scope)) || serviceSnapshot !== JSON.stringify(m().service(serviceId))) throw new Error('角色、存档或服务设置已变化');
+                const draft = toolDrafts.get(draftKey);
+                if (!draft) throw new Error('此工具定义没有暂存选项');
+                raw.value = JSON.stringify({ ...JSON.parse(raw.value), ...draft }, null, 2);
+                raw.dispatchEvent(new Event('input'));
+                d.status.textContent = '已填入选项，核对后可调用';
+            } catch (error) { d.status.textContent = error.message; }
+        }));
         if(target?.type==='private'&&typeof importExternalCharacterMemo==='function')actions.append(button('存为待审备忘录',()=>d.run(async()=>{
             if(!result||!scope||!m().reviewable(result,scope))throw new Error('请在原角色当前存档重新调用工具');
             const chat=target.chat,editor=dialog('审核外部事实','mcp-memory-review'),text=node('textarea');text.value=String(result.text||'').slice(0,400);text.maxLength=400;text.setAttribute('aria-label','外部事实');
@@ -172,7 +198,13 @@
                 confirmed = await confirm('确认外部工具操作', svc.name + '\n' + svc.url + '\n' + tool.name + '\n' + JSON.stringify(args, null, 2), signal);
                 if (!confirmed) { d.status.textContent = '未执行'; return; }
             }
-            d.status.textContent = '正在调用…'; result = await m().call(serviceId, tool.name, args, { scope: scope || undefined, signal, confirmed });
+            if (serviceSnapshot !== JSON.stringify(m().service(serviceId))) throw new Error('服务设置已变化，请重新打开工具面板');
+            d.status.textContent = '正在调用…';
+            try { result = await m().call(serviceId, tool.name, args, { scope: scope || undefined, signal, confirmed, expectedTool: tool.signature }); }
+            catch (error) {
+                if (!confirmed || ['unknown', 'returned'].includes(error.executionState)) throw error;
+                throw Object.assign(new Error('未发送工具调用：' + error.message, { cause: error }), { executionState: 'not-dispatched' });
+            }
             if (d.controller.signal.aborted) return;
             output.textContent = result.text; supply.disabled = !scope; d.status.textContent = '调用成功；结果仅以文本显示，最多保留 20000 字符，不会自动进入日记';
         }).then(() => { supply.disabled = !result || !scope; })), supply,

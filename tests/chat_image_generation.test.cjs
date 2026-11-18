@@ -62,6 +62,23 @@ test('confirm preview never purchases a generation when no prepared image exists
     assert.match(f.element('pv-generation-status').textContent, /预览.*失效|重新.*预览/);
 });
 
+test('closing and reopening restores only the original chat image draft and never sends it implicitly', async () => {
+    const f = fixture({preview:true});
+    f.element('created-label input').checked = true;
+    await f.feature.send('draft');
+    f.c.currentChatId = 'b'; f.element('pv-text-input').value = ''; f.feature.open();
+    assert.equal(f.element('pv-text-input').value, '');
+    assert.equal(await f.feature.send('draft', true), false);
+    f.c.currentChatId = 'a'; f.feature.open();
+    assert.equal(f.element('pv-text-input').value, 'draft');
+    f.element('created-label input').checked = false;
+    assert.equal(await f.feature.send('draft'), false);
+    assert.equal(f.calls.length, 1);
+    assert.equal(await f.feature.send('draft', true), true);
+    f.element('pv-text-input').value = ''; f.feature.open();
+    assert.equal(f.element('pv-text-input').value, '');
+});
+
 test('changed preview settings or text require a fresh preview before confirmation', async () => {
     for (const change of ['settings', 'text']) {
         const f = fixture({preview:true}); f.element('created-label input').checked = true;

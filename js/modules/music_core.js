@@ -495,6 +495,30 @@
     }
 
     const state = { track: null, queue: [], index: -1, playing: false, phase: 'idle', position: 0, duration: 0, mode: 'order', error: '', errorCode: '', sleepAt: 0, skipUnavailable:false, queueLabel:'', queueVersion:0, volume:1 };
+    const checkpointKey = 'uvu.music.position.v1:' + (root.location?.pathname || '/');
+    let lastCheckpoint = 0;
+    function checkpointEnabled() { try { return sessionStorage.getItem(checkpointKey) !== null; } catch (_) { return false; } }
+    function setCheckpoint(enabled) {
+        try {
+            if (!enabled) sessionStorage.removeItem(checkpointKey);
+            else if (!checkpointEnabled()) sessionStorage.setItem(checkpointKey, '{}');
+            lastCheckpoint = 0; saveCheckpoint();
+        } catch (_) { return false; }
+        return checkpointEnabled() === enabled;
+    }
+    function saveCheckpoint() {
+        if (!state.track || state.position < 1 || !checkpointEnabled()) return;
+        try { sessionStorage.setItem(checkpointKey, JSON.stringify({ provider: state.track.provider, id: state.track.id, position: state.position })); lastCheckpoint = Date.now(); } catch (_) {}
+    }
+    function checkpoint() {
+        try {
+            const saved = JSON.parse(sessionStorage.getItem(checkpointKey));
+            if (!saved || !Number.isFinite(saved.position) || saved.position < 1) return null;
+            const stored = library();
+            const track = [...stored.queue, ...stored.recent, ...stored.favorites].find(t => t.provider === saved.provider && t.id === saved.id && (t.provider !== 'local' || t.localId));
+            return track ? { track, position: number(saved.position) } : null;
+        } catch (_) { return null; }
+    }
     let shuffleBag=[], visits=[], visitIndex=-1, priority=[];
     const failedKeys=new Set();
     function resetShuffle(current=state.track){shuffleBag=state.queue.map(key).filter(id=>!current||id!==key(current));for(let i=shuffleBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffleBag[i],shuffleBag[j]]=[shuffleBag[j],shuffleBag[i]];}}
@@ -548,8 +572,8 @@
         ++intent; clearTimeout(stallTimer);
         const wasAttempting=state.playing||state.phase==='loading';
         state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
-        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':error?.code==='stalled'?'stalled':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
-        state.error={permission:'请点击播放以允许音频播放',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试',stalled:'音频缓冲超时，请检查网络后点击重试'}[state.errorCode];emit();
+        const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':['account_required','unauthorized'].includes(error?.code)?'account':error?.code==='stalled'?'stalled':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
+        state.error={permission:'请点击播放以允许音频播放',account:'音乐账号未登录或已过期，请重新登录',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试',stalled:'音频缓冲超时，请检查网络后点击重试'}[state.errorCode];emit();
         if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable','public_match'].includes(state.errorCode)&&state.track){
             failedKeys.add(key(state.track));const next=state.queue.find((t,i)=>i>state.index&&!failedKeys.has(key(t)))||state.queue.find(t=>!failedKeys.has(key(t)));
             if(next&&failedKeys.size<Math.min(state.queue.length,5))return play(next,undefined,{keepFailures:true});
@@ -585,6 +609,7 @@
     function play(track, queue, options = {}) {
         restore(true);
         const value = normalizeTrack(track), generation = ++intent;
+        const resumeAt = number(options.resumeAt), resumeSeek = seekRevision;
         if(!options.keepFailures)failedKeys.clear();
         if (queue !== undefined) { state.queue = tracks(queue, MAX_QUEUE);state.queueVersion++;state.queueLabel=text(options.label,100);visits=[];visitIndex=-1;priority=[]; }
         let index = state.queue.findIndex(item => key(item) === key(value));
@@ -593,7 +618,7 @@
         if(!options.historyMove&&visits[visitIndex]!==key(value)){visits=visits.slice(0,visitIndex+1);visits.push(key(value));if(visits.length>1000)visits.shift();visitIndex=visits.length-1;}
         if(queue!==undefined)resetShuffle(value);shuffleBag=shuffleBag.filter(id=>id!==key(value));saveQueue();
         if (!options.reloadSource && audio && state.track && key(state.track) === key(value) && state.phase!=='error') return playAudio(audio, generation);
-        unload(); state.track = value; state.position = 0; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = '';state.errorCode=''; emit();
+        unload(); state.track = value; state.position = resumeAt; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = '';state.errorCode=''; emit();
         const controller = new AbortController(); loadController = controller;
         return resolveSource(value, controller.signal).then(async source => {
             if (generation !== intent || controller.signal.aborted) return;
@@ -607,9 +632,21 @@
             const stalled = () => { if (!valid()) return; clearTimeout(stallTimer); stallTimer = setTimeout(() => { if (valid() && (state.playing || state.phase === 'loading')) void fail(Object.assign(new Error('Audio stalled'), { code: 'stalled' })); }, 30000); stallTimer?.unref?.(); };
             current.addEventListener('waiting', stalled); current.addEventListener('stalled', stalled);
             for (const event of ['playing', 'timeupdate', 'canplay', 'pause', 'ended']) current.addEventListener(event, () => { if (valid()) clearTimeout(stallTimer); });
-            current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); emit(true); } });
-            current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; emit(); } });
-            current.addEventListener('ended', () => { if (valid() && state.playing) { state.playing = false; void advance(1, true); } });
+            current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); if (state.playing && Date.now() - lastCheckpoint >= 3000) saveCheckpoint(); emit(true); } });
+            let pendingSeek = resumeAt > 0;
+            const restorePosition = () => {
+                if (!pendingSeek || !valid() || generation !== intent || seekRevision !== resumeSeek) return;
+                const ranges = current.seekable;
+                if (ranges && !ranges.length) return;
+                pendingSeek = false;
+                if (ranges && !Array.from({ length: ranges.length }, (_, i) => i).some(i => resumeAt >= ranges.start(i) && resumeAt < ranges.end(i))) return;
+                if (Number.isFinite(current.duration) && resumeAt >= current.duration) return;
+                try { current.currentTime = resumeAt; state.position = number(current.currentTime); } catch (_) {}
+            };
+            current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; restorePosition(); emit(); } });
+            current.addEventListener('canplay', restorePosition, { once: true });
+            if (current.readyState >= 1) restorePosition();
+            current.addEventListener('ended', () => { if (valid() && state.playing) { if (checkpointEnabled()) try { sessionStorage.setItem(checkpointKey, '{}'); } catch (_) {} state.playing = false; void advance(1, true); } });
             current.addEventListener('error', () => { if (valid()) void fail(new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error')); });
             current.addEventListener('pause', () => { if (valid() && current.paused && !current.ended && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
             await playAudio(current, generation);
@@ -665,7 +702,7 @@
     }
     function move(from,to){restore(true);if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=state.queue.length||to>=state.queue.length)return;state.queue.splice(to,0,state.queue.splice(from,1)[0]);queueChanged();}
     function clear(){restore(true);state.queue=state.track?[state.track]:[];priority=[];shuffleBag=[];visits=state.track?[key(state.track)]:[];visitIndex=visits.length-1;queueChanged();}
-    function retry(){const t=state.track;if(!t)return Promise.resolve();if(audio&&state.phase==='blocked'){state.phase='paused';return playAudio(audio,++intent);}unload();return play(t);}
+    function retry(){const t=state.track;if(!t)return Promise.resolve();if(audio&&state.phase==='blocked'){state.phase='paused';return playAudio(audio,++intent);}const resumeAt=state.position;return play(t,undefined,{reloadSource:true,resumeAt});}
     function setSkipUnavailable(value){restore(true);state.skipUnavailable=value===true;saveQueue();emit();}
     function setVolume(value) {
         if (!Number.isFinite(value)) return;
@@ -692,7 +729,10 @@
         };
     }
     const player = { snapshot, subscribe(fn) { if (typeof fn !== 'function') throw new Error('Music subscriber must be a function'); listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
-        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setVolume, setSleep, stop, suspendVoice };
+        play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setVolume, setSleep, stop, suspendVoice,
+        checkpoint, checkpointEnabled, setCheckpoint,
+        resumeCheckpoint() { const last = checkpoint(); return last ? play(last.track, undefined, { reloadSource: true, resumeAt: last.position }) : Promise.resolve(); } };
+    root.addEventListener?.('pagehide', () => { if (state.playing || state.phase === 'paused') saveCheckpoint(); });
     if (typeof navigator !== 'undefined' && navigator.mediaSession?.setActionHandler) {
         for (const [name, action] of Object.entries({ play: () => { if (!state.playing) toggle(); }, pause: () => { if (state.playing) toggle(); }, previoustrack: player.previous, nexttrack: player.next, stop,
             seekto: details => seek(details.seekTime), seekbackward: details => seek(state.position - (details.seekOffset || 10)), seekforward: details => seek(state.position + (details.seekOffset || 10)) })) {

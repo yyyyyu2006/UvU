@@ -58,7 +58,7 @@ const MiniMaxTTS = (() => {
     const audioDetails = new WeakMap();
     const maxCachedAudio = 8;
     const maxCachedBytes = 24 * 1024 * 1024;
-    let lastDiagnostic = null;
+    let lastDiagnostic = null, incompleteSpeech = null;
 
     function getCacheInfo() {
         return { entries: audioCache.size, bytes: Array.from(audioCache.values()).reduce((sum, blob) => sum + blob.size, 0),
@@ -68,6 +68,7 @@ const MiniMaxTTS = (() => {
     function clearCache() {
         const previous = getCacheInfo();
         audioCache.clear();
+        incompleteSpeech = null;
         return previous;
     }
 
@@ -390,7 +391,11 @@ const MiniMaxTTS = (() => {
             return startPlayback(previous);
         }
         stop();
+        const previousParts = !override.retry && incompleteSpeech?.bubble === bubble && incompleteSpeech.cacheKey === cacheKey
+            ? incompleteSpeech.parts : [];
+        incompleteSpeech = null;
         const session = { bubble, cacheKey, source, identity, audio: new Audio(), controller: new AbortController(), phase: 'loading' };
+        const completed = [];
         activeSession = session; setLoading(session, true);
         if (typeof MutationObserver === 'function' && bubble.isConnected && document.body) {
             const screen = bubble.closest('.screen');
@@ -421,6 +426,14 @@ const MiniMaxTTS = (() => {
                 region: speech ? speech.region(ttsSettings.endpoint) : '', persistent: playback?.persistentCache === true };
             for (const line of lines) {
                 if (activeSession !== session || identity && !VoiceDirector.isCurrent(identity)) return stop(session);
+                const prior = previousParts[completed.length];
+                if (prior) {
+                    blobs.push(prior.blob); details.push({ ...prior.detail, cacheHit: true }); completed.push(prior);
+                    session.diagnostic.segmentDetails.push({ ...prior.segment, cacheHit: true, usageCharacters: 0 });
+                    session.diagnostic.pauseCount += prior.segment.pauses.length;
+                    session.diagnostic.speed = prior.segment.speed;
+                    continue;
+                }
                 let speechText = line, lineSettings = ttsSettings;
                 if (source) {
                     const lineSource = lines.length === 1 ? source : VoiceDirector.capture(bubble, line, directorSettings);
@@ -457,6 +470,7 @@ const MiniMaxTTS = (() => {
                     if (identity && !VoiceDirector.isCurrent(identity)) { stop(session); return; }
                     session.progressive?.push(hex);
                 } : undefined);
+                if (activeSession !== session || identity && !VoiceDirector.isCurrent(identity)) return stop(session);
                 session.diagnostic.synthesisMs += Date.now() - synthesisStarted;
                 const detail = audioDetails.get(blob) || {};
                 session.diagnostic.segmentDetails.push({ text: line, emotion: speech ? speech.requestOptions(lineSettings).voice_setting.emotion || 'auto' : lineSettings.emotion || 'auto', speed: Number(lineSettings.speed) || 1,
@@ -465,6 +479,7 @@ const MiniMaxTTS = (() => {
                 session.diagnostic.cacheHit = session.diagnostic.cacheHit && Boolean(detail.cacheHit);
                 session.diagnostic.speed = Number(lineSettings.speed) || 1;
                 blobs.push(blob); details.push(detail);
+                completed.push({ blob, detail, segment: session.diagnostic.segmentDetails.at(-1) });
             }
             session.blob = blobs.length === 1 ? blobs[0] : new Blob(blobs, { type: 'audio/mpeg' });
             const sum = field => details.every(d => d[field] != null) ? details.reduce((n, d) => n + d[field], 0) : null;
@@ -489,7 +504,25 @@ const MiniMaxTTS = (() => {
         } catch (error) {
             if (activeSession !== session) return;
             stop(session);
-            if (error?.name !== 'AbortError') showToast(error?.message || '语音生成失败，请检查 MiniMax 设置和网络');
+            if (error?.name !== 'AbortError') {
+                const diagnostic = session.diagnostic;
+                if (diagnostic?.segments > 1 && completed.length < diagnostic.segments) {
+                    if (completed.reduce((size, part) => size + part.blob.size, 0) <= maxCachedBytes) {
+                        incompleteSpeech = { bubble, cacheKey, parts: completed };
+                    }
+                    diagnostic.failure = `第 ${completed.length + 1}/${diagnostic.segments} 段失败（${error.stage === 'decode' ? '解码' : '合成'}）`;
+                    lastDiagnostic = { ...diagnostic };
+                    speech?.inspect(bubble, diagnostic, null, null, null, ttsSettings.model,
+                        incompleteSpeech ? () => {
+                            if (incompleteSpeech?.bubble === bubble && incompleteSpeech.cacheKey === cacheKey) {
+                                return play(bubble, text, settings, { ...override, retry: false });
+                            }
+                            showToast('上次语音任务已失效，请重新选择播放');
+                        } : null);
+                }
+                const failedAt = diagnostic?.failure || ({ decode: '解码失败', response: '合成响应失败', request: '合成请求失败' })[error?.stage];
+                showToast([failedAt, error?.message || '语音生成失败，请检查 MiniMax 设置和网络'].filter(Boolean).join('：'));
+            }
         }
     }
 

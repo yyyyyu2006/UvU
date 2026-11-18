@@ -20,7 +20,8 @@ const server=http.createServer((req,res)=>{const f=path.resolve(root,'.'+(req.ur
    GuideSystem.cleanup();db.characters=[{id:'preview-char',realName:'测试角色',remarkName:'测试角色',myName:'我',avatar:'',myAvatar:'',maxMemory:20,worldBookIds:[],history:[],memoryJournals:[]}];db.groups=[];
    db.workshopSettings={provider:'gpt',gptModel:'first-model',gptApiUrl:'https://unused.invalid',gptApiKey:'fixture'};
    await saveData();openChatRoom('preview-char','private');window.imagePurchases=0;
-   window.executeImageGeneration=async()=>{imagePurchases++;const canvas=document.createElement('canvas');canvas.width=canvas.height=16;const ctx=canvas.getContext('2d');ctx.fillStyle='#ddd';ctx.fillRect(0,0,16,16);return{imageData:canvas.toDataURL('image/png')};};
+   window.executeImageGeneration=async(settings,prompt,options)=>{imagePurchases++;window.imageDraftArgs=options.historyDraft;const canvas=document.createElement('canvas');canvas.width=canvas.height=16;const ctx=canvas.getContext('2d');ctx.fillStyle='#ddd';ctx.fillRect(0,0,16,16);return{imageData:canvas.toDataURL('image/png')};};
+   await dexieDB.workshopHistory.add({timestamp:Date.now(),prompt:'历史图片',image:document.createElement('canvas').toDataURL(),parameters:{model:'gpt-image-1',size:'1024x1536'}});
   });
   await page.locator('#toggle-expansion-btn').click();await page.locator('#photo-video-btn').click();await page.locator('#pv-mode-ai').check();
   assert.equal(await page.locator('#pv-confirm-preview').isVisible(),true,'preview controls remain directly available in the native AI panel');
@@ -36,6 +37,18 @@ const server=http.createServer((req,res)=>{const f=path.resolve(root,'.'+(req.ur
   await page.locator('#pv-generated-regenerate').click();await page.waitForFunction(()=>imagePurchases===2&&!document.getElementById('pv-generated-confirm').disabled);
   await page.locator('#pv-generated-confirm').click();await page.waitForFunction(()=>db.characters[0].history.length===1);
   assert.equal(await page.evaluate(()=>imagePurchases),2);assert.equal(await page.evaluate(()=>db.characters[0].history[0].parts[1].type),'image');
+  if (!(await page.locator('#photo-video-btn').isVisible())) await page.locator('#toggle-expansion-btn').click();
+  await page.locator('#photo-video-btn').click();await page.locator('#pv-mode-ai').check();
+  await page.locator('#send-pv-modal .pv-send-actions').getByRole('button',{name:'记录',exact:true}).click();
+  await page.locator('#draft-image-history .draft-image-gallery button').first().click();
+  await page.getByRole('button',{name:'用这些参数开新草稿'}).click();
+  assert.equal(await page.locator('#pv-text-input').inputValue(),'历史图片');assert.equal(await page.evaluate(()=>imagePurchases),2);
+  await page.locator('#pv-send-btn').click();await page.locator('#pv-generated-confirm').waitFor({state:'visible'});
+  await page.waitForFunction(()=>!document.getElementById('pv-generated-confirm').disabled);
+  assert.equal(await page.evaluate(()=>db.characters[0].history.length),1);
+  assert.equal(await page.evaluate(()=>imageDraftArgs.model+' '+imageDraftArgs.size),'gpt-image-1 1024x1536');
+  await page.locator('#pv-generated-confirm').click();await page.waitForFunction(()=>db.characters[0].history.length===2);
+  assert.equal(await page.evaluate(()=>imagePurchases),3);
   assert.deepEqual(errors,[]);console.log('PASS actual image preview, stale settings reject without generation, explicit regeneration, decoded preview and one confirmed message');
  } finally {await browser.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);server.closeAllConnections();server.close();process.exitCode=1;});

@@ -337,6 +337,22 @@
             try { voices = await listVoices(readConnection(), controller.signal); render(); status.textContent = '已读取 ' + voices.length + ' 个音色'; }
             catch (error) { status.textContent = error.message; } finally { refresh.disabled = false; }
         }); catalog.append(refresh, list, status); search.oninput = favoritesOnly.onchange = render; render();
+        const compare = details(advanced, '对比试听');
+        const sample = field(compare, '共用试听台词', 'textarea', '你好，这是一段音色与语速的对比试听。'); sample.maxLength = 300;
+        for (const label of ['A', 'B']) {
+            const row = node('div'); row.className = 'minimax-speech-group'; compare.append(row);
+            const compareVoice = field(row, label + ' 音色 ID'); compareVoice.maxLength = 200;
+            compareVoice.placeholder = '留空使用当前音色';
+            const speed = field(row, label + ' 语速', 'number', label === 'A' ? 1 : 1.15); speed.min = .5; speed.max = 2; speed.step = .05;
+            const preview = button('试听 ' + label, () => {
+                if (!sample.value.trim() || !speed.value || !speed.checkValidity()) { showToast('请填写试听台词和 0.5 到 2 的语速'); return; }
+                return MiniMaxTTS.play(preview, sample.value.trim(), { ...db.minimaxTtsSettings, ...readConnection(),
+                    model: document.getElementById('minimax-tts-model')?.value || db.minimaxTtsSettings?.model,
+                    voiceId: compareVoice.value.trim() || document.getElementById('minimax-tts-voice')?.value.trim(),
+                    director: { enabled: false } }, { manual: { speed: speed.value } });
+            });
+            row.append(preview);
+        }
         const playback = details(advanced, '播放与缓存'), config = options(saved.speech);
         const stream = field(playback, '流式语音', 'checkbox'); stream.checked = config.stream;
         const segmented = field(playback, '长语音分段', 'checkbox'); segmented.checked = config.segmented;
@@ -415,13 +431,17 @@
         if (initialBubble) source.value = String(bubbles.indexOf(initialBubble));source.onchange();
         body.append(source, text, status, result);d.panel.append(body, footer);
     }
-    function inspect(bubble, diagnostic, onPlain, onRetry, onManual, model) {
+    function inspect(bubble, diagnostic, onPlain, onRetry, onManual, model, onResume) {
         if (typeof document === 'undefined' || !document.createElement || !bubble?.insertAdjacentElement || bubble.id === 'minimax-tts-preview') return;
         let detail = bubble.nextElementSibling;
         if (!detail?.classList?.contains('minimax-message-diagnostic')) {
             detail = document.createElement('details'); detail.className = 'minimax-message-diagnostic'; bubble.insertAdjacentElement('afterend', detail);
         }
         detail.replaceChildren(); const title = document.createElement('summary'); title.textContent = '语音详情'; detail.append(title);
+        if (diagnostic.failure) {
+            detail.open = true;
+            const failure = document.createElement('p'); failure.textContent = diagnostic.failure; detail.append(failure);
+        }
         const line = document.createElement('p'); line.textContent = '情绪 ' + (diagnostic.emotion || 'auto') + ' · 语速 ' + diagnostic.speed + ' · 停顿 ' + diagnostic.pauseCount + ' 处' +
             (diagnostic.currentUsageCharacters != null ? ' · 本次合成计费字符 ' + diagnostic.currentUsageCharacters : '') + (diagnostic.cacheHit ? ' · 缓存' : '') +
             (diagnostic.audioMs != null ? ' · ' + (diagnostic.audioMs / 1000).toFixed(1) + ' 秒' : '') +
@@ -439,7 +459,7 @@
             }); detail.append(segments);
         }
         const actions = document.createElement('div'); actions.className = 'minimax-tts-actions';
-        for (const [text, callback] of [['普通语音', onPlain], ['重试导演', onRetry]]) { if (!callback) continue; const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.onclick = callback; actions.append(button); }
+        for (const [text, callback] of [['继续合成', onResume], ['普通语音', onPlain], ['重试导演', onRetry]]) { if (!callback) continue; const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.onclick = callback; actions.append(button); }
         detail.append(actions);
         if (onManual) {
             const manual = document.createElement('div'); manual.className = 'minimax-manual-controls';

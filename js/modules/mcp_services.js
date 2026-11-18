@@ -205,10 +205,11 @@
         const connectionEpoch = connectionEpochs.get(id) || 0;
         const fingerprint = JSON.stringify(svc) + ':' + secretEpoch + ':' + connectionEpoch;
         const previous = runtime.get(id);
-        if (!force && previous?.fingerprint === fingerprint && Date.now() - previous.at < 300000) return previous.tools;
+        if (!force && previous?.fingerprint === fingerprint && previous.toolsRevision === previous.client.toolsRevision && Date.now() - previous.at < 300000) return previous.tools;
         const start = stamp();
         const client = transport().create(svc, token), tools = [];
-        for (const item of await client.listTools(signal)) {
+        const listed = await client.listTools(signal), toolsRevision = client.toolsRevision;
+        for (const item of listed) {
             const tool = { name: item.name, description: text(item.description, 2000), inputSchema: item.inputSchema, outputSchema: item.outputSchema, annotations: item.annotations || {}, unavailable: '' };
             try {
                 if (!item.inputSchema || item.inputSchema.type !== 'object') throw new Error('工具参数 schema 必须为 object');
@@ -223,7 +224,7 @@
         }
         if (signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
         if (stamp() !== start || (connectionEpochs.get(id) || 0) !== connectionEpoch) throw new Error('MCP 配置或凭据已变更，连接结果失效，请重新测试');
-        const at=Date.now(); runtime.set(id, { client, tools, fingerprint, at });
+        const at=Date.now(); runtime.set(id, { client, tools, fingerprint, at, toolsRevision });
         try { localStorage.setItem(discoveryKey(svc),JSON.stringify({identity:discoveryIdentity(svc),at,count:tools.length})); } catch { /* A successful live connection must still work in storage-restricted browsers. */ }
         return tools;
     }
@@ -278,10 +279,14 @@
         if (!active.enabled || !svc.enabled) throw new Error('请先启用 MCP 总开关和此服务');
         if (options.scope && !valid(options.scope)) throw new Error('角色或存档已切换，请重新选择');
         if (options.signal?.aborted) throw new DOMException('请求已取消', 'AbortError');
-        const tools = await discover(id, options.signal), tool = tools.find(t => t.name === name), permission = svc.tools[name];
+        const initialSettings = JSON.stringify(active), permission = svc.tools[name];
+        if (options.expectedTool !== undefined && !permission?.readOnly && !options.confirmed) throw new Error('请先确认本次外部操作');
+        const tools = await discover(id, options.signal, options.expectedTool !== undefined && !permission?.readOnly), tool = tools.find(t => t.name === name);
+        if (JSON.stringify(settings()) !== initialSettings) throw new Error('MCP 配置已变化，请重新打开操作面板');
         const start = stamp();
         if (!settings().enabled || !service(id).enabled) throw new Error('MCP 已关闭，本次工具调用未执行');
         if (!tool || tool.unavailable) throw new Error('工具不可用：' + (tool?.unavailable || '请重新发现工具'));
+        if (options.expectedTool !== undefined && options.expectedTool !== tool.signature) throw new Error('工具定义已变化；请重新打开操作面板并检查授权');
         if (!permission?.enabled || permission.signature !== tool.signature) throw new Error('工具未启用或定义已变化，请重新检查授权');
         if (!args || Array.isArray(args) || typeof args !== 'object' || !tool.validate(args)) throw new Error('工具参数不符合 JSON Schema（检查必填项、类型、范围和多余字段）');
         if (options.automatic && (!permission.readOnly || !granted(options.scope, id, name))) throw new Error('此工具未获得本角色的只读自动授权');
@@ -315,9 +320,11 @@
             const executionState = permission.readOnly ? 'read-only' : uncertain ? 'unknown' : received ? 'returned' : 'not-dispatched';
             log({ serviceId: id, toolName: name, stage: 'call', status: uncertain ? '远端执行结果未确认，请先核实' : received && !permission.readOnly ? '远端已返回，本地结果未采用' : options.signal?.aborted ? '已停止等待' : '失败', executionState,
                 code: error.status || error.rpc?.code || null, protocol: runtime.get(id)?.client.version || svc.protocol, ms: Date.now() - started });
-            if (uncertain) {
-                const outcome = new Error('已停止等待，远端执行结果未确认；请先核实服务端记录，写入操作不会自动重试');
-                outcome.name = error.name; outcome.executionState = 'unknown'; outcome.status = error.status; throw outcome;
+            if (!permission.readOnly) {
+                const message = uncertain ? '远端执行结果未确认；请先核实服务端记录，写入操作不会自动重试'
+                    : received ? '远端已返回，本地结果未采用：' + error.message : error.message;
+                const outcome = new Error(message, { cause: error });
+                outcome.name = error.name; outcome.executionState = executionState; outcome.status = error.status; throw outcome;
             }
             throw error;
         }

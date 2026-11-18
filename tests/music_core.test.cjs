@@ -254,6 +254,17 @@ function harness(initial = {}, extras = {}) {
     return h;
 }
 
+test('retrying an interrupted song reloads it and restores the last position on the new media', async () => {
+    const h = harness(), a = h.music.importURL('https://media.test/a', { id: 'a' });
+    await h.music.player.play(a);
+    h.sounds[0].currentTime = 80; h.sounds[0].emit('timeupdate'); h.sounds[0].emit('error');
+    await h.music.player.retry();
+    assert.equal(h.sounds.length, 2);
+    h.sounds[1].emit('loadedmetadata');
+    assert.equal(h.sounds[1].currentTime, 80);
+    assert.equal(h.music.player.snapshot().position, 80);
+});
+
 test('native pause before ended advances, list wraps, and manual pause never advances', async () => {
     const h = harness(), a = h.music.importURL('https://media.test/a', {id:'a'}), b = h.music.importURL('https://media.test/b', {id:'b'});
     await h.music.player.play(a,[a,b]); let audio=h.sounds.at(-1); audio.ended=true;audio.paused=true;audio.emit('pause');audio.emit('ended');await tick();
@@ -743,4 +754,23 @@ test('public matching failure offers manual search instead of a misleading netwo
     assert.equal(h.music.player.snapshot().errorCode,'public_match');
     assert.match(h.music.player.snapshot().error,/手动搜索/);assert.doesNotMatch(h.music.player.snapshot().error,/网络/);
     assert.equal(h.sounds.length,0);h.music.player.stop();
+});
+
+test('resume across a reload stores only track identity and requires a new play action', async () => {
+    const song=track('resume'), initial={musicSettings:{endpoint:'https://one.test'},musicLibrary:{queue:[song]}};
+    const h=harness(initial);
+    assert.equal(h.music.player.setCheckpoint(true),true);
+    await h.music.player.play(song);
+    h.sounds[0].currentTime=80;h.sounds[0].emit('timeupdate');
+    const item=[...h.session.entries()].find(([key])=>key.startsWith('uvu.music.position.'));
+    assert.deepEqual(JSON.parse(item[1]),{provider:song.provider,id:'resume',position:80});
+    const reloaded=harness(plain(initial));reloaded.session.set(...item);
+    assert.equal(reloaded.music.player.checkpoint().position,80);
+    assert.equal(reloaded.calls.length,0);
+    await reloaded.music.player.resumeCheckpoint();
+    reloaded.sounds[0].emit('loadedmetadata');
+    assert.equal(reloaded.sounds[0].currentTime,80);
+    assert.equal(reloaded.music.player.setCheckpoint(false),true);
+    assert.equal(reloaded.music.player.checkpoint(),null);
+    h.music.player.stop();reloaded.music.player.stop();
 });

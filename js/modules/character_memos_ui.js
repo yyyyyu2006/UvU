@@ -156,11 +156,57 @@ function openCharacterMemos(target) {
         if(typeof appendCharacterMemoDetails==='function')appendCharacterMemoDetails(chat,note,{node,content,button});
         if(!sourceStatus.valid)content.append(node('p','memo-status',sourceStatus.message));
         const old=note.replacesId&&characterMemoRecords(chat).find(n=>n.id===note.replacesId&&n.owner===owner.persona);
-        if(note.replacesId){const conflict=node('section','memo-detail-source memo-conflict');conflict.append(node('h3','','原记录'),node('p','',old?.fact||'原记录已移除'));if(old?.locked)conflict.append(node('small','','已锁定'));content.append(conflict);}
+        if(note.replacesId){
+            const conflict=node('section','memo-detail-source memo-conflict');conflict.append(node('h3','','原记录'),node('p','',old?.fact||'原记录已移除'));if(old?.locked)conflict.append(node('small','','已锁定'));
+            if(old){
+                const impact=characterMemoImpact(chat,old.id), ids=new Set(impact.journalIds);
+                const list=node('details','memo-options');list.append(node('summary','',`替换影响 · ${ids.size} 篇关联记忆`));
+                for(const journal of (chat.memoryJournals||[]).filter(j=>ids.has(j.id)))list.append(node('p','',(journal.autoMemory?.kind==='merged'?'大总结':'日记／记忆')+' · '+(journal.title||'未命名')));
+                list.append(node('p','','独立复制的内容保留。'));conflict.append(list);
+            }
+            content.append(conflict);
+        }
+        if(note.expiresAt){
+            content.append(node('p','memo-status','到期：'+new Date(note.expiresAt).toLocaleString()));
+            if(note.status==='approved'&&sourceStatus.valid){
+                const expiry=node('details','memo-options'), row=node('label','memo-editor-field','新的到期时间'), date=node('input'), expected=JSON.stringify(note);
+                date.type='datetime-local';date.setAttribute('aria-label','新的到期时间');date.value=characterMemoLocalInput(Math.max(Date.now(),note.expiresAt)+86400000);
+                row.append(date);expiry.append(node('summary','','延长有效期'),row,button('确认续期',async()=>{await renewCharacterMemo(chat,note.id,expected,Date.parse(date.value));v.dismiss();}));content.append(expiry);
+            }
+        }
         const source=node('section','memo-detail-source');source.append(node('h3','','原话'));
-        for(const evidence of note.sources||[]){source.append(node('p','',evidence.quote));const original=chat.history.find(m=>m.id===evidence.id);if(original){const preview=node('details');preview.append(node('summary','','查看原消息'),node('p','',original.content));source.append(preview);}}
+        if(sourceStatus.valid) for(const evidence of note.sources||[]){
+            const original=chat.history.find(m=>m.id===evidence.id);
+            if(!original)continue;
+            const preview=node('details');preview.append(node('summary','','查看原消息'),node('p','',evidence.quote));
+            if(typeof messageArea!=='undefined'&&currentChatType==='private'&&currentChatId===chat.id){
+                const jump=node('button','','到原话');jump.type='button';
+                jump.onclick=()=>{
+                    if(!characterMemoCurrent(owner)||currentChatType!=='private'||currentChatId!==chat.id||!characterMemoSourceValid(chat,note))return showToast('原话已变化或不在当前聊天');
+                    const floor=chat.history.indexOf(original);
+                    if(floor<0)return showToast('原话已移除');
+                    const find=()=>[...messageArea.querySelectorAll('.message-wrapper[data-id]')].find(row=>row.dataset.id===String(original.id));
+                    let row=find();
+                    if(!row){
+                        const size=typeof MESSAGES_PER_PAGE!=='undefined'?MESSAGES_PER_PAGE:20;
+                        currentPage=Math.max(currentPage,Math.ceil((chat.history.length-floor)/size));
+                        renderMessages(false,false,true);
+                        row=find();
+                    }
+                    if(!row)return showToast('原话目前折叠或不可显示');
+                    v.dismiss();d.dismiss();row.scrollIntoView({block:'center'});
+                };
+                preview.append(jump);
+            }
+            source.append(preview);
+        }
         if(note.manual)source.append(node('p','','手动记录'));content.append(source);
         const editButton=node('button',note.status==='pending'?'':'panel-primary','编辑');editButton.type='button';editButton.onclick=()=>{v.dismiss();edit(note);};footer.append(editButton);
+        if(note.status==='approved'&&sourceStatus.valid&&note.revisions?.some(revision=>revision.status==='approved')){
+            const expected=JSON.stringify(note), restore=node('button','','恢复上一审核版');restore.type='button';
+            restore.onclick=()=>{if(impactConfirm(note,'恢复历史版本'))void execute(async()=>{await restoreCharacterMemoRevision(chat,note.id,expected);v.dismiss();});};
+            footer.append(restore);
+        }
         if(!sourceStatus.valid){const correct=node('button','','另存为手动记录');correct.type='button';correct.onclick=()=>{v.dismiss();edit(null,note);};footer.append(correct);}
         if(note.status==='pending'){
             footer.classList.add('memo-review-actions');
@@ -187,7 +233,7 @@ function openCharacterMemos(target) {
         const initial=note||seed;const fact=field('记住的事情',initial?.fact),text=field('角色的便签',initial?.content,true),expires=field('到期时间',characterMemoLocalInput(initial?.expiresAt));expires.type='datetime-local';
         const extra=node('details','memo-options');extra.append(node('summary','','事实与隐私'));content.append(extra);
         const metadata={};for(const [key,label]of [['attribute','属性'],['value','取值'],['topics','主题'],['relatedPeople','关联人物'],['validFrom','生效时间'],['validTo','失效时间']]){const row=node('label','memo-editor-field',label),input=node('input');input.setAttribute('aria-label',label);input.value=Array.isArray(initial?.[key])?initial[key].join('、'):key.startsWith('valid')?characterMemoLocalInput(initial?.[key]):initial?.[key]||'';if(key.startsWith('valid'))input.type='datetime-local';row.append(input);extra.append(row);metadata[key]=input;}
-        const localOnly=node('input');localOnly.type='checkbox';localOnly.checked=initial?.localOnly===true;localOnly.setAttribute('aria-label','仅本地查看');const localRow=node('label','memo-switch-row');localRow.append(node('span','','仅本地查看'),localOnly);extra.append(localRow);
+        const localOnly=node('input');localOnly.type='checkbox';localOnly.checked=initial?.localOnly===true;localOnly.setAttribute('aria-label','仅本地查看');const localRow=node('label','memo-switch-row');localRow.append(node('span','','仅本地查看'),localOnly);if(note)extra.append(localRow);else extra.before(localRow);
         const polarity=node('select');polarity.setAttribute('aria-label','肯定或否定');for(const [value,label]of [['unknown','未标注'],['positive','肯定'],['negative','否定']]){const option=node('option','',label);option.value=value;polarity.append(option);}polarity.value=initial?.polarity||'unknown';extra.append(polarity);
         // Preserve unchanged absolute times, including seconds and the repeated DST hour.
         const parseTime=(value,key)=>value===characterMemoLocalInput(initial?.[key])?(initial?.[key]??null):value?Date.parse(value):null;

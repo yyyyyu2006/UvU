@@ -1517,6 +1517,13 @@
             const date = new Date(item.timestamp); if (Number.isFinite(date.getTime())) detail.append(make('small', '', date.toLocaleDateString()));
             const actions = make('div', 'draft-image-history-actions'), reuse = make('button', 'panel-primary', '使用提示词'), save = make('a', '', '保存图片'), remove = make('button', '', '删除'); reuse.type = remove.type = 'button';
             reuse.onclick = () => { const field = document.getElementById('pv-text-input'); field.value = item.prompt || ''; field.dispatchEvent(new Event('input', { bubbles: true })); d.dismiss(); };
+            const reuseParameters = make('button', '', '用这些参数开新草稿'); reuseParameters.type = 'button';
+            reuseParameters.disabled = !workshopDraftFromHistory(item, db.workshopSettings);
+            reuseParameters.onclick = () => {
+                if (!ChatImageGeneration.useHistory(item)) { status.textContent = '参数不完整、接口不匹配，或会话已变化'; return; }
+                d.dismiss();
+            };
+            actions.append(reuseParameters);
             save.href = safeImage(item.image); save.download = 'UvU-generated-' + item.timestamp + '.png'; save.rel = 'noopener';
             remove.onclick = async () => {
                 if (!window.confirm('删除这张工坊记录？已发送的图片会保留。')) return;

@@ -194,6 +194,22 @@ test('optional long speech segments preserve text, aggregate usage and bound syn
     f.sounds[0].dispatchEvent(new Event('ended'));
 });
 
+test('a failed segment reports its position and resuming does not resubmit a completed segment', async () => {
+    const submitted = [];
+    const f = playerFixture(async (url, init) => {
+        submitted.push(JSON.parse(init.body).text);
+        if (submitted.length === 2) throw Error('network failure');
+        return audioReply();
+    });
+    f.c.db.minimaxTtsSettings.speech = { segmented: true, segmentChars: 300 };
+    const text = '甲'.repeat(300) + '乙'.repeat(300) + '丙'.repeat(10);
+    await f.tts.play(f.bubble, text);
+    assert.match(f.tts.getDiagnostics().failure, /2\/3/);
+    await f.tts.play(f.bubble, text);
+    assert.deepEqual(submitted.map(x => x[0]), ['甲','乙','乙','丙']);
+    assert.equal(f.tts.getDiagnostics().segmentDetails[0].cacheHit, true);
+});
+
 test('stream response on unsupported MediaSource plays complete MP3 with only one paid request', async () => {
     let calls = 0;
     const f = playerFixture(async () => { calls++; return new Response([

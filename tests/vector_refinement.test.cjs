@@ -18,6 +18,24 @@ function fixture(settings = {}) {
     }
     return { c, chat, calls };
 }
+
+test('candidate vectors and manual trial are isolated from live memory and its diagnostics', async () => {
+    const f = fixture({ vectorExternalIndex: true, vectorRewriteEnabled: true, vectorRerankEnabled: true });
+    f.chat.memoryJournals = [{ id: 'story', title: '猫猫', content: '猫猫喜欢在窗台睡觉' }];
+    const controller = new AbortController(), before = f.chat.memoryVectorIndex;
+    const diagnostics = JSON.stringify(f.c.getVectorMemoryDiagnostics(f.chat));
+    await f.c.getVectorMemoryContext(f.chat, '猫猫', controller.signal, { candidateModel: 'candidate', indexOnly: true });
+    let trial;
+    await f.c.getVectorMemoryContext(f.chat, '猫猫', controller.signal, { candidateModel: 'candidate', trial: value => trial = value });
+    assert.equal(trial.pendingCount, 0);
+    assert.deepEqual(f.calls.map(call => call.body.model), ['candidate','candidate']);
+    assert.equal(f.c.db.vectorMemoryApiSettings.embeddingModel, 'embed');
+    assert.equal(f.chat.memoryVectorIndex, before);
+    assert.equal(JSON.stringify(f.c.getVectorMemoryDiagnostics(f.chat)), diagnostics);
+    controller.abort();
+    await assert.rejects(f.c.getVectorMemoryContext(f.chat, '猫猫', controller.signal, { candidateModel: 'cancelled', indexOnly: true }), { name: 'AbortError' });
+    assert.equal(f.calls.length, 2);
+});
 test('configured body tags extract only complete plot and strip nested excluded blocks without mutating source', () => {
     const { c, chat } = fixture({ vectorBodyTags: 'content,正文', vectorExcludeTags: 'side,小剧场' });
     const text = '外部状态<content>相约海边<side>不要记</side>。<thinking>秘密</thinking></content><status>99</status>';

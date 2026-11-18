@@ -429,6 +429,24 @@ async function addManualCharacterMemo(chat, fields) {
     const note={id:characterMemoId(),owner:owner.persona,fact,content,subject,category,...characterMemoFields(chat,{...fields,manual:true,subject,category,fact}),status:'approved',manual:true,userEdited:true,locked:true,useContext:true,sources:[],createdAt:Date.now(),expiresAt:fields.expiresAt ?? null};
     next.notes=[...next.notes,note];await saveCharacterMemoState(owner,next);return note;
 }
+
+async function restoreCharacterMemoRevision(chat, id, expected) {
+    const note = characterMemoRecords(chat).find(item => item.id === id && item.owner === characterMemoIdentity(chat));
+    if (!note || note.status !== 'approved' || JSON.stringify(note) !== expected) throw new Error('记录已变化，请重新打开详情');
+    const revision = (note.revisions || []).findLast(item => item.status === 'approved');
+    if (!revision || !characterMemoSourceValid(chat, note) || revision.expiresAt && revision.expiresAt <= Date.now() ||
+        revision.validTo && revision.validTo <= Date.now() || revision.validFrom && revision.validFrom > Date.now() ||
+        !characterMemoPrivacyAllowed(chat, revision.fact + ' ' + (revision.content || ''))) throw new Error('历史版本的来源、隐私或时效已不满足恢复条件');
+    const { fact, content, expiresAt, validFrom, validTo } = revision;
+    await changeCharacterMemo(chat, id, { fact, content, expiresAt, validFrom, validTo, userEdited: true });
+}
+async function renewCharacterMemo(chat, id, expected, expiresAt) {
+    const note = characterMemoRecords(chat).find(item => item.id === id && item.owner === characterMemoIdentity(chat));
+    if (!note || note.status !== 'approved' || !note.expiresAt || JSON.stringify(note) !== expected) throw new Error('记录已变化，请重新打开详情');
+    if (!characterMemoSourceValid(chat, note) || !characterMemoPrivacyAllowed(chat, note.fact + ' ' + (note.content || ''))) throw new Error('原话或隐私条件已变化，无法续期');
+    if (!Number.isFinite(expiresAt) || expiresAt <= Math.max(Date.now(), note.expiresAt) || note.validTo && expiresAt > note.validTo) throw new Error('新到期时间应晚于当前到期，并且不能超过失效时间');
+    await changeCharacterMemo(chat, id, { expiresAt });
+}
 function characterMemoJournalAllowed(chat, journal) {
     const note=characterMemoRecords(chat).find(n=>n.id===journal.characterMemoId);
     if(!note || note.status!=='approved' || note.useContext===false || note.localOnly || !characterMemoAt(note) || !characterMemoPrivacyAllowed(chat,note.fact+' '+(note.content||'')) || !characterMemoSourceValid(chat,note))return false;

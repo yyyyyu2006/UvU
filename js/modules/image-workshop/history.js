@@ -7,7 +7,9 @@ async function saveToHistory(base64Image, payload) {
         image: base64Image,
         prompt: payload.input || payload.prompt || '',
         negativePrompt: payload.parameters?.negative_prompt || payload.negative_prompt || '',
-        parameters: payload.parameters || { model: payload.model, size: payload.size, quality: payload.quality }
+        parameters: Object.fromEntries(Object.entries({ ...payload.parameters, model: payload.model, size: payload.size,
+            quality: payload.quality, style: payload.style }).filter(([key, value]) => value !== undefined &&
+                ['model', 'size', 'quality', 'style', 'width', 'height', 'seed', 'steps', 'scale', 'sampler'].includes(key)))
     };
     
     try {
@@ -19,6 +21,24 @@ async function saveToHistory(base64Image, payload) {
         console.error('Save history error:', error);
         throw error;
     }
+}
+
+function workshopDraftFromHistory(item, settings) {
+    const p = item?.parameters || {}, provider = settings?.provider || 'novelai';
+    const model = typeof p.model === 'string' && p.model.length <= 180 && /^[\w.\-:/]+$/.test(p.model) ? p.model : '';
+    if (!model || typeof item.prompt !== 'string' || !item.prompt.trim()) return null;
+    const native = Number.isInteger(p.width) && Number.isInteger(p.height) && [p.width, p.height].every(v => v >= 64 && v <= 4096);
+    const preset = settings?.apiPresets?.[provider]?.find(row => row.id === settings?.activeApiPresetId?.[provider]);
+    if (native && provider === 'novelai' && preset?.protocol !== 'openai') return { provider, model, width: p.width, height: p.height,
+        seed: Number.isInteger(p.seed) && p.seed >= 0 && p.seed <= 4294967295 ? p.seed : undefined,
+        negative: String(item.negativePrompt || '').slice(0, 16000) };
+    if (!native && typeof p.size === 'string' && /^(?:auto|[1-4]\d{2,3}x[1-4]\d{2,3})$/.test(p.size)) {
+        const isNovel = /novelai|nai[-_.]|diffusion/i.test(model);
+        if (provider === 'gpt' && !isNovel || provider === 'novelai' && isNovel && preset?.protocol === 'openai') return { provider, model, size: p.size,
+            quality: ['standard', 'hd', 'auto', 'low', 'medium', 'high'].includes(p.quality) ? p.quality : undefined,
+            style: ['natural', 'vivid'].includes(p.style) ? p.style : undefined };
+    }
+    return null;
 }
 
 async function loadWorkshopHistory() {

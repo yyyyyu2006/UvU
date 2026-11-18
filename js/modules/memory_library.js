@@ -4,6 +4,18 @@ function memoryLibrarySnapshot(chat) {
     return () => chat.activeArchiveId === archive && chat.history === history && chat.memoryJournals === journals &&
         [...(db.characters || []), ...(db.groups || [])].includes(chat);
 }
+function memorySummaryDependencies(chat, start, end) {
+    const ids = new Set((chat.history || []).slice(start - 1, end).map(message => message.id));
+    const journals = (chat.memoryJournals || []).filter(journal => journal.autoMemory);
+    const matches = new Set(journals.filter(journal => journal.autoMemory.sources?.some(source => ids.has(source.id))).map(journal => journal.id));
+    const parents = new Map();
+    for (const journal of journals) for (const child of journal.autoMemory.children || []) {
+        if (!parents.has(child.id)) parents.set(child.id, []);
+        parents.get(child.id).push(journal.id);
+    }
+    for (const id of matches) for (const parent of parents.get(id) || []) matches.add(parent);
+    return journals.filter(journal => matches.has(journal.id));
+}
 function memorySummarySentenceLinks(chat, journal) {
     const ids = new Set(journal.autoMemory?.sources?.map(s => s.id) || []), start = journal.range?.start || 0, end = journal.range?.end || 0;
     const normalize = text => String(text || '').replace(/\s+/g, '');
@@ -285,6 +297,166 @@ function openMemoryLibrary() {
     }));
     const diagnostics = element('details', undefined, 'memory-library-diagnostics'); diagnostics.append(element('summary', '本轮检索诊断 / 来源索引状态'));
     const diagnosticText = element('pre'); diagnostics.append(diagnosticText);
+    const trial = element('details'), trialInput = element('input'), trialOutput = element('pre');
+    trialInput.type = 'search'; trialInput.maxLength = 500; trialInput.setAttribute('aria-label', '试查记忆');
+    trialOutput.setAttribute('aria-live', 'polite');
+    let trialJob;
+    const cancelTrial = button('取消试查', () => trialJob?.controller.abort()); cancelTrial.disabled = true;
+    const runTrial = async (withVector) => {
+        const query = trialInput.value.trim();
+        if (!query || trialJob) return;
+        try {
+            assertCurrent();
+            if (!withVector) {
+                const hits = VectorMemoryTools.topK(getVectorMemoryCandidates(chat).map(item => ({ item, score: VectorMemoryTools.lexical(query, `${item.title || ''}\n${item.content || ''}`) })).filter(row => row.score > 0), 8);
+                trialOutput.textContent = hits.length ? hits.map(({item,score}) => `${item.title || '记忆'} · 关键词 ${score.toFixed(2)}\n${String(item.content || '').slice(0,240)}`).join('\n\n') : '本地关键词无匹配';
+                return;
+            }
+            const job = { controller: new AbortController() }; trialJob = job; jobs.add(job); cancelTrial.disabled = false;
+            trialOutput.textContent = '正在查询已有索引…';
+            try {
+                if (!getAutoMemorySettings(chat).vectorSearchEnabled) throw new Error('请先启用向量检索');
+                await getVectorMemoryContext(chat, query, job.controller.signal, { trial: result => {
+                    assertCurrent();
+                    trialOutput.textContent = [...result.selected.map(item => `${item.title || '记忆'} · ${item.score.toFixed(3)}\n${item.content}`),
+                        ...result.excluded.slice(0,12).map(item => `${item.id}：${item.reason}`), result.pendingCount ? `${result.pendingCount} 个分块没有可用索引，本次未建立` : ''].filter(Boolean).join('\n\n') || '已有索引未命中';
+                } });
+            } finally { jobs.delete(job); trialJob = null; cancelTrial.disabled = true; }
+        } catch (error) { if (!closed) trialOutput.textContent = error.name === 'AbortError' ? '试查已取消' : error.message; }
+    };
+    trial.append(element('summary', '试查一句'), trialInput, button('本地关键词', () => runTrial(false)),
+        button('请求向量试查', () => runTrial(true)), cancelTrial, trialOutput);
+    diagnostics.append(trial);
+    if (typeof VectorIndexStore !== 'undefined' && typeof VectorMemoryTools !== 'undefined') {
+        const compare = element('details'), model = element('input'), query = element('input'), report = element('pre');
+        model.maxLength = 200; model.placeholder = '候选嵌入模型'; model.setAttribute('aria-label', '候选嵌入模型');
+        query.maxLength = 500; query.placeholder = '用同一句话试查'; query.setAttribute('aria-label', '候选索引试查');
+        report.setAttribute('aria-live', 'polite');
+        let job, comparison;
+        const reset = () => { comparison = null; switchModel.disabled = true; };
+        const switchModel = button('采用已对比的模型', async () => {
+            if (job || !comparison) return;
+            const { candidate, scope, fingerprint, updatedAt, api } = comparison;
+            if (!confirm(`切换嵌入模型为 ${candidate}？这会更新全局向量设置；其他存档可分别续建索引。旧索引保留。`)) return;
+            switchModel.disabled = true;
+            try {
+                assertCurrent();
+                const stored = await VectorIndexStore.read(scope);
+                assertCurrent();
+                if (stored.updatedAt !== updatedAt || stored.fingerprint !== fingerprint || vectorSourceFingerprint(chat) !== fingerprint ||
+                    autoMemoryFingerprint(db.vectorMemoryApiSettings) !== api || model.value.trim() !== candidate) throw new Error('模型或来源已变化，请重新对比');
+                const previous = db.vectorMemoryApiSettings, next = { ...previous, embeddingModel: candidate };
+                db.vectorMemoryApiSettings = next;
+                try { await saveData(); } catch (error) { if (db.vectorMemoryApiSettings === next) db.vectorMemoryApiSettings = previous; throw error; }
+                reset(); report.textContent = '已切换；旧模型的独立索引保留。';
+            } catch (error) { if (!closed) report.textContent = error.message; }
+        });
+        reset();
+        model.oninput = query.oninput = reset;
+        const compareModels = button('建立候选索引并对比', async () => {
+            if (job) return;
+            const candidate = model.value.trim(), text = query.value.trim();
+            if (!candidate || !text) { report.textContent = '请填写候选模型和试查问题'; return; }
+            if (!confirm('使用当前向量 API 建立候选索引（最多新建 200 块），再分别试查现用模型与候选模型。继续？')) return;
+            reset(); job = { controller: new AbortController() }; jobs.add(job); cancel.disabled = false; compareModels.disabled = true;
+            model.disabled = query.disabled = true;
+            const signal = job.controller.signal;
+            try {
+                assertCurrent();
+                if (!getAutoMemorySettings(chat).vectorSearchEnabled) throw new Error('请先启用向量检索');
+                const api = autoMemoryFingerprint(db.vectorMemoryApiSettings), fingerprint = vectorSourceFingerprint(chat);
+                const scope = VectorMemoryTools.indexScope(chat, vectorMemoryApiFingerprint({ ...resolveVectorMemoryApi(), embeddingModel: candidate }));
+                report.textContent = '正在建立候选索引…';
+                await getVectorMemoryContext(chat, text, signal, { candidateModel: candidate, indexOnly: true, onProgress: p => {
+                    if (!closed) report.textContent = `候选索引：${p.totalChunks || 0} 块，剩余 ${p.pendingChunks || 0} 块`;
+                } });
+                let active, proposed;
+                await getVectorMemoryContext(chat, text, signal, { trial: result => { active = result; } });
+                await getVectorMemoryContext(chat, text, signal, { candidateModel: candidate, trial: result => { proposed = result; } });
+                const stored = await VectorIndexStore.read(scope);
+                assertCurrent();
+                if (signal.aborted || stored.fingerprint !== fingerprint || vectorSourceFingerprint(chat) !== fingerprint ||
+                    autoMemoryFingerprint(db.vectorMemoryApiSettings) !== api || !active || !proposed || proposed.pendingCount) throw new Error('对比已取消，或索引与来源已变化');
+                const hits = run => `${run.selected.map((row, i) => `${i + 1}. ${row.title || '记忆'}`).join('\n') || '没有命中'}${run.pendingCount ? `\n${run.pendingCount} 块尚未建立` : ''}`;
+                report.textContent = `现用 ${resolveVectorMemoryApi().embeddingModel}\n${hits(active)}\n\n候选 ${candidate}\n${hits(proposed)}`;
+                comparison = { candidate, scope, fingerprint, updatedAt: stored.updatedAt, api }; switchModel.disabled = false;
+            } catch (error) { if (!closed) report.textContent = signal.aborted ? '对比已取消；现用模型未切换' : error.message; }
+            finally { jobs.delete(job); job = null; compareModels.disabled = model.disabled = query.disabled = false; cancel.disabled = true; }
+        });
+        const cancel = button('取消对比', () => job?.controller.abort()); cancel.disabled = true;
+        compare.append(element('summary', '对比候选索引'), model, query, compareModels, cancel, switchModel, report);
+        diagnostics.append(compare);
+    }
+    const coverage = element('details'), coverageOutput = element('pre');
+    coverage.append(element('summary', '总结覆盖明细'), coverageOutput);
+    coverage.addEventListener('toggle', () => {
+        if (!coverage.open) return;
+        try {
+            assertCurrent();
+            const state = getAutoMemoryState(chat), pending = new Set(), invalid = new Set();
+            for (const journal of chat.memoryJournals || []) {
+                const group = journal.qualityReview?.status === 'pending' ? pending : !state.validIds.has(journal.id) ? invalid : null;
+                if (group) for (const source of journal.autoMemory?.sources || []) group.add(source.id);
+            }
+            const ranges = [];
+            for (const [index, message] of (chat.history || []).entries()) {
+                const stateName = !isAutoMemoryFloor(message) ? '不可用' : state.covered.has(message.id) ? '已覆盖' : pending.has(message.id) ? '待审核' : invalid.has(message.id) ? '旧总结来源已变化' : '未覆盖';
+                const previous = ranges.at(-1);
+                if (previous?.state === stateName) previous.end = index + 1;
+                else ranges.push({ start: index + 1, end: index + 1, state: stateName });
+            }
+            coverageOutput.textContent = ranges.slice(-300).map(({start,end,state}) => `${start === end ? start : `${start}–${end}`} 楼：${state}`).join('\n') || '暂无聊天记录';
+            if (ranges.length > 300) coverageOutput.textContent = '只显示最近 300 段\n' + coverageOutput.textContent;
+        } catch (error) { coverageOutput.textContent = error.message; }
+    });
+    diagnostics.append(coverage);
+    const rebuildRange = element('details'), rangeResult = element('pre');
+    rangeResult.setAttribute('aria-live', 'polite');
+    const rangeField = label => {
+        const wrap = element('label', label), input = element('input'); input.type = 'number'; input.min = 1;
+        input.max = Math.max(chat.history?.length || 0, 1); input.setAttribute('aria-label', label); wrap.append(input); rebuildRange.append(wrap); return input;
+    };
+    rebuildRange.append(element('summary', '指定楼层重算'));
+    const firstFloor = rangeField('起始楼层'), lastFloor = rangeField('结束楼层');
+    const focus = element('select'); focus.setAttribute('aria-label', '总结侧重点');
+    for (const [id, label] of [['','默认总结'],['plot','剧情 · 副 API'],['commitments','约定 · 副 API'],['characters','人物变化 · 副 API']]) focus.append(new Option(label, id));
+    rebuildRange.append(focus);
+    let approvedRange, rangeJob;
+    const readSpan = () => {
+        assertCurrent();
+        const start = firstFloor.valueAsNumber, end = lastFloor.valueAsNumber;
+        return planAutoMemoryRange(chat, start, end, 1);
+    };
+    const recalculate = button('生成待审总结', async () => {
+        if (rangeJob) return;
+        try {
+            const span = readSpan();
+            const expected = JSON.stringify([span.start, span.end, span.sources.map(autoMemoryMessageHash)]);
+            if (!approvedRange || approvedRange !== expected) throw new Error('楼层或来源已变化，请重新预览');
+            recalculate.disabled = true; approvedRange = null; rangeJob = { controller: new AbortController() }; jobs.add(rangeJob); cancelRange.disabled = false;
+            rangeResult.textContent = '正在生成待审稿…';
+            const result = await runAutoMemory(chat.id, type, { range: { start: span.start, end: span.end, parts: 1 }, reviewOnly: true, focus: focus.value, signal: rangeJob.controller.signal });
+            if (closed || !isCurrent()) return;
+            rangeResult.textContent = result.error || (result.count ? `已保存 ${result.count} 篇待审稿` : '未生成待审稿');
+            refresh(); renderJournalList();
+        } catch (error) { if (!closed) rangeResult.textContent = error.message; }
+        finally { jobs.delete(rangeJob); rangeJob = null; recalculate.disabled = cancelRange.disabled = true; }
+    });
+    const cancelRange = button('取消重算', () => rangeJob?.controller.abort()); cancelRange.disabled = true;
+    recalculate.disabled = true;
+    for (const input of [firstFloor, lastFloor]) input.oninput = () => { approvedRange = null; recalculate.disabled = true; };
+    rebuildRange.append(button('预览影响范围', () => {
+        if (rangeJob) return;
+        try {
+            const span = readSpan(), affected = memorySummaryDependencies(chat, span.start, span.end);
+            rangeResult.textContent = [`可重算 ${span.sources.length} 条 · 跳过已覆盖／待审 ${span.skipped} 条 · 不可用 ${span.excluded} 条`,
+                ...affected.slice(0,30).map(j => (j.autoMemory.kind === 'merged' ? '大总结' : '小总结') + ' · ' + (j.title || '未命名')),
+                affected.length > 30 ? `还有 ${affected.length - 30} 篇关联总结` : ''].filter(Boolean).join('\n');
+            approvedRange = JSON.stringify([span.start, span.end, span.sources.map(autoMemoryMessageHash)]);
+            recalculate.disabled = !span.sources.length;
+        } catch (error) { approvedRange = null; recalculate.disabled = true; rangeResult.textContent = error.message; }
+    }), recalculate, cancelRange, rangeResult);
+    diagnostics.append(rebuildRange);
     const migration = element('details', undefined, 'memory-library-migration');
     migration.append(element('summary', '模型 / 分块变更：各存档重建预览'));
     const migrationText = element('pre');
@@ -344,6 +516,7 @@ function openMemoryLibrary() {
         const details = element('details'), summary = element('summary', '对照原始聊天 / 合并来源'); details.append(summary);
         details.addEventListener('toggle', () => {
             if (!details.open || details.dataset.loaded) return;
+            if (closed || !isCurrent()) { status.textContent = '存档或记忆已变化，请重新打开记忆管理'; return; }
             details.dataset.loaded = 'true';
             const fidelity=memorySummaryFidelity(chat,journal),audit=element('details');audit.append(element('summary','总结保真对照'),element('p',fidelity.layer+' · '+fidelity.rawCount+' 个来源；文字检查不能证明事实正确。'));
             for(const warning of fidelity.warnings)audit.append(element('p',warning));details.append(audit);
@@ -352,7 +525,7 @@ function openMemoryLibrary() {
             }
             const ids = new Set(journal.autoMemory?.sources?.map(source => source.id) || []);
             const start = Math.max(0, (journal.range?.start || 0) - 1), end = journal.range?.end || 0;
-            const messages = ids.size ? (chat.history || []).filter(message => ids.has(message.id)) : (chat.history || []).slice(start, end);
+            const messages = (ids.size ? (chat.history || []).filter(message => ids.has(message.id)) : (chat.history || []).slice(start, end)).filter(isAutoMemoryFloor);
             details.append(element('pre', messages.map(message => `${new Date(message.timestamp || 0).toLocaleString()} · ${message.role}\n${message.content || ''}`).join('\n\n') || '手动记忆，无关联聊天楼层。'));
             const facts = element('details'); facts.append(element('summary', '人物 / 日期 / 约定 / 待办对照'));
             const sourceFacts = journal.manualMergeSources?.length ? journal.manualMergeSources : messages;

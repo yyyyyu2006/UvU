@@ -1,9 +1,22 @@
 // On-demand photo generation, isolated from ordinary chat replies and workshop state.
 const ChatImageGeneration = (() => {
-    let ui, target, running, retry;
+    let ui, target, running, retry, historyDraft;
+    const drafts = new Map();
+    const savingHistory = new Set();
+    const draftLifetime = 15 * 60 * 1000;
     const maxBytes = 15 * 1024 * 1024;
     const cancelled = () => Object.assign(new Error('已取消生成'), { name: 'AbortError' });
     const isSelected = () => ui?.aiMode.checked === true;
+
+    function forget(draft) {
+        if (draft && drafts.get(draft.target.history) === draft) drafts.delete(draft.target.history);
+    }
+
+    function remember(draft) {
+        drafts.delete(draft.target.history);
+        drafts.set(draft.target.history, draft);
+        while (drafts.size > 3) drafts.delete(drafts.keys().next().value);
+    }
 
     function status(text) {
         if (!ui) return;
@@ -26,6 +39,7 @@ const ChatImageGeneration = (() => {
         if (ui.preview) {
             const ready = Boolean(ai && retry?.image && retry.target === target && retry.prompt === ui.input.value.trim());
             ui.preview.hidden = !ready;
+            ui.draftActions.hidden = !(ai && retry && retry.prompt === ui.input.value.trim());
             ui.previewToggle.hidden = !ai;
             ui.previewCheckbox.disabled = busy;
             ui.previewConfirm.disabled = ui.previewRegenerate.disabled = busy;
@@ -49,9 +63,37 @@ const ChatImageGeneration = (() => {
         if (running?.saving) running = null;
         else cancel();
         target = captureChatSendTarget();
-        retry = null;
-        status('');
+        historyDraft = null;
+        for (const draft of drafts.values()) if (draft.expires <= Date.now() || !isChatSendTargetValid(draft.target)) forget(draft);
+        const draft = target && drafts.get(target.history);
+        retry = draft && !draft.saving && draft.target.chat === target.chat && draft.target.type === target.type &&
+            draft.key === JSON.stringify(db.workshopSettings || {}) ? draft : null;
+        if (retry) {
+            retry.target = target;
+            historyDraft = retry.historyDraft || null;
+            retry.reopened = true;
+            ui.input.value = retry.prompt;
+            ui.aiMode.checked = true;
+            ui.textMode.checked = false;
+            if (ui.previewCheckbox) ui.previewCheckbox.checked = true;
+        }
+        status(retry?.unknown ? '上次生成结果未确认；可选择重新生图' : retry?.image ? '已恢复图片草稿' : retry?.raw ? '已恢复生成结果，可重试取图' : '');
         refresh();
+    }
+
+    function useHistory(item) {
+        if (!ui || running || !isChatSendTargetValid(target) || !ui.modal.classList.contains('visible')) return false;
+        const draft = workshopDraftFromHistory(item, db.workshopSettings);
+        if (!draft) return false;
+        retry = null;
+        historyDraft = draft;
+        ui.input.value = item.prompt;
+        ui.aiMode.checked = true;
+        ui.textMode.checked = false;
+        if (ui.previewCheckbox) ui.previewCheckbox.checked = true;
+        status('已回填草稿：' + [draft.model, draft.size || `${draft.width}×${draft.height}`, draft.seed === undefined ? '' : `种子 ${draft.seed}`].filter(Boolean).join(' · '));
+        refresh();
+        return true;
     }
 
     function setup() {
@@ -62,7 +104,7 @@ const ChatImageGeneration = (() => {
             textMode: field('pv-mode-text'), aiMode: field('pv-mode-ai'), submit: field('pv-send-btn'),
             cancel: field('pv-cancel-generation'), status: field('pv-generation-status'), hint: field('pv-generation-hint') };
         for (const mode of [ui.textMode, ui.aiMode]) mode.addEventListener('change', () => {
-            cancel(); retry = null; status(''); refresh();
+            cancel(); retry = null; historyDraft = null; status(''); refresh();
         });
         ui.input.addEventListener('input', refresh);
         ui.cancel.addEventListener('click', cancel);
@@ -75,14 +117,25 @@ const ChatImageGeneration = (() => {
             toggle.innerHTML = '<input id="pv-confirm-preview" type="checkbox"> 生成后先预览，再确认发送';
             ui.hint.insertAdjacentElement('afterend', toggle);
             const preview = document.createElement('div'); preview.id = 'pv-generated-preview'; preview.hidden = true;
-            preview.innerHTML = '<img alt="本次生成图片预览" style="display:block;max-width:100%;max-height:35dvh;object-fit:contain"><p class="feature-help">图片仅在本次弹窗暂存；关闭后请重新生成。保存失败可重试发送。</p><a id="pv-generated-save" download="UvU-generated-image.png">保存图片</a> <button id="pv-generated-confirm" type="button">确认发送</button> <button id="pv-generated-regenerate" type="button">重新生图</button>';
+            preview.innerHTML = '<img alt="本次生成图片预览" style="display:block;max-width:100%;max-height:35dvh;object-fit:contain"><a id="pv-generated-save" download="UvU-generated-image.png">保存图片</a> <button id="pv-generated-confirm" type="button">确认发送</button>';
             toggle.insertAdjacentElement('afterend', preview);
-            Object.assign(ui, { previewToggle: toggle, previewCheckbox: toggle.querySelector('input'), preview,
+            const draftActions = document.createElement('div'); draftActions.id = 'pv-image-draft-actions';
+            draftActions.innerHTML = '<button id="pv-generated-regenerate" type="button">重新生图</button> <button id="pv-draft-discard" type="button">丢弃草稿</button>';
+            preview.insertAdjacentElement('afterend', draftActions);
+            Object.assign(ui, { previewToggle: toggle, previewCheckbox: toggle.querySelector('input'), preview, draftActions,
                 previewImage: preview.querySelector('img'), previewSave: preview.querySelector('a'),
-                previewConfirm: preview.querySelector('#pv-generated-confirm'), previewRegenerate: preview.querySelector('#pv-generated-regenerate') });
+                previewConfirm: preview.querySelector('#pv-generated-confirm'), previewRegenerate: draftActions.querySelector('#pv-generated-regenerate'),
+                discard: draftActions.querySelector('#pv-draft-discard') });
             ui.previewCheckbox.addEventListener('change', refresh);
             ui.previewConfirm.addEventListener('click', () => send(ui.input.value, true));
-            ui.previewRegenerate.addEventListener('click', () => { retry = null; send(ui.input.value); });
+            ui.discard.addEventListener('click', () => {
+                if (running) return;
+                forget(retry); retry = null; status(''); refresh();
+            });
+            ui.previewRegenerate.addEventListener('click', () => {
+                if (running) return;
+                forget(retry); retry = null; send(ui.input.value);
+            });
         }
         refresh();
     }
@@ -242,12 +295,15 @@ const ChatImageGeneration = (() => {
         if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
         const settings = structuredClone(db.workshopSettings || {});
         const key = JSON.stringify(settings);
+        const prepared = retry?.target === source && retry.prompt === text && retry.key === key;
+        if (savingHistory.has(source.history)) { status('上次发送正在保存，请稍候'); return false; }
+        if (prepared && retry.unknown) { status('上次生成结果未确认；需要再次提交时，请选择重新生图'); return false; }
         // Confirmation sends exactly the prepared preview; it cannot buy a new image.
         if (confirmPreview && !(retry?.target === source && retry.prompt === text && retry.key === key && retry.image)) {
             status('预览已失效，请重新生成并预览后发送');
             refresh(); return false;
         }
-        const session = { target: source, controller: new AbortController(), saving: false, timedOut: false };
+        const session = { target: source, controller: new AbortController(), saving: false, timedOut: false, requirePreview: !!historyDraft || prepared && retry.reopened };
         running = session;
         session.timer = setTimeout(() => {
             if (running === session && !session.saving) { session.timedOut = true; session.controller.abort(); }
@@ -261,21 +317,27 @@ const ChatImageGeneration = (() => {
                 if (typeof window.executeImageGeneration !== 'function') throw new Error('请先在工坊完成生图 API 配置，并刷新页面');
                 const result = retry?.target === source && retry.prompt === text && retry.key === key && retry.raw
                     ? { imageData: retry.raw }
-                    : await cancellable(window.executeImageGeneration(settings, text, { signal: session.controller.signal }), session.controller.signal);
+                    : await cancellable(window.executeImageGeneration(settings, text, { signal: session.controller.signal, historyDraft }), session.controller.signal);
                 assertActive(session);
-                retry = { target: source, prompt: text, key, raw: result.imageData };
+                retry = { target: source, prompt: text, key, historyDraft, raw: result.imageData, reopened: session.requirePreview };
+                retry.expires = Date.now() + draftLifetime; remember(retry);
                 status('正在准备图片…');
                 image = await cancellable(imageData(result.imageData, session.controller.signal), session.controller.signal);
                 assertActive(session);
-                retry = { target: source, prompt: text, key, image };
+                retry = { target: source, prompt: text, key, historyDraft, image, reopened: session.requirePreview };
+                retry.expires = Date.now() + draftLifetime; remember(retry);
             }
             assertActive(session);
-            if (ui?.previewCheckbox?.checked && !confirmPreview) {
+            if ((ui?.previewCheckbox?.checked || session.requirePreview) && !confirmPreview) {
                 status('图片已生成；请预览后确认发送，也可先保存图片或重新生图');
                 return false;
             }
             if (source.type === 'private' && typeof relationshipCanSend === 'function' && !relationshipCanSend(source.chat)) return false;
             session.saving = true; clearTimeout(session.timer); refresh();
+            savingHistory.add(source.history);
+            const savingDraft = retry;
+            savingDraft.saving = true;
+            session.draft = savingDraft;
             const { chat, type, chatId } = source;
             const name = type === 'private' ? chat.myName : chat.me.nickname;
             const message = { id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, role: 'user',
@@ -291,6 +353,7 @@ const ChatImageGeneration = (() => {
                 return false;
             }
             renderChatList();
+            forget(savingDraft);
             if (running === session) {
                 retry = null;
                 ui?.modal.classList.remove('visible');
@@ -298,13 +361,18 @@ const ChatImageGeneration = (() => {
             showToast('图片已发送');
             return true;
         } catch (error) {
+            if (running === session && session.timedOut && !retry?.raw) {
+                retry = { target: source, prompt: text, key, historyDraft, unknown: true, expires: Date.now() + draftLifetime };
+                remember(retry);
+            }
             if (running === session) status(errorText(error, session) + (retry?.raw ? '；生成结果已保留，可重试下载，无需重新生图' : ''));
             return false;
         } finally {
+            if (session.draft) { session.draft.saving = false; savingHistory.delete(source.history); }
             clearTimeout(session.timer);
             if (running === session) { running = null; refresh(); }
         }
     }
 
-    return { setup, open, isSelected, send, cancel };
+    return { setup, open, isSelected, send, cancel, useHistory };
 })();

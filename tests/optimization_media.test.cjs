@@ -49,7 +49,7 @@ test('synthesis response and decoding failures carry their stage', async () => {
 });
 function image(fetch) {
     const c = vm.createContext({ Blob, Uint8Array, URL, AbortController, fetch });
-    vm.runInContext(source('chat_image_generation').replace('return { setup, open, isSelected, send, cancel };', 'return { readImageBlob };'), c);
+    vm.runInContext(source('chat_image_generation').replace(/return \{ setup, open, isSelected, send, cancel[^}]*\};/, 'return { readImageBlob };'), c);
     return vm.runInContext('ChatImageGeneration', c);
 }
 test('image streaming cancels immediately above the actual byte limit without consuming the tail', async () => {

@@ -548,7 +548,17 @@
         }, () => unsubscribe?.());
     }
     const modeNames={order:'顺序播放',list:'列表循环',one:'单曲循环',shuffle:'随机播放'};
-    function playerOptions(){modal('播放选项',body=>{body.append(button(modeNames[M.player.snapshot().mode],modePanel,'repeat'),button('定时关闭',sleepPanel,'moon'),button('分享',()=>{const t=M.player.snapshot().track;if(t)share(t);},'share-2'));const t=M.player.snapshot().track;if(t)body.append(button('歌曲菜单',()=>trackMenu(t),'ellipsis'));if(M.player.snapshot().phase==='error'||M.player.snapshot().phase==='blocked')body.append(button('重试播放',()=>M.player.retry()));});}
+    function playerOptions(){modal('播放选项',body=>{
+        const state=M.player.snapshot(), t=state.track;
+        body.append(button(modeNames[state.mode],modePanel,'repeat'),button('定时关闭',sleepPanel,'moon'),button('分享',()=>{const current=M.player.snapshot().track;if(current)share(current);},'share-2'));
+        if(t)body.append(button('歌曲菜单',()=>trackMenu(t),'ellipsis'));
+        if(state.errorCode==='account') body.append(button('登录音乐账号',()=>accountsPanel('account')),button('查看公共音乐',()=>accountsPanel('public')));
+        else if(state.phase==='error'||state.phase==='blocked')body.append(button(state.phase==='blocked'?'手动播放':'重取本曲音源',()=>M.player.retry()));
+        const label=el('label',undefined,'um-check um-public-toggle'), check=el('input'); check.type='checkbox'; check.checked=M.player.checkpointEnabled();
+        const last=M.player.checkpoint(), resume=last?button('续听 '+last.track.title+' · '+clock(last.position),()=>{ if(M.player.checkpointEnabled()){nowPlaying();void M.player.resumeCheckpoint();} }):null;
+        check.onchange=()=>{if(!M.player.setCheckpoint(check.checked)){check.checked=M.player.checkpointEnabled();toast('此页面无法保存续听进度');}if(resume)resume.hidden=!check.checked;};
+        label.append(check,document.createTextNode('记住本标签页的播放进度'));body.append(label);if(resume)body.append(resume);
+    });}
     function modePanel(){modal('播放模式',body=>{for(const [value,label]of Object.entries(modeNames)){const b=button(label,()=>{M.player.setMode(value);nowPlaying();},undefined,'um-wide um-mode-choice');b.setAttribute('aria-pressed',String(M.player.snapshot().mode===value));body.append(b);}const label=el('label',undefined,'um-check um-public-toggle'),check=el('input');check.type='checkbox';check.checked=M.player.snapshot().skipUnavailable;check.onchange=()=>M.player.setSkipUnavailable(check.checked);label.append(check,document.createTextNode('跳过不可播放歌曲'));body.append(label);});}
     function queuePanel() {
         let unsubscribe,last='';modal('播放队列',body=>{

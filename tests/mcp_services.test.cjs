@@ -39,6 +39,25 @@ async function enabled(f) {
     next.policies=[{chatId:'a',type:'private',enabled:true,auto:false,grants:[{serviceId:'s',toolName:'weather'}]}]; await f.api.save(next); return list;
 }
 
+test('a write form cannot send after the remote tool definition changes', async () => {
+    const f = fixture(), original = f.c.window.MCPTransport.create;
+    let revision = 0, lists = 0;
+    f.c.window.MCPTransport.create = (...args) => {
+        const client = original(...args), list = client.listTools;
+        return { ...client, get toolsRevision() { return revision; }, listTools: async () => {
+            lists++; const rows = await list();
+            if (revision) { rows[0].inputSchema.required.push('count'); rows[0].inputSchema.properties.count = {type:'integer'}; }
+            return rows;
+        } };
+    };
+    const [tool] = await enabled(f), cfg = f.api.settings();
+    cfg.services[0].tools.weather.readOnly = false; await f.api.save(cfg);
+    await f.api.discover('s'); const before = lists; revision++;
+    await assert.rejects(f.api.call('s','weather',{city:'上海'},{confirmed:true,expectedTool:tool.signature}), /定义已变化/);
+    assert.equal(lists, before + 1);
+    assert.equal(f.calls.length, 0);
+});
+
 test('MCP rejects expensive input checks before a tool request and rejects expensive output before injection', async () => {
     for (const output of [false, true]) {
         const f = fixture();
