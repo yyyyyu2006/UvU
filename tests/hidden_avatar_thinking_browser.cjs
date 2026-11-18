@@ -36,7 +36,18 @@ fs.mkdirSync(out, { recursive: true });
             const hit = await trigger.boundingBox();
             const bubble = await page.locator('[data-id=answer] .message-bubble').boundingBox();
             assert.ok(hit.width >= 36 && hit.height >= 36);
-            assert.ok(hit.x + hit.width <= bubble.x + 1, 'avatar target must not cover message actions');
+            const layout = await page.evaluate(() => {
+                const trigger = document.querySelector('[data-id=answer] .thinking-avatar-hit-target');
+                const measure = () => [...document.querySelectorAll('#message-area .message-wrapper, #message-area .message-bubble, #message-area .message-info')]
+                    .map(el => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; });
+                const withTarget = measure();
+                trigger.style.display = 'none';
+                const withoutTarget = measure();
+                trigger.style.removeProperty('display');
+                return { withTarget, withoutTarget };
+            });
+            assert.deepEqual(layout.withTarget, layout.withoutTarget, 'transparent layer must not change any bubble, avatar slot or message position');
+            assert.equal(await trigger.evaluate(el => getComputedStyle(el).position), 'absolute');
             assert.equal(await page.locator('[data-id=answer] .message-avatar').evaluate(el => getComputedStyle(el).display), 'none');
             assert.equal(await trigger.evaluate(el => getComputedStyle(el).backgroundColor), 'rgba(0, 0, 0, 0)');
             await action(() => trigger.tap());
@@ -50,8 +61,12 @@ fs.mkdirSync(out, { recursive: true });
                 assert.equal(await page.locator('#char-thinking-dialog').count(), 1);
                 await page.keyboard.press('Escape');
             }
-            await action(() => page.locator('[data-id=answer] .message-bubble').tap());
+            const text = await page.locator('[data-id=answer] .message-bubble').boundingBox();
+            // The avatar-origin layer intentionally owns its small overlapping
+            // region. The rest of the bubble retains its ordinary actions.
+            await action(() => page.touchscreen.tap(text.x + text.width - 4, text.y + text.height / 2));
             assert.equal(await page.locator('#char-thinking-dialog').count(), 0);
+            if (bilingual) assert.equal(await page.locator('[data-id=answer] .translation-text').isVisible(), true);
         }
         for (const id of ['user', 'withdrawn', 'thinking']) assert.equal(await page.locator(`[data-id=${id}] [data-thinking-avatar]`).count(), 0);
         await action(() => page.locator('[data-id=none] [data-thinking-avatar]').tap());
@@ -60,7 +75,32 @@ fs.mkdirSync(out, { recursive: true });
         await action(() => page.locator('[data-id=answer] [data-thinking-avatar]').tap());
         assert.equal(await page.locator('#char-thinking-dialog').count(), 0);
         await page.evaluate(() => { isInMultiSelectMode = false; selectedMessageIds.clear(); });
-        await page.addStyleTag({ content: '.received .message-bubble{border-radius:4px;padding:20px 12px;background:#fff}.message-info{gap:4px}.message-avatar{border-radius:0}' });
+        for (const [name, css] of [
+            ['default', '/* original theme */'],
+            ['compact', '.received .message-bubble{border-radius:4px;padding:20px 12px;background:#fff}.message-info{gap:4px}.message-avatar{border-radius:0}'],
+            ['mail', '.message-bubble-row{gap:0}.received .message-bubble{background:#fff;border:1px solid #ddd;border-radius:12px;margin-left:3px}.received .message-bubble:before{content:"New Message";display:block;color:#999;font-size:10px}']
+        ]) {
+            const style = await page.addStyleTag({ content: css });
+            for (const width of [320, 390, 768]) {
+                await page.setViewportSize({ width, height: 844 });
+                await page.evaluate(() => { document.activeElement.blur(); renderMessages(false, false); });
+                await stableUI(page, '#message-area');
+                const capture = { style: '#toast-notification{visibility:hidden !important}' };
+                const before = await page.locator('#message-area').screenshot({ ...capture, path: path.join(out, `overlay-${name}-${width}.png`) });
+                const dimensions = await page.evaluate(() => {
+                    const measure = () => [...document.querySelectorAll('#message-area .message-wrapper, #message-area .message-bubble, #message-area .message-info')]
+                        .map(el => { const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; });
+                    const withLayer = measure();
+                    document.querySelectorAll('.thinking-avatar-hit-target').forEach(el => el.remove());
+                    return { withLayer, withoutLayer: measure() };
+                });
+                const after = await page.locator('#message-area').screenshot({ ...capture, path: path.join(out, `no-overlay-${name}-${width}.png`) });
+                assert.deepEqual(dimensions.withLayer, dimensions.withoutLayer, `${name}/${width}: layout unchanged`);
+                assert.ok(before.equals(after), `${name}/${width}: screenshot identical with and without overlay`);
+                await page.evaluate(() => renderMessages(false, false));
+            }
+            await style.evaluate(el => el.remove());
+        }
         await action(() => page.locator('[data-id=answer] [data-thinking-avatar]').tap());
         assert.equal(await page.locator('.char-thinking-content').textContent(), '隔离测试保存内容');
         await page.keyboard.press('Escape');
@@ -82,6 +122,6 @@ fs.mkdirSync(out, { recursive: true });
         await action(() => page.locator('[data-id=answer] [data-thinking-avatar]').tap());
         assert.equal(await page.locator('.char-thinking-content').textContent(), '隔离测试保存内容');
         assert.deepEqual(errors, []);
-        console.log('PASS hidden avatar: touch/Enter/Space, saved content, no overlap/API/mutation, bilingual, 320/390/768, mode switches and reload');
+        console.log('PASS hidden avatar: absolute overlay, pixel-identical layout in 3 styles x 3 widths, touch/keyboard, bilingual outside overlay, no API/mutation, modes and reload');
     } finally { await app.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

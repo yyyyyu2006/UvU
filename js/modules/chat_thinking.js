@@ -34,7 +34,7 @@ function decorateMessageThinkingAvatar(element, message) {
     let avatar = element.querySelector('.message-avatar:not(.avatar-hidden):not(.avatar-invisible)');
     const hiddenAvatar = element.querySelector('.message-avatar.avatar-hidden');
     if (!avatar && hiddenAvatar) {
-        // Keep the portrait hidden; only its original slot becomes interactive.
+        // Overlay the hidden portrait's origin without reserving layout space.
         avatar = element.querySelector('.thinking-avatar-hit-target');
         if (!avatar) {
             avatar = document.createElement('button');
