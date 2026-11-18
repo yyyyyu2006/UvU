@@ -92,6 +92,7 @@
             });
             const mood = parsed.mood && Object.hasOwn(C().moods, parsed.mood.mood) ? { mood: parsed.mood.mood, note: String(parsed.mood.note || '').slice(0, 1000) } : null;
             const token = C().id(), proposal = { token, date, events, mood };
+            if (!reviewShape(proposal, update)) throw new Error('日程返回包含无效或重复的操作，未修改记录');
             tickets.set(token, { s, proposal: JSON.parse(JSON.stringify(proposal)), update }); if (tickets.size > 16) forget(tickets.keys().next().value);
             setStatus(s.owner, '行程已生成，等待保存'); return proposal;
         } catch (e) { setStatus(s.owner, e.name === 'AbortError' ? '安排已取消，原记录保留' : '安排失败，原记录保留'); throw e; }

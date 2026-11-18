@@ -93,3 +93,22 @@ test('calendar restored proposals reject malformed actions and expired storage',
         const key=[...session.values.keys()][0],data=JSON.parse(session.values.get(key));mutate(data.items[0]);session.values.set(key,JSON.stringify(data));session.reload();assert.equal(c.UvUCalendarAI.pending(c.chat).length,0);assert.equal(c.UvUCalendar.state().events.length,0);
     }
 });
+
+
+test('invalid calendar actions never enter preview or the persisted review queue',async()=>{
+    for(const [update,events] of [
+        [true,[{action:'update',title:'Missing ID'}]],
+        [true,[{action:'delete',id:123}]],
+        [false,[{action:'delete',id:'unexpected-in-create-mode'}]],
+        [true,[{action:'delete',id:'same'},{action:'delete',id:'same'}]],
+    ]){
+        const c=fixture(), C=c.UvUCalendar, A=c.UvUCalendarAI, session=calendarSession(c), owner=C.owner(c.chat);
+        await C.saveProfile(owner, {autonomy:update,autoGenerate:!update,reviewChanges:true});
+        c.fetchAiResponse=async()=>JSON.stringify({events});
+        await assert.rejects(A.afterReply(c.chat), /日程操作|日程返回/);
+        assert.equal(A.pending(c.chat).length,0);
+        assert.equal(session.values.size,0);
+        assert.equal(C.state().events.length,0);
+        assert.match(A.status(owner),/安排失败/);
+    }
+});
