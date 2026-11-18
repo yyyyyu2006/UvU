@@ -153,6 +153,13 @@ function initShopSystem() {
 
 // --- 自定义分类管理 ---
 
+const SHOP_MAX_ITEM_COUNT = 20;
+
+function effectiveShopItemCount(value) {
+    const count = typeof value === 'string' ? Number(value) : value;
+    return Number.isSafeInteger(count) && count >= 1 ? Math.min(count, SHOP_MAX_ITEM_COUNT) : 8;
+}
+
 function getShopSettings() {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (chat && chat.shopSettings) {
@@ -199,7 +206,7 @@ async function saveItemCount() {
     if (!countInput) return;
     
     const count = Number(countInput.value);
-    if (!Number.isSafeInteger(count) || count < 1 || count > 20) {
+    if (!Number.isSafeInteger(count) || count < 1 || count > SHOP_MAX_ITEM_COUNT) {
         showToast('生成数量请填写 1 到 20 的整数');
         return;
     }
@@ -217,7 +224,7 @@ function openCategoryManager() {
     const settings = getShopSettings();
     const countInput = document.getElementById('shop-item-count');
     if (countInput) {
-        countInput.value = settings.itemCount || 8;
+        countInput.value = effectiveShopItemCount(settings.itemCount);
     }
     
     renderCategoryList();
@@ -703,7 +710,7 @@ async function fetchShopData(target = captureChatSendTarget(currentChatId, 'priv
     const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
 
     // 获取商品数量设置
-    const itemCount = settings.itemCount || 8;
+    const itemCount = effectiveShopItemCount(settings.itemCount);
 
     // 构建分类 Prompt
     let categoryPrompt = `

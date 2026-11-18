@@ -120,6 +120,88 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
             assert.match(result.error,/injected/);assert.equal(result.memory,8);assert.equal(result.disk,8);
         });
 
+        await check('repair: old shop counts use the same limits in settings and generation', async page => {
+            const result = await page.evaluate(async () => {
+                const chat = { id:'s', realName:'Shop', history:[], shopSettings:{itemCount:50} };
+                db.characters = [chat]; currentChatId = chat.id; currentChatType = 'private';
+                await saveData();
+                generatePrivateSystemPrompt = () => '';
+                resolveAuxiliaryApiConfig = () => ({ provider:'newapi', url:'https://fixture.invalid', key:'fixture', model:'fixture' });
+                const stop = new Error('request captured');
+                let requested;
+                fetchAiResponse = async (_config, payload) => {
+                    requested = Number(payload.messages[1].content.match(/必须包含 (\d+) 个商品/)?.[1]);
+                    throw stop;
+                };
+                const observed = [];
+                for (const count of [50, '50', 6, 2.5, 0, true]) {
+                    chat.shopSettings.itemCount = count;
+                    await saveData();
+                    openCategoryManager();
+                    try { await fetchShopData(); } catch (error) { if (error !== stop) throw error; }
+                    observed.push([document.getElementById('shop-item-count').value, requested,
+                        chat.shopSettings.itemCount, (await dexieDB.characters.get(chat.id)).shopSettings.itemCount]);
+                }
+                return observed;
+            });
+            assert.deepEqual(result, [['20',20,50,50],['20',20,'50','50'],['6',6,6,6],['8',8,2.5,2.5],['8',8,0,0],['8',8,true,true]]);
+        });
+
+        await check('repair: bubble preset rename and delete wait for storage and can retry', async page => {
+            const result = await page.evaluate(async () => {
+                const old = [{ name:'Original', css:'.sample{color:red}' }];
+                db.bubbleCssPresets = old;
+                await saveData();
+                window.prompt = () => 'Renamed'; window.confirm = () => true;
+                const list = document.getElementById('bubble-presets-list');
+                const modal = document.getElementById('bubble-presets-modal');
+                const read = async () => ({ memory:db.bubbleCssPresets.map(p=>p.name),
+                    disk:(await dexieDB.globalSettings.get('bubbleCssPresets')).value.map(p=>p.name),
+                    list:list.firstChild?.firstChild?.textContent || '', visible:modal.style.display==='flex' });
+                const fail = () => { throw Error('injected preset failure'); };
+                const button = text => [...list.querySelectorAll('button')].find(el => el.textContent===text);
+                openManagePresetsModal();
+                dexieDB.globalSettings.hook('updating', fail);
+                await button('重命名').onclick();
+                const failedRename = await read();
+                if (failedRename.memory[0] !== 'Original') return { failedRename };
+                await button('删除').onclick();
+                const failedDelete = await read();
+                dexieDB.globalSettings.hook('updating').unsubscribe(fail);
+                await button('重命名').onclick();
+                const retriedRename = await read();
+                const pending = button('删除').onclick();
+                document.getElementById('close-presets-modal').click();
+                await pending;
+                return { failedRename, failedDelete, retriedRename, retriedDelete:await read(), original:old[0] };
+            });
+            const original = { memory:['Original'], disk:['Original'], list:'Original', visible:true };
+            assert.deepEqual(result, { failedRename:original, failedDelete:original,
+                retriedRename:{ memory:['Renamed'],disk:['Renamed'],list:'Renamed',visible:true },
+                retriedDelete:{ memory:[],disk:[],list:'Renamed',visible:false }, original:{ name:'Original',css:'.sample{color:red}' } });
+        });
+
+        await check('repair: bubble preset import leaves an existing preset intact on write failure', async page => {
+            await page.evaluate(async () => {
+                db.bubbleCssPresets = [{ name:'Original', css:'.sample{color:red}' }];
+                await saveData();
+                window.confirm = () => true;
+                window.failPresetImport = () => { throw Error('injected import failure'); };
+                dexieDB.globalSettings.hook('updating', failPresetImport);
+            });
+            const input = page.locator('#bubble-preset-import-input');
+            const file = { name:'preset.json', mimeType:'application/json', buffer:Buffer.from(JSON.stringify({ name:'Original', css:'.sample{color:blue}' })) };
+            const read = () => page.evaluate(async () => ({ memory:db.bubbleCssPresets[0].css,
+                disk:(await dexieDB.globalSettings.get('bubbleCssPresets')).value[0].css }));
+            await input.setInputFiles(file);
+            await page.getByText('预设未保存，请重试', { exact:true }).waitFor({ state:'visible' });
+            assert.deepEqual(await read(), { memory:'.sample{color:red}', disk:'.sample{color:red}' });
+            await page.evaluate(() => dexieDB.globalSettings.hook('updating').unsubscribe(failPresetImport));
+            await input.setInputFiles(file);
+            await page.getByText('预设导入成功', { exact:true }).waitFor({ state:'visible' });
+            assert.deepEqual(await read(), { memory:'.sample{color:blue}', disk:'.sample{color:blue}' });
+        });
+
         await check('checkout stays with original archive and preserves draft', async page => {
             await page.evaluate(async()=>{
                 db.characters=[{id:'a',realName:'A',remarkName:'A',myName:'U',history:[],peekData:{cart:{items:[{title:'item',price:'1.00'}]}}},

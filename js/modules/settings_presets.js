@@ -3,9 +3,33 @@
 function _getBubblePresets() {
     return db.bubbleCssPresets || [];
 }
-function _saveBubblePresets(arr) {
-    db.bubbleCssPresets = arr || [];
-    return saveData();
+let bubblePresetSavePending = false;
+async function _saveBubblePresets(next) {
+    if (bubblePresetSavePending) {
+        showToast('预设正在保存，请稍后重试');
+        return false;
+    }
+    const previous = db.bubbleCssPresets;
+    bubblePresetSavePending = true;
+    try {
+        await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () =>
+            putGuardedSettings([{ key: 'bubbleCssPresets', value: next }])));
+        if (db.bubbleCssPresets !== previous) return false;
+        db.bubbleCssPresets = next;
+        return true;
+    } catch (error) {
+        console.error('保存气泡预设失败:', error);
+        showToast(error.name === 'DataConflictError' ? error.message : '预设未保存，请重试');
+        return false;
+    } finally {
+        bubblePresetSavePending = false;
+    }
+}
+
+function refreshBubblePresetControls() {
+    populateBubblePresetSelect('bubble-preset-select');
+    populateBubblePresetSelect('group-bubble-preset-select');
+    if (document.getElementById('bubble-presets-modal')?.style.display === 'flex') openManagePresetsModal();
 }
 
 function captureBubblePresetSettings(chat, type) {
@@ -168,8 +192,7 @@ async function saveCurrentTextareaAsPreset() {
         }
     }
 
-    const previous = _getBubblePresets();
-    const presets = previous.map(preset => ({ ...preset }));
+    const presets = _getBubblePresets().slice();
     const idx = presets.findIndex(p => p.name === name);
     
     const presetData = { name, css };
@@ -178,22 +201,15 @@ async function saveCurrentTextareaAsPreset() {
     }
     
     if (idx >= 0) {
-        presets[idx].css = css;
-        if (settings) presets[idx].settings = settings;
-        else delete presets[idx].settings;
+        const updated = { ...presets[idx], ...presetData };
+        if (!settings) delete updated.settings;
+        presets[idx] = updated;
     } else {
         presets.push(presetData);
     }
-    
-    try { await _saveBubblePresets(presets); }
-    catch (error) {
-        if (db.bubbleCssPresets === presets) db.bubbleCssPresets = previous;
-        console.error('保存气泡预设失败:', error);
-        showToast('预设未保存，请重试');
-        return;
-    }
-    populateBubblePresetSelect('bubble-preset-select'); 
-    populateBubblePresetSelect('group-bubble-preset-select');
+
+    if (!await _saveBubblePresets(presets)) return;
+    refreshBubblePresetControls();
     showToast('预设已保存');
 }
 
@@ -204,7 +220,7 @@ function openManagePresetsModal() {
     list.innerHTML = '';
     const presets = _getBubblePresets();
     if (!presets.length) list.innerHTML = '<p style="color:#888;margin:6px 0;">暂无预设</p>';
-    presets.forEach((p, idx) => {
+    presets.forEach(p => {
         const row = document.createElement('div');
         row.style.display = 'flex';
         row.style.justifyContent = 'space-between';
@@ -233,27 +249,27 @@ function openManagePresetsModal() {
         renameBtn.className = 'btn';
         renameBtn.style.padding = '6px 8px;border-radius:8px';
         renameBtn.textContent = '重命名';
-        renameBtn.onclick = function(){
+        renameBtn.onclick = async function(){
             const newName = prompt('输入新名称：', p.name);
-            if (!newName) return;
-            const presetsAll = _getBubblePresets();
-            presetsAll[idx].name = newName;
-            _saveBubblePresets(presetsAll);
-            openManagePresetsModal(); 
-            populateBubblePresetSelect('bubble-preset-select'); populateBubblePresetSelect('group-bubble-preset-select');
+            if (!newName || newName === p.name) return;
+            const next = _getBubblePresets().slice();
+            const index = next.indexOf(p);
+            if (index < 0) return refreshBubblePresetControls();
+            next[index] = { ...p, name: newName };
+            if (await _saveBubblePresets(next)) refreshBubblePresetControls();
         };
 
         const delBtn = document.createElement('button');
         delBtn.className = 'btn btn-danger';
         delBtn.style.padding = '6px 8px;border-radius:8px';
         delBtn.textContent = '删除';
-        delBtn.onclick = function(){
+        delBtn.onclick = async function(){
             if (!confirm('确定删除预设 \"' + p.name + '\" ?')) return;
-            const presetsAll = _getBubblePresets();
-            presetsAll.splice(idx, 1);
-            _saveBubblePresets(presetsAll);
-            openManagePresetsModal();
-            populateBubblePresetSelect('bubble-preset-select'); populateBubblePresetSelect('group-bubble-preset-select');
+            const next = _getBubblePresets().slice();
+            const index = next.indexOf(p);
+            if (index < 0) return refreshBubblePresetControls();
+            next.splice(index, 1);
+            if (await _saveBubblePresets(next)) refreshBubblePresetControls();
         };
 
         btnWrap.appendChild(applyBtn);
@@ -709,9 +725,10 @@ function setupPresetFeatures() {
             const fileExt = fileName.split('.').pop().toLowerCase();
             const presetName = fileName.substring(0, fileName.lastIndexOf('.'));
 
-            const processImportData = (data) => {
+            const processImportData = async (data) => {
+                bubbleImportInput.value = '';
                 try {
-                    const presets = _getBubblePresets();
+                    const presets = _getBubblePresets().slice();
                     const idx = presets.findIndex(p => p.name === data.name);
                     if (idx >= 0) {
                         if (confirm(`已存在名为 "${data.name}" 的预设，是否覆盖？`)) {
@@ -723,14 +740,11 @@ function setupPresetFeatures() {
                         presets.push(data);
                     }
                     
-                    _saveBubblePresets(presets);
-                    populateBubblePresetSelect('bubble-preset-select'); 
-                    populateBubblePresetSelect('group-bubble-preset-select');
+                    if (!await _saveBubblePresets(presets)) return;
+                    refreshBubblePresetControls();
                     showToast('预设导入成功');
                 } catch(err) {
                     showToast('导入失败：' + err.message);
-                } finally {
-                    bubbleImportInput.value = '';
                 }
             };
 
