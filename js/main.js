@@ -109,6 +109,7 @@ const init = async () => {
     setupChatSettings();
     if (typeof setupChatArchiveSystem === 'function') setupChatArchiveSystem();
     setupApiSettingsApp();
+    setupDesktopPet();
     if (typeof setupUvUStoryBridge === 'function') { try { setupUvUStoryBridge(); } catch (error) { console.error('UvU Story Bridge failed:', error); } }
     setupMessageNotifications();
     setupWallpaperApp();
@@ -249,7 +250,7 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
-        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, :is(#uvu-story-bridge-screen,#storage-analysis-screen,#send-pv-modal) :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
+        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, #uvu-pet-feature, #uvu-pet-settings-entry, :is(#uvu-story-bridge-screen,#storage-analysis-screen,#send-pv-modal) :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
             // Dialog and derived app controls are ordinary interactions, not background rescue taps.
             globalRescueClickCount = 0;
             globalRescueLastClickTime = 0;

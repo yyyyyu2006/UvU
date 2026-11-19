@@ -146,6 +146,20 @@ function setupApiSettingsApp() {
         }
     };
 
+    const primaryDraft = () => JSON.stringify([n.value, r.value, s.value, a.value, tempEnabledSwitch.checked, tempSlider.value]);
+    let loadedPrimaryDraft = primaryDraft(), primaryDraftConflict = false;
+    window.addEventListener('uvu-primary-api-committed', () => {
+        invalidateModels();
+        if (primaryDraft() !== loadedPrimaryDraft) { primaryDraftConflict = true; return; }
+        const saved = db.apiSettings;
+        n.value = saved.provider; r.value = saved.url; s.value = saved.key;
+        a.replaceChildren(new Option(saved.model, saved.model));
+        tempEnabledSwitch.checked = saved.temperatureEnabled !== false;
+        tempSlider.disabled = !tempEnabledSwitch.checked;
+        tempSlider.value = saved.temperature ?? 1;
+        tempValue.textContent = tempSlider.value;
+        loadedPrimaryDraft = primaryDraft(); primaryDraftConflict = false;
+    });
     t.addEventListener('click', () => window.fetchAndPopulateModels(true));
     e.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -160,6 +174,7 @@ function setupApiSettingsApp() {
         if (secondary.enabled && BLOCKED_API_DOMAINS.some(domain => secondary.url.includes(domain))) {
             return showToast('副 API 站点已被屏蔽，无法保存！');
         }
+        if (primaryDraftConflict && !confirm('桌宠已经切换主 API。要用本页草稿覆盖当前主 API 吗？')) return;
         db.apiSettings = {
             provider: n.value,
             url: r.value,
@@ -174,6 +189,7 @@ function setupApiSettingsApp() {
             secondary
         };
         await saveData();
+        loadedPrimaryDraft = primaryDraft(); primaryDraftConflict = false;
         showToast('API设置已保存！')
     })
 }

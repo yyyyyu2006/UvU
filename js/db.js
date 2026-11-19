@@ -158,7 +158,7 @@ const DEFAULT_COT_PRESETS = [
 
 const globalSettingKeys = [
     'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons',
-    'apiPresets', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
+    'apiPresets', 'desktopPetSettings', 'bubbleCssPresets', 'myPersonaPresets', 'globalCss',
     'globalCssPresets', 'fontPresets', 'homeSignature', 'insWidgetSettings', 'homeWidgetSettings',
     'chatFolders', 'fontSizeScale', 'activePersonaId', 'moreProfileCardBg', 'statusBarPresets', 'themeSettings', 'themePresets', 'savedKeyboardHeight',
     'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
