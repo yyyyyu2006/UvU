@@ -14,7 +14,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
                 await page.locator('#uvu-pet-button').waitFor();
                 await page.waitForFunction(() => document.querySelector('#uvu-pet-button img').complete);
                 assert.equal(await page.locator('#uvu-pet-button img').evaluate(img => img.naturalWidth > 0), true);
-                await page.evaluate(() => switchScreen('customize-screen'));
+                await page.evaluate(() => { renderCustomizeForm(); switchScreen('customize-screen'); });
                 await page.getByRole('button', { name: '桌宠设置', exact: true }).click();
                 await page.waitForFunction(() => document.querySelector('#uvu-pet-settings img').complete);
                 assert.equal(await page.locator('#uvu-pet-settings img').evaluate(img => img.naturalWidth > 0), true);
@@ -22,7 +22,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
             }],
             ['pending appearance save keeps the form and prevents new edits', async page => {
                 await page.evaluate(() => {
-                    switchScreen('customize-screen');
+                    renderCustomizeForm(); switchScreen('customize-screen');
                     window.originalPetSave = desktopPetSavePrefs;
                     desktopPetSavePrefs = async (...args) => {
                         await new Promise(resolve => { window.releasePetSave = resolve; });

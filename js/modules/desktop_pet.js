@@ -2,6 +2,18 @@ const desktopPetDefaultArt = 'data:image/svg+xml,' + encodeURIComponent('<svg xm
 const desktopPetCorners = { br: [1, 1], bl: [0, 1], tr: [1, 0], tl: [0, 0] };
 const desktopPetClamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+function desktopPetIcon(name) {
+    const paths = {
+        close: '<path d="m6 6 12 12M18 6 6 18"/>',
+        help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.6 2.6 0 0 1 5 1c0 2-2.5 2-2.5 4M12 17h.01"/>',
+        check: '<path d="m5 12 4 4L19 6"/>', plus: '<path d="M12 5v14M5 12h14"/>',
+        settings: '<path d="m9 3-1 3-3 1-2 4 2 3v4l4 2 3-1 3 1 4-2v-4l2-3-2-4-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',
+        tl: '<path d="M6 16V6h10"/>', tr: '<path d="M8 6h10v10"/>',
+        bl: '<path d="M6 8v10h10"/>', br: '<path d="M8 18h10V8"/>'
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || ''}</svg>`;
+}
+
 function desktopPetPrefs(value) {
     const corner = Object.prototype.hasOwnProperty.call(desktopPetCorners, value?.anchor) ? value.anchor : 'br';
     const position = Array.isArray(value?.position) && value.position.length === 2 && value.position.every(Number.isFinite)
@@ -122,17 +134,16 @@ function setupDesktopPet() {
         <button type="button" id="uvu-pet-button" aria-label="桌宠 API 快捷菜单" aria-controls="uvu-pet-menu" aria-expanded="false" hidden><img alt="" draggable="false"></button>
         <section id="uvu-pet-menu" class="uvu-pet-panel" aria-label="API 快捷切换" hidden></section>
         <dialog id="uvu-pet-settings" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-settings-title">
-          <form><div class="uvu-pet-head"><h2 id="uvu-pet-settings-title">桌宠设置</h2><button type="button" data-close aria-label="关闭桌宠设置">×</button></div>
-          <label class="uvu-pet-inline"><input name="enabled" type="checkbox">显示桌宠</label>
-          <div class="uvu-pet-preview"><img alt="桌宠预览"></div>
-          <label>图片<input name="image" type="file" accept="image/png,image/jpeg,image/webp"></label>
-          <label>大小 <output></output><input name="size" type="range" min="40" max="96" step="1"></label>
-          <label>位置<select name="corner"><option value="custom">拖动位置</option><option value="br">右下</option><option value="bl">左下</option><option value="tr">右上</option><option value="tl">左上</option></select></label>
+          <form><div class="uvu-pet-head"><h2 id="uvu-pet-settings-title">桌宠设置</h2><button type="button" data-help class="uvu-pet-icon" aria-label="使用说明">${desktopPetIcon('help')}</button><button type="button" data-close class="uvu-pet-icon" aria-label="关闭桌宠设置">${desktopPetIcon('close')}</button></div>
+          <label class="uvu-pet-inline"><span>显示桌宠</span><span class="uvu-pet-switch"><input name="enabled" type="checkbox" autofocus><span aria-hidden="true"></span></span></label>
+          <div class="uvu-pet-image-row"><div class="uvu-pet-preview"><img alt="桌宠预览"></div><div class="uvu-pet-image-actions"><button type="button" data-image>更换图片</button><button type="button" data-default class="uvu-pet-text">使用默认图片</button></div><input name="image" type="file" accept="image/png,image/jpeg,image/webp" aria-label="桌宠图片" hidden></div>
+          <div class="uvu-pet-size"><label for="uvu-pet-size">大小 <output for="uvu-pet-size"></output></label><input id="uvu-pet-size" name="size" type="range" min="40" max="96" step="1"><div class="uvu-pet-range-ends"><span>40</span><span>96</span></div></div>
+          <div class="uvu-pet-position"><div class="uvu-pet-field-head"><span id="uvu-pet-position-title">位置</span><span data-position-label></span></div><input name="corner" type="hidden"><div class="uvu-pet-corners" role="group" aria-labelledby="uvu-pet-position-title">${[['tl', '左上'], ['tr', '右上'], ['bl', '左下'], ['br', '右下']].map(([key, text]) => `<button type="button" data-corner="${key}" aria-pressed="false">${desktopPetIcon(key)}${text}</button>`).join('')}</div></div>
           <p class="uvu-pet-status" role="status"></p>
           <div class="uvu-pet-actions"><button type="button" data-reset>恢复默认外观</button><button class="uvu-pet-primary">保存</button></div></form>
         </dialog>
         <dialog id="uvu-pet-api-dialog" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-api-title">
-          <form><div class="uvu-pet-head"><h2 id="uvu-pet-api-title">新建 API</h2><button type="button" data-close aria-label="取消新建 API">×</button></div>
+          <form><div class="uvu-pet-head"><h2 id="uvu-pet-api-title">新建 API</h2><button type="button" data-help class="uvu-pet-icon" aria-label="使用说明">${desktopPetIcon('help')}</button><button type="button" data-close class="uvu-pet-icon" aria-label="取消新建 API">${desktopPetIcon('close')}</button></div>
           <p class="uvu-pet-status" data-destination></p>
           <label>预设名称<input name="label" required maxlength="80" autocomplete="off"></label>
           <label>服务商<select name="provider"></select></label>
@@ -142,9 +153,15 @@ function setupDesktopPet() {
           <p class="uvu-pet-status" role="status"></p>
           <button type="button" data-api-test>测试连接并读取模型</button>
           <div class="uvu-pet-actions"><button name="saveOnly" value="save">保存为预设</button><button name="apply" class="uvu-pet-primary" value="apply">保存并切换</button></div></form>
-        </dialog>`;
+        </dialog>
+        <dialog id="uvu-pet-help" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-help-title"><div class="uvu-pet-head"><h2 id="uvu-pet-help-title">使用说明</h2><button type="button" data-close class="uvu-pet-icon" aria-label="关闭使用说明" autofocus>${desktopPetIcon('close')}</button></div><div class="uvu-pet-help-body"><p>桌宠显示在 UvU 页面内。按住拖动，松手后记住位置，也可以在设置中直接选择四角。</p><p>点击桌宠可切换聊天默认 API，或绑定当前私聊／群聊的预设。切换只影响之后发起的请求，正在生成的回复继续使用原设置。会话绑定由该会话的各存档共享。</p><p>图片支持 4 MB 以内的 PNG、JPEG、WebP，最长边不超过 4096 像素，读取后会压缩保存。</p><p>新建 API 时，只有点击“测试连接并读取模型”才会请求服务商。密钥保存在当前浏览器，导出设置备份时可能包含，请妥善保管。</p><p>要收起桌宠，请在桌宠设置中关闭“显示桌宠”并保存。</p></div></dialog>`;
     document.body.append(host);
     const [button, menu, settings, apiDialog] = host.children, icon = button.firstElementChild;
+    const help = host.querySelector('#uvu-pet-help');
+    help.querySelector('[data-close]').onclick = () => help.close();
+    const showHelp = () => { help.showModal(); schedule(); };
+    help.onclose = () => schedule();
+    for (const panel of [settings, apiDialog]) panel.querySelector('[data-help]').onclick = showHelp;
     const form = settings.querySelector('form'), fields = form.elements, preview = form.querySelector('img');
     for (const image of [icon, preview]) image.onerror = () => {
         if (image.getAttribute('src') && image.getAttribute('src') !== desktopPetDefaultArt) image.src = desktopPetDefaultArt;
@@ -155,6 +172,7 @@ function setupDesktopPet() {
     for (const option of providerOptions || []) apiFields.provider.add(new Option(option.textContent, option.value));
     let draftImage = '', draftPosition, draftPrevious, imageRead = 0, draftBusy = false;
     let active = false, frame = 0, gesture = null, draggedClick = false, openScreen = null;
+    let pendingMove = null, positionSaving = false;
     let scope, menuTarget, formTarget, apiBusy = false, testRequest;
     const nativePopover = typeof menu.showPopover === 'function';
     const screen = () => phone.querySelector('.screen.active');
@@ -188,24 +206,29 @@ function setupDesktopPet() {
     function place() {
         frame = 0;
         if (!active) return;
-        if (apiDialog.open) {
+        for (const dialog of [settings, apiDialog, help]) if (dialog.open) {
             const viewport = window.visualViewport;
-            apiDialog.style.maxHeight = `${Math.max(0, (viewport?.height || innerHeight) - 24)}px`;
-            apiDialog.style.insetBlockStart = `${viewport?.offsetTop || 0}px`;
+            dialog.style.maxHeight = `${Math.max(0, (viewport?.height || innerHeight) - 24)}px`;
+            dialog.style.insetBlockStart = `${viewport?.offsetTop || 0}px`;
         }
         const prefs = desktopPetPrefs(db.desktopPetSettings), size = Math.max(44, prefs.sizePx), box = limits(size);
-        const covered = host.hasAttribute('inert') || settings.open || apiDialog.open || !!document.fullscreenElement ||
+        const covered = host.hasAttribute('inert') || settings.open || apiDialog.open || help.open || !!document.fullscreenElement ||
             !!phone.querySelector('.modal-overlay.visible,.modal-overlay.open,.action-sheet-overlay.visible,.action-sheet-overlay.open,.settings-sidebar.open,.vc-incoming-overlay.visible,.vc-type-modal.visible,.vc-scene:not(.vc-hidden)');
         button.hidden = Boolean(covered || box.xmax < box.xmin || box.ymax < box.ymin);
         if (button.hidden) { closeMenu(false); finishDrag(null, false); return; }
-        const [rx, ry] = prefs.position || desktopPetCorners[prefs.anchor];
+        const [rx, ry] = pendingMove?.position || prefs.position || desktopPetCorners[prefs.anchor];
         const x = gesture?.dragging ? gesture.x : box.xmin + rx * (box.xmax - box.xmin);
         const y = gesture?.dragging ? gesture.y : box.ymin + ry * (box.ymax - box.ymin);
-        button.style.left = `${desktopPetClamp(x, box.xmin, box.xmax)}px`;
-        button.style.top = `${desktopPetClamp(y, box.ymin, box.ymax)}px`;
+        const left = desktopPetClamp(x, box.xmin, box.xmax), top = desktopPetClamp(y, box.ymin, box.ymax);
+        if (gesture?.dragging) {
+            button.style.left = `${gesture.left}px`; button.style.top = `${gesture.top}px`;
+            button.style.transform = `translate3d(${left - gesture.left}px, ${top - gesture.top}px, 0)`;
+        } else {
+            button.style.transform = 'none'; button.style.left = `${left}px`; button.style.top = `${top}px`;
+        }
         if (menuOpen()) {
             const rect = button.getBoundingClientRect(), gap = 8;
-            menu.style.width = `${Math.min(224, box.right - box.xmin)}px`;
+            menu.style.width = `${Math.min(276, box.right - box.xmin)}px`;
             const below = box.ymax + size - rect.bottom - gap, above = rect.top - box.ymin - gap;
             const openBelow = below >= above;
             menu.style.maxHeight = `${Math.max(0, openBelow ? below : above)}px`;
@@ -220,6 +243,7 @@ function setupDesktopPet() {
     function schedule() { if (!frame && active) frame = requestAnimationFrame(place); }
     function refresh() {
         const prefs = desktopPetPrefs(db.desktopPetSettings), size = Math.max(44, prefs.sizePx);
+        entry.querySelector('[data-state]').textContent = prefs.enabled ? '已开启' : '未开启';
         if (prefs.enabled) icon.src = prefs.image || desktopPetDefaultArt; else icon.removeAttribute('src');
         button.style.setProperty('--uvu-pet-size', `${prefs.sizePx}px`);
         button.style.width = button.style.height = `${size}px`;
@@ -267,6 +291,22 @@ function setupDesktopPet() {
         gesture.dragging = true; gesture.x = gesture.left + dx; gesture.y = gesture.top + dy;
         button.dataset.dragging = ''; closeMenu(false); schedule();
     }
+    async function savePosition() {
+        if (positionSaving) return;
+        positionSaving = true;
+        try {
+            while (pendingMove) {
+                const move = pendingMove;
+                try {
+                    await desktopPetSavePrefs({ ...desktopPetPrefs(move.previous), position: move.position }, move.previous);
+                    // A later drag may have started before this transaction committed.
+                    if (pendingMove !== move && pendingMove.previous === move.previous) pendingMove.previous = db.desktopPetSettings;
+                } catch { showToast('桌宠位置未保存，请重试'); }
+                if (pendingMove === move) pendingMove = null;
+                schedule();
+            }
+        } finally { positionSaving = false; }
+    }
     function finishDrag(event, save) {
         if (!gesture || (event && event.pointerId !== gesture.id)) return;
         const previous = db.desktopPetSettings, prefs = desktopPetPrefs(previous), last = gesture;
@@ -274,8 +314,8 @@ function setupDesktopPet() {
         if (button.hasPointerCapture?.(last.id)) button.releasePointerCapture(last.id);
         if (last.dragging && save && screen() === last.screen) {
             const { xmin, xmax, ymin, ymax } = limits(Math.max(44, prefs.sizePx));
-            prefs.position = [desktopPetClamp((last.x - xmin) / Math.max(1, xmax - xmin), 0, 1), desktopPetClamp((last.y - ymin) / Math.max(1, ymax - ymin), 0, 1)];
-            desktopPetSavePrefs(prefs, previous).catch(() => showToast('桌宠位置未保存，请重试')).finally(schedule);
+            const position = [desktopPetClamp((last.x - xmin) / Math.max(1, xmax - xmin), 0, 1), desktopPetClamp((last.y - ymin) / Math.max(1, ymax - ymin), 0, 1)];
+            pendingMove = { position, previous }; void savePosition();
         }
         if (last.dragging || !save) { draggedClick = true; setTimeout(() => { draggedClick = false; }, 0); }
         schedule();
@@ -286,9 +326,18 @@ function setupDesktopPet() {
         preview.src = draftImage || desktopPetDefaultArt;
         preview.width = preview.height = Number(fields.size.value);
         form.querySelector('output').textContent = `${fields.size.value} px`;
+        fields.size.style.setProperty('--uvu-pet-range', `${(Number(fields.size.value) - 40) / 56 * 100}%`);
+        const selected = fields.corner.value;
+        const names = { tl: '左上', tr: '右上', bl: '左下', br: '右下', custom: '拖动位置' };
+        form.querySelector('[data-position-label]').textContent = names[selected];
+        for (const control of form.querySelectorAll('[data-corner]')) control.setAttribute('aria-pressed', String(control.dataset.corner === selected));
     }
-    entry.hidden = false;
-    entry.onclick = () => {
+    const mountEntry = () => {
+        const group = document.querySelector('#customize-form .kkt-settings-container > .kkt-group');
+        if (group) { group.prepend(entry); entry.hidden = false; }
+    };
+    document.addEventListener('uvu-customize-rendered', mountEntry); mountEntry();
+    const openSettings = () => {
         if (draftBusy) return;
         draftPrevious = db.desktopPetSettings;
         const prefs = desktopPetPrefs(draftPrevious);
@@ -298,9 +347,13 @@ function setupDesktopPet() {
         form.querySelector('[role=status]').textContent = '';
         previewDraft(); settings.showModal(); schedule();
     };
+    entry.onclick = openSettings;
     settings.onclose = () => { imageRead++; schedule(); };
     settings.oncancel = event => { if (draftBusy) event.preventDefault(); };
     fields.size.oninput = previewDraft;
+    form.querySelector('[data-image]').onclick = () => fields.image.click();
+    form.querySelector('[data-default]').onclick = () => { imageRead++; draftImage = ''; fields.image.value = ''; form.querySelector('.uvu-pet-primary').disabled = draftBusy; previewDraft(); };
+    for (const control of form.querySelectorAll('[data-corner]')) control.onclick = () => { fields.corner.value = control.dataset.corner; previewDraft(); };
     form.querySelector('[data-close]').onclick = () => { if (!draftBusy) settings.close(); };
     form.querySelector('[data-reset]').onclick = () => {
         imageRead++; draftImage = ''; draftPosition = null; fields.size.value = 56; fields.corner.value = 'br'; fields.image.value = '';
@@ -393,15 +446,15 @@ function setupDesktopPet() {
         finally { apiBusy = false; apiFields.saveOnly.disabled = apiFields.apply.disabled = false; }
     };
     function renderMenu() {
-        menu.innerHTML = `<div class="uvu-pet-head"><h2>API 快捷切换</h2><button type="button" data-close aria-label="收起 API 快捷菜单">×</button></div>
-          <label>生效范围<select aria-label="API 生效范围"><option value="default">聊天默认</option><option value="session">当前会话</option></select></label>
+        menu.innerHTML = `<div class="uvu-pet-head"><h2>切换 API</h2><button type="button" data-help class="uvu-pet-icon" aria-label="使用说明">${desktopPetIcon('help')}</button><button type="button" data-close class="uvu-pet-icon" aria-label="收起 API 快捷菜单">${desktopPetIcon('close')}</button></div>
+          <div class="uvu-pet-scopes" role="group" aria-label="API 生效范围"><button type="button" data-scope="default" aria-pressed="${scope === 'default'}">聊天默认</button><button type="button" data-scope="session" aria-pressed="${scope === 'session'}" ${menuTarget ? '' : 'disabled'}>当前会话</button></div>
           <p class="uvu-pet-status" role="status"></p><div class="uvu-pet-list"></div>
-          <div class="uvu-pet-actions"><button type="button" data-new class="uvu-pet-primary">＋ 新建 API</button><button type="button" data-hide>隐藏桌宠</button></div>`;
-        const status = menu.querySelector('[role=status]'), list = menu.querySelector('.uvu-pet-list'), select = menu.querySelector('select');
+          <div class="uvu-pet-actions"><button type="button" data-new class="uvu-pet-text">${desktopPetIcon('plus')}新建 API</button><button type="button" data-settings class="uvu-pet-icon" aria-label="桌宠设置">${desktopPetIcon('settings')}</button></div>`;
+        const status = menu.querySelector('[role=status]'), list = menu.querySelector('.uvu-pet-list');
         const session = scope === 'session' && menuTarget, presets = _getApiPresets().filter(p => p && typeof p.name === 'string' && p.name.trim());
-        select.value = scope;
-        select.lastElementChild.disabled = !menuTarget;
-        select.onchange = () => { scope = select.value; renderMenu(); menu.querySelector('select').focus(); place(); };
+        for (const control of menu.querySelectorAll('[data-scope]')) control.onclick = () => {
+            scope = control.dataset.scope; renderMenu(); menu.querySelector(`[data-scope="${scope}"]`).focus(); place();
+        };
         const bound = session && session.chat.exclusiveApiEnabled;
         const same = (left, right) => Object.entries(left).every(([key, value]) => key === 'url' ? String(right?.url || '').replace(/\/+$/, '') === value : right?.[key] === value);
         const matches = presets.filter(p => {
@@ -409,9 +462,19 @@ function setupDesktopPet() {
             try { return same(desktopPetApiConfig(p.data || {}), db.apiSettings); } catch { return false; }
         });
         const current = matches.length === 1 ? matches[0] : null;
-        status.textContent = current ? `当前：${current.name}` : session ? (bound ? '专属绑定失效或重名，请重选' : '当前：跟随聊天默认') : (db.apiSettings?.model ? '当前：自定义设置' : '尚未设置主 API');
+        status.textContent = current || (session && !bound) ? '' : session ? '专属绑定失效或重名，请重选' : (db.apiSettings?.model ? '当前：自定义设置' : '尚未设置主 API');
         const pick = (name, checked, selected) => {
-            const item = document.createElement('button'); item.type = 'button'; item.textContent = name; item.title = name;
+            const item = document.createElement('button'); item.type = 'button'; item.title = name;
+            item.setAttribute('aria-label', name);
+            const text = document.createElement('span'), title = document.createElement('span');
+            text.className = 'uvu-pet-option-text'; title.textContent = name; text.append(title);
+            if (selected) {
+                const detail = document.createElement('small'), data = selected.data || {};
+                const names = { newapi: 'OpenAI 兼容', gemini: 'Gemini', deepseek: 'DeepSeek', claude: 'Claude' };
+                detail.textContent = [names[data.provider || 'newapi'] || '自定义服务', String(data.model || '').trim()].filter(Boolean).join(' · ');
+                text.append(detail);
+            }
+            item.append(text); item.insertAdjacentHTML('beforeend', desktopPetIcon('check'));
             item.setAttribute('aria-pressed', String(checked));
             item.onclick = async () => {
                 if (apiBusy) return;
@@ -431,17 +494,12 @@ function setupDesktopPet() {
         for (const preset of presets) pick(preset.name, preset === current, preset);
         if (!presets.length && !session) list.textContent = '还没有 API 预设';
         menu.querySelector('[data-close]').onclick = () => closeMenu();
+        menu.querySelector('[data-help]').onclick = showHelp;
+        menu.querySelector('[data-settings]').onclick = () => { closeMenu(false); openSettings(); };
         menu.querySelector('[data-new]').onclick = () => {
             closeMenu(false); formTarget = session || null;
             apiForm.querySelector('[data-destination]').textContent = formTarget ? '切换范围：当前会话' : '切换范围：聊天默认';
             apiDialog.showModal(); schedule();
-        };
-        const hide = menu.querySelector('[data-hide]');
-        hide.onclick = async () => {
-            const old = db.desktopPetSettings;
-            hide.disabled = true;
-            try { await desktopPetSavePrefs({ ...desktopPetPrefs(old), enabled: false }, old); refresh(); }
-            catch { hide.disabled = false; showToast('桌宠未隐藏，请刷新页面后重试'); }
         };
     }
     const startMenu = () => {

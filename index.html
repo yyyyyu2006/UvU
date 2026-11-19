@@ -27,7 +27,7 @@
     <link rel="manifest" href="manifest.json">
     <!-- CSS Split: Base & Layout -->
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/modules/desktop_pet.css?v=20261119-pet">
+    <link rel="stylesheet" href="css/modules/desktop_pet.css?v=20261119-pet-redesign">
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
     <link rel="stylesheet" href="css/modules/home_drag.css?v=20261107-drag">
 
@@ -883,7 +883,7 @@ node setup-server-plugin.js</code></pre>
     <div id="customize-screen" class="screen">
         <header class="app-header"><button class="back-btn" data-target="home-screen">‹</button><div class="title-container"><h1 class="title">个性化设置</h1></div><div class="placeholder"></div></header>
         <main class="content" style="padding: 16px;">
-            <button type="button" id="uvu-pet-settings-entry" class="btn btn-neutral" hidden>桌宠设置</button>
+            <button type="button" id="uvu-pet-settings-entry" class="kkt-item" aria-label="桌宠设置" hidden><span class="kkt-item-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10V3l6 4h4l6-4v7c2 2 2 4 1 7-1 3-4 4-9 4s-8-1-9-4c-1-3-1-5 1-7Z"/><path d="M8 12v1m8-1v1m-6 4q2 2 4 0"/></svg></span><span class="kkt-item-content"><span class="kkt-item-title">桌宠</span></span><span data-state></span><span class="kkt-arrow" aria-hidden="true">›</span></button>
             <section class="kkt-group home-preset-card" aria-labelledby="home-preset-title">
                 <h2 id="home-preset-title">主页预设</h2>
                 <p>分享主页分页布局、图标、壁纸和小组件（含图片、文字及组件代码）。不会导出聊天记录、角色卡或 API 设置。</p>
@@ -3036,7 +3036,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/model_picker.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/settings_api.js?v=20261119-pet"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js?v=20261118-preset-save"></script> <!-- 预设管理 (气泡、人设等) -->
-<script src="js/modules/settings_customize.js?v=20261107-music"></script> <!-- 个性化与外观设置 -->
+<script src="js/modules/settings_customize.js?v=20261119-pet-entry"></script> <!-- 个性化与外观设置 -->
 <script src="js/modules/home_presets.js?v=20261111-persistence-vector-v1"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
@@ -3202,7 +3202,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_catalog.js?v=20261112-compact-music-v1"></script>
 <script src="js/modules/music_ui.js?v=20261116-panel-help-tabs"></script>
 <script src="js/modules/music_together_ui.js?v=20261112-chat-only"></script>
-<script src="js/modules/desktop_pet.js?v=20261119-pet-guards"></script>
+<script src="js/modules/desktop_pet.js?v=20261119-pet-redesign"></script>
 <script src="js/main.js?v=20261119-pet"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

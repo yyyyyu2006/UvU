@@ -453,6 +453,7 @@ function renderCustomizeForm() {
 
     container.innerHTML = appearanceSection + soundSectionHTML + iconsSectionHTML;
     customizeForm.appendChild(container);
+    document.dispatchEvent(new Event('uvu-customize-rendered'));
 
     // 注入模态框 HTML 到 body (如果不存在)
     if (!document.getElementById('font-settings-modal')) {
