@@ -19,7 +19,23 @@ function desktopPetPrefs(value) {
     const position = Array.isArray(value?.position) && value.position.length === 2 && value.position.every(Number.isFinite)
         ? value.position.map(n => desktopPetClamp(n, 0, 1)) : null;
     const image = typeof value?.image === 'string' && value.image.length < 490000 && /^data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(value.image) ? value.image : '';
-    return { version: 1, enabled: value?.enabled === true, anchor: corner, position, sizePx: Number.isFinite(value?.sizePx) ? desktopPetClamp(value.sizePx, 40, 96) : 56, image };
+    const shape = ['original', 'square', 'rectangle', 'circle'].includes(value?.shape) ? value.shape : 'original';
+    const cornerRadius = Number.isFinite(value?.cornerRadius) ? desktopPetClamp(value.cornerRadius, 0, 50) : 0;
+    const backgroundColor = typeof value?.backgroundColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor.toLowerCase() : '';
+    return { version: 1, shape, cornerRadius, backgroundColor, enabled: value?.enabled === true, anchor: corner, position, sizePx: Number.isFinite(value?.sizePx) ? desktopPetClamp(value.sizePx, 40, 96) : 56, image };
+}
+
+function desktopPetDimensions(prefs) {
+    return { width: prefs.shape === 'rectangle' ? Math.round(prefs.sizePx * 4 / 3) : prefs.sizePx, height: prefs.sizePx };
+}
+
+function desktopPetApplyAppearance(art, prefs, scale = 1) {
+    const size = desktopPetDimensions(prefs);
+    art.dataset.shape = prefs.shape;
+    art.style.width = size.width * scale + 'px';
+    art.style.height = size.height * scale + 'px';
+    art.style.borderRadius = (prefs.shape === 'circle' ? 50 : prefs.cornerRadius) + '%';
+    art.style.backgroundColor = prefs.backgroundColor || 'transparent';
 }
 
 async function desktopPetReadImage(file) {
@@ -131,13 +147,16 @@ function setupDesktopPet() {
     const host = document.createElement('div');
     host.id = 'uvu-pet-feature';
     host.innerHTML = `
-        <button type="button" id="uvu-pet-button" aria-label="桌宠 API 快捷菜单" aria-controls="uvu-pet-menu" aria-expanded="false" hidden><img alt="" draggable="false"></button>
+        <button type="button" id="uvu-pet-button" aria-label="桌宠 API 快捷菜单" aria-controls="uvu-pet-menu" aria-expanded="false" hidden><span class="uvu-pet-art"><img alt="" draggable="false"></span></button>
         <section id="uvu-pet-menu" class="uvu-pet-panel" aria-label="API 快捷切换" hidden></section>
         <dialog id="uvu-pet-settings" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-settings-title">
           <form><div class="uvu-pet-head"><h2 id="uvu-pet-settings-title">桌宠设置</h2><button type="button" data-help class="uvu-pet-icon" aria-label="使用说明">${desktopPetIcon('help')}</button><button type="button" data-close class="uvu-pet-icon" aria-label="关闭桌宠设置">${desktopPetIcon('close')}</button></div>
           <label class="uvu-pet-inline"><span>显示桌宠</span><span class="uvu-pet-switch"><input name="enabled" type="checkbox" autofocus><span aria-hidden="true"></span></span></label>
-          <div class="uvu-pet-image-row"><div class="uvu-pet-preview"><img alt="桌宠预览"></div><div class="uvu-pet-image-actions"><button type="button" data-image>更换图片</button><button type="button" data-default class="uvu-pet-text">使用默认图片</button></div><input name="image" type="file" accept="image/png,image/jpeg,image/webp" aria-label="桌宠图片" hidden></div>
+          <div class="uvu-pet-image-row"><div class="uvu-pet-preview"><span class="uvu-pet-art"><img alt="桌宠预览"></span></div><div class="uvu-pet-image-actions"><button type="button" data-image>更换图片</button><button type="button" data-default class="uvu-pet-text">使用默认图片</button></div><input name="image" type="file" accept="image/png,image/jpeg,image/webp" aria-label="桌宠图片" hidden></div>
           <div class="uvu-pet-size"><label for="uvu-pet-size">大小 <output for="uvu-pet-size"></output></label><input id="uvu-pet-size" name="size" type="range" min="40" max="96" step="1"><div class="uvu-pet-range-ends"><span>40</span><span>96</span></div></div>
+          <div class="uvu-pet-shape"><span id="uvu-pet-shape-title">外形</span><input name="shape" type="hidden"><div class="uvu-pet-shapes" role="group" aria-labelledby="uvu-pet-shape-title"><button type="button" data-shape="original" aria-pressed="false">原图</button><button type="button" data-shape="square" aria-pressed="false">正方形</button><button type="button" data-shape="rectangle" aria-pressed="false">长方形</button><button type="button" data-shape="circle" aria-pressed="false">圆形</button></div></div>
+          <div class="uvu-pet-size"><label for="uvu-pet-radius">圆角 <output for="uvu-pet-radius"></output></label><input id="uvu-pet-radius" name="radius" type="range" min="0" max="50" step="1"></div>
+          <div class="uvu-pet-background"><label class="uvu-pet-inline"><span>显示背景</span><span class="uvu-pet-switch"><input name="backgroundEnabled" type="checkbox"><span aria-hidden="true"></span></span></label><label class="uvu-pet-color">背景颜色<input name="backgroundColor" type="color" value="#ffffff"></label></div>
           <div class="uvu-pet-position"><div class="uvu-pet-field-head"><span id="uvu-pet-position-title">位置</span><span data-position-label></span></div><input name="corner" type="hidden"><div class="uvu-pet-corners" role="group" aria-labelledby="uvu-pet-position-title">${[['tl', '左上'], ['tr', '右上'], ['bl', '左下'], ['br', '右下']].map(([key, text]) => `<button type="button" data-corner="${key}" aria-pressed="false">${desktopPetIcon(key)}${text}</button>`).join('')}</div></div>
           <p class="uvu-pet-status" role="status"></p>
           <div class="uvu-pet-actions"><button type="button" data-reset>恢复默认外观</button><button class="uvu-pet-primary">保存</button></div></form>
@@ -154,9 +173,9 @@ function setupDesktopPet() {
           <button type="button" data-api-test>测试连接并读取模型</button>
           <div class="uvu-pet-actions"><button name="saveOnly" value="save">保存为预设</button><button name="apply" class="uvu-pet-primary" value="apply">保存并切换</button></div></form>
         </dialog>
-        <dialog id="uvu-pet-help" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-help-title"><div class="uvu-pet-head"><h2 id="uvu-pet-help-title">使用说明</h2><button type="button" data-close class="uvu-pet-icon" aria-label="关闭使用说明" autofocus>${desktopPetIcon('close')}</button></div><div class="uvu-pet-help-body"><p>桌宠显示在 UvU 页面内。按住拖动，松手后记住位置，也可以在设置中直接选择四角。</p><p>点击桌宠可切换聊天默认 API，或绑定当前私聊／群聊的预设。切换只影响之后发起的请求，正在生成的回复继续使用原设置。会话绑定由该会话的各存档共享。</p><p>图片支持 4 MB 以内的 PNG、JPEG、WebP，最长边不超过 4096 像素，读取后会压缩保存。</p><p>新建 API 时，只有点击“测试连接并读取模型”才会请求服务商。密钥保存在当前浏览器，导出设置备份时可能包含，请妥善保管。</p><p>要收起桌宠，请在桌宠设置中关闭“显示桌宠”并保存。</p></div></dialog>`;
+        <dialog id="uvu-pet-help" class="uvu-pet-panel uvu-pet-dialog" aria-labelledby="uvu-pet-help-title"><div class="uvu-pet-head"><h2 id="uvu-pet-help-title">使用说明</h2><button type="button" data-close class="uvu-pet-icon" aria-label="关闭使用说明" autofocus>${desktopPetIcon('close')}</button></div><div class="uvu-pet-help-body"><p>桌宠显示在 UvU 页面内。按住拖动，松手后记住位置，也可以在设置中直接选择四角。</p><p>点击桌宠可切换聊天默认 API，或绑定当前私聊／群聊的预设。切换只影响之后发起的请求，正在生成的回复继续使用原设置。会话绑定由该会话的各存档共享。</p><p>图片支持 4 MB 以内的 PNG、JPEG、WebP，最长边不超过 4096 像素，读取后会压缩保存。</p><p>新建 API 时，只有点击“测试连接并读取模型”才会请求服务商。密钥保存在当前浏览器，导出设置备份时可能包含，请妥善保管。</p><p>外形可选原图、正方形、4:3 长方形或圆形。原图保留完整图片，其他外形会居中裁切；圆形固定圆角，其他外形可调整。关闭“显示背景”即为透明背景，透明图片仍保留自身透明部分。</p><p>要收起桌宠，请在桌宠设置中关闭“显示桌宠”并保存。</p></div></dialog>`;
     document.body.append(host);
-    const [button, menu, settings, apiDialog] = host.children, icon = button.firstElementChild;
+    const [button, menu, settings, apiDialog] = host.children, art = button.firstElementChild, icon = art.firstElementChild;
     const help = host.querySelector('#uvu-pet-help');
     help.querySelector('[data-close]').onclick = () => help.close();
     const showHelp = () => { help.showModal(); schedule(); };
@@ -170,7 +189,7 @@ function setupDesktopPet() {
     const apiTest = apiForm.querySelector('[data-api-test]'), modelChoices = apiForm.querySelector('datalist');
     const providerOptions = document.getElementById('api-provider')?.options;
     for (const option of providerOptions || []) apiFields.provider.add(new Option(option.textContent, option.value));
-    let draftImage = '', draftPosition, draftPrevious, imageRead = 0, draftBusy = false;
+    let draftImage = '', draftPosition, draftPrevious, draftRadius = 0, imageRead = 0, draftBusy = false;
     let active = false, frame = 0, gesture = null, draggedClick = false, openScreen = null;
     let pendingMove = null, positionSaving = false;
     let scope, menuTarget, formTarget, apiBusy = false, testRequest;
@@ -190,16 +209,16 @@ function setupDesktopPet() {
         button.setAttribute('aria-expanded', 'false');
         if (focus && !button.hidden) button.focus({ preventScroll: true });
     }
-    function limits(size) {
+    function limits(petWidth, petHeight) {
         const view = window.visualViewport, left = view?.offsetLeft || 0, top = view?.offsetTop || 0;
         const width = view?.width || innerWidth, height = view?.height || innerHeight;
         const bounds = phone.getBoundingClientRect(), edge = 10;
-        const xmin = Math.max(bounds.left, left) + edge, xmax = Math.min(bounds.right, left + width) - edge - size;
+        const xmin = Math.max(bounds.left, left) + edge, xmax = Math.min(bounds.right, left + width) - edge - petWidth;
         const ymin = Math.max(bounds.top, top) + edge, bottom = Math.min(bounds.bottom, top + height) - edge;
-        let ymax = bottom - size;
+        let ymax = bottom - petHeight;
         for (const el of [screen()?.querySelector('.message-input-area'), document.getElementById('global-bottom-nav')]) {
             const box = el?.getBoundingClientRect();
-            if (box?.height && box.top > ymin && box.top < bottom && getComputedStyle(el).visibility !== 'hidden') ymax = Math.min(ymax, box.top - edge - size);
+            if (box?.height && box.top > ymin && box.top < bottom && getComputedStyle(el).visibility !== 'hidden') ymax = Math.min(ymax, box.top - edge - petHeight);
         }
         return { xmin, xmax, ymin, ymax, bottom, right: Math.min(bounds.right, left + width) - edge };
     }
@@ -211,7 +230,8 @@ function setupDesktopPet() {
             dialog.style.maxHeight = `${Math.max(0, (viewport?.height || innerHeight) - 24)}px`;
             dialog.style.insetBlockStart = `${viewport?.offsetTop || 0}px`;
         }
-        const prefs = desktopPetPrefs(db.desktopPetSettings), size = Math.max(44, prefs.sizePx), box = limits(size);
+        const prefs = desktopPetPrefs(db.desktopPetSettings), dimensions = desktopPetDimensions(prefs);
+        const width = Math.max(44, dimensions.width), height = Math.max(44, dimensions.height), box = limits(width, height);
         const covered = host.hasAttribute('inert') || settings.open || apiDialog.open || help.open || !!document.fullscreenElement ||
             !!phone.querySelector('.modal-overlay.visible,.modal-overlay.open,.action-sheet-overlay.visible,.action-sheet-overlay.open,.settings-sidebar.open,.vc-incoming-overlay.visible,.vc-type-modal.visible,.vc-scene:not(.vc-hidden)');
         button.hidden = Boolean(covered || box.xmax < box.xmin || box.ymax < box.ymin);
@@ -229,24 +249,25 @@ function setupDesktopPet() {
         if (menuOpen()) {
             const rect = button.getBoundingClientRect(), gap = 8;
             menu.style.width = `${Math.min(276, box.right - box.xmin)}px`;
-            const below = box.ymax + size - rect.bottom - gap, above = rect.top - box.ymin - gap;
+            const below = box.ymax + height - rect.bottom - gap, above = rect.top - box.ymin - gap;
             const openBelow = below >= above;
             menu.style.maxHeight = `${Math.max(0, openBelow ? below : above)}px`;
             menu.style.left = `${desktopPetClamp(rect.right - menu.offsetWidth, box.xmin, box.right - menu.offsetWidth)}px`;
             menu.style.top = `${openBelow ? rect.bottom + gap : rect.top - gap - menu.offsetHeight}px`;
             if (Math.max(below, above) < 72) {
                 menu.style.top = `${box.ymin}px`;
-                menu.style.maxHeight = `${box.ymax + size - box.ymin}px`;
+                menu.style.maxHeight = `${box.ymax + height - box.ymin}px`;
             }
         }
     }
     function schedule() { if (!frame && active) frame = requestAnimationFrame(place); }
     function refresh() {
-        const prefs = desktopPetPrefs(db.desktopPetSettings), size = Math.max(44, prefs.sizePx);
+        const prefs = desktopPetPrefs(db.desktopPetSettings), dimensions = desktopPetDimensions(prefs);
         entry.querySelector('[data-state]').textContent = prefs.enabled ? '已开启' : '未开启';
         if (prefs.enabled) icon.src = prefs.image || desktopPetDefaultArt; else icon.removeAttribute('src');
-        button.style.setProperty('--uvu-pet-size', `${prefs.sizePx}px`);
-        button.style.width = button.style.height = `${size}px`;
+        desktopPetApplyAppearance(art, prefs);
+        button.style.width = Math.max(44, dimensions.width) + 'px';
+        button.style.height = Math.max(44, dimensions.height) + 'px';
         if (active !== prefs.enabled) {
             active = prefs.enabled;
             if (active) {
@@ -313,7 +334,8 @@ function setupDesktopPet() {
         gesture = null; delete button.dataset.dragging;
         if (button.hasPointerCapture?.(last.id)) button.releasePointerCapture(last.id);
         if (last.dragging && save && screen() === last.screen) {
-            const { xmin, xmax, ymin, ymax } = limits(Math.max(44, prefs.sizePx));
+            const dimensions = desktopPetDimensions(prefs);
+            const { xmin, xmax, ymin, ymax } = limits(Math.max(44, dimensions.width), Math.max(44, dimensions.height));
             const position = [desktopPetClamp((last.x - xmin) / Math.max(1, xmax - xmin), 0, 1), desktopPetClamp((last.y - ymin) / Math.max(1, ymax - ymin), 0, 1)];
             pendingMove = { position, previous }; void savePosition();
         }
@@ -324,7 +346,16 @@ function setupDesktopPet() {
     function cancelDrag(event) { finishDrag(event, false); }
     function previewDraft() {
         preview.src = draftImage || desktopPetDefaultArt;
-        preview.width = preview.height = Number(fields.size.value);
+        const prefs = desktopPetPrefs({ sizePx: Number(fields.size.value), shape: fields.shape.value,
+            cornerRadius: draftRadius, backgroundColor: fields.backgroundEnabled.checked ? fields.backgroundColor.value : '' });
+        const dimensions = desktopPetDimensions(prefs);
+        desktopPetApplyAppearance(preview.parentElement, prefs, Math.min(1, 88 / dimensions.width, 80 / dimensions.height));
+        fields.radius.value = prefs.shape === 'circle' ? 50 : draftRadius;
+        fields.radius.disabled = prefs.shape === 'circle';
+        fields.backgroundColor.disabled = !fields.backgroundEnabled.checked;
+        form.querySelector('output[for="uvu-pet-radius"]').textContent = (prefs.shape === 'circle' ? 50 : prefs.cornerRadius) + '%';
+        fields.radius.style.setProperty('--uvu-pet-range', (prefs.shape === 'circle' ? 100 : prefs.cornerRadius * 2) + '%');
+        for (const control of form.querySelectorAll('button[data-shape]')) control.setAttribute('aria-pressed', String(control.dataset.shape === prefs.shape));
         form.querySelector('output').textContent = `${fields.size.value} px`;
         fields.size.style.setProperty('--uvu-pet-range', `${(Number(fields.size.value) - 40) / 56 * 100}%`);
         const selected = fields.corner.value;
@@ -342,6 +373,8 @@ function setupDesktopPet() {
         draftPrevious = db.desktopPetSettings;
         const prefs = desktopPetPrefs(draftPrevious);
         fields.enabled.checked = prefs.enabled; fields.size.value = prefs.sizePx; fields.corner.value = prefs.position ? 'custom' : prefs.anchor;
+        fields.shape.value = prefs.shape; draftRadius = prefs.cornerRadius; fields.radius.value = draftRadius;
+        fields.backgroundEnabled.checked = Boolean(prefs.backgroundColor); fields.backgroundColor.value = prefs.backgroundColor || '#ffffff';
         fields.image.value = ''; draftImage = prefs.image; draftPosition = prefs.position;
         form.querySelector('.uvu-pet-primary').disabled = draftBusy;
         form.querySelector('[role=status]').textContent = '';
@@ -350,13 +383,16 @@ function setupDesktopPet() {
     entry.onclick = openSettings;
     settings.onclose = () => { imageRead++; schedule(); };
     settings.oncancel = event => { if (draftBusy) event.preventDefault(); };
-    fields.size.oninput = previewDraft;
+    for (const field of [fields.size, fields.backgroundEnabled, fields.backgroundColor]) field.oninput = previewDraft;
+    fields.radius.oninput = () => { draftRadius = Number(fields.radius.value); previewDraft(); };
+    for (const control of form.querySelectorAll('button[data-shape]')) control.onclick = () => { fields.shape.value = control.dataset.shape; previewDraft(); };
     form.querySelector('[data-image]').onclick = () => fields.image.click();
     form.querySelector('[data-default]').onclick = () => { imageRead++; draftImage = ''; fields.image.value = ''; form.querySelector('.uvu-pet-primary').disabled = draftBusy; previewDraft(); };
     for (const control of form.querySelectorAll('[data-corner]')) control.onclick = () => { fields.corner.value = control.dataset.corner; previewDraft(); };
     form.querySelector('[data-close]').onclick = () => { if (!draftBusy) settings.close(); };
     form.querySelector('[data-reset]').onclick = () => {
-        imageRead++; draftImage = ''; draftPosition = null; fields.size.value = 56; fields.corner.value = 'br'; fields.image.value = '';
+        imageRead++; draftImage = ''; draftPosition = null; fields.shape.value = 'original'; draftRadius = 0; fields.radius.value = 0;
+        fields.backgroundEnabled.checked = false; fields.backgroundColor.value = '#ffffff'; fields.size.value = 56; fields.corner.value = 'br'; fields.image.value = '';
         form.querySelector('.uvu-pet-primary').disabled = draftBusy;
         form.querySelector('[role=status]').textContent = ''; previewDraft();
     };
@@ -378,6 +414,7 @@ function setupDesktopPet() {
         // Snapshot values before disabling controls; restore the original enabled state on failure.
         const custom = fields.corner.value === 'custom';
         const next = { enabled: fields.enabled.checked, sizePx: Number(fields.size.value), image: draftImage,
+            shape: fields.shape.value, cornerRadius: draftRadius, backgroundColor: fields.backgroundEnabled.checked ? fields.backgroundColor.value : '',
             anchor: custom ? desktopPetPrefs(draftPrevious).anchor : fields.corner.value, position: custom ? draftPosition : null };
         controls.forEach(control => { control.disabled = true; });
         settings.setAttribute('closedby', 'none');

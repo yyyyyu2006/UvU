@@ -18,7 +18,7 @@ const { fullApp } = require('./helpers/full_app_browser.cjs');
         await page.waitForFunction(() => document.querySelector('#uvu-pet-settings img').src.startsWith('data:image/webp'));
         await settings.locator('input[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png', buffer: Buffer.from('invalid') });
         await settings.getByText('图片格式不支持').waitFor();
-        await settings.locator('input[type=range]').fill('72');
+        await settings.locator('input[name=size]').fill('72');
         await settings.getByRole('button', { name: '保存', exact: true }).click();
         await pet.waitFor();
         assert.equal((await pet.boundingBox()).width, 72);

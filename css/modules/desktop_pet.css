@@ -6,7 +6,10 @@
 #uvu-pet-button, .uvu-pet-panel { box-sizing:border-box; color:#41464e; font:14px/1.5 system-ui,sans-serif; }
 #uvu-pet-button { position:fixed; z-index:35; display:grid; place-items:center; padding:0; margin:0; border:0; background:transparent; touch-action:none; cursor:grab; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; transition:none; }
 #uvu-pet-button[data-dragging] { cursor:grabbing; will-change:transform; }
-#uvu-pet-button img { width:var(--uvu-pet-size); height:var(--uvu-pet-size); object-fit:contain; pointer-events:none; filter:drop-shadow(0 2px 4px #25303b24); }
+#uvu-pet-feature .uvu-pet-art { display:block; overflow:hidden; flex:none; pointer-events:none; }
+#uvu-pet-button > .uvu-pet-art { filter:drop-shadow(0 2px 4px #25303b24); }
+#uvu-pet-feature .uvu-pet-art img { display:block; width:100%; height:100%; object-fit:cover; pointer-events:none; border-radius:inherit; }
+#uvu-pet-feature .uvu-pet-art[data-shape=original] img { object-fit:contain; }
 .uvu-pet-panel { color-scheme:light; background:#fff; border:1px solid #eef1f4; border-radius:24px; padding:16px; box-shadow:0 12px 32px #33445514; overflow:auto; overscroll-behavior:contain; }
 .uvu-pet-panel *, .uvu-pet-panel *::before, .uvu-pet-panel *::after { box-sizing:border-box; }
 #uvu-pet-menu { position:fixed; z-index:36; inset:auto; margin:0; width:276px; padding:15px 15px 10px; border-radius:21px; }
@@ -59,8 +62,16 @@ dialog.uvu-pet-dialog form { display:grid; gap:12px; margin:0; }
 .uvu-pet-switch input:focus-visible + span { outline:2px solid #6d98af; outline-offset:2px; }
 .uvu-pet-switch input:disabled + span { opacity:.55; }
 .uvu-pet-image-row { display:flex; align-items:center; gap:19px; background:#f6f8fa; border-radius:16px; padding:11px 17px; min-height:101px; margin:4px 0 7px; }
-.uvu-pet-preview { display:grid; place-items:center; width:75px; min-height:79px; flex:none; }
-.uvu-pet-preview img { object-fit:contain; max-width:96px; max-height:96px; }
+.uvu-pet-preview { display:grid; place-items:center; width:90px; min-height:80px; flex:none; }
+#uvu-pet-settings .uvu-pet-shape > span { color:#41464e; font-size:13px; }
+#uvu-pet-settings .uvu-pet-shapes { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin-top:8px; }
+#uvu-pet-settings .uvu-pet-shapes button { padding:6px 2px; min-height:34px; font-size:11px; }
+#uvu-pet-settings .uvu-pet-shapes button[aria-pressed=true] { background:#d4e5ef; color:#4e6a7e; }
+#uvu-pet-settings .uvu-pet-size input:disabled { opacity:.45; cursor:default; }
+#uvu-pet-settings .uvu-pet-background { display:grid; gap:10px; }
+#uvu-pet-settings .uvu-pet-color { display:flex; justify-content:space-between; align-items:center; }
+#uvu-pet-settings .uvu-pet-color input[type=color] { width:44px; min-height:30px; height:30px; padding:2px; border:1px solid #e3e9ed; border-radius:8px; background:transparent; }
+#uvu-pet-settings .uvu-pet-color input:disabled { opacity:.4; }
 .uvu-pet-image-actions { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:0; }
 .uvu-pet-image-actions [data-image] { border-radius:18px; min-height:32px; padding:6px 14px; background:#e6edf2; white-space:nowrap; }
 .uvu-pet-image-actions [data-default] { white-space:nowrap; }

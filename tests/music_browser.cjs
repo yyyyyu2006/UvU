@@ -62,7 +62,7 @@ const server = http.createServer((req,res) => {
             db.characters=[{id:'music-char',realName:'林间',remarkName:'林间',myName:'我',myAvatar:'',avatar:'',persona:'温柔的朋友',myPersona:'我',history:[],maxMemory:20,worldBookIds:[]}]; db.groups=[];db.backupReminderSettings={enabled:false};ensureAllChatArchives();await saveData();await UvUMusic.saveSettings({endpoint:base});setupHomeScreen();
         },base);
         assert.equal(await page.locator('[data-id="app-uvu-music"]').count(),1); assert.equal(await page.locator('[data-id="app-placeholder"] [data-target="uvu-story-bridge-screen"]').count(),1);
-        assert.equal(await page.locator('[data-id="app-uvu-music"] img').getAttribute('src'),'assets/music/app-icon.png?v=20261119-transparent','music uses the user-provided default icon');
+        assert.equal(await page.locator('[data-id="app-uvu-music"] img').getAttribute('src'),'assets/music/app-icon.png?v=20261119-icon-small','music uses the user-provided default icon');
         assert.ok(await page.locator('[data-id="app-uvu-music"] img').evaluate(n=>n.complete&&n.naturalWidth>0),'default music icon loads');
         await page.evaluate(()=>UvUMusicUI.open());
         assert.deepEqual(await page.locator('#uvu-music-screen [data-um-tab]').allTextContents(),['主页','新发现','广播','资料库','搜索'],'approved five-tab navigation');
