@@ -146,6 +146,9 @@ function setupDesktopPet() {
     document.body.append(host);
     const [button, menu, settings, apiDialog] = host.children, icon = button.firstElementChild;
     const form = settings.querySelector('form'), fields = form.elements, preview = form.querySelector('img');
+    for (const image of [icon, preview]) image.onerror = () => {
+        if (image.getAttribute('src') && image.getAttribute('src') !== desktopPetDefaultArt) image.src = desktopPetDefaultArt;
+    };
     const apiForm = apiDialog.querySelector('form'), apiFields = apiForm.elements, apiStatus = apiForm.querySelector('[role=status]');
     const apiTest = apiForm.querySelector('[data-api-test]'), modelChoices = apiForm.querySelector('datalist');
     const providerOptions = document.getElementById('api-provider')?.options;
@@ -286,6 +289,7 @@ function setupDesktopPet() {
     }
     entry.hidden = false;
     entry.onclick = () => {
+        if (draftBusy) return;
         draftPrevious = db.desktopPetSettings;
         const prefs = desktopPetPrefs(draftPrevious);
         fields.enabled.checked = prefs.enabled; fields.size.value = prefs.sizePx; fields.corner.value = prefs.position ? 'custom' : prefs.anchor;
@@ -295,8 +299,9 @@ function setupDesktopPet() {
         previewDraft(); settings.showModal(); schedule();
     };
     settings.onclose = () => { imageRead++; schedule(); };
+    settings.oncancel = event => { if (draftBusy) event.preventDefault(); };
     fields.size.oninput = previewDraft;
-    form.querySelector('[data-close]').onclick = () => settings.close();
+    form.querySelector('[data-close]').onclick = () => { if (!draftBusy) settings.close(); };
     form.querySelector('[data-reset]').onclick = () => {
         imageRead++; draftImage = ''; draftPosition = null; fields.size.value = 56; fields.corner.value = 'br'; fields.image.value = '';
         form.querySelector('.uvu-pet-primary').disabled = draftBusy;
@@ -315,13 +320,24 @@ function setupDesktopPet() {
         const save = form.querySelector('.uvu-pet-primary');
         if (draftBusy || save.disabled) return;
         draftBusy = save.disabled = true;
+        const controls = [...fields].filter(control => !control.disabled);
+        const status = form.querySelector('[role=status]');
+        // Snapshot values before disabling controls; restore the original enabled state on failure.
+        const custom = fields.corner.value === 'custom';
+        const next = { enabled: fields.enabled.checked, sizePx: Number(fields.size.value), image: draftImage,
+            anchor: custom ? desktopPetPrefs(draftPrevious).anchor : fields.corner.value, position: custom ? draftPosition : null };
+        controls.forEach(control => { control.disabled = true; });
+        settings.setAttribute('closedby', 'none');
+        status.textContent = '正在保存…';
         try {
-            const custom = fields.corner.value === 'custom';
-            await desktopPetSavePrefs({ enabled: fields.enabled.checked, sizePx: Number(fields.size.value), image: draftImage,
-                anchor: custom ? desktopPetPrefs(draftPrevious).anchor : fields.corner.value, position: custom ? draftPosition : null }, draftPrevious);
+            await desktopPetSavePrefs(next, draftPrevious);
             settings.close(); refresh();
-        } catch { form.querySelector('[role=status]').textContent = '桌宠设置未保存。请刷新页面后重试。'; }
-        finally { draftBusy = save.disabled = false; }
+        } catch { status.textContent = '桌宠设置未保存。请刷新页面后重试。'; }
+        finally {
+            settings.removeAttribute('closedby');
+            controls.forEach(control => { control.disabled = false; });
+            draftBusy = save.disabled = false;
+        }
     };
     const apiData = () => ({ provider: apiFields.provider.value, apiUrl: apiFields.apiUrl.value, apiKey: apiFields.apiKey.value, model: apiFields.model.value });
     const stopTest = () => { testRequest?.abort(); testRequest = null; apiTest.disabled = false; };
