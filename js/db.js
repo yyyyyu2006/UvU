@@ -909,6 +909,12 @@ const loadData = async () => {
         localStorage.removeItem('gemini-chat-app-db');
         await loadData();
     }
+    // 只初始化确实没有存档的新数据库；已有分页、主题或旧版迁移数据不自动更换。
+    if (!oldLocalStorageData && settingsArray.length === 0 &&
+        [characters, groups, worldBooks, myStickers].every(items => items.length === 0) &&
+        typeof window !== 'undefined' && window.UvUDefaultHome) {
+        Object.assign(db, window.UvUDefaultHome.createSettings(db));
+    }
 };
 
 // 存储分析工具

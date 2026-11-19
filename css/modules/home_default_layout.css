@@ -1,0 +1,27 @@
+/* 只作用于主动选择的默认桌面，不改变原版或个人主页。 */
+#home-screen.uvu-default-home { padding: calc(54px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom)); }
+.uvu-default-home .home-screen-swiper { min-height: 0; }
+.home-screen-page.uvu-home-default-wrap { min-height: 0; overflow-y: auto; }
+.home-grid-layout.uvu-home-default-page {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: repeat(6, minmax(0, 1fr));
+    gap: 16px; height: 610px; min-height: 610px; flex: 0 0 610px;
+    padding: 16px 0 4px; overflow: visible;
+}
+.uvu-home-default-page > div { min-width: 0; }
+.uvu-default-home .icon-img { object-fit: contain; aspect-ratio: 1; }
+.uvu-default-home .app-name { color: #52616b; text-shadow: none; }
+.uvu-default-home .dock-normal {
+    height: 78px; margin: 0 13px; padding: 0; gap: 33px;
+    background: #f7f9fa; border: 1px solid #eef1f3; border-radius: 27px; max-width: 360px;
+}
+.uvu-default-home .dock-normal .icon-img { width: 48px; height: 48px; margin: 0; }
+.uvu-default-home .page-indicator { bottom: calc(112px + env(safe-area-inset-bottom)); }
+.uvu-default-home .page-indicator .dot { width: 5px; height: 5px; background: #c3cfd7; }
+.uvu-default-home .page-indicator .dot.active { width: 15px; border-radius: 6px; background: #7e9aae; }
+.uvu-default-home .app-icon:focus-visible,
+.uvu-home-default-page [data-widget-var]:focus-visible { outline: 2px solid #567c96; outline-offset: 3px; }
+@media (max-width: 360px) {
+    #home-screen.uvu-default-home { padding-inline: 12px; }
+    .home-grid-layout.uvu-home-default-page { gap: 12px; }
+}

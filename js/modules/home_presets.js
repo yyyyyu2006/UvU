@@ -332,6 +332,7 @@
         const exportButton = document.getElementById('home-preset-export-btn');
         const importButton = document.getElementById('home-preset-import-btn');
         const fileInput = document.getElementById('home-preset-import-input');
+        const defaultButton = document.getElementById('home-default-layout-btn');
         if (!exportButton || !importButton || !fileInput || exportButton.dataset.bound) return;
         exportButton.dataset.bound = 'true';
         const status = document.getElementById('home-preset-status');
@@ -342,11 +343,23 @@
         };
         let undoButton;
         if (importButton.insertAdjacentElement) {
-            undoButton = document.createElement('button'); undoButton.type = 'button'; undoButton.id = 'home-preset-undo'; undoButton.textContent = '撤销上次主页导入'; undoButton.hidden = !undoState;
+            undoButton = document.createElement('button'); undoButton.type = 'button'; undoButton.id = 'home-preset-undo'; undoButton.textContent = '撤销上次主页更换'; undoButton.hidden = !undoState;
             importButton.insertAdjacentElement('afterend', undoButton);
             undoButton.onclick = async () => { busy(true); try { await undoPreset(); undoButton.hidden = true; report('已恢复导入前的主页配置'); } catch (error) { report('撤销失败：' + error.message, true); } finally { busy(false); } };
         }
-        const busy = value => { exportButton.disabled = value; importButton.disabled = value; fileInput.disabled = value; if (undoButton) undoButton.disabled = value; };
+        const busy = value => { exportButton.disabled = value; importButton.disabled = value; fileInput.disabled = value; if (undoButton) undoButton.disabled = value; if (defaultButton) defaultButton.disabled = value; };
+        defaultButton?.addEventListener('click', async () => {
+            busy(true);
+            try {
+                const preset = validate({ format: FORMAT, version: VERSION, name: '白色默认布局', settings: window.UvUDefaultHome.createSettings(db) });
+                if (!await previewPreset(preset, ['应用白色默认布局？', '两页，各两个组件；第一页四个应用，第二页七个应用错落摆放。',
+                    '将更换当前分页、桌面组件和壁纸；保留自定义图标、字体与全局 CSS。原组件库保留，成功后可撤销一次。'], false)) return;
+                await applyPreset(preset);
+                if (undoButton) undoButton.hidden = false;
+                report('已应用白色默认布局，返回主页即可查看');
+            } catch (error) { report('更换失败：' + error.message, true); }
+            finally { busy(false); }
+        });
         exportButton.addEventListener('click', async () => {
             busy(true);
             try {

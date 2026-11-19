@@ -30,6 +30,7 @@
     <link rel="stylesheet" href="css/modules/desktop_pet.css?v=20261119-pet-shapes">
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
     <link rel="stylesheet" href="css/modules/home_drag.css?v=20261107-drag">
+    <link rel="stylesheet" href="css/modules/home_default_layout.css?v=20261119-home-v1">
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261115-theme-stop-compat">
@@ -891,6 +892,7 @@ node setup-server-plugin.js</code></pre>
                 <input id="home-preset-name" type="text" maxlength="80" placeholder="例如：奶油色桌面" autocomplete="off">
                 <label class="home-preset-option"><input id="home-preset-include-appearance" type="checkbox" checked> 同时导出当前字体、字号和全局 CSS</label>
                 <div class="home-preset-actions">
+                    <button id="home-default-layout-btn" type="button" class="btn btn-neutral">使用白色默认布局</button>
                     <button id="home-preset-export-btn" type="button" class="btn btn-primary">导出主页预设</button>
                     <button id="home-preset-import-btn" type="button" class="btn btn-neutral">导入主页预设</button>
                 </div>
@@ -2965,10 +2967,10 @@ node setup-server-plugin.js</code></pre>
 
 <!-- [1. 基础层] -->
 <script src="js/utils.js?v=20261115-image-bounds"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
-<script src="js/db.js?v=20261119-pet-shapes"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
+<script src="js/db.js?v=20261119-home-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
-<script src="js/ui.js?v=20261115-workshop-peek-home-recovery"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
+<script src="js/ui.js?v=20261119-home-v1"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261118-settings-retry"></script>
@@ -3037,7 +3039,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/settings_api.js?v=20261119-pet"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js?v=20261118-preset-save"></script> <!-- 预设管理 (气泡、人设等) -->
 <script src="js/modules/settings_customize.js?v=20261119-pet-entry"></script> <!-- 个性化与外观设置 -->
-<script src="js/modules/home_presets.js?v=20261111-persistence-vector-v1"></script> <!-- 主页预设导入导出 -->
+<script src="js/modules/home_presets.js?v=20261119-home-v1"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
 <script src="js/modules/sticker.js?v=20261106-quote-sticker"></script>   <!-- 表情包管理系统 -->
@@ -3149,6 +3151,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/storage_features.js?v=20261108-playlist-public"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js?v=20261115-search-widget-recovery"></script> <!-- 小组件市场 -->
+<script src="js/modules/home_default_layout.js?v=20261119-home-v1"></script>
 <script src="js/modules/tutorial.js?v=20261114-cloud-restore-latest"></script>  <!-- 教程、更新日志、GitHub备份 -->
 <script src="js/modules/more_menu.js?v=20261104-derived-features"></script> <!-- 更多菜单与状态栏管理 -->
 <script src="js/modules/search.js?v=20261115-search-widget-recovery"></script> <!-- 聊天记录搜索模块 -->

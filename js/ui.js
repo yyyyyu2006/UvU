@@ -710,6 +710,7 @@ function setupHomeScreen() {
 
     
     homeScreen.innerHTML = homeScreenHTML;
+    window.UvUDefaultHome?.decorate(homeScreen);
 
     // 执行收集到的小组件 JS 代码
     // 先清理旧的脚本标签
@@ -1182,6 +1183,8 @@ function initHomeSortables() {
 
 function enterHomeEditMode() {
     isHomeEditMode = true;
+    // 排序期间沿用原来的流式拖动；不把默认格位锁在图标上。
+    window.UvUDefaultHome?.releasePositions(homeScreen);
     const gridLayouts = document.querySelectorAll('.home-grid-layout');
     
     gridLayouts.forEach(layout => {
@@ -1215,6 +1218,7 @@ function enterHomeEditMode() {
 
 function exitHomeEditMode() {
     isHomeEditMode = false;
+    window.UvUDefaultHome?.decorate(homeScreen);
     const gridLayouts = document.querySelectorAll('.home-grid-layout');
     
     gridLayouts.forEach(layout => {
