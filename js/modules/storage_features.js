@@ -136,5 +136,13 @@ function storageBackupControls() {
     progress('正在解析备份；提交前可以取消。');
     return { signal: controller.signal, onProgress: value => progress(`已解析约 ${(value.decodedBytes / 1024 / 1024).toFixed(1)} MB 解压数据；正在读取所选分类…`),
         committing() { if (cancel) cancel.hidden = true; progress('校验已通过，正在事务提交；请保持页面打开。'); },
-        finish(message) { if (cancel) { cancel.hidden = true; cancel.onclick = null; } progress(message); } };
+        finish(message, detail) {
+            if (cancel) { cancel.hidden = true; cancel.onclick = null; }
+            progress(message);
+            if (status && detail) {
+                const summary = document.createElement('span'), reason = document.createElement('span');
+                summary.textContent = message; reason.textContent = detail;
+                status.replaceChildren(summary, document.createElement('br'), reason);
+            }
+        } };
 }

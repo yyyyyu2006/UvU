@@ -424,25 +424,37 @@ function storageRuntimeData(chat, options = {}) {
     }
     return result;
 }
-function storageContactData(chat) {
+function storageSocialError(error, path) {
+    if (error?.code !== 'UVU_MOMENTS_DATA') return new Error(path + '.momentsSocial 动态校验模块不可用，请刷新后重试', { cause: error });
+    return new Error(path + '.' + error.dataPath + '：' + error.message, { cause: error });
+}
+function storageContactData(chat, options = {}) {
     const excluded = new Set([...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery']);
     const result = {};
     Object.keys(chat).forEach(key => { if (!excluded.has(key)) result[key] = storageClone(chat[key]); });
     if (result.musicProfile !== undefined) result.musicProfile = window.UvUMusicCharacter.validateProfile(result.musicProfile);
-    if (result.momentsSocial !== undefined) window.UvUMoments.validateData(result);
+    if (result.momentsSocial !== undefined) {
+        try { window.UvUMoments.validateData(chat); }
+        catch (error) {
+            const detail = storageSocialError(error, options.path || '角色');
+            // 导出必须能保全有问题的原数据；导入仍由写入前的完整校验拦截。
+            if (!options.socialWarnings || error?.code !== 'UVU_MOMENTS_DATA') throw detail;
+            options.socialWarnings.push(detail.message);
+        }
+    }
     if (result.statusPanel) STORAGE_STATUS_KEYS.forEach(key => delete result.statusPanel[key]);
     return result;
 }
 function storageExportChat(chat, contacts, chats, options = {}) {
-    const result = contacts ? storageContactData(chat) : { id: chat.id, name: chat.name };
+    const result = contacts ? storageContactData(chat, options) : { id: chat.id, name: chat.name };
     if (chats) {
         Object.assign(result, storageRuntimeData(chat, options));
         if (contacts && chat.statusPanel) result.statusPanel = storageClone(chat.statusPanel);
         result.activeArchiveId = chat.activeArchiveId;
-        result.archives = (chat.archives || []).map(archive => {
+        result.archives = (chat.archives || []).map((archive, index) => {
             const metadata = {};
             Object.keys(archive).forEach(key => { if (key !== 'data') metadata[key] = storageClone(archive[key]); });
-            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}), ...storageRuntimeData(archive.data || {}, options) } : storageRuntimeData(archive.data || {}, options) };
+            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}, { ...options, path: `${options.path || '角色'}.archives[${index}].data` }), ...storageRuntimeData(archive.data || {}, options) } : storageRuntimeData(archive.data || {}, options) };
         });
         result.archives.forEach(archive => {
             if (contacts && archive.data.statusPanel && chat.archives.find(item => item.id === archive.id)?.data?.statusPanel) {
@@ -810,7 +822,7 @@ function storageValidateModules(modules) {
         }
         if (item.momentsSocial !== undefined) {
             try { window.UvUMoments.validateData(item); }
-            catch (_) { fail(path + '.momentsSocial', '有效的动态人物与评论关系'); }
+            catch (error) { throw storageSocialError(error, path); }
         }
         for (const key of ['persona', 'myPersona', 'realName', 'remarkName', 'myName', 'name', 'avatar']) optional(item[key], path + '.' + key, 'string');
         for (const key of ['privateSessions', 'gossipSessions']) {
@@ -1202,7 +1214,7 @@ async function handleExport() {
     const exportText = document.getElementById('storage-export-text');
     const format = document.getElementById('storage-export-format')?.value || 'ee';
     const exportOptions = { includeCredentials: document.getElementById('storage-export-purpose')?.value !== 'share' && document.getElementById('storage-export-credentials')?.checked !== false,
-        includeVectorIndex: document.getElementById('storage-export-vector-index')?.checked !== false };
+        includeVectorIndex: document.getElementById('storage-export-vector-index')?.checked !== false, socialWarnings: [] };
     const includeIntegrity = document.getElementById('storage-export-integrity')?.checked === true;
     storageBackupBusy = true;
     exportBtn.disabled = true;
@@ -1220,8 +1232,8 @@ async function handleExport() {
             exportData.modules.characters = [];
             exportData.modules.groups = [];
 
-            exportData.modules.characters = db.characters.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
-            exportData.modules.groups = db.groups.map(chat => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, exportOptions));
+            exportData.modules.characters = db.characters.map((chat, index) => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, { ...exportOptions, path: `characters[${index}]` }));
+            exportData.modules.groups = db.groups.map((chat, index) => storageExportChat(chat, exportSelection.contacts, exportSelection.chats, { ...exportOptions, path: `groups[${index}]` }));
         }
 
         // 2. Worldbooks
@@ -1276,6 +1288,7 @@ async function handleExport() {
         if (typeof storageApplyExportOptions === 'function') exportData.modules = storageApplyExportOptions(exportData.modules, exportOptions);
         exportData.backupManifest = { version: 1, categories: Object.keys(exportSelection).filter(key => exportSelection[key]),
             ...exportOptions, resources: 'external-links-preserved' };
+        if (exportOptions.socialWarnings.length) exportData.backupManifest.warnings = exportOptions.socialWarnings;
         if (includeIntegrity) {
             if (!globalThis.UvUBackupIntegrity) throw new Error('完整性校验模块未加载，请刷新后重试');
             exportText.textContent = '正在生成校验…';
@@ -1307,7 +1320,10 @@ async function handleExport() {
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        showToast(extension === 'ee' ? '导出成功' : '导出成功 (未压缩 JSON)');
+        const exportNotice = exportOptions.socialWarnings.length ? '导出成功；原动态数据已保留，导入前仍需处理：' + exportOptions.socialWarnings[0] : extension === 'ee' ? '导出成功' : '导出成功 (未压缩 JSON)';
+        const progress = document.getElementById('storage-backup-progress');
+        if (progress) progress.textContent = exportNotice;
+        showToast(exportNotice);
     } catch (error) {
         console.error('导出失败:', error);
         showToast(includeIntegrity ? '导出失败：' + error.message : '导出失败，请重试');
@@ -1356,7 +1372,7 @@ async function handleImport(event) {
         setTimeout(() => { window.location.reload(); }, 1500);
     } catch (error) {
         if (error.name !== 'AbortError') console.error('导入出错:', error);
-        controls?.finish(error.name === 'AbortError' ? '已取消，未写入数据。' : '导入失败，原数据保留。');
+        controls?.finish(error.name === 'AbortError' ? '已取消，未写入数据。' : '导入失败，原数据保留。', error.name === 'AbortError' ? '' : error.message);
         showToast(error.name === 'AbortError' ? '已取消导入，未写入数据' : '导入失败：' + error.message);
         storageBackupBusy = false;
         importLabel.classList.remove('disabled');

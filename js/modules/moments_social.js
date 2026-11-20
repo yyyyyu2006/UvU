@@ -69,26 +69,44 @@
         });
     }
     function validateData(chat) {
-        if (chat.momentsSocial !== undefined) validateConfig(chat.momentsSocial);
+        const invalid = (path, message, cause) => { throw Object.assign(new Error(message, { cause }), { code: 'UVU_MOMENTS_DATA', dataPath: path }); };
+        if (chat.momentsSocial !== undefined) {
+            try { validateConfig(chat.momentsSocial); }
+            catch (error) { invalid('momentsSocial', error.message, error); }
+        }
         if (chat.moments === undefined) return;
-        if (!Array.isArray(chat.moments) || chat.moments.length > 100000) throw new Error('动态列表无效');
-        const postIds = new Set();
+        if (!Array.isArray(chat.moments) || chat.moments.length > 100000) invalid('moments', '动态列表无效');
+        const postIds = new Map();
+        const referencedPosts = new Set([
+            ...(Array.isArray(chat.history) ? chat.history : []).map(message => message?.momentSource?.postId),
+            ...(Array.isArray(chat.memoryJournals) ? chat.memoryJournals : []).map(journal => journal?.momentId)
+        ]);
         const validRef = ref => ref === null || ref === undefined || (!!refKey(ref) && ref.id.length <= 180);
-        for (const post of chat.moments) {
-            if (!post || typeof post !== 'object' || typeof post.content !== 'string' || post.content.length > 100000 || !validRef(post.authorRef)) throw new Error('动态内容或身份无效');
-            if (post.id && (typeof post.id !== 'string' || post.id.length > 180 || postIds.has(post.id))) throw new Error('动态 ID 重复或无效');
-            postIds.add(post.id);
-            if (post.audience !== undefined && (!Array.isArray(post.audience) || post.audience.length > 66 || post.audience.some(ref => !refKey(ref)))) throw new Error('动态可见范围无效');
-            if (post.socialAttempts !== undefined && (!Array.isArray(post.socialAttempts) || post.socialAttempts.length > 20 || post.socialAttempts.some(value => !Number.isFinite(value) || value < 0))) throw new Error('动态请求次数无效');
-            if (post.socialBatches !== undefined && (!Array.isArray(post.socialBatches) || post.socialBatches.length > 200 || post.socialBatches.some(value => typeof value !== 'string' || value.length > 200))) throw new Error('动态批次记录无效');
-            if (post.likeActors !== undefined && (!Array.isArray(post.likeActors) || post.likeActors.length > 10000 || post.likeActors.some(item => !item || !refKey(item.ref) || typeof item.name !== 'string' || item.name.length > 80))) throw new Error('点赞人物无效');
-            if (post.comments !== undefined && (!Array.isArray(post.comments) || post.comments.length > 100000)) throw new Error('评论列表无效');
-            const ids = new Set();
-            for (const comment of post.comments || []) {
-                if (!comment || typeof comment.content !== 'string' || comment.content.length > 20000 || !validRef(comment.authorRef) || comment.id && (typeof comment.id !== 'string' || comment.id.length > 180 || ids.has(comment.id))) throw new Error('评论内容或身份无效');
-                if (comment.replyToCommentId && !ids.has(comment.replyToCommentId)) throw new Error('评论回复目标无效');
-                for (const key of ['deleted', 'read']) if (comment[key] !== undefined && typeof comment[key] !== 'boolean') throw new Error('评论状态无效');
-                ids.add(comment.id);
+        for (const [postIndex, post] of chat.moments.entries()) {
+            const path = `moments[${postIndex}]`;
+            if (!post || typeof post !== 'object' || typeof post.content !== 'string' || post.content.length > 100000 || !validRef(post.authorRef)) invalid(path, '动态内容或身份无效');
+            if (post.comments !== undefined && (!Array.isArray(post.comments) || post.comments.length > 100000)) invalid(path + '.comments', '评论列表无效');
+            // 原版毫秒编号可能重号；只兼容没有稳定人物/回复/记忆关联的旧数据，不改写或删除原文。
+            const legacyComment = comment => comment && !comment.authorRef && !comment.replyToCommentId && !comment.batchId;
+            const legacy = /^moment_\d+$/.test(post.id) && !post.authorRef && post.audience === undefined &&
+                post.socialAttempts === undefined && post.socialBatches === undefined &&
+                (post.likeActors === undefined || Array.isArray(post.likeActors) && !post.likeActors.length) &&
+                !referencedPosts.has(post.id) && (post.comments || []).every(legacyComment);
+            if (post.id && (typeof post.id !== 'string' || post.id.length > 180 || postIds.has(post.id) && !(legacy && postIds.get(post.id)))) invalid(path + '.id', '动态 ID 重复或无效');
+            postIds.set(post.id, legacy);
+            if (post.audience !== undefined && (!Array.isArray(post.audience) || post.audience.length > 66 || post.audience.some(ref => !refKey(ref)))) invalid(path + '.audience', '动态可见范围无效');
+            if (post.socialAttempts !== undefined && (!Array.isArray(post.socialAttempts) || post.socialAttempts.length > 20 || post.socialAttempts.some(value => !Number.isFinite(value) || value < 0))) invalid(path + '.socialAttempts', '动态请求次数无效');
+            if (post.socialBatches !== undefined && (!Array.isArray(post.socialBatches) || post.socialBatches.length > 200 || post.socialBatches.some(value => typeof value !== 'string' || value.length > 200))) invalid(path + '.socialBatches', '动态批次记录无效');
+            if (post.likeActors !== undefined && (!Array.isArray(post.likeActors) || post.likeActors.length > 10000 || post.likeActors.some(item => !item || !refKey(item.ref) || typeof item.name !== 'string' || item.name.length > 80))) invalid(path + '.likeActors', '点赞人物无效');
+            const ids = new Map(), linked = new Set((post.comments || []).map(comment => comment?.replyToCommentId));
+            for (const [commentIndex, comment] of (post.comments || []).entries()) {
+                const commentPath = `${path}.comments[${commentIndex}]`;
+                if (!comment || typeof comment.content !== 'string' || comment.content.length > 20000 || !validRef(comment.authorRef)) invalid(commentPath, '评论内容或身份无效');
+                const oldId = /^comment_\d+$/.test(comment.id) && legacyComment(comment) && !linked.has(comment.id);
+                if (comment.id && (typeof comment.id !== 'string' || comment.id.length > 180 || ids.has(comment.id) && !(oldId && ids.get(comment.id)))) invalid(commentPath + '.id', '评论 ID 重复或无效');
+                if (comment.replyToCommentId && !ids.has(comment.replyToCommentId)) invalid(commentPath + '.replyToCommentId', '评论回复目标无效');
+                for (const key of ['deleted', 'read']) if (comment[key] !== undefined && typeof comment[key] !== 'boolean') invalid(commentPath + '.' + key, '评论状态无效');
+                ids.set(comment.id, oldId);
             }
         }
     }

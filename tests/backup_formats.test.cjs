@@ -23,6 +23,71 @@ function fixture() {
     return { c, blobs, downloads, toasts, imports, element };
 }
 
+function socialFixture() {
+    const f = fixture();
+    f.c.window = f.c;
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/moments_social.js'), 'utf8'), f.c);
+    f.element('storage-export-format').value = 'json';
+    return f;
+}
+
+test('old millisecond IDs can repeat without blocking a lossless social backup roundtrip', async () => {
+    const f = socialFixture();
+    const legacy = { momentsSocial: f.c.UvUMoments.settings({}), moments: [
+        { id: 'moment_1700000000000', content: 'one', comments: [
+            { id: 'comment_1700000000000', author: 'old', content: 'first' },
+            { id: 'comment_1700000000000', author: 'old', content: 'second' }
+        ] },
+        { id: 'moment_1700000000000', content: 'two', comments: [] }
+    ] };
+    Object.assign(f.c.db.characters[0], structuredClone(legacy));
+    f.c.db.characters[0].archives = [{ id: 'old', data: structuredClone(legacy) }];
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = ["contacts", "chats"].includes(key));', f.c);
+    const before = JSON.stringify(f.c.db.characters);
+    await f.c.handleExport();
+    assert.equal(f.downloads.length, 1, f.toasts.at(-1));
+    const modules = JSON.parse(await f.blobs[0].text()).modules;
+    assert.doesNotThrow(() => f.c.storageValidateModules(modules));
+    const prepared = f.c.storagePrepareImport({ contacts: true, chats: true }, modules);
+    assert.deepEqual(JSON.parse(JSON.stringify(prepared.characters[0].moments)), legacy.moments);
+    assert.deepEqual(JSON.parse(JSON.stringify(prepared.characters[0].archives[0].data.moments)), legacy.moments);
+    assert.equal(JSON.stringify(f.c.db.characters), before);
+});
+
+test('a broken archived social link cannot prevent exporting the original data for recovery', async () => {
+    const f = socialFixture();
+    const data = { momentsSocial: f.c.UvUMoments.settings({}), moments: [{ id: 'p', content: 'original', comments: [
+        { id: 'c', content: 'preserve', replyToCommentId: 'missing', authorRef: { kind: 'user', id: 'c' } }
+    ] }] };
+    f.c.db.characters[0].archives = [{ id: 'old', data }];
+    vm.runInContext('Object.keys(selectedModules).forEach(key => selectedModules[key] = ["contacts", "chats"].includes(key));', f.c);
+    const before = JSON.stringify(f.c.db.characters);
+    await f.c.handleExport();
+    assert.equal(f.downloads.length, 1, f.toasts.at(-1));
+    const exported = JSON.parse(await f.blobs[0].text());
+    assert.deepEqual(exported.modules.characters[0].archives[0].data.moments, data.moments);
+    assert.match(exported.backupManifest.warnings[0], /characters\[0\]\.archives\[0\]\.data\.moments\[0\]\.comments\[0\]\.replyToCommentId/);
+    assert.match(f.toasts.at(-1), /导出成功.*导入/);
+    assert.throws(() => f.c.storageValidateModules(exported.modules), /characters\[0\]\.archives\[0\]\.data\.moments\[0\]\.comments\[0\]\.replyToCommentId/);
+    assert.equal(JSON.stringify(f.c.db.characters), before);
+});
+
+test('stable social identities, ambiguous reply IDs and malformed settings remain rejected', () => {
+    const f = socialFixture(), config = f.c.UvUMoments.settings({});
+    for (const moments of [
+        [{ id: 'p', content: 'one', authorRef: { kind: 'character', id: 'c' } }, { id: 'p', content: 'two' }],
+        [{ id: 'moment_1700000000000', content: 'one', authorRef: { kind: 'character', id: 'c' } }, { id: 'moment_1700000000000', content: 'two' }],
+        [{ id: 'p', content: 'one' }, { id: 'p', content: 'two' }],
+        [{ id: 'p', content: 'one', comments: [{ id: 'same', content: 'one' }, { id: 'same', content: 'two' }, { id: 'reply', content: 'reply', replyToCommentId: 'same' }] }]
+    ]) assert.throws(() => f.c.storageValidateModules({ characters: [{ id: 'c', momentsSocial: config, moments }] }), /moments/);
+    for (const linked of [{ history: [{ id: 'm', content: 'event', momentSource: { postId: 'moment_1700000000000' } }] },
+        { memoryJournals: [{ momentId: 'moment_1700000000000', content: 'reviewed' }] }]) {
+        assert.throws(() => f.c.storageValidateModules({ characters: [{ id: 'c', momentsSocial: config, ...linked,
+            moments: [{ id: 'moment_1700000000000', content: 'one' }, { id: 'moment_1700000000000', content: 'two' }] }] }), /moments\[1\]\.id/);
+    }
+    assert.throws(() => f.c.storageValidateModules({ characters: [{ id: 'c', momentsSocial: { ...config, enabled: 'yes' } }] }), /momentsSocial.*动态设置/);
+});
+
 test('JSON export needs no compression API and contains only selected categories', async () => {
     const f = fixture(); f.element('storage-export-format').value = 'json';
     f.c.CompressionStream = undefined;
