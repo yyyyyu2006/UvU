@@ -385,8 +385,11 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
 
     // 1. 获取完整的系统提示词
     let systemPrompt = '';
+    const sceneMode = globalThis.UvUScene?.enabled(chat, chatType);
     if (chatType === 'private') {
-        if (typeof generatePrivateSystemPrompt === 'function') {
+        if (sceneMode) {
+            systemPrompt = UvUScene.prompt(chat, activeWorldBookPlan, chat.sceneMode);
+        } else if (typeof generatePrivateSystemPrompt === 'function') {
             systemPrompt = generatePrivateSystemPrompt(chat, activeWorldBookPlan);
         }
     } else {
@@ -429,7 +432,7 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
 
     let cotText = '';
     const cotSettings = db.cotSettings;
-    if (cotSettings?.enabled) {
+    if (!sceneMode && cotSettings?.enabled) {
         const activePresetId = chat.exclusiveCotPreset || cotSettings.activePresetId || 'default';
         const preset = (db.cotPresets || []).find(item => item.id === activePresetId);
         cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
@@ -503,7 +506,8 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     const plan = preview ? getTokenPreviewWorldBookPlan(chat) : worldBookPlan;
     const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, environment: 0, mcp: 0, history: 0,
         worldBookDetails: getWorldBookTokenDetails(chat, plan, preview) };
-    const effectiveSystemPrompt = systemPrompt || (chatType === 'private'
+    const sceneMode = globalThis.UvUScene?.enabled(chat, chatType);
+    const effectiveSystemPrompt = systemPrompt || (sceneMode ? UvUScene.prompt(chat, plan, chat.sceneMode) : chatType === 'private'
         ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
         : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, plan) : ''));
     // Read the final request without rewriting it. Each text span belongs to one category only.
@@ -548,7 +552,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     getContextMemoryJournals(chat).forEach(journal => claim(`标题：${journal.title}\n内容：${journal.content}`, 'memory'));
     const preset = (db.cotPresets || []).find(item => item.id === (chat.exclusiveCotPreset || db.cotSettings?.activePresetId || 'default'));
     const cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
-    if (db.cotSettings?.enabled && cotText) claim(cotText, 'cot');
+    if (!sceneMode && db.cotSettings?.enabled && cotText) claim(cotText, 'cot');
     for (const field of fields) {
         if (field.category === 'baseSystem') {
             // T.T can place history inside the system message; count it once as history.

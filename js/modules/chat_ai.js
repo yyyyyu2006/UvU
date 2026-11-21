@@ -90,6 +90,7 @@ function showIncomingMessageNotifications(chat, messages, chatId, chatType) {
 }
 
 function formatQuotedUserMessage(message, chat, chatType) {
+    if (message.scene && !message.isWithdrawn) return `${message.content}\n引用${message.quote.senderName || ''}：${message.quote.content}`;
     const name = chatType === 'group' ? (chat.me?.nickname || '我') : (chat.myName || '我');
     const quotedName = message.quote.senderName ? `${message.quote.senderName}：` : '';
     return `[${name}引用“${quotedName}${message.quote.content}”并回复：${getQuoteMessageContent(message)}]`;
@@ -108,11 +109,19 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
 
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
+    const initialSceneToken = globalThis.UvUScene?.capture(chat, chatType) || null;
+    const initialSceneMode = chatType === 'private' ? JSON.stringify(chat.sceneMode) : undefined;
+    if (globalThis.UvUScene?.enabled(chat, chatType)) {
+        if (isBackground) return;
+        if (typeof VideoCallModule !== 'undefined' && VideoCallModule.state.isCallActive && VideoCallModule.state.currentChat === chat) {
+            showToast('通话中请先结束通话，再继续线下场景'); return;
+        }
+    }
     const bridgeArchive = chat.activeArchiveId, bridgeHistory = chat.history;
     const bridgeTurnStart = globalThis.UvUStoryBridge?.turnStart?.(chat) ?? Math.max(0, chat.history.length - 1);
     let storyBridgeMode = null;
     if (chatType === 'private' && globalThis.UvUStoryBridge?.isEnabled?.() !== false && globalThis.UvUStoryBridge?.isConnected()) {
-        const preflight = { chat, chatType, archiveId: bridgeArchive, history: bridgeHistory, controller: typeof AbortController === 'function' ? new AbortController() : null };
+        const preflight = { chat, chatType, archiveId: bridgeArchive, history: bridgeHistory, controller: typeof AbortController === 'function' ? new AbortController() : null, sceneToken: initialSceneToken };
         chatGenerationRequests.add(preflight);
         if (!isBackground) refreshChatGenerationUI();
         try {
@@ -145,6 +154,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     }
 
     if (getChatGeneration(chatId, chatType)) return;
+    if (chatType === 'private' && JSON.stringify(chat.sceneMode) !== initialSceneMode) return;
+    if (initialSceneToken && !globalThis.UvUScene.current(initialSceneToken)) return;
     let apiConfig = db.apiSettings;
     
     // 检查是否启用了专属模型
@@ -186,7 +197,8 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     }
 
     const generationController = typeof AbortController === 'function' ? new AbortController() : null;
-    const generationRequest = { chat, chatType, archiveId: chat.activeArchiveId, history: chat.history, controller: generationController };
+    const sceneToken = initialSceneToken;
+    const generationRequest = { chat, chatType, archiveId: chat.activeArchiveId, history: chat.history, controller: generationController, sceneToken };
     chatGenerationRequests.add(generationRequest);
     if (!isBackground) {
         refreshChatGenerationUI();
@@ -201,6 +213,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (generationController?.signal.aborted || chat.history !== generationRequest.history || chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         const requestHistory = chat.history;
         const requestIsCurrent = () => !generationController?.signal.aborted && chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&
+            (!sceneToken || globalThis.UvUScene.current(sceneToken)) &&
             (chatType !== 'private' || typeof relationshipCanChat !== 'function' || (relationshipCanChat(chat, chatType) && chat.friendRelationship?.revision === relationshipRevision)) &&
             (chatType === 'private' ? db.characters : db.groups).includes(chat);
         let systemPrompt, requestBody;
@@ -233,20 +246,20 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
         if (!requestIsCurrent()) return;
         let mcpContext = '';
-        if (typeof prepareMcpChatContext === 'function') {
+        if (!sceneToken && typeof prepareMcpChatContext === 'function') {
             try { mcpContext = await prepareMcpChatContext(chat, chatType, generationController?.signal, { onLease: lease => { mcpLease = lease; } }); }
             catch (error) { if (generationController?.signal.aborted) throw error; console.warn('MCP reference unavailable; continuing ordinary reply'); }
         }
         if (!requestIsCurrent()) return;
         const documentPlan = chatType === 'private' && typeof prepareDocumentContext === 'function' ? prepareDocumentContext(historySlice) : { history: historySlice, instructions: '', sources: [] };
         historySlice = documentPlan.history;
-        const musicPlan = chatType === 'private' && typeof window !== 'undefined' && window.UvUMusicChat ? window.UvUMusicChat.requestPlan(historySlice, chat) : null;
+        const musicPlan = !sceneToken && chatType === 'private' && typeof window !== 'undefined' && window.UvUMusicChat ? window.UvUMusicChat.requestPlan(historySlice, chat) : null;
         // Optional observer only: capture the sources while vector deduplication is still scoped to this build.
         let requestDiagnostic = null;
         try { if (globalThis.UvURequestDiagnostics?.isEnabled()) requestDiagnostic = { blocks: {}, journals: [], worldBooks: [] }; } catch (_) {}
         const buildBasePrompt = () => {
             if (chatType === 'private') {
-                systemPrompt = generatePrivateSystemPrompt(chat, worldBookPlan);
+                systemPrompt = sceneToken ? globalThis.UvUScene.prompt(chat, worldBookPlan, sceneToken.mode) : generatePrivateSystemPrompt(chat, worldBookPlan);
             } else {
                 // generateGroupSystemPrompt 应该在 group_chat.js 中定义
                 if (typeof generateGroupSystemPrompt === 'function') {
@@ -277,10 +290,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             catch (_) { console.warn('Optional character memo reference unavailable; continuing reply'); }
         }
 
-        if (typeof getStickerDescriptionContext === 'function') { const stickerContext = getStickerDescriptionContext(chat); systemPrompt += stickerContext; if (requestDiagnostic) requestDiagnostic.blocks.sticker = stickerContext; }
+        if (!sceneToken && typeof getStickerDescriptionContext === 'function') { const stickerContext = getStickerDescriptionContext(chat); systemPrompt += stickerContext; if (requestDiagnostic) requestDiagnostic.blocks.sticker = stickerContext; }
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
-        if (documentPlan.instructions) systemPrompt += documentPlan.instructions;
+        if (!sceneToken && documentPlan.instructions) systemPrompt += documentPlan.instructions;
         if (musicPlan?.instructions) systemPrompt += musicPlan.instructions;
         // Explicit calendar grants only; disabled path appends an empty string.
         if (chatType === 'private' && typeof window !== 'undefined' && window.UvUCalendar) {
@@ -599,7 +612,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // 2. 插入 CoT 序列（无论前台后台，只要开启就插入）
             const cotEnabled = db.cotSettings && db.cotSettings.enabled;
             
-            if (cotEnabled) {
+            if (cotEnabled && !sceneToken) {
                 let cotInstruction = '';
                 // 优先使用角色专属 CoT 预设
                 let activePresetId = 'default';
@@ -680,7 +693,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let reportedUsage = null;
         if (streamEnabled) {
-            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }, documentPlan.sources, musicPlan) === true;
+            replyDelivered = await processStream(response, chat, provider, chatId, chatType, isBackground, requestIsCurrent, generationController?.signal, usage => { reportedUsage = usage; }, documentPlan.sources, musicPlan, sceneToken) === true;
         } else {
             let result;
             try {
@@ -697,7 +710,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // 仅在 CoT 开启且检测到闭合标签时补全
             const cotEnabled = db.cotSettings && db.cotSettings.enabled;
             // 【修改】去掉了 !isBackground，确保后台模式也能正确补全标签
-            if (cotEnabled && fullResponse && !fullResponse.trim().startsWith('<thinking>')) {
+            if (!generationRequest.sceneToken && cotEnabled && fullResponse && !fullResponse.trim().startsWith('<thinking>')) {
                  if (fullResponse.includes('</thinking>')) {
                      fullResponse = '<thinking>' + fullResponse;
                  }
@@ -705,12 +718,16 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // ===================================
             
             
-            if (!requestIsCurrent()) return;
+            if (!requestIsCurrent()) {
+                if (sceneToken) await globalThis.UvUScene.retain(sceneToken, fullResponse, '回复完成前聊天或场景已变化，原文未写入正式消息');
+                return;
+            }
             if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
-            replyDelivered = await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal, documentPlan.sources, musicPlan) !== false;
+            replyDelivered = sceneToken ? await globalThis.UvUScene.deliver(fullResponse, sceneToken, generationController?.signal) :
+                await handleAiReplyContent(fullResponse, chat, chatId, chatType, isBackground, generationController?.signal, documentPlan.sources, musicPlan) !== false;
         }
         if (replyDelivered && requestIsCurrent()) mcpLease?.commit();
-        if (replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
+        if (!sceneToken && replyDelivered && requestIsCurrent() && storyBridgeMode?.sceneId && storyBridgeMode.mode === 'phone' && globalThis.UvUStoryBridge) {
             try { await globalThis.UvUStoryBridge.publishTurn(chat, storyBridgeMode, globalThis.UvUStoryBridge.messageRecords(chat, bridgeTurnStart, chat.history.length)); }
             catch (error) { console.warn('UvU Story Bridge sync failed:', error.message); }
         }
@@ -728,20 +745,28 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         refreshChatGenerationUI();
         if (typeof scheduleAutoMemory === 'function') scheduleAutoMemory(chatId, chatType);
         if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof scheduleCharacterMemos === 'function') scheduleCharacterMemos(chat);
-        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof window !== 'undefined' && window.UvUCalendarAI) {
+        if (!sceneToken && replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof window !== 'undefined' && window.UvUCalendarAI) {
             window.UvUCalendarAI.afterReply(chat).catch(() => console.warn('Optional calendar planning did not change the reply'));
         }
-        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterAvatar === 'function') {
+        if (!sceneToken && replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterAvatar === 'function') {
             checkCharacterAvatar(chat).catch(error => console.warn('Character avatar check failed:', error.message));
         }
-        if (replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterBlacklist === 'function') {
+        if (!sceneToken && replyDelivered && !generationController?.signal.aborted && chatType === 'private' && chat.activeArchiveId === generationRequest.archiveId && chat.history === generationRequest.history && typeof checkCharacterBlacklist === 'function') {
             checkCharacterBlacklist(chat).catch(error => console.warn('Character relationship check failed:', error.message));
         }
     }
 }
 
-async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage, documentSources = [], musicPlan = null) {
-    let fullResponse = await readStreamResponse(response, apiType, onUsage);
+async function processStream(response, chat, apiType, targetChatId, targetChatType, isBackground = false, requestIsCurrent = () => true, signal, onUsage, documentSources = [], musicPlan = null, sceneToken = null) {
+    let fullResponse;
+    if (sceneToken) {
+        let received = '';
+        try { fullResponse = await readStreamResponse(response, apiType, onUsage, text => { received = text; }); }
+        catch (error) { await globalThis.UvUScene.retain(sceneToken, received, signal?.aborted ? '生成已停止，已收到的原文保留' : '流式回复中断，已收到的原文保留'); throw error; }
+        if (!requestIsCurrent()) { await globalThis.UvUScene.retain(sceneToken, fullResponse, '聊天或场景已变化，回复未写入正式消息'); return false; }
+        return await globalThis.UvUScene.deliver(fullResponse, sceneToken, signal);
+    }
+    fullResponse = await readStreamResponse(response, apiType, onUsage);
     if (!requestIsCurrent()) return;
     if (!fullResponse.trim()) throw new Error('API未返回有效的回复文本，请检查模型响应。');
     // === 【补丁：补全流式输出时丢失的开头标签】 ===
@@ -749,7 +774,7 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
     // 无论前台后台，只要是CoT开启且被预填吃掉了开头，都要补回来
     const cotEnabled = db.cotSettings && db.cotSettings.enabled;
     // 【修改】去掉了 !isBackground，确保后台模式也能正确补全标签
-    if (cotEnabled && fullResponse && !fullResponse.trim().startsWith('<thinking>')) {
+    if (!sceneToken && cotEnabled && fullResponse && !fullResponse.trim().startsWith('<thinking>')) {
          // 这里判断：如果内容里有闭合的 </thinking> 但开头没有 <thinking>，说明开头被 Prefill 吃掉了
          if (fullResponse.includes('</thinking>')) {
              fullResponse = '<thinking>' + fullResponse;

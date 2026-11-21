@@ -116,6 +116,8 @@ function autoMemoryFingerprint(value) {
     return `${text.length}:${a >>> 0}:${b >>> 0}`;
 }
 function autoMemoryMessageHash(message) {
+    if (message.scene) return autoMemoryFingerprint([message.role, message.content, message.parts, message.quote,
+        message.senderId, message.timestamp, !!message.isWithdrawn, !!message.isThinking, !!message.isContextDisabled, message.scene]);
     return autoMemoryFingerprint([message.role, message.content, message.parts, message.quote,
         message.senderId, message.timestamp, !!message.isWithdrawn, !!message.isThinking, !!message.isContextDisabled]);
 }

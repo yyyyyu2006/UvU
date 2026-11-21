@@ -21,7 +21,10 @@ function fixture(root, provider, version, type) {
         fetch:async (_url, init)=> { requests.push(JSON.parse(init.body)); return { ok:true, json:async()=>provider==='gemini'?{ candidates:[{content:{parts:[{text:'回复'}]}}] }:{choices:[{message:{content:'回复'}}]} }; },
         showApiError:error=>errors.push(error.message) });
     if (root === current) for (const file of ['modules/chat_documents.js', 'modules/vector_index_store.js', 'modules/vector_memory_tools.js', 'modules/auto_memory.js', 'modules/character_memos.js', 'modules/worldbook_rules.js', 'modules/minimax_speech.js', 'modules/voice_director.js', 'modules/mcp_transport.js', 'modules/mcp_oauth.js', 'modules/mcp_forms.js', 'modules/mcp_services.js', 'modules/mcp_chat.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
-    if (root === current) vm.runInContext(fs.readFileSync(path.join(root,'js/modules/music_chat.js'),'utf8'),c);
+    if (root === current) {
+        for (const file of ['music_chat.js', 'chat_scene.js', 'chat_scene_reply.js'])
+            vm.runInContext(fs.readFileSync(path.join(root, 'js/modules', file), 'utf8'), c);
+    }
     for (const file of ['modules/chat_ai_prompt.js','group_chat.js','modules/chat_ai.js']) vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),c);
     vm.runInContext(fs.readFileSync(path.join(root, 'js/utils.js'), 'utf8'), c);
     c.showApiError = error => errors.push(error.message);

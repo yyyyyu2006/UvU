@@ -51,7 +51,7 @@ function createInvisibleMessageRegex(showStatusUpdateMsg) {
 function findPreviousRenderableMessage(history, start, memoryCovered, invisibleRegex) {
     for (let i = start - 1; i >= 0; i--) {
         const candidate = history[i];
-        if (!memoryCovered.has(candidate.id) && !invisibleRegex.test(candidate.content)) return candidate;
+        if (!memoryCovered.has(candidate.id) && (candidate.scene || !invisibleRegex.test(candidate.content))) return candidate;
     }
     return null;
 }
@@ -114,7 +114,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
 
         let isContinuous = false;
         
-        const isSystemMsg = /\[system:.*?\]|\[system-display:.*?\]/.test(msg.content);
+        const isSystemMsg = !msg.scene && /\[system:.*?\]|\[system-display:.*?\]/.test(msg.content);
         
         if (!isSystemMsg) {
             if (previousRenderableMessage) {
@@ -131,8 +131,10 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
         }
 
         const bubble = createMessageBubbleElement(msg, isContinuous);
-        if (bubble) fragment.appendChild(bubble);
-        if (!invisibleRegex.test(msg.content)) previousRenderableMessage = msg;
+        // Keep original rows directly under the message area for third-party child selectors.
+        if (bubble?.classList?.contains('scene-turn')) fragment.append(...bubble.childNodes);
+        else if (bubble) fragment.appendChild(bubble);
+        if (msg.scene || !invisibleRegex.test(msg.content)) previousRenderableMessage = msg;
     });
     const existingLoadBtn = document.getElementById('load-more-btn');
     if (existingLoadBtn) existingLoadBtn.remove();
@@ -174,6 +176,14 @@ function createMessageBubbleElement(message, isContinuous = false) {
 
 function createBaseMessageBubbleElement(message, isContinuous = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (message.scene && currentChatType === 'private' && globalThis.UvUScene) {
+        if (!message.isWithdrawn) return globalThis.UvUScene.render(message, isContinuous);
+        // Reuse the original withdrawal control without interpreting old scene text as commands/HTML.
+        const withdrawn = createBaseMessageBubbleElement({ ...message, scene: undefined, content: '[撤回消息]', originalContent: '' }, isContinuous);
+        const body = withdrawn?.querySelector('.withdrawn-content');
+        if (body) body.textContent = message.scene.blocks.map(part => part.text).join('\n');
+        return withdrawn;
+    }
     if (message.type === 'music' && message.music && !message.isWithdrawn && window.UvUMusicChat) {
         try { return window.UvUMusicChat.createElement(message, chat, currentChatType, isContinuous); } catch (_) { /* Existing text fallback for damaged music cards. */ }
     }
@@ -1187,6 +1197,10 @@ window.sendPayResponse = async function(msgId, action) {
 
 
 function addMessageBubble(message, targetChatId, targetChatType) {
+    if (message.scene && targetChatType === 'private' && globalThis.UvUScene) {
+        globalThis.UvUScene.append(message, targetChatId);
+        return;
+    }
     if (typeof prepareRelationshipMessage === 'function') {
         const target = (targetChatType === 'private' ? db.characters : db.groups).find(c => c.id === targetChatId);
         if (target) prepareRelationshipMessage(target, message, targetChatType);

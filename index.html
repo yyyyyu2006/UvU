@@ -55,6 +55,7 @@
     <link rel="stylesheet" href="css/modules/cot_settings.css?v=20261106-model-picker">
     <link rel="stylesheet" href="css/modules/model_picker.css?v=20261115-search-focus">
     <link rel="stylesheet" href="css/modules/chat_thinking.css?v=20261115-tall-viewer">
+    <link rel="stylesheet" href="css/modules/chat_scene.css?v=20261121">
     <link rel="stylesheet" href="css/modules/video_call.css">
     <link rel="stylesheet" href="css/modules/storage.css?v=20261103-storage-perf">
     <link rel="stylesheet" href="css/workshop.css">
@@ -1369,6 +1370,9 @@ node setup-server-plugin.js</code></pre>
                         <button type="button" id="hide-timestamp-btn" class="btn btn-neutral" style="padding: 8px 12px; font-size: 12px; white-space: nowrap; display: none;" title="将时间设置为上一条消息+1分钟">隐藏时间戳</button>
                     </div>
                 </div>
+                <div class="form-group" id="message-edit-narration-group" hidden>
+                    <label for="message-edit-narration"><input id="message-edit-narration" name="narration" type="checkbox">改为旁白</label>
+                </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <!-- 新增的删除按钮，默认隐藏 -->
                     <button type="button" id="debug-delete-msg-btn" class="btn btn-danger" style="flex: 1; display: none;">删除</button>
@@ -1380,6 +1384,35 @@ node setup-server-plugin.js</code></pre>
         </div>
     </div>
 
+    <div id="scene-mode-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="scene-mode-heading">
+        <div class="modal-window">
+            <div class="scene-panel-header">
+                <h3 id="scene-mode-heading">线下场景</h3>
+                <button id="scene-help-btn" class="scene-small-btn" type="button" aria-label="使用说明" aria-controls="scene-help" aria-expanded="false">?</button>
+                <button id="scene-mode-close" class="scene-small-btn" type="button" aria-label="关闭场景设置">×</button>
+            </div>
+            <div id="scene-help" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API进行面对面剧情；关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p></div>
+            <form id="scene-mode-form" aria-labelledby="scene-mode-heading">
+                <label class="scene-switch" for="scene-enabled"><span>旁白模式</span><input id="scene-enabled" name="enabled" type="checkbox"></label>
+                <label class="scene-field" for="scene-name">场景名称<input id="scene-name" name="name" maxlength="40" placeholder="未命名场景"></label>
+                <div class="scene-pair">
+                    <label class="scene-field" for="scene-place">地点<input id="scene-place" name="place" maxlength="60"></label>
+                    <label class="scene-field" for="scene-time">剧情时间<input id="scene-time" name="time" maxlength="60"></label>
+                </div>
+                <label class="scene-field" for="scene-background">开场背景（选填）<textarea id="scene-background" name="background" rows="3" maxlength="4000"></textarea></label>
+                <div class="scene-pair">
+                    <label class="scene-field" for="scene-viewpoint">叙述视角<select id="scene-viewpoint" name="viewpoint"><option value="third">第三人称</option><option value="second">第二人称</option></select></label>
+                    <label class="scene-field" for="scene-length">描写长度<select id="scene-length" name="length"><option value="short">简短</option><option value="medium">适中</option><option value="long">详细</option></select></label>
+                </div>
+                <div id="scene-draft-group" hidden>
+                    <p id="scene-draft-error" role="status"></p>
+                    <label class="scene-field" for="scene-draft-text">未完成回复原文<textarea id="scene-draft-text" rows="4" readonly data-expanded-editor="true"></textarea></label>
+                    <button id="scene-copy-draft" type="button">复制原文</button>
+                </div>
+                <div class="scene-panel-footer"><button id="scene-panel-online" type="button">回到线上</button><button type="submit">保存场景</button></div>
+            </form>
+        </div>
+    </div>
     <div id="add-char-modal" class="modal-overlay">
         <div class="modal-window">
             <h3>创建新角色</h3>
@@ -2966,7 +2999,7 @@ node setup-server-plugin.js</code></pre>
 -->
 
 <!-- [1. 基础层] -->
-<script src="js/utils.js?v=20261115-image-bounds"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
+<script src="js/utils.js?v=20261121-scene"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
 <script src="js/db.js?v=20261119-home-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
@@ -2994,20 +3027,23 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/character_import.js?v=20261115-data-integrity"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261111-review-notification-guards"></script>
+<script src="js/modules/chat_scene.js?v=20261121"></script>
+<script src="js/modules/chat_scene_ui.js?v=20261121"></script>
+<script src="js/modules/chat_scene_reply.js?v=20261121"></script>
 <script src="js/modules/chat_thinking.js?v=20261118-first-bubble"></script>
-<script src="js/modules/chat_render.js?v=20261115-data-integrity"></script>
-<script src="js/modules/chat_archives.js?v=20261113-audit-nine-fixes-v1"></script>
+<script src="js/modules/chat_render.js?v=20261121-scene"></script>
+<script src="js/modules/chat_archives.js?v=20261121-scene"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261115-airdrop-recovery"></script>
-    <script src="js/modules/chat_ai_prompt.js?v=20261105-mcp-center"></script>
+    <script src="js/modules/chat_ai_prompt.js?v=20261121-scene"></script>
     <script src="js/modules/chat_ai_call.js?v=20261115-api-recovery"></script>
     <script src="js/modules/notifications.js?v=20261111-review-notification-guards"></script>
     <script src="js/modules/request_memory_diagnostics.js?v=20261111-rules-request-v1"></script>
-    <script src="js/modules/chat_ai.js?v=20261115-api-recovery"></script>
+    <script src="js/modules/chat_ai.js?v=20261121-scene"></script>
 <script src="js/modules/minimax_speech.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/voice_director.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/chat_image_generation.js?v=20261111-media-preview-guards"></script>
 <script src="js/modules/chat_features.js?v=20261115-forward-lines"></script>
-<script src="js/modules/chat_ops.js?v=20261114-delete-rollback"></script>
+<script src="js/modules/chat_ops.js?v=20261121-scene"></script>
 <script src="js/modules/message_forward.js?v=20261114-card-modes"></script>
 <script src="js/modules/character_avatar.js?v=20261111-ui-regressions"></script>
 <link rel="stylesheet" href="css/modules/mcp.css?v=20261107-refinement">
@@ -3025,10 +3061,10 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/calendar_chat.js?v=20261114-card-modes"></script>
 <script src="js/modules/calendar_ui.js?v=20261116-social-secondary-recipients"></script>
 <link rel="stylesheet" href="css/modules/derived_features.css?v=20261113-panel-flow-v1">
-<script src="js/chat.js?v=20261115-data-integrity"></script>     <!-- 聊天核心入口 -->
+<script src="js/chat.js?v=20261121-scene"></script>     <!-- 聊天核心入口 -->
 <script src="js/group_chat.js?v=20261115-packet-session-bounds"></script> <!-- 群聊系统：群聊管理、设置、Prompt生成 -->
 <script src="js/contacts.js?v=20261103-notifications-backup"></script> <!-- 联系人：好友列表、名片 -->
-<script src="js/modules/chat_room_html.js?v=20261115-theme-stop-compat"></script> <!-- 聊天室HTML注入 -->
+<script src="js/modules/chat_room_html.js?v=20261121-scene"></script> <!-- 聊天室HTML注入 -->
 <script src="js/modules/chat_settings_html.js?v=20261108-id-cover"></script> <!-- 聊天设置HTML注入 -->
 <script src="js/modules/group_settings_html.js?v=20261104-worldbook-count"></script> <!-- 群聊设置HTML注入 -->
 <script src="js/modules/my_profile_html.js"></script> <!-- 我的档案HTML注入 -->
@@ -3135,7 +3171,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/journal.js?v=20261113-1900-compat-v1"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/vector_index_store.js?v=20261111-persistence-vector-v1"></script>
 <script src="js/modules/vector_memory_tools.js?v=20261109-audit-repairs"></script>
-<script src="js/modules/auto_memory.js?v=20261114-memory-date-v1"></script>
+<script src="js/modules/auto_memory.js?v=20261121-scene"></script>
 <script src="js/modules/character_memos.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/character_memos_tools_ui.js?v=20261112-memory20-v1"></script>
 <script src="js/modules/character_memos_ui.js?v=20261114-memo-legacy-navigation"></script>
@@ -3147,7 +3183,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/memory_library.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/storage_html.js?v=20261116-panel-help-tabs"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/backup_integrity.js?v=20261111-review-recovery-v1"></script>
-<script src="js/modules/storage.js?v=20261120-backup-social"></script>
+<script src="js/modules/storage.js?v=20261121-scene"></script>
 <script src="js/modules/storage_features.js?v=20261120-backup-social"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js?v=20261115-search-widget-recovery"></script> <!-- 小组件市场 -->

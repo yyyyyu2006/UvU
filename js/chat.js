@@ -669,6 +669,7 @@ function setupChatRoom() {
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
     });
     setupMessageReplyGestures(messageArea);
+    globalThis.UvUScene?.setup();
     setupMessageRangeShortcut();
     
     const messageEditForm = document.getElementById('message-edit-form');
@@ -734,8 +735,14 @@ function openChatRoom(chatId, type) {
     const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
 
+    if (currentChatId !== chatId || currentChatType !== type) {
+        const previous = currentChatType === 'private' && db.characters.find(item => item.id === currentChatId);
+        if (previous) globalThis.UvUScene?.abort(previous);
+        globalThis.UvUScene?.close();
+    }
     currentChatId = chatId;
     currentChatType = type;
+    globalThis.UvUScene?.refresh();
     cancelQuoteReply();
 
     // 迁移旧的私聊数据 (仅群聊)
@@ -931,6 +938,7 @@ async function sendMessage() {
             content: quoteInfo.content,
             timestamp: quoteInfo.timestamp
         };
+        if (quoteInfo.segmentId) message.quote.segmentId = quoteInfo.segmentId;
     }
 
     if (currentChatType === 'group') {

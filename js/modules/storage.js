@@ -411,7 +411,7 @@ function setupStorageAnalysisScreen() {
 
 // 将设定和运行数据分开；存档也遵循同一勾选范围。
 const STORAGE_CHAT_KEYS = ['history', 'callHistory', 'memoryJournals', 'characterMemos', 'memoryVectorIndex', 'lastUserMessageTimestamp',
-    'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship', 'avatarAutonomy', 'environmentProfile'];
+    'status', 'peekData', 'privateSessions', 'gossipSessions', 'friendRelationship', 'avatarAutonomy', 'environmentProfile', 'sceneMode', 'sceneDraft'];
 const STORAGE_STATUS_KEYS = ['currentStatusRaw', 'currentStatusHtml', 'history'];
 const STORAGE_CACHE_TABLES = ['workshopHistory', 'workshopVibeGroups', 'characterPhotos', 'reader_books', 'reader_chapters', 'reader_comments'];
 const storageClone = value => value === undefined ? undefined : (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
@@ -661,7 +661,11 @@ function storageValidateModules(modules) {
         });
         if (item.quote !== undefined && item.quote !== null) {
             object(item.quote, path + '.quote');
-            for (const key of ['messageId', 'senderId', 'senderName', 'content']) optional(item.quote[key], path + '.quote.' + key, 'string');
+            for (const key of ['messageId', 'senderId', 'senderName', 'content', 'segmentId']) optional(item.quote[key], path + '.quote.' + key, 'string');
+        }
+        if (item.scene !== undefined) {
+            if (!globalThis.UvUScene) throw new Error(path + '.scene：旁白模块未加载，请刷新后导入');
+            try { globalThis.UvUScene.validateMessage(item); } catch (error) { throw new Error(path + '.scene：' + error.message); }
         }
         if (item.type === 'document') {
             if (typeof validateSharedDocument !== 'function') throw new Error('文件消息模块未加载，请刷新后导入');
@@ -681,6 +685,17 @@ function storageValidateModules(modules) {
         }
     };
     const runtime = (item, path) => {
+        if (item.sceneMode !== undefined) {
+            if (!globalThis.UvUScene) throw new Error(path + '.sceneMode：旁白模块未加载，请刷新后导入');
+            try { globalThis.UvUScene.validateMode(item.sceneMode); } catch (error) { throw new Error(path + '.sceneMode：' + error.message); }
+        }
+        if (item.sceneDraft !== undefined) {
+            const draft = item.sceneDraft;
+            object(draft, path + '.sceneDraft');
+            if (draft.version !== 1 || typeof draft.raw !== 'string' || draft.raw.length > 16 * 1024 * 1024) fail(path + '.sceneDraft', '有效的旁白回复草稿');
+            for (const key of ['id', 'reason', 'sessionId']) optional(draft[key], path + '.sceneDraft.' + key, 'string');
+            timestamp(draft.createdAt, path + '.sceneDraft.createdAt');
+        }
         if (item.characterMemos !== undefined) memoState(item.characterMemos, path + '.characterMemos');
         list(item.history, path + '.history', message);
         list(item.callHistory, path + '.callHistory', (call, location) => {
@@ -973,6 +988,11 @@ function storageMergeChats(targets, incoming, contacts, chats) {
         if (!chats) return;
         const applyRuntime = (destination, source) => {
             const data = storageRuntimeData(source);
+            // An old restored history must not inherit the previous local scene.
+            if (source.history !== undefined) {
+                if (source.sceneMode === undefined) delete destination.sceneMode;
+                if (source.sceneDraft === undefined) delete destination.sceneDraft;
+            }
             if (Array.isArray(data.memoryJournals)) data.memoryJournals = data.memoryJournals.map(journal =>
                 journal.range ? journal : { ...journal, range: { start: 0, end: 0 } });
             // Old backups have no index. Never pair newly restored history with

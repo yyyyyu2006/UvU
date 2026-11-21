@@ -99,6 +99,22 @@ async function saveChatMutation(state, failureText = '保存失败，已恢复�
 let currentMultiSelectMode = 'delete'; // 'delete' or 'capture'
 let isAddingMessageMode = false;
 let messageEditRevision = 0; // Invalidate work from an earlier editor opening or save.
+let messageEditSegmentId = null;
+let messageSceneEditTarget = null;
+
+function setupSceneMessageEditor(message = null, segmentId = null, raw = false) {
+    messageEditSegmentId = segmentId;
+    messageSceneEditTarget = message?.scene || globalThis.UvUScene?.plainUser(message, currentChatType)
+        ? { target: captureChatSendTarget(), message, source: JSON.stringify(message) } : null;
+    const group = document.getElementById('message-edit-narration-group');
+    const checkbox = document.getElementById('message-edit-narration');
+    if (!group || !checkbox) return;
+    const available = !raw && currentChatType === 'private' && (globalThis.UvUScene?.plainUser(message, currentChatType) ||
+        (message?.role === 'user' && !message.isWithdrawn && message.scene?.blocks.length === 1));
+    group.hidden = !available;
+    checkbox.disabled = !available;
+    checkbox.checked = Boolean(available && message.scene?.blocks[0]?.kind === 'narration');
+}
 let addingAfterMessageId = null;
 let messageSelectionScope = null;
 
@@ -112,6 +128,8 @@ function handleMessageLongPress(messageWrapper, x, y) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    const segmentId = messageWrapper.dataset.segmentId || null;
+    const sceneMessage = globalThis.UvUScene?.hasScene(message);
     const menuChatType = currentChatType;
     const menuArchiveId = chat.activeArchiveId;
     if (isInMultiSelectMode) {
@@ -134,18 +152,18 @@ function handleMessageLongPress(messageWrapper, x, y) {
     } else {
         invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
     }
-    const isInvisibleMessage = invisibleRegex.test(message.content);
+    const isInvisibleMessage = !sceneMessage && invisibleRegex.test(message.content);
     const isWithdrawn = message.isWithdrawn; 
 
     let menuItems = [];
 
     if (!isWithdrawn) {
-        if (message.type !== 'forwarded-chat' && !isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage) {
-            menuItems.push({label: '编辑', action: () => startMessageEdit(messageId)});
+        if (sceneMessage || (message.type !== 'forwarded-chat' && !isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage)) {
+            menuItems.push({label: '编辑', action: () => startMessageEdit(messageId, segmentId)});
         }
         
         if (!isInvisibleMessage && canQuoteMessage(message)) {
-            menuItems.push({label: '引用', action: () => startQuoteReply(messageId)});
+            menuItems.push({label: '引用', action: () => startQuoteReply(messageId, segmentId)});
         }
 
         if (message.role === 'user') {
@@ -153,7 +171,7 @@ function handleMessageLongPress(messageWrapper, x, y) {
         }
         
         if (message.role === 'assistant') {
-            menuItems.push({label: '接收照片', action: () => receiveAirDropPhoto(messageId)});
+            if (!sceneMessage) menuItems.push({label: '接收照片', action: () => receiveAirDropPhoto(messageId)});
             menuItems.push({label: '新增', action: () => startAddNewMessage(messageId)});
         }
     }
@@ -186,6 +204,7 @@ function startDebugEdit(messageId) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    setupSceneMessageEditor(message, null, true);
 
     const modal = document.getElementById('message-edit-modal');
     const textarea = document.getElementById('message-edit-textarea');
@@ -196,7 +215,9 @@ function startDebugEdit(messageId) {
     title.textContent = "调试/编辑源码";
 
     const textMatch = message.content.match(/^\[(.*?)的消息：([\s\S]+?)\]$/);
-    if (message.quote && textMatch) {
+    if (message.scene) {
+        textarea.value = JSON.stringify(message.scene, null, 2);
+    } else if (message.quote && textMatch) {
         const name = textMatch[1];
         const text = textMatch[2];
         const quoteContent = message.quote.content;
@@ -236,7 +257,9 @@ function startDebugEdit(messageId) {
     textarea.focus();
 }
 
-function getQuoteMessageContent(message) {
+function getQuoteMessageContent(message, segmentId = null) {
+    if (message?.scene && !message.isWithdrawn) return segmentId
+        ? globalThis.UvUScene.block(message, segmentId)?.text || '' : message.scene.blocks.map(block => block.text).join('\n');
     const content = typeof message.content === 'string' ? message.content : '';
     if (message.parts?.some(part => part.type === 'image')) return '[图片]';
     if (/\[.*?(?:发送的|的)表情包[：:]/.test(content)) return '[表情包]';
@@ -302,7 +325,7 @@ function setupMessageReplyGestures(area) {
             if (element.scrollWidth > element.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(element).overflowX)) quotable = false;
         }
         const touch = event.touches[0];
-        gesture = { wrapper, row: wrapper.querySelector('.message-bubble-row') || wrapper,
+        gesture = { wrapper, row: wrapper.querySelector('.message-bubble-row') || wrapper, segmentId: wrapper.dataset.segmentId || null,
             id: message.id, touchId: touch.identifier, x: touch.clientX, y: touch.clientY,
             dx: 0, dy: 0, axis: '', chatId: currentChatId, chatType: currentChatType,
             archiveId: getChat()?.activeArchiveId, ready: false, quotable };
@@ -359,7 +382,7 @@ function setupMessageReplyGestures(area) {
         }
         if (reply) {
             removeContextMenu();
-            startQuoteReply(state.id);
+            startQuoteReply(state.id, state.segmentId);
         }
     }, { passive: false });
     area.addEventListener('touchcancel', reset, { passive: true });
@@ -372,10 +395,11 @@ function setupMessageReplyGestures(area) {
     document.addEventListener('visibilitychange', () => { if (document.hidden) reset(); });
 }
 
-function startQuoteReply(messageId) {
+function startQuoteReply(messageId, segmentId = null) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat?.history?.find(m => m.id === messageId);
     if (!canQuoteMessage(message) || isInMultiSelectMode) return;
+    if (segmentId && !globalThis.UvUScene?.block(message, segmentId)) return;
 
     let senderName = '';
     let senderId = '';
@@ -399,7 +423,8 @@ function startQuoteReply(messageId) {
         id: message.id,
         senderId: senderId,
         senderName: senderName,
-        content: getQuoteMessageContent(message),
+        content: getQuoteMessageContent(message, segmentId),
+        ...(segmentId ? { segmentId } : {}),
         timestamp: message.timestamp,
         chatId: currentChatId,
         chatType: currentChatType,
@@ -430,6 +455,7 @@ function cancelQuoteReply() {
 }
 
 function startAddNewMessage(messageId) {
+    setupSceneMessageEditor();
     messageEditRevision++;
     exitMultiSelectMode();
     isAddingMessageMode = true;
@@ -468,7 +494,7 @@ function startAddNewMessage(messageId) {
     textarea.focus();
 }
 
-function startMessageEdit(messageId) {
+function startMessageEdit(messageId, segmentId = null) {
     const currentChat = currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (currentChat?.history.find(message => message.id === messageId)?.type === 'forwarded-chat') {
         showToast('合并记录保留原始内容，请编辑原消息后重新转发');
@@ -482,6 +508,8 @@ function startMessageEdit(messageId) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const message = chat.history.find(m => m.id === messageId);
     if (!message) return;
+    if (message.scene && !segmentId) segmentId = message.scene.blocks[0]?.id;
+    setupSceneMessageEditor(message, segmentId);
 
     const modal = document.getElementById('message-edit-modal');
     const textarea = document.getElementById('message-edit-textarea');
@@ -491,12 +519,13 @@ function startMessageEdit(messageId) {
     if (title) title.textContent = "编辑消息";
     if (typeGroup) typeGroup.style.display = 'none';
 
-    let contentToEdit = message.content;
+    let contentToEdit = message.scene ? globalThis.UvUScene.block(message, segmentId)?.text : message.content;
+    if (contentToEdit === undefined) { cancelMessageEdit(); return; }
     const plainTextMatch = contentToEdit.match(/^\[.*?：([\s\S]*)\]$/);
-    if (plainTextMatch && plainTextMatch[1]) {
+    if (!message.scene && plainTextMatch && plainTextMatch[1]) {
         contentToEdit = plainTextMatch[1].trim();
     }
-    contentToEdit = contentToEdit.replace(/\[发送时间:.*?\]/g, '').trim();
+    if (!message.scene) contentToEdit = contentToEdit.replace(/\[发送时间:.*?\]/g, '').trim();
     
     textarea.value = contentToEdit;
 
@@ -537,6 +566,11 @@ async function saveMessageEdit() {
     const editRevision = ++messageEditRevision;
     let mutation = beginChatMutation(chat, currentChatType, chat.history.filter(message => message.id === editingMessageId));
     const editToken = editingMessageId;
+    const sceneEdit = messageSceneEditTarget;
+    if (sceneEdit && (!isChatSendTargetValid(sceneEdit.target) || sceneEdit.target.chat !== chat ||
+        !chat.history.includes(sceneEdit.message) || JSON.stringify(sceneEdit.message) !== sceneEdit.source)) {
+        showToast('消息或存档已变化，请重新打开编辑；当前草稿仍保留'); return;
+    }
     if (isAddingMessageMode) {
         const targetIndex = chat.history.findIndex(m => m.id === addingAfterMessageId);
         if (targetIndex === -1) {
@@ -605,7 +639,21 @@ async function saveMessageEdit() {
             delete editedMessage.forwardedChat;
         }
 
-        if (isRawEditMode) {
+        const wantsNarration = document.getElementById('message-edit-narration')?.checked === true;
+        const canConvert = !isRawEditMode && currentChatType === 'private' &&
+            (globalThis.UvUScene?.plainUser(originalMessage, currentChatType) || originalMessage.scene?.blocks.length === 1 && originalMessage.role === 'user');
+        if (originalMessage.scene || (canConvert && wantsNarration)) {
+            try {
+                let next;
+                if (isRawEditMode) {
+                    next = { ...editedMessage, scene: JSON.parse(newText) };
+                    globalThis.UvUScene.sync(next); globalThis.UvUScene.validateMessage(next);
+                } else if (canConvert) next = globalThis.UvUScene.convert(originalMessage, newText, wantsNarration, chat);
+                else next = globalThis.UvUScene.edit(originalMessage, messageEditSegmentId, newText);
+                Object.assign(editedMessage, next);
+                if (!next.scene) delete editedMessage.scene;
+            } catch (error) { showToast(error.message); return; }
+        } else if (isRawEditMode) {
             const quoteRegex = /^\[(.*?)引用[“"]([\s\S]*?)[”"]并回复：([\s\S]*?)\]$/;
             const match = newText.match(quoteRegex);
 
@@ -677,7 +725,7 @@ async function saveMessageEdit() {
         }
         
         let statusUpdate = null;
-        if (target.type === 'private') {
+        if (target.type === 'private' && !editedMessage.scene) {
             if (chat.statusPanel && chat.statusPanel.enabled && chat.statusPanel.regexPattern) {
                 try {
                     let pattern = chat.statusPanel.regexPattern;
@@ -743,6 +791,7 @@ async function saveMessageEdit() {
 }
 
 function cancelMessageEdit() {
+    setupSceneMessageEditor();
     messageEditRevision++;
     editingMessageId = null;
     isRawEditMode = false; 
@@ -815,9 +864,10 @@ function exitMultiSelectMode() {
     
     chatRoomScreen.classList.remove('multi-select-active');
     selectedMessageIds.forEach(id => {
-        const el = messageArea.querySelector(`.message-wrapper[data-id="${id}"]`);
-        if (el) el.classList.remove('multi-select-selected');
-        if (el) el.removeAttribute('aria-selected');
+        messageArea.querySelectorAll(`.message-wrapper[data-id="${id}"]`).forEach(el => {
+            el.classList.remove('multi-select-selected');
+            el.removeAttribute('aria-selected');
+        });
     });
     selectedMessageIds.clear();
     messageSelectionScope = null;
@@ -1025,6 +1075,7 @@ async function generateCapture() {
     
     // 2. 创建临时容器
     const tempContainer = document.createElement('div');
+    if (sortedMessages.some(message => message.scene)) tempContainer.className = 'scene-capture';
     tempContainer.style.position = 'absolute';
     tempContainer.style.top = '-9999px';
     tempContainer.style.left = '0';
@@ -1052,10 +1103,11 @@ async function generateCapture() {
     // 我们可以手动构建或者克隆现有的 DOM 并移除 .multi-select-selected 类
     
     sortedMessages.forEach(msg => {
-        const originalEl = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
-        if (originalEl) {
+        const originalRows = messageArea.querySelectorAll(`.message-wrapper[data-id="${msg.id}"]`);
+        originalRows.forEach(originalEl => {
             const clone = originalEl.cloneNode(true);
             clone.classList.remove('multi-select-selected');
+            clone.removeAttribute('aria-selected');
             clone.style.marginBottom = '15px';
             
             // 处理一些可能在截图时显示不正常的元素
@@ -1063,7 +1115,7 @@ async function generateCapture() {
             // 这里暂时不做特殊处理，html2canvas 对 iframe 支持有限
             
             tempContainer.appendChild(clone);
-        }
+        });
     });
     
     // 添加水印
@@ -1481,7 +1533,7 @@ function recalculateChatStatus(chat) {
     for (let i = chat.history.length - 1; i >= 0; i--) {
         const msg = chat.history[i];
         // 忽略被撤回的消息
-        if (msg.isWithdrawn || msg.type === 'calendar') continue;
+        if (msg.isWithdrawn || msg.type === 'calendar' || msg.scene) continue;
 
         const match = msg.content.match(updateStatusRegex);
         if (match) {

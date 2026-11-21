@@ -102,6 +102,8 @@ function syncAllActiveArchives() {
 }
 
 function applyArchiveData(chat, archive) {
+    globalThis.UvUScene?.abort(chat);
+    globalThis.UvUScene?.close();
     if (typeof window.clearStickerSuggestions === 'function') window.clearStickerSuggestions();
     Object.keys(chat).forEach(key => {
         if (!CHAT_ARCHIVE_META_KEYS.has(key)) delete chat[key];
@@ -117,6 +119,8 @@ function getActiveArchive(chat) {
 }
 
 function resetArchiveRuntime(data) {
+    delete data.sceneMode;
+    delete data.sceneDraft;
     data.history = [];
     data.memoryJournals = [];
     data.callHistory = [];

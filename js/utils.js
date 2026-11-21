@@ -706,6 +706,7 @@ function normalizeHistoryForAI(chat, historySlice, ignoreContextDisabled = false
     // 【三重保险】强制清洗所有消息内容中的 <thinking> 标签块
     // 防止思维链内容意外混入普通消息中
     filteredHistory.forEach(msg => {
+        if (msg.scene && !msg.isWithdrawn) return;
         if (msg.content && typeof msg.content === 'string') {
             msg.content = msg.content.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
         }
@@ -721,7 +722,7 @@ function normalizeHistoryForAI(chat, historySlice, ignoreContextDisabled = false
     // 2. 双语模式格式标准化
     if (chat.bilingualModeEnabled) {
         filteredHistory.forEach(msg => {
-            if (msg.role === 'assistant') {
+            if (msg.role === 'assistant' && !msg.scene) {
                 if (msg.content) {
                     msg.content = msg.content.replace(/[\s\n]*[\(（]([^\)）]+)[\)）]([\s\n]*\])$/, '「$1」$2');
                     msg.content = msg.content.replace(/[\s\n]*[\(（]([^\)）]+)[\)）]$/, '「$1」');
@@ -772,6 +773,7 @@ function filterHistoryForAI(chat, historySlice, ignoreContextDisabled = false) {
         // 3.2 遍历处理
         for (let i = filteredHistory.length - 1; i >= 0; i--) {
             const msg = filteredHistory[i];
+            if (msg.scene && !msg.isWithdrawn) continue;
             const currentDepth = filteredHistory.length - 1 - i;
             
             if (msg.isStatusUpdate) {
@@ -1045,7 +1047,7 @@ async function fetchAiResponse(settings, requestBody, headers, endpoint, forceSt
     return extractAiResponseText(parseAiResponseJson(text), provider);
 }
 
-async function readStreamResponse(response, provider, onUsage) {
+async function readStreamResponse(response, provider, onUsage, onText) {
     if (!response.body?.getReader) throw new Error('API未返回可读取的回复文本。');
     const reader = response.body.getReader(), decoder = new TextDecoder();
     let buffer = '', fullResponse = '', mode = '', ended = false, eof = false, receivedBytes = 0;
@@ -1059,6 +1061,7 @@ async function readStreamResponse(response, provider, onUsage) {
             if (usage) onUsage(usage);
         });
         fullResponse += text;
+        if (typeof onText === 'function') onText(fullResponse);
     };
     const consume = event => {
         const lines = event.split(/\r\n|\r|\n/);
