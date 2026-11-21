@@ -2,6 +2,13 @@
     'use strict';
     const scene = root.UvUScene, $ = id => document.getElementById(id);
     let panelTarget = null, panelSource = null, panelRevision = 0, returnFocus = null;
+    function showHelp(visible, moveFocus = true) {
+        $('scene-help').hidden = !visible;
+        $('scene-mode-form').hidden = visible;
+        $('scene-help-btn').setAttribute('aria-expanded', String(visible));
+        $('scene-mode-modal').querySelector('.modal-window').scrollTop = 0;
+        if (moveFocus) (visible ? $('scene-help') : $('scene-help-btn')).focus({ preventScroll: true });
+    }
     function refresh() {
         const chat = currentChatType === 'private' && db.characters.find(item => item.id === currentChatId);
         const entry = $('scene-mode-btn'), bar = $('scene-mode-bar');
@@ -14,6 +21,7 @@
     function close() {
         const visible = $('scene-mode-modal').classList.contains('visible');
         panelRevision++; $('scene-mode-modal').classList.remove('visible'); panelTarget = null;
+        showHelp(false, false);
         const focus = returnFocus?.isConnected && returnFocus.getClientRects().length ? returnFocus : $('toggle-expansion-btn');
         if (visible && focus?.getClientRects().length) focus.focus({ preventScroll: true });
         returnFocus = null;
@@ -32,6 +40,7 @@
         $('scene-draft-group').hidden = !target.chat.sceneDraft;
         $('scene-draft-text').value = target.chat.sceneDraft?.raw || '';
         $('scene-draft-error').textContent = target.chat.sceneDraft?.reason || '';
+        showHelp(false, false);
         $('scene-mode-modal').classList.add('visible');
         $('scene-enabled').focus();
     }
@@ -106,10 +115,14 @@
         $('scene-return-online').addEventListener('click', returnOnline);
         $('scene-panel-online').addEventListener('click', returnOnline);
         $('scene-help-btn').addEventListener('click', () => {
-            const help = $('scene-help'); help.hidden = !help.hidden; $('scene-help-btn').setAttribute('aria-expanded', String(!help.hidden));
+            showHelp($('scene-help').hidden);
         });
+        $('scene-help-back').addEventListener('click', () => showHelp(false));
         $('scene-mode-modal').addEventListener('keydown', event => {
-            if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key === 'Escape') {
+                event.preventDefault(); event.stopPropagation();
+                if (!$('scene-help').hidden) showHelp(false); else close();
+            }
             if (event.key === 'Tab') {
                 const nodes = Array.from($('scene-mode-modal').querySelectorAll('button,input,textarea,select')).filter(el => !el.disabled && el.getClientRects().length);
                 const first = nodes[0], last = nodes[nodes.length - 1];

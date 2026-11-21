@@ -1,6 +1,7 @@
 /* Scene-only selectors: existing bubbles, editor controls and user themes stay original. */
 #message-edit-narration-group[hidden], #scene-mode-bar[hidden], #scene-mode-btn[hidden],
 #scene-failed-entry[hidden], #scene-draft-group[hidden], #scene-help[hidden] { display: none; }
+#scene-mode-modal [hidden] { display: none !important; }
 #message-edit-narration-group label { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; font-size: 12px; font-weight: 400; }
 #message-edit-narration, #scene-enabled { width: 18px; height: 18px; margin: 0; accent-color: #527488; }
 .scene-turn { display: contents; }
@@ -23,6 +24,7 @@
 #scene-mode-form .scene-panel-footer button { border: 0; border-radius: 18px; padding: 10px 16px; color: inherit; background: #f1f4f5; cursor: pointer; }
 #scene-mode-form .scene-panel-footer button[type=submit] { background: #d4e5ef; }
 #scene-mode-modal #scene-help { font-size: 12px; line-height: 1.8; }
+#scene-help-back { border: 0; border-radius: 18px; padding: 10px 16px; background: #d4e5ef; color: inherit; font: inherit; cursor: pointer; }
 #scene-mode-modal #scene-draft-error { font-size: 12px; overflow-wrap: anywhere; }
 #scene-mode-modal #scene-draft-text { font-size: 12px; }
 #scene-copy-draft { border: 0; border-radius: 12px; padding: 8px 12px; background: #f1f4f5; color: inherit; cursor: pointer; margin-bottom: 14px; }

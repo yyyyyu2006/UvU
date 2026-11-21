@@ -35,6 +35,57 @@ function fixture(root, provider, version, type) {
     return { c,chat,requests,errors };
 }
 
+for (const provider of ['newapi','gemini']) for (const version of ['uwu','tt'])
+test('disabled scene settings and drafts leave the complete online request unchanged: '+provider+'/'+version, async()=>{
+    const f=fixture(current,provider,version,'private');
+    f.c.db.cotSettings={promptVersion:version,enabled:true,activePresetId:'online',prefillEnabled:true};
+    f.c.db.cotPresets=[{id:'online',items:[{enabled:true,content:'ONLINE_COT_SENTINEL'}]}];
+    await f.c.getAiReply('c','private');
+    const ordinary=JSON.stringify(f.requests.at(-1));
+    f.chat.sceneMode=f.c.UvUScene.defaultMode();
+    f.chat.sceneMode.scene={name:'OFF_SCENE_NAME',place:'OFF_SCENE_PLACE',time:'OFF_SCENE_TIME',background:'OFF_SCENE_BACKGROUND'};
+    f.chat.sceneDraft={raw:'OFF_SCENE_DRAFT'};
+    const before=JSON.stringify(f.chat.history);
+    await f.c.getAiReply('c','private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,2);
+    assert.equal(JSON.stringify(f.requests.at(-1)),ordinary);
+    assert.equal(JSON.stringify(f.chat.history),before);
+    assert.doesNotMatch(ordinary,/OFF_SCENE|只输出一份完整JSON/);
+});
+
+for (const provider of ['newapi','gemini'])
+test('scene request preserves scoped personas, world-book order, allowed memory, history and quotes: '+provider,async()=>{
+    const f=fixture(current,provider,'tt','private');
+    const {chat,c}=f;
+    vm.runInContext(fs.readFileSync(path.join(current,'js/modules/chat_ops.js'),'utf8'),c);
+    chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;
+    chat.sceneMode.scene={name:'SCENE_NAME',place:'SCENE_PLACE',time:'SCENE_TIME',background:'SCENE_BACKGROUND'};
+    chat.sceneMode.preferences={viewpoint:'second',length:'short'};
+    chat.maxMemory=3;
+    chat.history=[{id:'old',role:'user',content:'OUTSIDE_HISTORY_WINDOW',timestamp:1700000000000},
+        {id:'hidden',role:'assistant',content:'HIDDEN_HISTORY',isContextDisabled:true,timestamp:1700000001000},
+        {id:'a',role:'assistant',content:'KEPT_ASSISTANT',timestamp:1700000002000},
+        {id:'u',role:'user',content:'KEPT_USER',timestamp:1700000003000,quote:{senderName:'晴',content:'QUOTED_SCENE_SEGMENT'}}];
+    chat.memoryJournals.push({id:'not-selected',title:'not-selected',content:'UNSELECTED_MEMORY',isFavorited:false},
+        {id:'denied',title:'denied',content:'UNAPPROVED_BRIDGE_MEMORY',isFavorited:true,source:'sillytavern'});
+    c.UvUStoryBridge={isEnabled:()=>false,isConnected:()=>false,allowedMemory:(_chat,journal)=>journal.id!=='denied'};
+    c.db.cotSettings={promptVersion:'tt',enabled:true,activePresetId:'online',prefillEnabled:true};
+    c.db.cotPresets=[{id:'online',items:[{enabled:true,content:'ONLINE_COT_SENTINEL'}]}];
+    let delivered=0;c.UvUScene.deliver=async()=>{delivered++;return true;};
+    const before=JSON.stringify(chat.history);
+    await c.getAiReply('c','private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(delivered,1);
+    const body=f.requests[0],all=JSON.stringify(body);
+    const system=provider==='gemini'?body.system_instruction.parts[0].text:body.messages[0].content;
+    for(const value of ['人物设定','用户设定','约定','周六见','SCENE_NAME','SCENE_PLACE','SCENE_TIME','SCENE_BACKGROUND','第二人称','简短'])
+        assert.ok(system.includes(value),value);
+    const ordered=['LIMIT','BEFORE_1','BEFORE_2','角色设定：人物设定','AFTER','用户设定：用户设定','GUIDELINES'];
+    assert.deepEqual(ordered.map(value=>system.indexOf(value)),ordered.map(value=>system.indexOf(value)).sort((a,b)=>a-b));
+    for(const value of ['KEPT_ASSISTANT','KEPT_USER','QUOTED_SCENE_SEGMENT'])assert.ok(all.includes(value),value);
+    assert.doesNotMatch(all,/OUTSIDE_HISTORY_WINDOW|HIDDEN_HISTORY|UNSELECTED_MEMORY|UNAPPROVED_BRIDGE_MEMORY|ONLINE_COT_SENTINEL|incipere/);
+    assert.equal(JSON.stringify(chat.history),before);
+});
+
 test('144 real-filter request combinations retain 1900 ordering, CoT and original Gemini bug fixes', {skip:!available}, async()=>{
     let equal=0,originalFailures=0;
     for(const provider of ['newapi','gemini'])for(const version of ['uwu','tt'])for(const type of ['private','group'])

@@ -55,7 +55,7 @@
     <link rel="stylesheet" href="css/modules/cot_settings.css?v=20261106-model-picker">
     <link rel="stylesheet" href="css/modules/model_picker.css?v=20261115-search-focus">
     <link rel="stylesheet" href="css/modules/chat_thinking.css?v=20261115-tall-viewer">
-    <link rel="stylesheet" href="css/modules/chat_scene.css?v=20261121">
+    <link rel="stylesheet" href="css/modules/chat_scene.css?v=20261121-scene-review">
     <link rel="stylesheet" href="css/modules/video_call.css">
     <link rel="stylesheet" href="css/modules/storage.css?v=20261103-storage-perf">
     <link rel="stylesheet" href="css/workshop.css">
@@ -1391,7 +1391,7 @@ node setup-server-plugin.js</code></pre>
                 <button id="scene-help-btn" class="scene-small-btn" type="button" aria-label="使用说明" aria-controls="scene-help" aria-expanded="false">?</button>
                 <button id="scene-mode-close" class="scene-small-btn" type="button" aria-label="关闭场景设置">×</button>
             </div>
-            <div id="scene-help" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API进行面对面剧情；关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p></div>
+            <div id="scene-help" tabindex="-1" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API进行面对面剧情；关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p><button id="scene-help-back" type="button">返回设置</button></div>
             <form id="scene-mode-form" aria-labelledby="scene-mode-heading">
                 <label class="scene-switch" for="scene-enabled"><span>旁白模式</span><input id="scene-enabled" name="enabled" type="checkbox"></label>
                 <label class="scene-field" for="scene-name">场景名称<input id="scene-name" name="name" maxlength="40" placeholder="未命名场景"></label>
@@ -3027,8 +3027,8 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/character_import.js?v=20261115-data-integrity"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261111-review-notification-guards"></script>
-<script src="js/modules/chat_scene.js?v=20261121"></script>
-<script src="js/modules/chat_scene_ui.js?v=20261121"></script>
+<script src="js/modules/chat_scene.js?v=20261121-scene-review"></script>
+<script src="js/modules/chat_scene_ui.js?v=20261121-scene-review"></script>
 <script src="js/modules/chat_scene_reply.js?v=20261121"></script>
 <script src="js/modules/chat_thinking.js?v=20261118-first-bubble"></script>
 <script src="js/modules/chat_render.js?v=20261121-scene"></script>
@@ -3242,6 +3242,6 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_ui.js?v=20261116-panel-help-tabs"></script>
 <script src="js/modules/music_together_ui.js?v=20261112-chat-only"></script>
 <script src="js/modules/desktop_pet.js?v=20261119-pet-shapes"></script>
-<script src="js/main.js?v=20261119-pet"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261121-scene-review"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

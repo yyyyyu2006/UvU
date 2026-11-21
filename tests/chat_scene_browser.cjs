@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
 const {fullApp, root, stableUI} = require('./helpers/full_app_browser.cjs');
 const runtime = require('./helpers/browser_runtime.cjs');
-const out = path.join(root, 'outputs/scene-implementation-20261121'); fs.mkdirSync(out,{recursive:true});
+const out = path.resolve(root, process.env.UVU_SCENE_OUTPUT || 'outputs/scene-implementation-20261121'); fs.mkdirSync(out,{recursive:true});
 (async () => {
     const app = await fullApp(), checks = [], errors = [], requests = [];
     const context = await app.browser.newContext({viewport:{width:390,height:844},hasTouch:true,serviceWorkers:'block'});
@@ -72,6 +72,29 @@ const out = path.join(root, 'outputs/scene-implementation-20261121'); fs.mkdirSy
         assert.equal(await page.locator('#message-edit-modal').isVisible(),true);assert.equal(await page.locator('#message-edit-narration').isChecked(),true);
         await page.evaluate(()=>{dexieDB.characters.hook('updating').unsubscribe(window.sceneDiskFailure);});await page.locator('#cancel-edit-modal-btn').click();checks.push('编辑保存失败回滚原消息并保留待重试内容');
         await page.locator('#toggle-expansion-btn').click();await page.locator('#scene-mode-btn').click();
+        assert.equal(await page.locator('#scene-help').isVisible(),false);
+        await page.locator('#scene-name').fill('未保存的场景草稿');
+        await page.locator('#scene-help-btn').click();
+        assert.equal(await page.locator('#scene-help').isVisible(),true);
+        assert.equal(await page.locator('#scene-mode-form').isVisible(),false);
+        assert.equal(await page.locator('#scene-help-btn').getAttribute('aria-expanded'),'true');
+        await stableUI(page,'#scene-help');await page.screenshot({path:path.join(out,'help-390.png')});
+        await page.locator('#scene-help-back').click();
+        assert.equal(await page.locator('#scene-name').inputValue(),'未保存的场景草稿');
+        assert.equal(await page.locator('#scene-help').isVisible(),false);
+        await page.evaluate(()=>{for(let i=0;i<6;i++)document.getElementById('scene-help-btn').click();});
+        assert.equal(await page.locator('#global-rescue-panel').count(),0);
+        assert.equal(await page.locator('#scene-help').isVisible(),false);
+        checks.push('场景面板连续点击不会误触全局紧急恢复遮罩');
+        await page.locator('#scene-help-btn').press('Enter');await page.keyboard.press('Escape');
+        assert.equal(await page.locator('#scene-mode-modal').isVisible(),true);
+        assert.equal(await page.locator('#scene-mode-form').isVisible(),true);
+        await page.locator('#scene-help-btn').click();await page.locator('#scene-mode-close').click();
+        await page.evaluate(()=>UvUScene.open());
+        assert.equal(await page.locator('#scene-help').isVisible(),false);
+        assert.equal(await page.locator('#scene-mode-form').isVisible(),true);
+        assert.equal(await page.locator('#scene-help-btn').getAttribute('aria-expanded'),'false');
+        checks.push('问号进入独立说明页，返回保留表单草稿，键盘可用且重开默认收起');
         await page.locator('#scene-enabled').check();await page.locator('#scene-name').fill('雨后的咖啡店');
         await page.locator('#scene-place').fill('靠窗座位');await page.locator('#scene-mode-form button[type=submit]').click();
         await page.locator('#scene-mode-modal').waitFor({state:'hidden'});assert.equal(await page.locator('#scene-mode-bar').isVisible(),true);
@@ -152,6 +175,18 @@ const out = path.join(root, 'outputs/scene-implementation-20261121'); fs.mkdirSy
         while(!held)await new Promise(resolve=>setTimeout(resolve,10));
         await page.evaluate(()=>{db.characters[0].sceneMode.revision++;});held();held=null;delay=false;await page.evaluate(()=>window.pendingSceneReply);
         assert.equal(await page.evaluate(()=>db.characters[0].history.length),beforeLate);checks.push('模式修订后迟到回复不写入');
+        for(const changed of ['persona','quote']) {
+            const beforeCount=await page.evaluate(()=>db.characters[0].history.length);delay=true;
+            await page.evaluate(()=>{window.pendingSceneReply=getAiReply('scene-char','private');});
+            while(!held)await new Promise(resolve=>setTimeout(resolve,10));
+            await page.evaluate(changed=>{
+                if(changed==='persona')db.characters[0].persona+='；已保存的新设定';
+                else db.characters[0].history.at(-1).quote={content:'已经更正的引用',senderName:'我'};
+            },changed);
+            held();held=null;delay=false;await page.evaluate(()=>window.pendingSceneReply);
+            assert.equal(await page.evaluate(()=>db.characters[0].history.length),beforeCount);
+            assert.equal(await page.evaluate(()=>db.characters[0].sceneDraft.raw),raw);
+        }checks.push('生成期间更改人设或引用，旧回复只保留原文草稿，不入正式历史');
         const backup=await page.evaluate(()=>{
             const chat=db.characters[0],exported=storageExportChat(chat,true,true),modules={characters:[exported]};
             storageValidateModules(modules);

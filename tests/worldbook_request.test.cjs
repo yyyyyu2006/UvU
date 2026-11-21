@@ -89,3 +89,24 @@ for (const provider of ['newapi','gemini']) test('call summary applies activatio
     assert.equal(f.requests.length,1);const text=JSON.stringify(f.requests[0]);
     assert.ok(text.includes('WORLD_HEAD'));assert.ok(!text.includes('SHOULD_NOT_APPEAR'));
 });
+
+for (const provider of ['newapi','gemini']) test('scene reuses one worldbook activation without changing history or running online tools: '+provider,async()=>{
+    const f=fixture(provider,false,'private','system');
+    f.c.crypto=require('node:crypto').webcrypto;
+    for(const file of ['chat_scene.js','chat_scene_reply.js'])
+        vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules',file),'utf8'),f.c);
+    f.c.getContextMemoryJournals=()=>[];
+    f.c.UvUScene.deliver=async()=>true;
+    f.chat.sceneMode=f.c.UvUScene.defaultMode();f.chat.sceneMode.enabled=true;
+    let tools=0;
+    f.c.prepareMcpChatContext=async()=>{tools++;return 'MCP_SHOULD_NOT_RUN';};
+    f.c.getStickerDescriptionContext=()=>{tools++;return 'STICKERS_SHOULD_NOT_RUN';};
+    f.c.window={UvUMusicChat:{requestPlan:()=>{tools++;return {instructions:'MUSIC_SHOULD_NOT_RUN'};}}};
+    const original=JSON.stringify(f.chat.history);
+    await f.c.getAiReply(f.chat.id,'private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),1);assert.equal(tools,0);
+    const body=JSON.stringify(f.requests[0]);
+    for(const value of ['WORLD_HEAD','WORLD_MIDDLE','WORLD_TAIL'])assert.equal(body.split(value).length-1,1);
+    assert.doesNotMatch(body,/SHOULD_NOT_APPEAR|SHOULD_NOT_RUN/);
+    assert.equal(JSON.stringify(f.chat.history),original);
+});

@@ -64,3 +64,22 @@ test('stored scenes reject mismatched projections, duplicate IDs and unknown ver
     assert.throws(()=>scene.validateMessage(bad));
     assert.throws(()=>scene.validateMode({...scene.defaultMode(),version:2}));
 });
+
+test('pending scene replies become stale after quote, media, timestamp or persona changes', () => {
+    const scene = setup();
+    for (const change of [
+        chat => { chat.history[0].quote.content = '已经更正的引用'; },
+        chat => { chat.history[0].parts = [{type:'image',data:'data:image/png;base64,changed'}]; },
+        chat => { chat.history[0].timestamp++; },
+        chat => { chat.persona = '已经保存的新设定'; },
+        chat => { chat.myPersona = '已经保存的用户设定'; },
+        chat => { chat.worldBookIds.push('another-book'); }
+    ]) {
+        const chat = {history:[user()],activeArchiveId:'a',persona:'原设定',myPersona:'用户',worldBookIds:[],sceneMode:scene.defaultMode()};
+        chat.sceneMode.enabled = true;
+        const token = scene.capture(chat,'private');
+        assert.equal(scene.current(token),true);
+        change(chat);
+        assert.equal(scene.current(token),false);
+    }
+});
