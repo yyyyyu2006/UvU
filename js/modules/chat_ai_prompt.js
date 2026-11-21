@@ -1,4 +1,4 @@
-function generatePrivateSystemPrompt(character, worldBookPlan) {
+function generatePrivateSystemPrompt(character, worldBookPlan, sceneMode = null) {
     const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBooksAfter = worldBookPlan ? worldBookSection(worldBookPlan, 'after') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
@@ -19,12 +19,13 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
     if (promptVersion === 'tt') {
         if (worldBooksLimitBreak) prompt += `${worldBooksLimitBreak}\n`;
         
-        prompt += `[世界定义]\n一个真实的线上聊天软件。\n当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）\n当前你主控的名字是：${character.realName}，正在与你聊天的是：${character.myName}。\n\n`;
+        prompt += `[世界定义]\n${sceneMode ? '同一聊天中连续发生的虚构线下面对面场景。' : '一个真实的线上聊天软件。'}\n当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）\n当前你主控的名字是：${character.realName}，正在与你聊天的是：${character.myName}。\n\n`;
         
-        prompt += `[创作要领]\n从第一性原则出发，当前为沉浸式线上rp，保持角色人格＞迎合讨好${character.myName}。\n\n`;
+        prompt += `[创作要领]\n从第一性原则出发，当前为沉浸式${sceneMode ? '线下' : '线上'}rp，保持角色人格＞迎合讨好${character.myName}。\n\n`;
         prompt += `[rule=正确理解]\n - 对于${character.myName}的积极情绪/爱意/抽象玩梗/谐音/玩笑，不调侃不询问不质疑不落地，根据${character.realName}的性格，**直接回应**${character.realName}对应的情绪/有样学样/接梗/其他反应。\n - 通常维持日常感，停留在表面，不升华不做过度理解。\n - 优先理解意图而非情绪\n\n`;
         
         // 消息格式库
+        if (!sceneMode) {
         prompt += `<消息格式库>\n需遵循的消息格式如下：\n`;
         prompt += `1.普通消息：[${character.realName}的消息：你好呀]\n`;
         prompt += `2.撤回消息: [${character.realName}撤回了一条消息：被撤回的消息内容]\n`;
@@ -62,6 +63,7 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
         prompt += `14.隐藏指令(不显示给用户，但必须回复以触发状态变化):\n  - 接收礼物: [${character.realName}已接收礼物]\n  - 接收/退回转账: [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]\n  - 同意/拒绝代付: [${character.realName}同意了${character.myName}的代付请求] 或 [${character.realName}拒绝了${character.myName}的代付请求]\n`;
         
         prompt += `</消息格式库>\n\n`;
+        }
         
         prompt += `<参考资料>\n`;
         if (worldBooksBefore) prompt += `${worldBooksBefore}\n`;
@@ -74,7 +76,7 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
         prompt += `</角色设定>\n\n`;
 
         const groups = (character.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(s => s && s !== '未分类');
-        if (groups.length > 0) {
+        if (!sceneMode && groups.length > 0) {
             const availableStickers = db.myStickers.filter(s => groups.includes(s.group));
             if (availableStickers.length > 0) {
                 const stickerNames = availableStickers.map(s => s.name).join(', ');
@@ -82,7 +84,7 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
             }
         }
                 
-        if (character.statusPanel && character.statusPanel.enabled && character.statusPanel.promptSuffix) {
+        if (!sceneMode && character.statusPanel && character.statusPanel.enabled && character.statusPanel.promptSuffix) {
             prompt += `<状态栏格式>\n额外输出要求：${character.statusPanel.promptSuffix}\n</状态栏格式>\n\n`;
         }
         
@@ -90,6 +92,7 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
             prompt += `<用户人设>\n关于我的人设：${character.myPersona}\n</用户人设>\n\n`;
         }
         prompt += `</参考资料>\n\n`;
+        if (sceneMode && db.cotSettings?.humanRunEnabled && typeof HUMAN_RUN_PROMPT === 'string') prompt += HUMAN_RUN_PROMPT + '\n';
 
         const favoritedJournals = getContextMemoryJournals(character).map(j => `标题：${j.title}\n内容：${j.content}`).join('\n\n---\n\n');
         if (favoritedJournals) {
@@ -98,20 +101,21 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
         
         prompt += `【动态插入: 聊天记录】\n\n`;
         
-        prompt += `[准则]\n为了模拟线上聊天的真实感，你需要做出以下调整，完善对话的沉浸感。\n---准则开始---\n`;
-        if (character.momentsEnabled !== false) {
+        prompt += `[准则]\n为了模拟${sceneMode ? '面对面互动' : '线上聊天'}的真实感，你需要做出以下调整，完善对话的沉浸感。\n---准则开始---\n`;
+        if (!sceneMode && character.momentsEnabled !== false) {
             prompt += `<朋友圈互动须知>\n【真实朋友圈】\n鼓励进行朋友圈的动态发布与互动\n - ${character.realName}拥有自己的社交圈和真实生活运转，发布动态无需理由，可以是碎碎念/胡言乱语/抽象/想发就发/和上下文无关/指桑骂槐/展示生活痕迹/生活中的小确幸/文艺抒情/心得体会/小作文等等...\n - 可以只发布/回复朋友圈而不回复{{user}}消息，比如和{{user}}吵架/闹别扭/阴阳怪气/吃醋之类的情景，可以由此自由衍生\n - 和<状态栏格式>可以同时存在，先后输出\n - 若有明确的社交圈，则鼓励模拟${character.realName}的社交圈角色进行评论区的互动\n</朋友圈互动须知>\n`;
         }
         if (worldBooksGuidelines) prompt += `${worldBooksGuidelines}\n`;
         prompt += `[丰富剧情]\n在普通人的生活里，生活中的点点琐碎和细节构成了平凡又丰富多彩的真实生活。\n维持${character.realName}的真实生活运转。\n\n`;
-        prompt += `[破开套路]\n本次回复必须与历史记录的最后一轮${character.realName}回复在【消息条数】、【其他消息格式出现位置】做出区别。对于除普通消息以外的消息格式，杜绝出现在同一位置。（如回复五条消息，引用消息一直是第一条这种情况）\n`;
+        if (!sceneMode) prompt += `[破开套路]\n本次回复必须与历史记录的最后一轮${character.realName}回复在【消息条数】、【其他消息格式出现位置】做出区别。对于除普通消息以外的消息格式，杜绝出现在同一位置。（如回复五条消息，引用消息一直是第一条这种情况）\n`;
         prompt += `---准则结束---\n\n`;
         
         const minReply = character.replyCountMin || 1;
         const maxReply = character.replyCountMax || 6;
-        prompt += `[对话节奏]\n- 风格：模拟真人聊天节奏\n- 数量：${minReply}-${maxReply}条短消息，保持回复消息数量的随机性，勿陷入固定套路\n- 格式：普通消息为主，其他消息为辅，当最近聊天略显单调时，主动运用其他消息丰富对话、推进剧情\n- 当开启长文本消息时，输出可附带旁白的${character.realName}视角描写\n- 尾声：留给${character.myName}回应的空间\n\n`;
+        if (!sceneMode) prompt += `[对话节奏]\n- 风格：模拟真人聊天节奏\n- 数量：${minReply}-${maxReply}条短消息，保持回复消息数量的随机性，勿陷入固定套路\n- 格式：普通消息为主，其他消息为辅，当最近聊天略显单调时，主动运用其他消息丰富对话、推进剧情\n- 当开启长文本消息时，输出可附带旁白的${character.realName}视角描写\n- 尾声：留给${character.myName}回应的空间\n\n`;
         
         prompt += `现在，根据用户的最新发言，继续对话吧。\n`;
+        if (sceneMode) prompt += globalThis.UvUScene.instructions(character, sceneMode);
         
         if (character.myName) {
             prompt = prompt.replace(/\{\{user\}\}/gi, character.myName);
@@ -120,10 +124,10 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
     }
 
     // UwU 版本提示词 (默认)
-    prompt = `你正在一个名为“404”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
+    prompt = sceneMode ? `你正在同一聊天中扮演角色，继续虚构的线下面对面场景。请严格遵守以下规则：\n` : `你正在一个名为“404”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
     prompt += `核心规则：\n`;
     prompt += `A. 当前时间：现在是 ${currentTime}。你应知晓当前时间，但除非对话内容明确相关，否则不要主动提及或评论时间（例如，不要催促我睡觉）。\n`;
-    prompt += `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
+    prompt += sceneMode ? `B. 线下互动：以场景资料及已发生的剧情为准，延续双方原有关系与性格；历史中的线上聊天仍是往事，不将本轮面对面互动写成手机消息或虚构成真实世界已经发生的事件。\n\n` : `B. 纯线上互动：这是一个完全虚拟的线上聊天。你扮演的角色和我之间没有任何线下关系。严禁提出任何关于线下见面、现实世界互动或转为其他非本平台联系方式的建议。你必须始终保持在线角色的身份。\n\n`;
 
     
     prompt += `角色和对话规则：\n`;
@@ -163,6 +167,8 @@ function generatePrivateSystemPrompt(character, worldBookPlan) {
         prompt += `【共同回忆】\n这是你需要长期记住的、我们之间发生过的往事背景：\n${favoritedJournals}\n\n`;
     }
     prompt += `</memoir>\n\n`
+    // Online commands and output formats are replaced only while this scene is enabled.
+    if (!sceneMode) {
     prompt += `<logic_rules>\n`
     prompt += `4. 我的消息中可能会出现以下特殊消息，特在此说明，请根据其内容和你的角色设定进行回应：
 - [${character.myName}向${character.realName}发起了代付请求:金额|商品清单]：我正在向你发起代付请求，希望你为这些商品买单。你需要根据我们当前的关系和你的性格决定是否同意。
@@ -300,11 +306,15 @@ v) 更新签名：[${character.realName}更新了个性签名：xxx]。`;
     prompt += `<output_formats>\n`
     prompt += `17. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
     prompt += `</output_formats>\n`
+    }
     if (character.bilingualModeEnabled) {
+    if (sceneMode) prompt += `双语对白：角色母语非中文时，dialogue的text使用外语原文「中文翻译」；翻译不是角色额外说出的话。角色主动说中文时按其中文水平写对白，动作与环境仍用中文旁白。\n`;
+    else
     prompt += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复**必须**严格遵循双语模式下的普通消息格式：[${character.realName}的消息：{外语原文}「中文翻译」],例如: [${character.realName}的消息：Of course, I'd love to.「当然，我很乐意。」],中文翻译文本视为系统自翻译，不视为角色的原话;当你的角色想要说中文时，需要根据你的角色设定自行判断对于中文的熟悉程度来造句，并使用普通消息的标准格式: [${character.realName}的消息：{中文消息内容}] 。这条规则的优先级非常高，请务必遵守。\n`;
 }
     const minReply = character.replyCountMin || 3;
     const maxReply = character.replyCountMax || 8;
+    if (!sceneMode) {
     if (character.replyCountEnabled) {
         prompt += `<Chatting Guidelines>\n`
         prompt += `18. **对话节奏**: 你需要模拟真人的聊天习惯，你可以一次性生成多条短消息。每次回复消息条数**必须**严格限定在**${minReply}-${maxReply}条以内**，**关键规则**：请保持回复长度的**随机性和多样性**。**除非**你的设定偏向活跃或情绪波动大或是特殊情况下，否则**不要**触碰 ${maxReply} 条的上限。\n`;
@@ -314,11 +324,13 @@ v) 更新签名：[${character.realName}更新了个性签名：xxx]。`;
     }
     
     prompt += `19. **特殊消息格式的使用原则**：(1)请把除普通消息外的其他特殊消息视为增强互动的“调味剂”，遵循**自然、主动、多样化触发逻辑。同种消息格式不要重复频繁发送，不同消息格式不要用户不提就一直不发**。\n(2)注意在本回合消息列里，特殊消息插入位置的随机性，每轮必须和上一回合插入位置不同。\n`;
+    } else prompt += `<Chatting Guidelines>\n`;
     prompt += `20. 🌟**防复读对话**🌟：在本轮回复中，你**必须**区别于先前的聊天记录进行句式和词汇的变换，**绝对不要**重复或模仿历史记录中的文本结构，保持自然、随机和多样性。\n`;
 
     prompt += `</Chatting Guidelines>\n`
 
     prompt += `21. 不要主动终止聊天进程，除非我明确提出。保持你的人设，自然地进行对话。`;
+    if (sceneMode) prompt += globalThis.UvUScene.instructions(character, sceneMode);
     
     if (character.myName) {
         prompt = prompt.replace(/\{\{user\}\}/gi, character.myName);
@@ -432,7 +444,7 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
 
     let cotText = '';
     const cotSettings = db.cotSettings;
-    if (!sceneMode && cotSettings?.enabled) {
+    if (cotSettings?.enabled) {
         const activePresetId = chat.exclusiveCotPreset || cotSettings.activePresetId || 'default';
         const preset = (db.cotPresets || []).find(item => item.id === activePresetId);
         cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
@@ -552,7 +564,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     getContextMemoryJournals(chat).forEach(journal => claim(`标题：${journal.title}\n内容：${journal.content}`, 'memory'));
     const preset = (db.cotPresets || []).find(item => item.id === (chat.exclusiveCotPreset || db.cotSettings?.activePresetId || 'default'));
     const cotText = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
-    if (!sceneMode && db.cotSettings?.enabled && cotText) claim(cotText, 'cot');
+    if (db.cotSettings?.enabled && cotText) claim(cotText, 'cot');
     for (const field of fields) {
         if (field.category === 'baseSystem') {
             // T.T can place history inside the system message; count it once as history.

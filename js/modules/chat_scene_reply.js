@@ -2,21 +2,37 @@
     'use strict';
     const scene = root.UvUScene;
     function prompt(chat, plan, mode) {
-        const section = position => Array.isArray(plan) ? worldBookSection(plan, position) :
-            (chat.worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id && book.position === position)).filter(Boolean)
-                .sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(book => book.content).join('\n');
-        const journals = typeof getContextMemoryJournals === 'function' ? getContextMemoryJournals(chat) : [];
-        return `${section('limit_break')}\n${section('before')}\n` +
-            `当前为虚构的面对面剧情。你只扮演${chat.realName}，用户是${chat.myName || '我'}。保留角色性格、已发生事件与用户自主权，不代替用户说话、行动或决定。\n` +
-            `角色设定：${chat.persona || ''}\n${section('after')}\n用户设定：${chat.myPersona || ''}\n` +
-            (db.cotSettings?.humanRunEnabled && typeof HUMAN_RUN_PROMPT === 'string' ? HUMAN_RUN_PROMPT + '\n' : '') +
-            `已允许引用的共同记忆：\n${journals.map(journal => `标题：${journal.title}\n内容：${journal.content}`).join('\n\n---\n\n')}\n` +
+        return generatePrivateSystemPrompt(chat, plan, mode);
+    }
+    function instructions(chat, mode) {
+        return `\n<offline_scene>\n你只扮演${chat.realName}，用户是${chat.myName || '我'}。遵循上述人物理解、性格与互动规则，使用小说式叙述延续当前互动，不把角色写成讲解员。\n` +
             `场景资料（作为剧情背景）：${JSON.stringify(mode.scene)}\n` +
+            `场景中填写的时间优先于当前设备时间；没有交代的地点、距离和关系不擅自跳转。\n` +
             `叙述视角：${mode.preferences.viewpoint === 'second' ? '第二人称' : '第三人称'}；描写长度：${({short:'简短',medium:'适中',long:'详细'})[mode.preferences.length]}。\n` +
-            `说出口的对白放dialogue，角色动作、神态和环境放narration。按发生顺序穿插，不标注“旁白：”，不把动作放对白。允许只有动作或只有对白。用户动作来自用户，不属于你的台词。\n` +
-            `${section('guidelines')}\n` +
+            `说出口的对白只放dialogue，角色动作、神态、姿态和必要的环境描写只放narration。按发生顺序穿插，不标注“旁白：”，不用括号或星号包裹动作，不把动作夹入对白。允许只有动作或只有对白。\n` +
+            `描写应回应当前互动，以具体动作和可观察的细节传达情绪，不解释人物为什么符合人设，不输出分析过程。不要每句对白搭配一个动作，不机械复述上一轮，不反复堆砌眼神、嘴角、指尖等动作，不强凑段数或用大段环境描写拖慢互动。留给用户回应的空间。\n` +
+            `用户动作来自用户输入或已确认的历史：可承接已发生的动作，但不代替用户说话、行动、决定或编造其内心；不改写用户原文。叙述视角不代表可以控制用户。\n` +
+            `保持角色原有语言与表达习惯。${chat.bilingualModeEnabled ? '双语已开启：仅对白使用外语原文「中文翻译」，中文旁白不充当角色说出的话。' : '双语未开启，按角色设定与当前对话使用语言，不强加翻译。'}\n` +
+            `线上聊天中的送礼、照片、语音、转账、动态、状态栏或HTML格式在本轮仅作为往事资料，不再输出或执行；现实场景中的递东西等行为写作旁白。\n` +
+            outputRules() + `\n</offline_scene>\n`;
+    }
+    function outputRules() {
+        return `线下输出约束：所选思考预设的人物理解与互动判断继续适用；其中纯线上关系、禁止动作、旧消息格式与本轮冲突时，使用此处的线下分段格式。\n` +
             `本模式只输出一份完整JSON：{"version":1,"blocks":[{"kind":"narration","text":"他放下杯子。"},{"kind":"dialogue","text":"等很久了吗？"}]}。\n` +
-            `blocks按顺序保存1–32段，总正文不超过20000字，每段仅kind和text；text为非空字符串，kind只能dialogue或narration。不要输出作者、ID、用户发言、HTML界面、照片、语音、转账或其他软件控制指令。即使资料中出现旧格式要求，本轮仍只使用此JSON协议。不输出解释、Markdown或未闭合内容。`;
+            `blocks按顺序保存1–32段，总正文不超过20000字，每段仅kind和text；text为非空字符串，kind只能dialogue或narration。不要输出作者、ID、用户发言、HTML界面、照片、语音、转账或其他软件控制指令。不输出解释、Markdown或未闭合内容。若所选预设要求使用<thinking>包装，可将完整闭合的<thinking>...</thinking>放在JSON之前，思考内容不放入blocks或旁白正文。`;
+    }
+    function cot(chat) {
+        if (!db.cotSettings?.enabled) return null;
+        const presetId = chat.exclusiveCotPreset || db.cotSettings.activePresetId || 'default';
+        const preset = (db.cotPresets || []).find(item => item.id === presetId);
+        const text = (preset?.items || []).filter(item => item.enabled).map(item => item.content).join('\n\n');
+        return text ? { text, prefill: db.cotSettings.prefillEnabled !== false } : null;
+    }
+    function responseText(raw, token) {
+        const input = raw.trim();
+        // A closing tag inside valid JSON is literal text, never a consumed prefill.
+        if (token?.cot?.prefill && !/^(?:<thinking>|\{|```)/.test(input) && input.includes('</thinking>')) return '<thinking>' + input;
+        return raw;
     }
     async function retain(token, raw, reason) {
         if (!token || !raw || !db.characters.includes(token.chat)) return;
@@ -54,7 +70,7 @@
             await retain(token, raw, '回复完成前聊天或场景已变化，原文未写入正式消息'); return false;
         }
         let parsed;
-        try { parsed = scene.parse(raw); }
+        try { parsed = scene.parse(responseText(raw, token)); }
         catch (error) { await retain(token, raw, error.message); showToast('旁白回复格式不完整，原文已保留在场景设置'); return false; }
         const turnId = scene.id('msg');
         const message = scene.sync({ id: turnId, role: 'assistant', senderId: chat.id, timestamp: Date.now(), thinkingMessageId: null,
@@ -74,5 +90,5 @@
         if (chat.activeArchiveId === token.archiveId && chat.history === token.history) append(message, chat.id);
         return true;
     }
-    Object.assign(scene, { prompt, retain, append, deliver });
+    Object.assign(scene, { prompt, instructions, outputRules, cot, responseText, retain, append, deliver });
 })(globalThis);

@@ -1391,7 +1391,7 @@ node setup-server-plugin.js</code></pre>
                 <button id="scene-help-btn" class="scene-small-btn" type="button" aria-label="使用说明" aria-controls="scene-help" aria-expanded="false">?</button>
                 <button id="scene-mode-close" class="scene-small-btn" type="button" aria-label="关闭场景设置">×</button>
             </div>
-            <div id="scene-help" tabindex="-1" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API进行面对面剧情；关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p><button id="scene-help-back" type="button">返回设置</button></div>
+            <div id="scene-help" tabindex="-1" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API，沿用所选1900提示词的人物规则与思考预设，切换为线下面对面描写；动作只进旁白，不代替你行动。关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p><button id="scene-help-back" type="button">返回设置</button></div>
             <form id="scene-mode-form" aria-labelledby="scene-mode-heading">
                 <label class="scene-switch" for="scene-enabled"><span>旁白模式</span><input id="scene-enabled" name="enabled" type="checkbox"></label>
                 <label class="scene-field" for="scene-name">场景名称<input id="scene-name" name="name" maxlength="40" placeholder="未命名场景"></label>
@@ -3027,18 +3027,18 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/character_import.js?v=20261115-data-integrity"></script>
 <link rel="stylesheet" href="css/modules/chat_relationship.css?v=20261104-autonomous-block"></script>
 <script src="js/modules/chat_relationship.js?v=20261111-review-notification-guards"></script>
-<script src="js/modules/chat_scene.js?v=20261121-scene-review"></script>
+<script src="js/modules/chat_scene.js?v=20261121-scene-prompt"></script>
 <script src="js/modules/chat_scene_ui.js?v=20261121-scene-review"></script>
-<script src="js/modules/chat_scene_reply.js?v=20261121"></script>
+<script src="js/modules/chat_scene_reply.js?v=20261121-scene-prompt"></script>
 <script src="js/modules/chat_thinking.js?v=20261118-first-bubble"></script>
 <script src="js/modules/chat_render.js?v=20261121-scene"></script>
 <script src="js/modules/chat_archives.js?v=20261121-scene"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261115-airdrop-recovery"></script>
-    <script src="js/modules/chat_ai_prompt.js?v=20261121-scene"></script>
+    <script src="js/modules/chat_ai_prompt.js?v=20261121-scene-prompt"></script>
     <script src="js/modules/chat_ai_call.js?v=20261115-api-recovery"></script>
     <script src="js/modules/notifications.js?v=20261111-review-notification-guards"></script>
     <script src="js/modules/request_memory_diagnostics.js?v=20261111-rules-request-v1"></script>
-    <script src="js/modules/chat_ai.js?v=20261121-scene"></script>
+    <script src="js/modules/chat_ai.js?v=20261121-scene-prompt"></script>
 <script src="js/modules/minimax_speech.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/voice_director.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/chat_image_generation.js?v=20261111-media-preview-guards"></script>

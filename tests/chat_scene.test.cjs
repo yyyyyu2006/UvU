@@ -48,6 +48,18 @@ test('malformed, truncated, future and executable response structures are reject
         {version:1,blocks:[{kind:'narration',text:'x'.repeat(20001)}]}];
     for(const value of invalid) assert.throws(()=>scene.parse(typeof value === 'string' ? value : JSON.stringify(value)));
 });
+
+test('scene thinking prefill recovery is scoped and cannot consume a closing tag inside JSON',()=>{
+    const context=vm.createContext({crypto:require('node:crypto').webcrypto});
+    for(const file of ['chat_scene.js','chat_scene_reply.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules',file),'utf8'),context);
+    const scene=context.UvUScene,token={cot:{prefill:true}};
+    const json=JSON.stringify({version:1,blocks:[{kind:'narration',text:'他看了一眼写着 </thinking> 的纸。'}]});
+    assert.equal(scene.responseText(json,token),json);
+    assert.equal(scene.parse(scene.responseText('实际返回的内容</thinking>\n'+json,token)).thinking,'<thinking>实际返回的内容</thinking>');
+    const full='<thinking>实际内容</thinking>'+json;assert.equal(scene.responseText(full,token),full);
+    for(const state of [null,{cot:null},{cot:{prefill:false}}])assert.throws(()=>scene.parse(scene.responseText('内容</thinking>'+json,state)));
+    assert.throws(()=>scene.parse(scene.responseText('内容</thinking>{"version":1,',token)));
+});
 test('snapshot rejects edits, mode changes, archive replacement and late results', () => {
     const scene = setup(), chat = {history:[user()],activeArchiveId:'a',sceneMode:scene.defaultMode()};
     assert.equal(scene.capture(chat,'private'),null); chat.sceneMode.enabled=true;

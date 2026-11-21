@@ -79,11 +79,66 @@ test('scene request preserves scoped personas, world-book order, allowed memory,
     const system=provider==='gemini'?body.system_instruction.parts[0].text:body.messages[0].content;
     for(const value of ['人物设定','用户设定','约定','周六见','SCENE_NAME','SCENE_PLACE','SCENE_TIME','SCENE_BACKGROUND','第二人称','简短'])
         assert.ok(system.includes(value),value);
-    const ordered=['LIMIT','BEFORE_1','BEFORE_2','角色设定：人物设定','AFTER','用户设定：用户设定','GUIDELINES'];
+    const ordered=['LIMIT','BEFORE_1','BEFORE_2','角色设定是：人物设定','AFTER','关于我的人设：用户设定','GUIDELINES'];
     assert.deepEqual(ordered.map(value=>system.indexOf(value)),ordered.map(value=>system.indexOf(value)).sort((a,b)=>a-b));
     for(const value of ['KEPT_ASSISTANT','KEPT_USER','QUOTED_SCENE_SEGMENT'])assert.ok(all.includes(value),value);
-    assert.doesNotMatch(all,/OUTSIDE_HISTORY_WINDOW|HIDDEN_HISTORY|UNSELECTED_MEMORY|UNAPPROVED_BRIDGE_MEMORY|ONLINE_COT_SENTINEL|incipere/);
+    assert.doesNotMatch(all,/OUTSIDE_HISTORY_WINDOW|HIDDEN_HISTORY|UNSELECTED_MEMORY|UNAPPROVED_BRIDGE_MEMORY/);
+    assert.match(all,/ONLINE_COT_SENTINEL/);assert.match(all,/incipere/);
     assert.equal(JSON.stringify(chat.history),before);
+});
+
+for (const provider of ['newapi','gemini']) for (const version of ['uwu','tt']) for (const state of ['off','empty','prefill','no-prefill'])
+test('derived offline prompt and scoped thinking request: '+[provider,version,state].join('/'),async()=>{
+    const f=fixture(current,provider,version,'private'),{c,chat}=f;
+    chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;
+    chat.exclusivePromptVersion=version;
+    chat.exclusiveCotPreset='character-cot';
+    c.db.cotSettings={promptVersion:version==='tt'?'uwu':'tt',enabled:state!=='off',activePresetId:'global-cot',prefillEnabled:state==='prefill'};
+    c.db.cotPresets=[{id:'global-cot',items:[{enabled:true,content:'WRONG_GLOBAL_COT'}]},
+        {id:'character-cot',items:[{enabled:state!=='empty',content:'CHARACTER_COT'}, {enabled:false,content:'DISABLED_COT'}]}];
+    c.UvUScene.deliver=async()=>true;
+    const original=JSON.stringify(chat.history);
+    await c.getAiReply('c','private');
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);
+    const body=f.requests[0],text=JSON.stringify(body),active=state==='prefill'||state==='no-prefill';
+    const system=provider==='gemini'?body.system_instruction.parts[0].text:body.messages[0].content;
+    assert.match(system,/小说式叙述/);assert.match(system,/动作、神态、姿态和必要的环境描写只放narration/);
+    assert.match(system,/不代替用户说话、行动、决定/);
+    assert.doesNotMatch(system,/纯线上互动：|没有任何线下关系|绝对不允许包含任何|<消息格式库>|<output_formats>|<状态栏格式>/);
+    assert.match(system,version==='tt'?/保持角色人格＞迎合讨好/:/防复读对话/);
+    assert.doesNotMatch(text,/WRONG_GLOBAL_COT|DISABLED_COT/);
+    assert.equal(text.includes('CHARACTER_COT'),active);assert.equal(text.includes('[incipere]'),active);
+    const sequence=provider==='gemini'?body.contents:body.messages;
+    assert.equal(sequence.at(-1).role,state==='prefill'?(provider==='gemini'?'model':'assistant'):'user');
+    if(state==='prefill')assert.equal(provider==='gemini'?sequence.at(-1).parts[0].text:sequence.at(-1).content,'<thinking>');
+    const suffix=provider==='gemini'?system:body.messages.filter(m=>m.role==='system').at(-1).content;
+    if(active){assert.equal(text.split('CHARACTER_COT').length-1,1);assert.ok(suffix.lastIndexOf('线下输出约束')>suffix.indexOf('CHARACTER_COT'));}
+    for(const word of ['BEFORE_1','BEFORE_2','AFTER','LIMIT','GUIDELINES'])assert.equal(text.split(word).length-1,1);
+    assert.equal(JSON.stringify(chat.history),original);
+    const preview=c.calculateTokenBreakdown('c','private',[]);
+    assert.equal(preview.cot>0,active);
+});
+
+test('offline prompt inherits selected language, living-character rule and exact worldbook layout',()=>{
+    const f=fixture(current,'newapi','uwu','private'),{c,chat}=f;
+    c.db.cotSettings.humanRunEnabled=true;
+    chat.bilingualModeEnabled=true;chat.sceneMode=c.UvUScene.defaultMode();
+    for(const version of ['uwu','tt']){
+        chat.exclusivePromptVersion=version;
+        const text=c.UvUScene.prompt(chat,[],chat.sceneMode);
+        assert.ok(text.includes(vm.runInContext('HUMAN_RUN_PROMPT',c)));assert.match(text,/双语已开启/);
+        assert.doesNotMatch(text,/BEFORE_1|BEFORE_2|AFTER|LIMIT|GUIDELINES/);
+        assert.equal(text.includes('【动态插入: 聊天记录】'),version==='tt');
+    }
+});
+
+test('scene results become stale after prompt preset, thinking content or prefill changes',()=>{
+    const f=fixture(current,'newapi','uwu','private'),{c,chat}=f;
+    chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;
+    c.db.cotSettings.enabled=true;c.db.cotSettings.activePresetId='x';c.db.cotPresets=[{id:'x',items:[{enabled:true,content:'BEFORE'}]}];
+    for(const mutate of [()=>{chat.exclusivePromptVersion='tt';},()=>{c.db.cotPresets[0].items[0].content+=' edit';},()=>{c.db.cotSettings.prefillEnabled=false;}]){
+        const token=c.UvUScene.capture(chat,'private');assert.equal(c.UvUScene.current(token),true);mutate();assert.equal(c.UvUScene.current(token),false);
+    }
 });
 
 test('144 real-filter request combinations retain 1900 ordering, CoT and original Gemini bug fixes', {skip:!available}, async()=>{

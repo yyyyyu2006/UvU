@@ -454,6 +454,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 }
             }
 
+            if (sceneToken?.cot) {
+                systemPrompt += '\n\n' + sceneToken.cot.text + '\n\n' + globalThis.UvUScene.outputRules();
+                contents.push({role: 'user', parts: [{text: '[incipere]'}]});
+                if (sceneToken.cot.prefill) contents.push({role: 'model', parts: [{text: '<thinking>'}]});
+            }
             requestBody = {
                 contents: contents,
                 system_instruction: {parts: [{text: systemPrompt}]},
@@ -612,8 +617,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // 2. 插入 CoT 序列（无论前台后台，只要开启就插入）
             const cotEnabled = db.cotSettings && db.cotSettings.enabled;
             
-            if (cotEnabled && !sceneToken) {
+            if (cotEnabled || sceneToken?.cot) {
                 let cotInstruction = '';
+                if (sceneToken) cotInstruction = sceneToken.cot?.text || '';
+                else {
                 // 优先使用角色专属 CoT 预设
                 let activePresetId = 'default';
                 if (chat.exclusiveCotPreset) {
@@ -629,19 +636,20 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                         .map(item => item.content)
                         .join('\n\n');
                 }
+                }
 
                 if (cotInstruction) {
                     // 1. 插入后置指令
                     messages.push({
                         role: 'system', // 或者 'user'
-                        content: cotInstruction
+                        content: sceneToken ? cotInstruction + '\n\n' + globalThis.UvUScene.outputRules() : cotInstruction
                     });
 
                     // 2. 插入触发器
                     pushOrMergeMessage('user', '[incipere]');
 
                     // 3. 插入 Prefill (预填/强塞)
-                    const prefillEnabled = db.cotSettings.prefillEnabled !== false;
+                    const prefillEnabled = sceneToken ? sceneToken.cot.prefill : db.cotSettings.prefillEnabled !== false;
                     if (prefillEnabled) {
                         pushOrMergeMessage('assistant', '<thinking>');
                     }

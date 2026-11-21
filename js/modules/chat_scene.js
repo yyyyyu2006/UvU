@@ -120,15 +120,22 @@
     function signature(history) { return JSON.stringify(history.map(message => [message.id, message.role, message.content, message.parts,
         message.quote, message.timestamp, message.senderId, message.type, message.scene,
         !!message.isWithdrawn, !!message.isContextDisabled, !!message.isThinking, !!message.relationshipDelivery])); }
-    function identity(chat) { return JSON.stringify([chat.realName, chat.myName, chat.persona, chat.myPersona, chat.worldBookIds]); }
+    function identity(chat) {
+        const settings = typeof db === 'object' ? db.cotSettings : null;
+        return JSON.stringify([chat.realName, chat.myName, chat.persona, chat.myPersona, chat.worldBookIds,
+            chat.exclusivePromptVersion, chat.exclusiveCotPreset, chat.bilingualModeEnabled,
+            settings?.promptVersion, settings?.humanRunEnabled]);
+    }
+    function cotState(chat) { return root.UvUScene.cot?.(chat) || null; }
     function capture(chat, type) {
         if (!enabled(chat, type)) return null;
         validateMode(chat.sceneMode);
-        return { chat, archiveId: chat.activeArchiveId, history: chat.history, mode: clone(chat.sceneMode), source: signature(chat.history), identity: identity(chat) };
+        return { chat, archiveId: chat.activeArchiveId, history: chat.history, mode: clone(chat.sceneMode), source: signature(chat.history), identity: identity(chat), cot: cotState(chat) };
     }
     function current(token) {
         return Boolean(token && token.chat.activeArchiveId === token.archiveId && token.chat.history === token.history &&
-            enabled(token.chat) && identity(token.chat) === token.identity && JSON.stringify(token.chat.sceneMode) === JSON.stringify(token.mode) && signature(token.history) === token.source);
+            enabled(token.chat) && identity(token.chat) === token.identity && JSON.stringify(cotState(token.chat)) === JSON.stringify(token.cot) &&
+            JSON.stringify(token.chat.sceneMode) === JSON.stringify(token.mode) && signature(token.history) === token.source);
     }
     function abort(chat) {
         if (typeof getChatGeneration === 'function') {
