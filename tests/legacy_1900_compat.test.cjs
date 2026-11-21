@@ -35,6 +35,23 @@ function fixture(root, provider, version, type) {
     return { c,chat,requests,errors };
 }
 
+for (const version of ['uwu', 'tt'])
+test('online and copied narration builders cannot invoke each other: ' + version, () => {
+    const {c, chat} = fixture(current, 'newapi', version, 'private');
+    const online = c.generatePrivateSystemPrompt;
+    const expected = online(chat);
+    const mode = c.UvUScene.defaultMode(); mode.enabled = true;
+    mode.scene.background = 'INDEPENDENT_SCENE_SENTINEL';
+    // A leftover third argument cannot switch the online builder into narration.
+    assert.equal(online(chat, undefined, mode), expected);
+    c.generatePrivateSystemPrompt = () => { throw Error('online builder must not run for narration'); };
+    const narration = c.UvUScene.prompt(chat, undefined, mode);
+    assert.match(narration, /INDEPENDENT_SCENE_SENTINEL/);
+    assert.match(narration, /<offline_scene>/);
+    c.UvUScene.instructions = () => { throw Error('narration rules must not run for online'); };
+    assert.equal(online(chat), expected);
+});
+
 for (const provider of ['newapi','gemini']) for (const version of ['uwu','tt'])
 test('disabled scene settings and drafts leave the complete online request unchanged: '+provider+'/'+version, async()=>{
     const f=fixture(current,provider,version,'private');
@@ -51,6 +68,51 @@ test('disabled scene settings and drafts leave the complete online request uncha
     assert.equal(JSON.stringify(f.requests.at(-1)),ordinary);
     assert.equal(JSON.stringify(f.chat.history),before);
     assert.doesNotMatch(ordinary,/OFF_SCENE|只输出一份完整JSON/);
+});
+
+for (const provider of ['newapi','gemini']) for (const version of ['uwu','tt']) for (const remote of [false,true])
+test('scene distance and perceptual boundaries reach the real request without weather: '+[provider,version,remote].join('/'), async()=>{
+    const {c,chat,requests,errors}=fixture(current,provider,version,'private');
+    chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;
+    chat.environmentProfile={remoteEnabled:remote,aiEnabled:false};c.db.environmentSettings={enabled:false};
+    chat.sceneMode.scene.background=remote?'网恋，双方各自在家，只有文字联系。':'双方已经明确见面，隔桌坐着。';
+    chat.history=[c.UvUScene.convert({id:'u',role:'user',content:'[我的消息：我放下杯子。]',timestamp:1},'我放下杯子。',true,chat)];
+    const before=JSON.stringify(chat);c.UvUScene.deliver=async()=>true;
+    await c.getAiReply(chat.id,'private');
+    assert.deepEqual(errors,[]);assert.equal(requests.length,1);
+    const body=requests[0],system=provider==='gemini'?body.system_instruction.parts[0].text:body.messages[0].content;
+    assert.match(system,remote?/角色设置：已开启异地模式/:/角色设置：未开启异地模式/);
+    for(const fragment of ['旁白模式只改变表达与分段','长期关系与本次是否同场分别承接','面对面时','异地或经通信互动时','文字不等于声音','场外修正','不代替用户说话、行动、决定'])assert.ok(system.includes(fragment),fragment);
+    assert.doesNotMatch(system,/继续虚构的线下面对面场景|同一聊天中连续发生的虚构线下面对面场景|其中纯线上关系、禁止动作/);
+    assert.match(system,version==='tt'?/\[场景与信息\]/:/<scene_rules>/);
+    assert.equal(system.split('角色设置：').length-1,1);
+    assert.match(JSON.stringify(body),/用户动作：我放下杯子/);
+    assert.equal(JSON.stringify(chat),before);
+});
+
+for(const version of ['uwu','tt'])
+test('default thinking is adapted on a scene request copy while custom text and online requests stay intact: '+version, async()=>{
+    const {c,chat,requests,errors}=fixture(current,'newapi',version,'private');
+    const source=fs.readFileSync(path.join(current,'js/db.js'),'utf8');
+    vm.runInContext(source.slice(source.indexOf('const DEFAULT_COT_PRESETS ='),source.indexOf('const globalSettingKeys =')),c);
+    c.db.cotPresets=vm.runInContext('JSON.parse(JSON.stringify(DEFAULT_COT_PRESETS))',c);
+    c.db.cotSettings={enabled:true,activePresetId:'default',promptVersion:version,prefillEnabled:false};
+    const custom='自定义原文 <logic_rules>，默认期间以其他方式保持联系。';
+    c.db.cotPresets[0].items.push({id:'custom',enabled:true,content:custom});
+    const stored=JSON.stringify(c.db.cotPresets);
+    await c.getAiReply(chat.id,'private');
+    const online=requests.at(-1);
+    chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;c.UvUScene.deliver=async()=>true;
+    const adapted=c.UvUScene.cot(chat).text;
+    assert.match(adapted,/回复间隔不自动证明/);assert.ok(adapted.includes(custom));
+    assert.doesNotMatch(adapted,/默认双方只是自然忙碌后重新拿起手机|是否需要输出状态栏/);
+    assert.match(adapted,version==='tt'?/\[场景与信息\]/:/<scene_rules>/);
+    await c.getAiReply(chat.id,'private');
+    assert.ok(JSON.stringify(requests.at(-1)).includes('回复间隔不自动证明'));
+    chat.sceneMode.enabled=false;
+    await c.getAiReply(chat.id,'private');
+    assert.deepEqual(requests.at(-1),online);assert.deepEqual(errors,[]);
+    assert.equal(JSON.stringify(c.db.cotPresets),stored);
 });
 
 for (const provider of ['newapi','gemini'])

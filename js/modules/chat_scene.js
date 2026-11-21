@@ -124,7 +124,7 @@
         const settings = typeof db === 'object' ? db.cotSettings : null;
         return JSON.stringify([chat.realName, chat.myName, chat.persona, chat.myPersona, chat.worldBookIds,
             chat.exclusivePromptVersion, chat.exclusiveCotPreset, chat.bilingualModeEnabled,
-            settings?.promptVersion, settings?.humanRunEnabled]);
+            settings?.promptVersion, settings?.humanRunEnabled, chat.status, chat.environmentProfile?.remoteEnabled === true]);
     }
     function cotState(chat) { return root.UvUScene.cot?.(chat) || null; }
     function capture(chat, type) {

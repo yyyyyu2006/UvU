@@ -191,18 +191,34 @@ const out = path.resolve(root, process.env.UVU_SCENE_OUTPUT || 'outputs/scene-im
         while(!held)await new Promise(resolve=>setTimeout(resolve,10));
         await page.evaluate(()=>{db.characters[0].sceneMode.revision++;});held();held=null;delay=false;await page.evaluate(()=>window.pendingSceneReply);
         assert.equal(await page.evaluate(()=>db.characters[0].history.length),beforeLate);checks.push('模式修订后迟到回复不写入');
-        for(const changed of ['persona','quote']) {
+        for(const changed of ['persona','quote','distance','status']) {
             const beforeCount=await page.evaluate(()=>db.characters[0].history.length);delay=true;
             await page.evaluate(()=>{window.pendingSceneReply=getAiReply('scene-char','private');});
             while(!held)await new Promise(resolve=>setTimeout(resolve,10));
             await page.evaluate(changed=>{
                 if(changed==='persona')db.characters[0].persona+='；已保存的新设定';
+                else if(changed==='distance')db.characters[0].environmentProfile={remoteEnabled:true,aiEnabled:false};
+                else if(changed==='status')db.characters[0].status='已更新状态';
                 else db.characters[0].history.at(-1).quote={content:'已经更正的引用',senderName:'我'};
             },changed);
             held();held=null;delay=false;await page.evaluate(()=>window.pendingSceneReply);
             assert.equal(await page.evaluate(()=>db.characters[0].history.length),beforeCount);
             assert.equal(await page.evaluate(()=>db.characters[0].sceneDraft.raw),raw);
-        }checks.push('生成期间更改人设或引用，旧回复只保留原文草稿，不入正式历史');
+        }checks.push('生成期间更改人设、引用、异地设置或角色状态，旧回复只保留原文草稿，不入正式历史');
+        for(const version of ['uwu','tt'])for(const remote of [false,true]){
+            await page.evaluate(({version,remote})=>{
+                const chat=db.characters[0];chat.exclusivePromptVersion=version;
+                chat.environmentProfile={remoteEnabled:remote,aiEnabled:false};db.environmentSettings={enabled:false};
+                chat.sceneMode.scene.background=remote?'双方各自在家，只有文字联系。':'双方已明确见面，正在隔桌交谈。';
+            },{version,remote});
+            await reply();
+            const request=JSON.stringify(requests.at(-1));
+            assert.ok(request.includes(remote?'角色设置：已开启异地模式':'角色设置：未开启异地模式'));
+            assert.ok(request.includes('长期关系与本次是否同场分别承接'));
+            assert.ok(request.includes('用户旁白可供读者了解'));
+            assert.doesNotMatch(request,/继续虚构的线下面对面场景|同一聊天中连续发生的虚构线下面对面场景/);
+            checks.push(version+'/'+(remote?'异地':'面对面')+'请求包含独立距离、渠道与用户边界，天气关闭仍生效');
+        }
         const backup=await page.evaluate(()=>{
             const chat=db.characters[0],exported=storageExportChat(chat,true,true),modules={characters:[exported]};
             storageValidateModules(modules);
@@ -267,6 +283,7 @@ const out = path.resolve(root, process.env.UVU_SCENE_OUTPUT || 'outputs/scene-im
             Object.keys(selectedImportModules).forEach(key=>selectedImportModules[key]=['contacts','chats'].includes(key));
             switchScreen('storage-analysis-screen');
         });
+        const persistedScene=await page.evaluate(()=>db.characters.find(c=>c.id==='scene-char').history.at(-1).scene);
         const downloadJob=page.waitForEvent('download');await page.locator('#storage-export-btn').click();
         const download=await downloadJob,bytes=fs.readFileSync(await download.path());
         assert.match(download.suggestedFilename(),/\.ee$/);
@@ -276,7 +293,7 @@ const out = path.resolve(root, process.env.UVU_SCENE_OUTPUT || 'outputs/scene-im
         await page.waitForFunction(()=>document.getElementById('storage-backup-progress')?.textContent.includes('导入已成功提交'));
         checks.push('真实EE下载、Worker导入及同字节改名TXT往返恢复');
         await page.reload({waitUntil:'domcontentloaded'});await ready();await page.evaluate(()=>{GuideSystem.cleanup();openChatRoom('scene-char','private');GuideSystem.cleanup();});
-        assert.equal(await page.evaluate(()=>db.characters.find(c=>c.id==='scene-char').history.at(-1).scene.blocks[0].text),'这只是文字 </thinking>。');checks.push('IndexedDB落盘后刷新保留原文与段落');
+        assert.deepEqual(await page.evaluate(()=>db.characters.find(c=>c.id==='scene-char').history.at(-1).scene),persistedScene);checks.push('IndexedDB落盘后刷新保留原文与全部段落标识');
         for(const size of [{width:320,height:568},{width:390,height:844},{width:768,height:1024},{width:844,height:390}]){
             await page.setViewportSize(size);await stableUI(page,'#message-area');
             const style=await page.locator('.scene-narration-text').first().evaluate(el=>{const s=getComputedStyle(el);return {font:s.fontSize,italic:s.fontStyle,align:s.textAlign,color:s.color};});

@@ -77,6 +77,14 @@ test('stored scenes reject mismatched projections, duplicate IDs and unknown ver
     assert.throws(()=>scene.validateMode({...scene.defaultMode(),version:2}));
 });
 
+test('changing the independent distance setting invalidates a scene response even with weather disabled', () => {
+    const scene=setup(),chat={history:[user()],activeArchiveId:'a',sceneMode:scene.defaultMode(),environmentProfile:{remoteEnabled:true,aiEnabled:false}};
+    chat.sceneMode.enabled=true;
+    const token=scene.capture(chat,'private');assert.equal(scene.current(token),true);
+    chat.environmentProfile.remoteEnabled=false;assert.equal(scene.current(token),false);
+    const next=scene.capture(chat,'private');chat.status='新状态';assert.equal(scene.current(next),false);
+});
+
 test('pending scene replies become stale after quote, media, timestamp or persona changes', () => {
     const scene = setup();
     for (const change of [
