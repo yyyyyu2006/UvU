@@ -45,7 +45,7 @@ test('online and copied narration builders cannot invoke each other: ' + version
     // A leftover third argument cannot switch the online builder into narration.
     assert.equal(online(chat, undefined, mode), expected);
     c.generatePrivateSystemPrompt = () => { throw Error('online builder must not run for narration'); };
-    const narration = c.UvUScene.prompt(chat, undefined, mode);
+    const narration = c.UvUScene.prompt(chat, mode);
     assert.match(narration, /INDEPENDENT_SCENE_SENTINEL/);
     assert.match(narration, /<offline_scene>/);
     c.UvUScene.instructions = () => { throw Error('narration rules must not run for online'); };
@@ -194,9 +194,9 @@ test('offline prompt inherits selected language, living-character rule and exact
     chat.bilingualModeEnabled=true;chat.sceneMode=c.UvUScene.defaultMode();
     for(const version of ['uwu','tt']){
         chat.exclusivePromptVersion=version;
-        const text=c.UvUScene.prompt(chat,[],chat.sceneMode);
+        const text=c.UvUScene.prompt(chat,chat.sceneMode);
         assert.ok(text.includes(vm.runInContext('HUMAN_RUN_PROMPT',c)));assert.match(text,/双语已开启/);
-        assert.doesNotMatch(text,/BEFORE_1|BEFORE_2|AFTER|LIMIT|GUIDELINES/);
+        for(const word of ['BEFORE_1','BEFORE_2','AFTER','LIMIT','GUIDELINES'])assert.equal(text.split(word).length-1,1);
         assert.equal(text.includes('【动态插入: 聊天记录】'),version==='tt');
     }
 });
@@ -265,7 +265,7 @@ for (const provider of ['newapi', 'gemini']) test('1900 request survives dormant
     assert.deepEqual(b.requests,a.requests);assert.doesNotMatch(JSON.stringify(b.requests),/STICKER_SENTINEL|SECRET_REASONING|EXCLUDED_MESSAGE/);
 });
 
-test('custom diary style keeps 1900 depth order until each advanced rule is explicitly enabled', {skip:!available}, ()=>{
+test('custom diary style always keeps 1900 depth order despite stale advanced rules', {skip:!available}, ()=>{
     const a=fixture(baseline,'newapi','uwu','private'),b=fixture(current,'newapi','uwu','private');
     for(const [f,root]of [[a,baseline],[b,current]])vm.runInContext(fs.readFileSync(path.join(root,'js/modules/journal.js'),'utf8'),f.c);
     const original=fs.readFileSync(path.join(baseline,'js/modules/journal.js'),'utf8');
@@ -282,7 +282,7 @@ test('custom diary style keeps 1900 depth order until each advanced rule is expl
     assert.equal(b.c.buildJournalSummaryPrompt(b.chat,'private',b.chat.history,false),legacy);
     b.c.db.worldBooks.forEach(w=>{if(w.rules)w.rules.advancedEnabled=true;});
     const enabled=b.c.buildJournalSummaryPrompt(b.chat,'private',b.chat.history,false);
-    assert.notEqual(enabled,legacy);assert.match(enabled,/BEFORE_2\n\nBEFORE_1/);
+    assert.equal(enabled,legacy);assert.match(enabled,/BEFORE_1\n\nBEFORE_2/);
 });
 for (const version of ['uwu','tt']) for (const type of ['private','group']) {
     test('1900 prompt equality with additions off: '+version+'/'+type,{skip:!available},()=>{
@@ -382,3 +382,31 @@ test('character memos add only an explicitly enabled reference; provider history
  assert.match(b.requests[0].messages[0].content,/MEMO-PRIVATE-SENTINEL/);assert.deepEqual(b.requests[0].messages.slice(1),a.requests[0].messages.slice(1));assert.equal(scheduled,1);
  const c=fixture(current,'newapi','uwu','private');c.c.getCharacterMemoContext=()=>{throw Error('bad restored memo')};await c.c.getAiReply('c','private');assert.deepEqual(c.requests,a.requests);assert.deepEqual(c.errors,[]);
 });
+
+// The deleted extension must stay inert even in old backups that retain enabled rules.
+for (const provider of ['newapi', 'gemini']) for (const version of ['uwu', 'tt']) for (const type of ['private', 'group']) {
+    test('1900 static request equality with stale advanced worldbook settings: '+[provider,version,type].join('/'), {skip:!available}, async () => {
+        const a=fixture(baseline,provider,version,type), b=fixture(current,provider,version,type);
+        for (const f of [a,b]) {
+            f.c.db.worldBooks.forEach((book,index) => {
+                book.depth=index===0?0:index===1?2:100;
+                book.rules={advancedEnabled:true,enabled:false,constant:false,keys:['NEVER_MATCH'],secondaryKeys:['/(a+)+$/'],probability:0,order:100-index,chatDepth:0,role:'user'};
+            });
+            f.c.db.worldBooks.push({id:'old-chat',position:'chat',content:'NO_DEPTH_INJECTION',rules:{advancedEnabled:true,chatDepth:0,role:'assistant'}});
+            f.chat.worldBookIds.push('old-chat','missing');
+            f.c.Math=Object.assign(Object.create(Math),{random:()=>{throw Error('worldbook must not draw probability');}});
+        }
+        const fn=type==='private'?'generatePrivateSystemPrompt':'generateGroupSystemPrompt';
+        assert.equal(b.c[fn](b.chat),a.c[fn](a.chat));
+        assert.equal(b.c[fn](b.chat,[]),a.c[fn](a.chat));
+        await a.c.getAiReply('c',type); await b.c.getAiReply('c',type);
+        if (provider==='gemini' && version==='tt' && type==='private') {
+            assert.ok(a.errors.some(error=>/constant variable/i.test(error)));
+            assert.deepEqual(b.errors,[]);assert.equal(b.requests.length,1);
+        } else {
+            assert.deepEqual(a.errors,[]);assert.deepEqual(b.errors,[]);assert.equal(b.requests.length,1);
+            assert.deepEqual(b.requests,a.requests);
+        }
+        assert.doesNotMatch(JSON.stringify(b.requests),/NO_DEPTH_INJECTION/);
+    });
+}

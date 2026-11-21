@@ -225,8 +225,6 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             if (!requestIsCurrent()) return;
         }
         historySlice = filterHistoryForAI(chat, historySlice).filter(m => !m.isContextDisabled && !m.isThinking && !(typeof m.content === 'string' && m.content.trim().startsWith('<thinking>')));
-        const worldBookPlan = typeof chatUsesAdvancedWorldBook === 'function' && chatUsesAdvancedWorldBook(chat)
-            ? (typeof buildWorldBookPlanAsync === 'function' ? await buildWorldBookPlanAsync(chat, historySlice, Math.random, generationController?.signal) : buildWorldBookPlan(chat, historySlice)) : undefined;
         let vectorContext = '';
         if (typeof getVectorMemoryContext === 'function') {
             const query = typeof getVectorMemoryQuery === 'function' ? getVectorMemoryQuery(chat, historySlice.slice(-4))
@@ -259,11 +257,11 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         try { if (globalThis.UvURequestDiagnostics?.isEnabled()) requestDiagnostic = { blocks: {}, journals: [], worldBooks: [] }; } catch (_) {}
         const buildBasePrompt = () => {
             if (chatType === 'private') {
-                systemPrompt = sceneToken ? globalThis.UvUScene.prompt(chat, worldBookPlan, sceneToken.mode) : generatePrivateSystemPrompt(chat, worldBookPlan);
+                systemPrompt = sceneToken ? globalThis.UvUScene.prompt(chat, sceneToken.mode) : generatePrivateSystemPrompt(chat);
             } else {
                 // generateGroupSystemPrompt 应该在 group_chat.js 中定义
                 if (typeof generateGroupSystemPrompt === 'function') {
-                    systemPrompt = generateGroupSystemPrompt(chat, worldBookPlan);
+                    systemPrompt = generateGroupSystemPrompt(chat);
                 } else {
                     systemPrompt = "Group chat system prompt not available.";
                 }
@@ -272,7 +270,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             if (requestDiagnostic) {
                 try {
                     requestDiagnostic.journals = typeof getContextMemoryJournals === 'function' ? getContextMemoryJournals(chat).map(j => ({ id: j.id, title: j.title, fragment: `标题：${j.title}\n内容：${j.content}` })) : [];
-                    const books = Array.isArray(worldBookPlan) ? worldBookPlan : (db.worldBooks || []).filter(b => (chat.worldBookIds || []).includes(b.id) && b.rules?.advancedEnabled !== true);
+                    const books = (chat.worldBookIds || []).map(id => (db.worldBooks || []).find(b => b.id === id && ['limit_break', 'before', 'after', 'guidelines'].includes(b.position))).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
                     requestDiagnostic.worldBooks = books.map(b => ({ id: b.id, name: b.name, fragment: b.content }));
                 } catch (_) { /* Diagnostics cannot block the established prompt build. */ }
             }
@@ -315,7 +313,6 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             let lastTimeMarkerForAI = 0;
             let contents = historySlice.map(msg => {
                 const role = msg.role === 'assistant' ? 'model' : 'user';
-                if (msg.worldBookInjection) return Object.defineProperty({ role, parts: [{ text: msg.role === 'system' ? '[system]\n' + msg.content : msg.content }] }, 'worldBookInjection', { value: true });
 
                 let prefix = '';
                 const currentMsgTime = msg.timestamp;
@@ -374,14 +371,14 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // 【新增】将最新一轮的 user 消息用 <user_input> 框起来
             let lastUserEndIndex = -1;
             for (let i = contents.length - 1; i >= 0; i--) {
-                if (contents[i].role === 'user' && !contents[i].worldBookInjection) {
+                if (contents[i].role === 'user') {
                     lastUserEndIndex = i;
                     break;
                 }
             }
             if (lastUserEndIndex !== -1) {
                 let firstUserStartIndex = lastUserEndIndex;
-                while (firstUserStartIndex > 0 && contents[firstUserStartIndex - 1].role === 'user' && !contents[firstUserStartIndex - 1].worldBookInjection) {
+                while (firstUserStartIndex > 0 && contents[firstUserStartIndex - 1].role === 'user') {
                     firstUserStartIndex--;
                 }
                 
@@ -424,7 +421,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                     // 找到最后一条用户消息
                     let lastUserIndex = -1;
                     for (let i = contents.length - 1; i >= 0; i--) {
-                        if (contents[i].role === 'user' && !contents[i].worldBookInjection) {
+                        if (contents[i].role === 'user') {
                             lastUserIndex = i;
                             break;
                         }
@@ -439,7 +436,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 }
 
                 historyContents.forEach(c => {
-                    const roleName = c.worldBookInjection && c.parts[0]?.text?.startsWith('[system]') ? 'system' : (c.role === 'model' ? chat.realName : chat.myName);
+                    const roleName = c.role === 'model' ? chat.realName : chat.myName;
                     const text = c.parts.map(p => p.text || '').join('');
                     historyTextForPlaceholder += `${roleName}: ${text}\n`;
                 });
@@ -471,7 +468,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             
             const pushOrMergeMessage = (role, content) => {
                 const lastMessage = messages[messages.length - 1];
-                if (lastMessage && !lastMessage.worldBookInjection && lastMessage.role === role && role !== 'system') {
+                if (lastMessage && lastMessage.role === role && role !== 'system') {
                     if (typeof lastMessage.content === 'string' && typeof content === 'string') {
                         lastMessage.content += '\n' + content;
                     } else {
@@ -502,7 +499,6 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             let lastTimeMarkerForAI = 0;
 
             historySlice.forEach(msg => {
-               if (msg.worldBookInjection) { messages.push(Object.defineProperty({ role: msg.role, content: msg.content }, 'worldBookInjection', { value: true })); return; }
                let content;
                let prefix = '';
 
@@ -545,7 +541,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
             // 【新增】将最新一轮的 user 消息用 <user_input> 框起来
             let lastUserIndex = -1;
             for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === 'user' && !messages[i].worldBookInjection) {
+                if (messages[i].role === 'user') {
                     lastUserIndex = i;
                     break;
                 }
@@ -567,7 +563,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 // 找到最后一条用户消息的索引
                 let lastUserIndex = -1;
                 for (let i = messages.length - 1; i >= 0; i--) {
-                    if (messages[i].role === 'user' && !messages[i].worldBookInjection) {
+                    if (messages[i].role === 'user') {
                         lastUserIndex = i;
                         break;
                     }
@@ -577,7 +573,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
                 const endIndex = lastUserIndex !== -1 ? lastUserIndex : messages.length;
                 for (let i = 1; i < endIndex; i++) {
                     const msg = messages[i];
-                    const roleName = msg.worldBookInjection && msg.role === 'system' ? 'system' : (msg.role === 'assistant' ? chat.realName : chat.myName);
+                    const roleName = msg.role === 'assistant' ? chat.realName : chat.myName;
                     let text = '';
                     if (typeof msg.content === 'string') {
                         text = msg.content;
@@ -666,7 +662,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         
         let tokenEstimate = null;
         try {
-            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, worldBookPlan, requestBody, environmentContext, mcpContext);
+            if (typeof estimateChatTokenUsage === 'function') tokenEstimate = estimateChatTokenUsage(chat, chatType, systemPrompt, historySlice, vectorContext, requestBody, environmentContext, mcpContext);
         } catch (error) { console.warn('Token 分类估算失败，不影响本轮聊天:', error.message); }
         // Log metadata only; prompts, memories and reply text stay out of routine diagnostics.
         console.log('[聊天请求 / MCP 状态]', { provider, stream: streamEnabled,

@@ -140,7 +140,7 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
     note.className = 'status-token-note';
     note.textContent = data.actual
         ? '输入／输出总量优先使用 API usage；下方每项仍为本地文本估算。对账差额不是额外收费项目，可能来自分词器、服务端模板、图片或缓存口径；本站无法据此还原第三方账单。推理 Token 可能已包含在输出中，不再相加。'
-        : data.preview ? `尚未发送；分类为本地预估${data.worldBookPending ? `，${data.worldBookPending} 本规则世界书待发送时判定，未计入` : ''}。`
+        : data.preview ? '尚未发送；分类为本地预估。'
         : '当前未收到 API usage；下方数字为本地估算，仅供参考。';
 
     const list = document.createElement('div');
@@ -197,11 +197,11 @@ function renderTokenUsagePanel(container, chat, chatType = 'private') {
             row.className = 'status-token-worldbook-row';
             const name = document.createElement('span');
             name.textContent = item.name || '未命名世界书';
-            const triggered = document.createElement('span');
-            triggered.textContent = item.preview ? '预估包含' : item.triggered ? '已触发' : '未触发';
+            const included = document.createElement('span');
+            included.textContent = item.preview ? '预估包含' : '请求内资料';
             const amount = document.createElement('b');
             amount.textContent = `约 ${formatTokens(item.tokenEstimate)} token`;
-            row.append(name, triggered, amount);
+            row.append(name, included, amount);
             details.appendChild(row);
         });
         toggle.addEventListener('click', () => {

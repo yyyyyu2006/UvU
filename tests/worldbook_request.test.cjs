@@ -12,9 +12,9 @@ function fixture(provider, placeholder, type, injectedRole) {
     let rolls = 0;
     const c = vm.createContext({ db: { characters: type === 'private' ? [chat] : [], groups: type === 'group' ? [chat] : [], worldBooks: [
         { id:'head', position:'before', content:'WORLD_HEAD', rules:{advancedEnabled:true,constant:true,probability:50} },
-        { id:'middle', position:'chat', content:'WORLD_MIDDLE', rules:{advancedEnabled:true,constant:true,chatDepth:2,role:'system'} },
-        { id:'tail', position:'chat', content:'WORLD_TAIL', rules:{advancedEnabled:true,constant:true,chatDepth:0,role:injectedRole} },
-        { id:'off', position:'before', content:'SHOULD_NOT_APPEAR', rules:{advancedEnabled:true,enabled:false} }
+        { id:'middle', position:'before', depth:1, content:'WORLD_MIDDLE', rules:{advancedEnabled:true,constant:true,chatDepth:2,role:'system'} },
+        { id:'tail', position:'after', depth:2, content:'WORLD_TAIL', rules:{advancedEnabled:true,constant:true,chatDepth:0,role:injectedRole} },
+        { id:'off', position:'before', content:'WORLD_PREVIOUSLY_DISABLED', rules:{advancedEnabled:true,enabled:false} }
     ], apiSettings:{provider,url:'https://test.invalid',key:'fake',model:'test',streamEnabled:false} },
         AbortController, setTimeout, clearTimeout,
         Math: Object.assign(Object.create(Math), { random: () => { rolls++; return 0.1; } }),
@@ -26,18 +26,18 @@ function fixture(provider, placeholder, type, injectedRole) {
     });
     require('./helpers/api_transport.cjs')(c);
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/worldbook_rules.js'),'utf8'),c);
-    c.generatePrivateSystemPrompt = c.generateGroupSystemPrompt = (chat, plan) => 'ORIGINAL_RULES\n' + c.worldBookSection(plan,'before') + (placeholder ? '\n【动态插入: 聊天记录】\nORIGINAL_END' : '');
+    c.generatePrivateSystemPrompt = c.generateGroupSystemPrompt = chat => 'ORIGINAL_RULES\n' + ['limit_break','before','after','guidelines'].map(position => (chat.worldBookIds || []).map(id => c.db.worldBooks.find(b => b.id === id && b.position === position)).filter(Boolean).sort((a,b)=>(a.depth||100)-(b.depth||100)).map(b=>b.content).join('\n')).join('\n') + (placeholder ? '\n【动态插入: 聊天记录】\nORIGINAL_END' : '');
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/chat_ai.js'),'utf8'),c);c.handleAiReplyContent=async()=>{};
     return {c,chat,requests,errors,rolls:()=>rolls};
 }
-for(const provider of ['newapi','gemini'])for(const placeholder of [false,true])test(`actual diagnostic preserves ${provider}/${placeholder} body and single activation`,async()=>{
+for(const provider of ['newapi','gemini'])for(const placeholder of [false,true])test(`actual diagnostic preserves ${provider}/${placeholder} body and static selection`,async()=>{
  const plain=fixture(provider,placeholder,'private','system'),observed=fixture(provider,placeholder,'private','system');
  observed.c.localStorage={getItem:()=>null,setItem(){}};
  vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/request_memory_diagnostics.js'),'utf8'),observed.c);
  observed.c.UvURequestDiagnostics.setEnabled(true);
  await plain.c.getAiReply(plain.chat.id,'private');await observed.c.getAiReply(observed.chat.id,'private');
  assert.deepEqual(observed.errors,[]);assert.deepEqual(observed.requests,plain.requests);assert.equal(observed.rolls(),plain.rolls());
- const report=observed.c.UvURequestDiagnostics.get(observed.chat,'private');assert.equal(report.status,'completed');assert.ok(report.worldBooks.some(b=>b.id==='middle'&&b.matched));assert.ok(report.worldBooks.every(b=>b.id!=='off'));assert.ok(report.fieldCount>0);
+ const report=observed.c.UvURequestDiagnostics.get(observed.chat,'private');assert.equal(report.status,'completed');assert.ok(report.worldBooks.some(b=>b.id==='middle'&&b.matched));assert.ok(report.worldBooks.some(b=>b.id==='off'&&b.matched));assert.ok(report.fieldCount>0);
 });
 test('broken optional request observer does not suppress ordinary replies',async()=>{
  const f=fixture('newapi',false,'private','system');f.c.UvURequestDiagnostics={isEnabled:()=>true,begin:()=>{throw Error('observer failed');},finish:()=>{throw Error('observer failed');}};
@@ -54,22 +54,22 @@ test('unselected advanced rules preserve bound worldbooks and legacy depth order
     f.c.db.worldBooks.find(book => book.id === 'tail').depth = 2;
     await f.c.getAiReply(f.chat.id, 'private');
     const text = JSON.stringify(f.requests[0]);
-    for (const word of ['WORLD_HEAD', 'WORLD_MIDDLE', 'WORLD_TAIL', 'SHOULD_NOT_APPEAR']) assert.ok(text.includes(word), text);
+    for (const word of ['WORLD_HEAD', 'WORLD_MIDDLE', 'WORLD_TAIL', 'WORLD_PREVIOUSLY_DISABLED']) assert.ok(text.includes(word), text);
     assert.equal(f.rolls(), 0);
     const system = f.requests[0].messages.find(message => message.role === 'system').content;
     assert.ok(system.indexOf('WORLD_MIDDLE') < system.indexOf('WORLD_TAIL'));
-    assert.ok(system.indexOf('WORLD_TAIL') < system.indexOf('WORLD_HEAD'));
+    assert.ok(system.indexOf('WORLD_HEAD') < system.indexOf('WORLD_TAIL')); // Original positions take priority over cross-position depth.
 });
 for (const provider of ['newapi','gemini']) for (const placeholder of [false,true]) for (const type of ['private','group']) for (const role of ['system','user','assistant']) {
-    test('final worldbook insertion ' + [provider,placeholder,type,role].join('/'), async () => {
+    test('static worldbook request ' + [provider,placeholder,type,role].join('/'), async () => {
         const f=fixture(provider,placeholder,type,role), original=JSON.stringify(f.chat.history);
         await f.c.getAiReply(f.chat.id,type);
-        assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),1);
+        assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),0);
         const body=f.requests[0], text=JSON.stringify(body), sequence=provider==='gemini'?body.contents:body.messages;
         const systemText=provider==='gemini'?body.system_instruction.parts.map(part=>part.text).join('\n'):
             body.messages.filter(message=>message.role==='system').map(message=>message.content).join('\n');
         for(const word of ['WORLD_HEAD','WORLD_MIDDLE','WORLD_TAIL'])assert.equal(text.split(word).length-1,1,text);
-        assert.ok(!text.includes('SHOULD_NOT_APPEAR'));assert.ok(!text.includes('worldBookInjection'));
+        assert.ok(text.includes('WORLD_PREVIOUSLY_DISABLED'));assert.ok(!text.includes('worldBookInjection'));
         assert.equal(JSON.stringify(f.chat.history),original);
         assert.ok(systemText.includes('WORLD_HEAD')&&systemText.includes('WORLD_MIDDLE')&&systemText.includes('WORLD_TAIL'),text);
         assert.ok(!sequence.some(m=>m.worldBookInjection));
@@ -80,17 +80,17 @@ for (const provider of ['newapi','gemini']) for (const placeholder of [false,tru
         if(provider==='newapi')assert.equal(sequence.at(-1).role,'user');
     });
 }
-for (const provider of ['newapi','gemini']) test('call summary applies activation and excludes disabled books: ' + provider, async () => {
+for (const provider of ['newapi','gemini']) test('call summary ignores removed activation switches: ' + provider, async () => {
     const f=fixture(provider,false,'private','system');
     f.c.resolveAuxiliaryApiConfig=(route,config)=>config;
     f.c.getContextMemoryJournals=()=>[];
     vm.runInContext(fs.readFileSync(path.join(__dirname,'../js/modules/chat_ai_call.js'),'utf8'),f.c);
     assert.equal(await f.c.generateCallSummary(f.chat,[{role:'user',type:'audio',content:'通话内容'}]),'reply');
     assert.equal(f.requests.length,1);const text=JSON.stringify(f.requests[0]);
-    assert.ok(text.includes('WORLD_HEAD'));assert.ok(!text.includes('SHOULD_NOT_APPEAR'));
+    assert.ok(text.includes('WORLD_HEAD'));assert.ok(text.includes('WORLD_PREVIOUSLY_DISABLED'));
 });
 
-for (const provider of ['newapi','gemini']) test('scene reuses one worldbook activation without changing history or running online tools: '+provider,async()=>{
+for (const provider of ['newapi','gemini']) test('scene uses static worldbooks without changing history or running online tools: '+provider,async()=>{
     const f=fixture(provider,false,'private','system');
     f.c.crypto=require('node:crypto').webcrypto;
     for(const file of ['chat_scene.js','chat_scene_reply.js'])
@@ -104,9 +104,9 @@ for (const provider of ['newapi','gemini']) test('scene reuses one worldbook act
     f.c.window={UvUMusicChat:{requestPlan:()=>{tools++;return {instructions:'MUSIC_SHOULD_NOT_RUN'};}}};
     const original=JSON.stringify(f.chat.history);
     await f.c.getAiReply(f.chat.id,'private');
-    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),1);assert.equal(tools,0);
+    assert.deepEqual(f.errors,[]);assert.equal(f.requests.length,1);assert.equal(f.rolls(),0);assert.equal(tools,0);
     const body=JSON.stringify(f.requests[0]);
     for(const value of ['WORLD_HEAD','WORLD_MIDDLE','WORLD_TAIL'])assert.equal(body.split(value).length-1,1);
-    assert.doesNotMatch(body,/SHOULD_NOT_APPEAR|SHOULD_NOT_RUN/);
+    assert.match(body,/WORLD_PREVIOUSLY_DISABLED/);assert.doesNotMatch(body,/SHOULD_NOT_RUN/);
     assert.equal(JSON.stringify(f.chat.history),original);
 });

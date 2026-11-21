@@ -16,8 +16,8 @@
     padding:0 !important;align-items:center !important;justify-content:center !important;
     background:rgba(35,38,42,.19);backdrop-filter:none;
 }
-#uvu-notification-preferences[open]::before,.worldbook-advanced[open]::before { content:'';position:fixed;inset:0;z-index:39999;background:rgba(35,38,42,.19); }
-body:has(#uvu-notification-preferences[open],.worldbook-advanced[open]) { overflow:hidden;overscroll-behavior:none; }
+#uvu-notification-preferences[open]::before { content:'';position:fixed;inset:0;z-index:39999;background:rgba(35,38,42,.19); }
+body:has(#uvu-notification-preferences[open]) { overflow:hidden;overscroll-behavior:none; }
 .uvu-sheet-v2.uvu-mono-panel.mono-page > .mono-page-nav {
     position:relative;display:flex !important;align-items:center;justify-content:flex-start;
     flex:0 0 auto;min-height:76px;height:auto;gap:8px;padding:24px 24px 20px !important;

@@ -2,11 +2,11 @@
     'use strict';
     const scene = root.UvUScene;
     // Independent uwu/tt narration copies. Never call or edit the online prompt builder here.
-function generateSceneSystemPrompt(character, worldBookPlan, sceneMode) {
-    const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksAfter = worldBookPlan ? worldBookSection(worldBookPlan, 'after') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksGuidelines = worldBookPlan ? worldBookSection(worldBookPlan, 'guidelines') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+function generateSceneSystemPrompt(character, sceneMode) {
+    const worldBooksLimitBreak = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksBefore = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksAfter = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksGuidelines = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const now = new Date();
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
@@ -127,8 +127,8 @@ function generateSceneSystemPrompt(character, worldBookPlan, sceneMode) {
 
 // 估算文本 Token 数的辅助函数
 
-    function prompt(chat, plan, mode) {
-        return generateSceneSystemPrompt(chat, plan, mode);
+    function prompt(chat, mode) {
+        return generateSceneSystemPrompt(chat, mode);
     }
     function promptVersion(chat) { return chat.exclusivePromptVersion || db.cotSettings?.promptVersion || 'uwu'; }
     function ruleSection(chat, tag, title, lines) {

@@ -38,7 +38,7 @@ test('token reconciliation retains genuine positive and negative differences', (
     }
 });
 
-test('token estimate keeps only worldbooks activated for the current request', () => {
+test('token details use bound static positions and ignore legacy activation metadata', () => {
     const chat = {
         id: 'token-chat',
         history: [{ role: 'user', content: '当前消息' }],
@@ -63,11 +63,11 @@ test('token estimate keeps only worldbooks activated for the current request', (
         console: { error() {} },
     });
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/chat_ai_prompt.js'), 'utf8'), context);
-    const result = context.getWorldBookTokenDetails(chat, activePlan);
-    assert.deepEqual(result.map(item => item.name), ['已触发世界书']);
-    assert.deepEqual(result.map(item => item.triggered), [true]);
+    const result = context.getWorldBookTokenDetails(chat);
+    assert.deepEqual(result.map(item => item.name), ['已触发世界书', '未触发世界书']);
+    assert.ok(result.every(item => item.triggered === undefined));
     assert.ok(result[0].tokenEstimate > 0);
-    assert.equal(result.some(item => item.name === '未触发世界书'), false);
+    assert.equal(result.some(item => item.name === '未触发世界书'), true);
 });
 
 test('global CSS document tools are compact and anchored to the editor corner', () => {

@@ -21,7 +21,7 @@ test('final-request token classification is read-only and does not double-count 
     const body = { messages: [{ role: 'system', content: 'BASE\n角色设定\n用户设定\nWB\nVECTOR\n<chat_history>剧情</chat_history>' },
         { role: 'user', content: '最新消息' }, { role: 'system', content: 'CHAT_COT' }] };
     const before = JSON.stringify(body);
-    const result = c.estimateChatTokenUsage(chat, 'private', body.messages[0].content, [], 'VECTOR', [{ id: 'w', content: 'WB' }], body);
+    const result = c.estimateChatTokenUsage(chat, 'private', body.messages[0].content, [], 'VECTOR', body);
     assert.equal(JSON.stringify(body), before);
     assert.ok(result.baseSystem > 0); assert.ok(result.cot > 0);
     assert.ok(result.history > 0); assert.equal(result.memory, 0); assert.ok(result.vectorMemory > 0);

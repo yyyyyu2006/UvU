@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const roots = '.shared-document-dialog,.memory-library > .feature-dialog-card,.mcp-settings,.derived-settings,.relationship-dialog,.text-editor-card,.model-picker-card,.sticker-description-card,.regenerate-guidance-card,.resource-health,#auto-memory-modal,#uvu-story-bridge-screen,#uvu-notification-preferences';
-    const monochromeRoots = '.cc-export-dialog,.ms-dialog,.uvu-calendar,.calendar-editor,.worldbook-advanced,.relationship-settings,.pv-send-modes,#pv-generated-preview,#home-preset-preview > .feature-dialog-card,.kkt-item:has(> .kkt-item-control > #setting-char-tts-voice-id)';
+    const monochromeRoots = '.cc-export-dialog,.ms-dialog,.uvu-calendar,.calendar-editor,.relationship-settings,.pv-send-modes,#pv-generated-preview,#home-preset-preview > .feature-dialog-card,.kkt-item:has(> .kkt-item-control > #setting-char-tts-voice-id)';
     const allRoots = roots + ',' + monochromeRoots;
     const initialized = new WeakSet();
     const appearanceKey = 'uvu-derived-appearance.v1';
@@ -1330,9 +1330,9 @@
         const title=q(root,'.mono-page-title');if(title)title.textContent='环境信息';
     }
     function inlineSettings(root) {
-        if (root.dataset.draftInline || !root.matches('#uvu-notification-preferences,.worldbook-advanced')) return;
+        if (root.dataset.draftInline || !root.matches('#uvu-notification-preferences')) return;
         root.dataset.draftInline = 'true';
-        const title = root.id === 'uvu-notification-preferences' ? '通知偏好' : '世界书规则', original = q(root, ':scope > summary');
+        const title = '通知偏好', original = q(root, ':scope > summary');
         const nodes = [...root.children].filter(el => el!==original), panel=make('section','uvu-mono-panel mono-page draft-inline-workspace'), head=make('header','mono-page-nav');
         const back=make('button','mono-nav-back');back.type='button';back.setAttribute('aria-label','返回');navIcon(back,'chevron-left');back.onclick=()=>{root.open=false;original?.focus();};
         head.append(back,make('h2','mono-page-title',title),make('span','mono-nav-spacer'));
@@ -1347,16 +1347,6 @@
             const times=labels.filter(el=>q(el,'input[type=time]')),quiet=group([switches[2],...times],'免打扰','draft-card');if(quiet&&times.length){const range=make('div','draft-columns');range.append(...times);quiet.append(range);}
             const remaining=labels.filter(el=>!switches.slice(0,3).includes(el)&&!times.includes(el));group(remaining,'隐私与聊天','draft-card');
             const help=q(body,'.panel-notification-help');if(help)body.append(help);
-        }
-        if(root.classList.contains('worldbook-advanced')) {
-            const labels=[...body.querySelectorAll(':scope > label')], toggles=labels.filter(el=>q(el,'input[type=checkbox]'));
-            group(toggles.slice(0,2),'','draft-card');
-            const fields=labels.filter(el=>!toggles.includes(el));group(fields.slice(0,2),'触发方式','draft-card');disclose(fields.slice(2).concat(toggles.slice(2)),'匹配与扫描','draft-card');
-            const help=[...body.querySelectorAll(':scope > .feature-help,:scope > details')].filter(el=>el.matches('.feature-help')||/导入兼容/.test(q(el,':scope > summary')?.textContent));
-            helpOnly(panel,help);
-            const show=make('button','mono-nav-help');show.type='button';show.setAttribute('aria-label','使用说明');navIcon(show,'circle-help');show.onclick=()=>panel.monoHelp();head.append(show);
-            const editor=document.getElementById('edit-world-book-screen'),editorHead=q(editor,':scope > .app-header');
-            if(editorHead&&!q(editorHead,'.worldbook-editor-help')){const editorHelp=show.cloneNode(true);editorHelp.className='worldbook-editor-help';editorHelp.onclick=()=>panel.monoHelp();q(editorHead,'.placeholder')?.replaceWith(editorHelp);}
         }
         sheetLayout(panel);
         window.UvULensoPanels?.decorate(panel);

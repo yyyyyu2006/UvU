@@ -1,8 +1,8 @@
-function generatePrivateSystemPrompt(character, worldBookPlan) {
-    const worldBooksLimitBreak = worldBookPlan ? worldBookSection(worldBookPlan, 'limit_break') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksBefore = worldBookPlan ? worldBookSection(worldBookPlan, 'before') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksAfter = worldBookPlan ? worldBookSection(worldBookPlan, 'after') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
-    const worldBooksGuidelines = worldBookPlan ? worldBookSection(worldBookPlan, 'guidelines') : (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+function generatePrivateSystemPrompt(character) {
+    const worldBooksLimitBreak = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksBefore = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksAfter = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksGuidelines = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const now = new Date();
     const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
     
@@ -342,26 +342,20 @@ function estimateChatTokens(chatId, chatType = 'private') {
 }
 
 // 计算 Token 详细占比
-// Diagnostics must never consume the next request's probability draw or regex plan.
-function getTokenPreviewWorldBookPlan(chat) {
-    return (chat.worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id))
-        .filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && book.rules?.advancedEnabled !== true)
-        .sort((a, b) => (a.depth || 100) - (b.depth || 100));
+// Read-only accounting of the original four static positions. No activation evaluation.
+function getStaticWorldBooks(chat) {
+    return (chat.worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id && ['limit_break', 'before', 'after', 'guidelines'].includes(book.position)))
+        .filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
 }
-function getWorldBookTokenDetails(chat, worldBookPlan, preview = false) {
+function getWorldBookTokenDetails(chat, preview = false) {
     if (!chat) return [];
-    const plan = Array.isArray(worldBookPlan) ? worldBookPlan : [];
-    return plan.filter(book => book && book.type !== 'folder' && !book.rules?.unsupportedPosition && String(book.content || '').trim()).map(book => ({
-        id: book.id,
-        name: book.name || '未命名世界书',
-        triggered: !preview,
-        preview,
+    return getStaticWorldBooks(chat).filter(book => String(book.content || '').trim()).map(book => ({
+        id: book.id, name: book.name || '未命名世界书', preview,
         tokenEstimate: countTextTokens(book.content || '')
     }));
 }
 
-// worldBookPlan 是发送本轮请求时已经算出的激活结果；传入它可以避免统计时重新判断。
-function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
+function calculateTokenBreakdown(chatId, chatType = 'private') {
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return null;
 
@@ -378,32 +372,28 @@ function calculateTokenBreakdown(chatId, chatType = 'private', worldBookPlan) {
         total: 0
     };
 
-    const activeWorldBookPlan = Array.isArray(worldBookPlan)
-        ? worldBookPlan
-        : getTokenPreviewWorldBookPlan(chat);
-    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, activeWorldBookPlan, !Array.isArray(worldBookPlan));
+    breakdown.worldBookDetails = getWorldBookTokenDetails(chat, true);
 
     // 1. 获取完整的系统提示词
     let systemPrompt = '';
     const sceneMode = globalThis.UvUScene?.enabled(chat, chatType);
     if (chatType === 'private') {
         if (sceneMode) {
-            systemPrompt = UvUScene.prompt(chat, activeWorldBookPlan, chat.sceneMode);
+            systemPrompt = UvUScene.prompt(chat, chat.sceneMode);
         } else if (typeof generatePrivateSystemPrompt === 'function') {
-            systemPrompt = generatePrivateSystemPrompt(chat, activeWorldBookPlan);
+            systemPrompt = generatePrivateSystemPrompt(chat);
         }
     } else {
         if (typeof generateGroupSystemPrompt === 'function') {
-            systemPrompt = generateGroupSystemPrompt(chat, activeWorldBookPlan);
+            systemPrompt = generateGroupSystemPrompt(chat);
         }
     }
 
     // 2. 提取各动态部分的文本
-    const planForSections = Array.isArray(activeWorldBookPlan) ? activeWorldBookPlan : [];
-    const worldBooksLimitBreak = worldBookSection(planForSections, 'limit_break');
-    const worldBooksBefore = worldBookSection(planForSections, 'before');
-    const worldBooksAfter = worldBookSection(planForSections, 'after');
-    const worldBooksGuidelines = worldBookSection(planForSections, 'guidelines');
+    const worldBooksLimitBreak = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'limit_break')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksBefore = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksAfter = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
+    const worldBooksGuidelines = (chat.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'guidelines')).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100)).map(wb => wb.content).join('\n');
     const worldBookText = worldBooksLimitBreak + '\n' + worldBooksBefore + '\n' + worldBooksAfter + '\n' + worldBooksGuidelines;
     
     let charPersonaText = '';
@@ -499,17 +489,17 @@ function normalizeChatTokenUsage(usage, provider = '') {
     };
 }
 
-function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', worldBookPlan, requestBody, environmentContext = '', mcpContext = '') {
+function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', historySlice = null, vectorContext = '', requestBody, environmentContext = '', mcpContext = '') {
     if (!chat) return null;
     const history = Array.isArray(historySlice) ? historySlice : getAutoMemoryContextHistory(chat);
-    const preview = !Array.isArray(worldBookPlan);
-    const plan = preview ? getTokenPreviewWorldBookPlan(chat) : worldBookPlan;
+    const preview = !requestBody;
+    const books = getStaticWorldBooks(chat);
     const breakdown = { baseSystem: 0, cot: 0, worldBook: 0, charPersona: 0, userPersona: 0, memory: 0, vectorMemory: 0, environment: 0, mcp: 0, history: 0,
-        worldBookDetails: getWorldBookTokenDetails(chat, plan, preview) };
+        worldBookDetails: getWorldBookTokenDetails(chat, preview) };
     const sceneMode = globalThis.UvUScene?.enabled(chat, chatType);
-    const effectiveSystemPrompt = systemPrompt || (sceneMode ? UvUScene.prompt(chat, plan, chat.sceneMode) : chatType === 'private'
-        ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat, plan) : '')
-        : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat, plan) : ''));
+    const effectiveSystemPrompt = systemPrompt || (sceneMode ? UvUScene.prompt(chat, chat.sceneMode) : chatType === 'private'
+        ? (typeof generatePrivateSystemPrompt === 'function' ? generatePrivateSystemPrompt(chat) : '')
+        : (typeof generateGroupSystemPrompt === 'function' ? generateGroupSystemPrompt(chat) : ''));
     // Read the final request without rewriting it. Each text span belongs to one category only.
     const fields = [];
     const add = (text, category) => { if (typeof text === 'string' && text) fields.push({ text, category }); };
@@ -532,7 +522,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
         if (typeof fragment !== 'string' || !fragment) return false;
         for (let i = 0; i < fields.length; i++) {
             const field = fields[i];
-            if (field.category !== 'baseSystem' && !(category === 'worldBook' && field.category === 'history')) continue;
+            if (field.category !== 'baseSystem') continue;
             const index = field.text.indexOf(fragment);
             if (index < 0) continue;
             fields.splice(i, 1, { text: field.text.slice(0, index), category: field.category },
@@ -545,7 +535,7 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     claim(mcpContext, 'mcp');
     // Count the deduplicated text actually appended; fixed favorites keep their own category.
     claim(typeof getInjectedVectorMemoryContext === 'function' ? getInjectedVectorMemoryContext(chat, vectorContext) : vectorContext, 'vectorMemory');
-    for (const book of plan) claim(book.content, 'worldBook');
+    for (const book of books) claim(book.content, 'worldBook');
     claim(chatType === 'private' ? chat.persona : null, 'charPersona');
     claim(chatType === 'private' ? chat.myPersona : chat.me?.persona, 'userPersona');
     if (chatType !== 'private') (chat.members || []).forEach(member => claim(member.persona, 'charPersona'));
@@ -573,7 +563,6 @@ function estimateChatTokenUsage(chat, chatType = 'private', systemPrompt = '', h
     breakdown.actual = false;
     breakdown.source = preview ? '发送前估算' : '本地估算';
     breakdown.preview = preview;
-    breakdown.worldBookPending = preview ? (chat.worldBookIds || []).filter(id => db.worldBooks.find(book => book.id === id)?.rules?.advancedEnabled === true).length : 0;
     breakdown.floorCount = history.filter(message => message && !message.isThinking && !message.isContextDisabled && message.role !== 'system').length;
     return breakdown;
 }

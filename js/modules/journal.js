@@ -705,11 +705,7 @@ function buildJournalSummaryPrompt(chat, chatType, messagesToSummarize, includeF
 
                 // 如果是自定义风格，注入额外要求
                 if (styleSettings.mode === 'custom') {
-                    const styleOrder = book => {
-                        const order = book.rules?.advancedEnabled === true ? book.rules.order : null;
-                        return order !== '' && order != null && Number.isFinite(Number(order)) ? Math.min(9999, Math.max(0, Number(order))) : (book.depth || 100);
-                    };
-                    const customWorldBooks = (styleSettings.customWorldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id)).filter(Boolean).sort((a, b) => styleOrder(a) - styleOrder(b));
+                    const customWorldBooks = (styleSettings.customWorldBookIds || []).map(id => worldBookSource.find(wb => wb.id === id)).filter(Boolean).sort((a, b) => (a.depth || 100) - (b.depth || 100));
                     const customStyleContent = customWorldBooks.map(wb => wb.content).join('\n\n');
                     
                     if (customStyleContent) {

@@ -75,20 +75,19 @@
         return db.characters.includes(scope.chat) && scope.chat.activeArchiveId === scope.archiveId && scope.chat.history === scope.history && scope.stamp === JSON.stringify(source(scope.chat, db.worldBooks));
     }
     const number = (value, fallback, min = 0, max = 9999) => Number.isFinite(Number(value)) && value !== null && value !== '' ? Math.min(max, Math.max(min, Number(value))) : fallback;
-    const keys = value => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[,，\n]/) : []).map(String).map(item => item.trim()).filter(Boolean);
     function bookEntry(book, index) {
-        const rules = book.rules || {}, advanced = rules.advancedEnabled === true;
+        const rules = book.rules || {};
         const original = { position: book.position || 'before', depth: book.depth ?? 100 };
         if (book.rules) original.rules = safe(book.rules);
         const inherited = safe(book.importSource?.extensions || {}); delete inherited.uvu;
         const position = book.position || 'before';
         return { id: index, name: book.name || '', comment: book.name || '', content: book.content || '',
-            keys: advanced ? keys(rules.keys) : [], secondary_keys: advanced ? keys(rules.secondaryKeys) : [],
-            enabled: !rules.unsupportedPosition && (!advanced || rules.enabled !== false), constant: !advanced || rules.constant === true,
-            selective: advanced && rules.selective !== false, insertion_order: advanced ? number(rules.order, book.depth ?? 100) : number(book.depth, 100),
+            keys: [], secondary_keys: [],
+            enabled: ['before', 'after', 'limit_break', 'guidelines'].includes(position), constant: true,
+            selective: false, insertion_order: number(book.depth || 100, 100),
             position: position === 'after' ? 'after_char' : 'before_char',
             extensions: { ...inherited, position: position === 'chat' ? 4 : position === 'after' ? 1 : position === 'before' ? 0 : position,
-                probability: advanced ? number(rules.probability, 100, 0, 100) : 100, useProbability: advanced,
+                probability: 100, useProbability: false,
                 selectiveLogic: number(rules.selectiveLogic, 0, 0, 3), depth: number(rules.chatDepth, 4), scanDepth: number(rules.scanDepth, 20),
                 role: ['system', 'user', 'assistant'].includes(rules.role) ? rules.role : 'system',
                 caseSensitive: rules.caseSensitive === true, matchWholeWords: rules.wholeWords === true,
@@ -109,7 +108,7 @@
         data.extensions.uvu = { version: 1 };
         if (root.UvUCardCover && (metadata.cover || previous.extensions?.uvu?.cover)) data.extensions.uvu.cover = root.UvUCardCover.profile({ ...data, extensions: previous.extensions }, metadata.cover || {});
         const books = scope.data.entries.filter(book => selected.has(book.id)).sort((a, b) => {
-            const order = book => book.rules?.advancedEnabled ? number(book.rules.order, book.depth ?? 100) : number(book.depth, 100);
+            const order = book => book.depth || 100;
             return order(a) - order(b);
         });
         if (books.length) {

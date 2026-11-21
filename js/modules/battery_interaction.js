@@ -107,7 +107,7 @@ const BatteryInteraction = {
             if (chat.worldBookIds && chat.worldBookIds.length > 0 && window.db && window.db.worldBooks) {
                 const activeWorldBooks = chat.worldBookIds
                     .map(id => window.db.worldBooks.find(wb => wb.id === id))
-                    .filter(wb => wb && !(typeof worldBookUsesAdvancedRules === 'function' && worldBookUsesAdvancedRules(wb) && wb.rules.enabled === false))
+                    .filter(Boolean)
                     .sort((a, b) => (a.depth || 100) - (b.depth || 100));
                 
                 worldBooksLimitBreak = activeWorldBooks.filter(wb => wb.position === 'limit_break').map(wb => wb.content).join('\n\n');

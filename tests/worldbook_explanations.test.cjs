@@ -9,29 +9,9 @@ test('worldbook import distinguishes supported fields from preserved but unexecu
     assert.match(result.warnings.join('\n'), /仅保留.*未执行/);
     assert.equal(book.importSource, entry); assert.equal(book.rules.advancedEnabled, false);
 });
-test('activation explanations reuse the same plan and do not reroll probability or reorder legacy books', () => {
-    const c = fixture(); c.db.worldBooks = [
-        { id: 'legacy', content: '旧', depth: 1 },
-        { id: 'hit', content: '中', position: 'after', rules: { advancedEnabled: true, constant: false, keys: ['星河'], scanDepth: 1, probability: 50 } },
-        { id: 'miss', content: '无', rules: { advancedEnabled: true, constant: false, keys: ['不存在'], scanDepth: 1 } },
-        { id: 'off', content: '关', rules: { advancedEnabled: true, enabled: false } } ];
-    const chat = { worldBookIds: ['legacy', 'hit', 'miss', 'off'], history: [{ content: '星河' }] }; let rolls = 0;
-    const plan = c.buildWorldBookPlan(chat, chat.history, () => { rolls++; return 0.1; });
-    assert.deepEqual(Array.from(plan, book => book.id), ['legacy', 'hit']); assert.equal(rolls, 1);
-    const rows = c.getWorldBookPlanDiagnostics(chat);
-    assert.equal(rows, plan.activationDiagnostics); assert.equal(rolls, 1);
-    assert.equal(rows.find(row => row.id === 'hit').matchedKeys[0], '星河');
-    assert.equal(rows.find(row => row.id === 'hit').position, 'after');
-    assert.equal(rows.find(row => row.id === 'miss').reason, '主要关键词未匹配');
-    assert.equal(rows.find(row => row.id === 'off').reason, '条目已停用');
-    assert.equal(c.worldBookSection(plan, 'after'), '中'); assert.equal(rolls, 1);
-});
-test('many simultaneously active books and explicit empty plan retain deterministic order without extra activation', () => {
-    const c = fixture(); c.db.worldBooks = Array.from({ length: 500 }, (_, i) => ({ id: String(i), content: 'BOOK_' + i,
-        depth: i, rules: { advancedEnabled: true, constant: true, probability: 50, order: 500 - i } }));
-    const chat = { worldBookIds: c.db.worldBooks.map(book => book.id), history: [] }; let rolls = 0;
-    const plan = c.buildWorldBookPlan(chat, [], () => { rolls++; return .1; });
-    assert.equal(plan.length, 500); assert.equal(plan[0].id, '499'); assert.equal(rolls, 500);
-    assert.equal(c.worldBookSection([], 'before'), ''); assert.equal(rolls, 500);
-    assert.equal(c.getWorldBookPlanDiagnostics(chat).length, 500);
+test('removed activation engine cannot read history, roll probability or create regex workers', () => {
+    const c = fixture();
+    for (const name of ['buildWorldBookPlan', 'buildWorldBookPlanAsync', 'worldBookMatches', 'worldBookSection', 'getWorldBookPlanDiagnostics', 'insertDepthWorldBooks']) assert.equal(typeof c[name], 'undefined', name);
+    assert.equal(fs.existsSync(path.join(__dirname, '../js/workers/worldbook_regex_worker.js')), false);
+    assert.match(c.importWorldBookJson([{ content: '正文', key: ['never'], probability: 0 }], null).books[0].importCompatibility.ignored.join('、'), /关键词.*概率/);
 });

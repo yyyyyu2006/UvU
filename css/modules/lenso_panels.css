@@ -521,7 +521,7 @@
 #mcp-services .uvu-lenso-panel .draft-mcp-scope { gap:8px; }
 .uvu-lenso-panel.uvu-sheet-v2 :is(.shared-document-actions,.draft-fixed-actions,.home-preset-actions) > button { border:0; }
 #shared-document-dialog .uvu-lenso-panel.uvu-mono-panel .shared-document-actions > button { border:0; }
-#edit-world-book-screen #edit-world-book-form :is(label,input,textarea,.worldbook-advanced > summary) { color:#6e6e76; }
+#edit-world-book-screen #edit-world-book-form :is(label,input,textarea) { color:#6e6e76; }
 #edit-world-book-screen :is(#edit-world-book-title,.mono-page-title,.panel-section-title,.draft-scroll,select,summary) { color:#6e6e76; }
 #storage-analysis-screen .storage-group-title .storage-resource-check-btn { margin-left:auto;margin-right:12px;padding:6px 10px;border:0;border-radius:16px;background:transparent;color:inherit;font:inherit;font-size:13px; }
 #uvu-story-bridge-screen.uvu-lenso-panel .mono-bridge-footer { border-top:0; }

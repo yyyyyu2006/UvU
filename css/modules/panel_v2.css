@@ -83,9 +83,6 @@
 #home-preset-preview header { margin-bottom:24px; }
 #home-preset-preview button { border-radius:999px; min-height:36px; padding:8px 14px; }
 #home-preset-preview [data-confirm] { background:#1b1d21; color:#fff; }
-.worldbook-advanced { padding:16px 0; border:0; border-top:1px solid #eceef1; border-radius:0; background:transparent; }
-.worldbook-advanced > summary { font-size:14px; min-height:44px; align-content:center; }
-.worldbook-advanced :is(input:not([type=checkbox]),select) { border-color:#eceef1; border-radius:12px; background:#f8f9fb; }
 .uvu-panel-layout .vector-refinements > details { border:0; border-top:1px solid #eceef1; border-radius:0; background:transparent; padding:12px 0; }
 #auto-memory-modal.uvu-panel-layout .vector-memory-fieldset > .panel-card { padding:20px 0; }
 @media(max-width:350px) {

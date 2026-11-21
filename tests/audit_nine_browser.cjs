@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
-const {fullApp,root}=require('./helpers/full_app_browser.cjs');
+const {fullApp,root,stableUI}=require('./helpers/full_app_browser.cjs');
 (async()=>{const app=await fullApp(),failures=[],checks=[];
 try{
  async function check(name,run){const f=await app.page();f.page.setDefaultTimeout(6000);try{await run(f.page);assert.deepEqual(f.errors,[]);checks.push(name);console.log('PASS '+name);}catch(e){failures.push(name+': '+e.message);console.error('FAIL '+name+': '+e.message);}finally{await f.context.close();}}
@@ -19,6 +19,7 @@ try{
  await check('notification modal traps focus and restores its opener',async page=>{
   await page.evaluate(()=>switchScreen('api-settings-screen'));const opener=page.locator('#uvu-notification-preferences > summary');await opener.click();
   const panel=page.locator('#uvu-notification-preferences .draft-inline-workspace');await panel.waitFor();await page.waitForTimeout(50);
+  assert.equal(await opener.evaluate(el=>getComputedStyle(el.parentElement,'::before').content), '""');
   assert.equal(await panel.evaluate(el=>el.contains(document.activeElement)),true);
   for(let i=0;i<3;i++){await page.keyboard.press('Shift+Tab');assert.equal(await panel.evaluate(el=>el.contains(document.activeElement)),true);}
   assert.equal(await page.locator('#system-notification-test').evaluate(el=>!!el.closest('[inert]')),true);
@@ -42,13 +43,16 @@ try{
   assert.equal(await opener.evaluate(el=>el===document.activeElement),true,'child close must restore notification opener');assert.equal(await panel.evaluate(el=>!!el.closest('[inert]')),false,'notification must reactivate after child close');
   await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.getElementById('uvu-notification-preferences').open);
  });
- await check('worldbook inline modal owns keyboard focus and restores its summary',async page=>{
-  await page.evaluate(()=>{switchScreen(document.getElementById('edit-world-book-form').closest('.screen').id);document.querySelector('.worldbook-advanced > summary').focus();document.querySelector('.worldbook-advanced').open=true;});
-  const panel=page.locator('.worldbook-advanced .draft-inline-workspace');await panel.waitFor();await page.waitForTimeout(50);
+ await check('worldbook original editor help owns keyboard focus and restores its button',async page=>{
+  await page.evaluate(()=>switchScreen(document.getElementById('edit-world-book-form').closest('.screen').id));
+  await stableUI(page,'#edit-world-book-screen');await page.locator('.worldbook-editor-help').click();
+  const panel=page.locator('#panel-explanation-dialog');await panel.waitFor();
+  await page.waitForFunction(()=>document.querySelector('#panel-explanation-dialog').contains(document.activeElement));
   assert.equal(await panel.evaluate(el=>el.contains(document.activeElement)),true);
   for(let i=0;i<3;i++){await page.keyboard.press('Shift+Tab');assert.equal(await panel.evaluate(el=>el.contains(document.activeElement)),true);}
-  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.worldbook-advanced').open);
-  assert.equal(await page.locator('.worldbook-advanced > summary').evaluate(el=>el===document.activeElement),true);
+  await page.keyboard.press('Escape');await panel.waitFor({state:'detached'});
+  await page.waitForFunction(()=>document.querySelector('.worldbook-editor-help')===document.activeElement);
+  assert.equal(await page.locator('.worldbook-advanced').count(),0);
  });
  await check('failed bridge master setting rolls back captured channel and releases its lock',async page=>{
   await page.evaluate(async()=>{db.uvuStoryBridgeSettings={channel:'st',bridgeEnabled:true,ttSettings:{bridgeEnabled:true}};switchScreen('uvu-story-bridge-screen');await saveData();window.auditOriginalTransaction=dexieDB.transaction;window.auditSaveReject=null;const failure=new Promise((_,reject)=>{auditSaveReject=reject;});dexieDB.transaction=()=>failure;const input=document.getElementById('uvu-bridge-enabled');input.checked=false;input.dispatchEvent(new Event('change',{bubbles:true}));});

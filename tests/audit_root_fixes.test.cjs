@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
-test('opening token preview never rerolls activation or claims unsent books actually triggered', () => {
+test('opening token preview uses static positions without any activation', () => {
     const chat = { id: 'c', activeArchiveId: 'a', history: [], worldBookIds: ['static', 'random'] };
     const books = [{ id: 'static', name: '静态', content: '静态正文', position: 'before' },
         { id: 'random', name: '概率', content: '概率正文', position: 'before', rules: { advancedEnabled: true, probability: 50 } }];
@@ -12,17 +12,17 @@ test('opening token preview never rerolls activation or claims unsent books actu
         getAutoMemoryContextHistory: chat => chat.history, getContextMemoryJournals: () => [],
         buildWorldBookPlan: () => { draws++; return books; } });
     vm.runInContext(read('js/modules/chat_ai_prompt.js'), c);
-    c.generatePrivateSystemPrompt = (_chat, plan) => plan.map(book => book.content).join('\n');
+    c.generatePrivateSystemPrompt = () => books.map(book => book.content).join('\n');
     const preview = c.getChatTokenUsageSnapshot('c');
     assert.equal(draws, 0); assert.equal(preview.preview, true);
-    assert.equal(preview.worldBookPending, 1); assert.equal(preview.worldBookDetails.length, 1);
+    assert.equal(preview.worldBookPending, undefined); assert.equal(preview.worldBookDetails.length, 2);
     assert.equal(preview.worldBookDetails[0].id, 'static');
-    assert.equal(preview.worldBookDetails[0].triggered, false);
+    assert.equal(preview.worldBookDetails[0].triggered, undefined);
     assert.equal(preview.worldBookDetails[0].preview, true);
-    const actualEstimate = c.estimateChatTokenUsage(chat, 'private', '静态正文', [], '', [books[0]]);
+    const actualEstimate = c.estimateChatTokenUsage(chat, 'private', '静态正文', [], '', { messages: [{role:'system',content:'静态正文\n概率正文'}] });
     c.recordChatTokenUsage(chat, 'private', { prompt_tokens: 25, completion_tokens: 5 }, actualEstimate);
     const frozen = c.getChatTokenUsageSnapshot('c');
-    assert.equal(frozen.preview, false); assert.equal(frozen.worldBookDetails.length, 1);
+    assert.equal(frozen.preview, false); assert.equal(frozen.worldBookDetails.length, 2);
     assert.equal(frozen.promptTokens, 25); assert.equal(draws, 0);
 });
 

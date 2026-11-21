@@ -331,7 +331,7 @@ function renderBoundWorldBooks(type, worldBookIds) {
     }
 
     wrapper.style.display = 'block';
-    if (countSpan) countSpan.textContent = `${bindingStats.entries.length}，开启 ${bindingStats.enabled}`;
+    if (countSpan) countSpan.textContent = `${bindingStats.entries.length}，原版位置 ${bindingStats.enabled}`;
     const missingSpan = document.getElementById(type === 'private' ? 'private-bound-missing' : 'group-bound-missing');
     if (missingSpan) missingSpan.textContent = bindingStats.missingIds.length ? `（失效 ${bindingStats.missingIds.length}）` : '';
     list.innerHTML = '';
@@ -356,7 +356,7 @@ function renderBoundWorldBooks(type, worldBookIds) {
             const nameSpan = document.createElement('span');
             nameSpan.style.cssText = 'flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
             nameSpan.textContent = name;
-            if (!enabled) nameSpan.textContent += '（已停用）';
+            if (!enabled) nameSpan.textContent += '（位置不受支持）';
             const unbindButton = document.createElement('button');
             unbindButton.className = 'bound-wb-unbind-btn';
             unbindButton.dataset.id = id;
@@ -386,7 +386,7 @@ function renderBoundWorldBooks(type, worldBookIds) {
             
             list.appendChild(card);
     };
-    bindingStats.entries.forEach(book => renderRow(book.id, book.name, book.rules?.enabled !== false));
+    bindingStats.entries.forEach(book => renderRow(book.id, book.name, ['limit_break', 'before', 'after', 'guidelines'].includes(book.position)));
     bindingStats.missingIds.forEach(id => renderRow(id, '无效绑定：' + id, false));
 }
 

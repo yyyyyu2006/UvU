@@ -129,6 +129,11 @@ async function deleteSelectedWorldBooks() {
 async function migrateWorldBookPositions() {
     let migrated = false;
     db.worldBooks.forEach(item => {
+        // Keep unsupported imported entries outside the original runtime positions.
+        if (item.type === 'entry' && item.rules?.unsupportedPosition && item.position !== 'unsupported') {
+            item.position = 'unsupported';
+            migrated = true;
+        }
         if (item.type === 'entry' && (item.position === 'middle' || item.position === 'center')) {
             item.position = 'before';
             item.depth = 300;
@@ -137,7 +142,7 @@ async function migrateWorldBookPositions() {
     });
     if (migrated) {
         await saveData();
-        console.log('Worldbook positions migrated: middle -> before (depth 300)');
+        console.log('Worldbook positions normalized to original supported positions');
     }
 }
 
@@ -314,7 +319,6 @@ async function setupWorldBookApp() {
         const category = document.getElementById('world-book-category').value.trim();
         const position = document.querySelector('input[name="world-book-position"]:checked').value;
         const depth = Number(document.getElementById('world-book-depth').value);
-        const rules = editWorldBookForm.worldBookRules;
         const currentFolderId = wbPathStack[wbPathStack.length - 1].id;
 
         if (!name || !content) return showToast('名称和内容不能为空');
@@ -323,7 +327,7 @@ async function setupWorldBookApp() {
             const book = db.worldBooks.find(wb => wb.id === currentEditingWorldBookId);
             if (book) {
                 if (!await saveLocalSettingsFields([{target: book, values: {
-                    name, content, position, category, depth, ...(rules ? {rules} : {})
+                    name, content, position, category, depth, ...(book.position === 'unsupported' && book.rules ? { rules: { ...book.rules, unsupportedPosition: false } } : {})
                 }}])) return;
             } else return showToast('条目已变更，请重新打开');
         } else {
@@ -335,8 +339,7 @@ async function setupWorldBookApp() {
                 content, 
                 position, 
                 category,
-                depth,
-                ...(rules ? { rules } : {})
+                depth
             })) return;
         }
         showToast('世界书条目已保存');

@@ -293,7 +293,7 @@ test('environment token classification reads the final body without double-count
     c.getAutoMemoryContextHistory = () => []; c.buildWorldBookPlan = () => []; c.getContextMemoryJournals = () => [];
     vm.runInContext(source('chat_ai_prompt.js'), c);
     const env = '\n【可选真实环境资料】\n上海多云', body = { messages: [{ role: 'system', content: '基础' + env }] }, before = JSON.stringify(body);
-    const result = c.estimateChatTokenUsage(chat, 'private', body.messages[0].content, [], '', [], body, env);
+    const result = c.estimateChatTokenUsage(chat, 'private', body.messages[0].content, [], '', body, env);
     assert.ok(result.environment > 0); assert.ok(result.baseSystem > 0);
     assert.equal(result.total, result.environment + result.baseSystem); assert.equal(JSON.stringify(body), before);
 });

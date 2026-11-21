@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     const records = new Map();
-    const inlineSelector = '#uvu-notification-preferences[open] > .draft-inline-workspace, .worldbook-advanced[open] > .draft-inline-workspace';
+    const inlineSelector = '#uvu-notification-preferences[open] > .draft-inline-workspace';
     const selector = '.feature-dialog:not(#expanded-text-editor), .message-forward-overlay, #char-status-overlay.visible, ' + inlineSelector;
     const active = el => el.isConnected && (el.id !== 'char-status-overlay' || el.classList.contains('visible')) &&
         (!el.matches('.draft-inline-workspace') || el.parentElement.open && el.getClientRects().length > 0);

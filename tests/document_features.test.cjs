@@ -7,61 +7,35 @@ const crypto = require('node:crypto');
 function fixture(books = []) {
     const storage = { data: Object.create(null), getItem(key) { return this.data[key] ?? null; }, setItem(key, value) { this.data[key] = String(value); }, removeItem(key) { delete this.data[key]; } };
     const c = vm.createContext({ db: { worldBooks: books, myStickers: [], characters: [], groups: [] }, crypto, TextDecoder, AbortController, setTimeout, clearTimeout, console, localStorage: storage });
-    for (const name of ['worldbook_rules', 'document_import', 'text_editor', 'sticker_assist']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/' + name + '.js'), 'utf8'), c);
+    for (const name of ['chat_ai_prompt', 'worldbook_rules', 'document_import', 'text_editor', 'sticker_assist']) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules/' + name + '.js'), 'utf8'), c);
     c.__storage = storage;
     return c;
 }
 const plain = value => JSON.parse(JSON.stringify(value));
-test('legacy worldbooks retain binding order and old depth sorting with no extra rules', () => {
-    const books = [{ id: 'a', position: 'before', content: 'A', depth: 20 }, { id: 'b', position: 'before', content: 'B', depth: 10 }, { id: 'c', type: 'folder' }];
-    const c = fixture(books), chat = { worldBookIds: ['a', 'b', 'c'] };
-    assert.equal(c.worldBookSection(c.buildWorldBookPlan(chat), 'before'), 'B\nA');
-    assert.deepEqual(books, [{ id: 'a', position: 'before', content: 'A', depth: 20 }, { id: 'b', position: 'before', content: 'B', depth: 10 }, { id: 'c', type: 'folder' }]);
-});
-test('worldbook counts deduplicate real entries, exclude folders, identify stale bindings, and count enabled entries', () => {
-    const books = [{ id: 'on', rules: { advancedEnabled: true, enabled: true } }, { id: 'off', rules: { advancedEnabled: true, enabled: false } }, { id: 'folder', type: 'folder' }];
-    const c = fixture(books), stats = c.getWorldBookBindingStats(['on', 'on', 'off', 'folder', 'deleted']);
-    assert.deepEqual(plain(stats.entries.map(book => book.id)), ['on', 'off']);
-    assert.equal(stats.enabled, 1);
-    assert.deepEqual(plain(stats.missingIds), ['folder', 'deleted']);
-});
-test('activation honors constant, disabled, exact probability boundaries and secondary logic', () => {
-    const books = [0, 1, 2, 3].map(n => ({ id: '' + n, content: '' + n, rules: { advancedEnabled: true, constant: false, keys: ['猫'], secondaryKeys: ['开心', '晚安'], selectiveLogic: n, probability: 100 } }));
-    const c = fixture(books), chat = { worldBookIds: books.map(b => b.id), history: [{ content: '猫很开心' }] };
-    assert.deepEqual(plain(c.buildWorldBookPlan(chat)).map(b => b.id), ['0', '1']);
-    books[0].rules.enabled = false; books[1].rules.probability = 0;
-    assert.equal(c.buildWorldBookPlan(chat).length, 0);
-    books[0].rules = { advancedEnabled: true, constant: true, probability: 50 };
-    assert.equal(c.buildWorldBookPlan(chat, [], () => 0.49).length, 1);
-    assert.equal(c.buildWorldBookPlan(chat, [], () => 0.50).length, 0);
-});
-test('keyword matching supports literal punctuation, case, whole words and regex', () => {
-    const c = fixture();
-    assert.equal(c.worldBookMatches('cat', 'a cat!', { wholeWords: true }), true);
-    assert.equal(c.worldBookMatches('cat', 'cats', { wholeWords: true }), false);
-    assert.equal(c.worldBookMatches('C++', 'C++', { wholeWords: true }), true);
-    assert.equal(c.worldBookMatches('你好', '你好呀', {}), true);
-    assert.equal(c.worldBookMatches('/HELLO/i', 'hello', {}), true);
-    assert.equal(c.worldBookMatches('/[/', 'hello', {}), false);
-    assert.equal(c.worldBookMatches('Cat', 'cat', { caseSensitive: true }), false);
-});
-test('scan depth zero and finite depth exclude older trigger messages', () => {
-    const book = { id: 'a', rules: { advancedEnabled: true, constant: false, keys: ['old'], scanDepth: 1 } }, c = fixture([book]);
-    const chat = { worldBookIds: ['a'], history: [{ content: 'old' }, { content: 'new' }] };
-    assert.equal(c.buildWorldBookPlan(chat).length, 0); book.rules.scanDepth = 2; assert.equal(c.buildWorldBookPlan(chat).length, 1);
-    book.rules.scanDepth = 0; assert.equal(c.buildWorldBookPlan(chat).length, 0);
-});
-test('legacy chat-position worldbooks use the original system-reference injection point', () => {
-    const c = fixture();
-    const plan = [{ position: 'chat', content: 'depth book', rules: { chatDepth: 0 } }];
-    assert.equal(c.worldBookSection(plan, 'before'), 'depth book');
-    assert.equal(c.worldBookSection(plan, 'after'), '');
+test('static worldbooks retain original depth ordering even with stale advanced metadata', () => {
+    const books = [{ id: 'a', position: 'before', content: 'A', depth: 20, rules: { advancedEnabled: true, enabled: false, probability: 0, order: 0 } },
+        { id: 'b', position: 'before', content: 'B', depth: 10, rules: { advancedEnabled: true, constant: false, keys: ['absent'], order: 1000 } },
+        { id: 'chat', position: 'chat', content: 'unsupported', rules: { chatDepth: 0, role: 'user' } }];
+    const c = fixture(books), chat = { worldBookIds: ['a', 'b', 'chat'] }, before = JSON.stringify(books);
+    assert.deepEqual(Array.from(c.getStaticWorldBooks(chat), b => b.id), ['b', 'a']);
+    assert.equal(JSON.stringify(books), before);
+    assert.equal(typeof c.buildWorldBookPlan, 'undefined');
     assert.equal(typeof c.insertDepthWorldBooks, 'undefined');
 });
+
+test('worldbook binding count ignores deleted advanced enable switches', () => {
+    const c = fixture([{ id: 'on', position: 'before', rules: { advancedEnabled: true, enabled: true } },
+        { id: 'off', position: 'after', rules: { advancedEnabled: true, enabled: false } }, { id: 'folder', type: 'folder' }]);
+    const stats = c.getWorldBookBindingStats(['on', 'on', 'off', 'folder', 'deleted']);
+    assert.deepEqual(plain(stats.entries.map(book => book.id)), ['on', 'off']);
+    assert.equal(stats.enabled, 2);
+    assert.deepEqual(plain(stats.missingIds), ['folder', 'deleted']);
+});
+
 test('SillyTavern and character-book imports preserve keys, zero values, roles and original fields', () => {
     const c = fixture(), source = { entries: { 7: { comment: '测试', content: '内容', key: ['猫'], constant: false, selective: true, keysecondary: ['开心'], position: 4, depth: 0, order: 0, probability: 0, role: 2, cooldown: 5 } } };
     const book = c.importWorldBookJson(source, 'folder').books[0];
-    assert.equal(book.position, 'before'); assert.equal(book.rules.chatDepth, 0); assert.equal(book.rules.order, 0); assert.equal(book.rules.probability, 0); assert.equal(book.rules.role, 'assistant'); assert.equal(book.importSource.cooldown, 5);
+    assert.equal(book.position, 'unsupported'); assert.equal(book.rules.chatDepth, 0); assert.equal(book.rules.order, 0); assert.equal(book.rules.probability, 0); assert.equal(book.rules.role, 'assistant'); assert.equal(book.importSource.cooldown, 5);
     const card = c.importWorldBookJson({ data: { character_book: { entries: [{ name: '角色书', content: '文本', keys: ['key'], extensions: { position: 4, depth: 2, role: 1 } }] } } }, null).books[0];
     assert.equal(card.rules.role, 'user'); assert.equal(card.rules.chatDepth, 2);
     assert.throws(() => c.importWorldBookJson({ bad: true }, null), /entries/);
@@ -69,12 +43,12 @@ test('SillyTavern and character-book imports preserve keys, zero values, roles a
 test('worldbook editor no longer offers chat injection position or writes chat-depth controls', () => {
     const editor = fs.readFileSync(path.join(__dirname, '../js/modules/worldbook_editor.js'), 'utf8');
     assert.doesNotMatch(editor, /value="chat"|wb-chat-depth|wb-role/);
-    assert.match(editor, /book\.position === 'chat' \? 'before'/);
+    assert.doesNotMatch(editor, /wb-advanced-enabled|worldBookRules|worldbook-advanced/);
 });
 test('unsupported tavern positions are preserved and disabled instead of silently injected', () => {
     const c = fixture(), result = c.importWorldBookJson({ entries: { a: { content: 'unsupported', position: 7, constant: true } } }, null);
     assert.equal(result.warnings.length, 1); c.db.worldBooks = result.books;
-    assert.equal(c.buildWorldBookPlan({ worldBookIds: [result.books[0].id] }).length, 0);
+    assert.equal(c.getStaticWorldBooks({ worldBookIds: [result.books[0].id] }).length, 0);
 });
 test('find treats special characters literally and supports Unicode and case settings', () => {
     const c = fixture();
