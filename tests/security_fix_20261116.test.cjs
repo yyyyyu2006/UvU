@@ -5,21 +5,27 @@ const { Worker: Thread } = require('node:worker_threads');
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function runtime() {
+function runtime(options = {}) {
     let workers = 0;
     const workerSource = read('js/workers/status_regex_worker.js');
     class BrowserWorker {
         constructor() {
             workers++;
+            this.queue = [];
+            this.loading = setTimeout(() => {
+            if (options.failFirstStartup && workers === 1) { this.onerror?.({}); return; }
             this.thread = new Thread(`const {parentPort}=require('node:worker_threads');
                 global.self={postMessage:value=>parentPort.postMessage(value)};
                 ${workerSource}
                 parentPort.on('message',data=>self.onmessage({data}));`, {eval: true});
             this.thread.on('message', data => this.onmessage?.({data}));
             this.thread.on('error', error => this.onerror?.(error));
+            for (const value of this.queue) this.thread.postMessage(value);
+            this.queue = [];
+            }, options.startupDelay || 0);
         }
-        postMessage(value) { this.thread.postMessage(value); }
-        terminate() { return this.thread.terminate(); }
+        postMessage(value) { if (this.thread) this.thread.postMessage(value); else this.queue.push(value); }
+        terminate() { clearTimeout(this.loading); return this.thread?.terminate(); }
     }
     const chat = {id: 'c', activeArchiveId: 'a', history: [], memoryJournals: [], maxMemory: ''};
     const toasts = [];
@@ -76,6 +82,23 @@ test('catastrophic status expressions time out without blocking the caller or lo
     assert.ok(ticked); assert.ok(Date.now() - start < 5000);
     assert.equal(text.replace(f.c.createStatusRegex('(a+)+$', ''), ''), text);
     assert.equal(f.toasts.length, 1);
+});
+
+test('status worker loading time does not consume the regex execution budget', async () => {
+    const f = runtime({startupDelay: 400}), text = 'hello<status>busy</status>';
+    await f.c.prepareStatusRegexJobs([{source: '<status>(.*?)</status>', flags: 's', text}]);
+    assert.equal(f.c.createStatusRegex('<status>(.*?)</status>', 's').exec(text)?.[1], 'busy');
+    assert.deepEqual(f.toasts, []);
+});
+
+test('a transient worker startup failure can recover on the next preparation', async () => {
+    const f = runtime({failFirstStartup: true}), text = 'hello<status>busy</status>';
+    const job = {source: '<status>(.*?)</status>', flags: 's', text};
+    await f.c.prepareStatusRegexJobs([job]);
+    assert.equal(text.replace(f.c.createStatusRegex(job.source, job.flags), ''), text);
+    await f.c.prepareStatusRegexJobs([job]);
+    assert.equal(f.workers(), 2);
+    assert.equal(f.c.createStatusRegex(job.source, job.flags).exec(text)?.[1], 'busy');
 });
 
 test('status worker cancellation terminates pending work; disabled panels start no workers', async () => {

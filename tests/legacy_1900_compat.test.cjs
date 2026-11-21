@@ -75,13 +75,20 @@ test('scene distance and perceptual boundaries reach the real request without we
     const {c,chat,requests,errors}=fixture(current,provider,version,'private');
     chat.sceneMode=c.UvUScene.defaultMode();chat.sceneMode.enabled=true;
     chat.environmentProfile={remoteEnabled:remote,aiEnabled:false};c.db.environmentSettings={enabled:false};
-    chat.sceneMode.scene.background=remote?'网恋，双方各自在家，只有文字联系。':'双方已经明确见面，隔桌坐着。';
+    // Deliberately conflicting old scene/history must not override the saved remote flag.
+    chat.sceneMode.scene.background=remote?'此前误写双方已经见面，隔桌坐着，刚刚拥抱。':'双方已经明确见面，隔桌坐着。';
     chat.history=[c.UvUScene.convert({id:'u',role:'user',content:'[我的消息：我放下杯子。]',timestamp:1},'我放下杯子。',true,chat)];
     const before=JSON.stringify(chat);c.UvUScene.deliver=async()=>true;
     await c.getAiReply(chat.id,'private');
     assert.deepEqual(errors,[]);assert.equal(requests.length,1);
     const body=requests[0],system=provider==='gemini'?body.system_instruction.parts[0].text:body.messages[0].content;
     assert.match(system,remote?/角色设置：已开启异地模式/:/角色设置：未开启异地模式/);
+    if (remote) {
+        assert.match(system, /本轮必须按异地互动/);
+        assert.match(system, /旧历史或记忆中的见面描写均不能覆盖当前异地开关/);
+        assert.match(system, /只有用户在设置中关闭异地模式后/);
+        assert.doesNotMatch(system, /没有明确、有效的临时见面事实时|明确已发生的见面可以更新当前场景/);
+    }
     for(const fragment of ['旁白模式只改变表达与分段','长期关系与本次是否同场分别承接','面对面时','异地或经通信互动时','文字不等于声音','场外修正','不代替用户说话、行动、决定'])assert.ok(system.includes(fragment),fragment);
     assert.doesNotMatch(system,/继续虚构的线下面对面场景|同一聊天中连续发生的虚构线下面对面场景|其中纯线上关系、禁止动作/);
     assert.match(system,version==='tt'?/\[场景与信息\]/:/<scene_rules>/);

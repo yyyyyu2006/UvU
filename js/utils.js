@@ -41,8 +41,14 @@ const statusRegexCache = new Map();
 let statusRegexCacheBytes = 0;
 let statusRegexWarningShown = false;
 function statusRegexKey(source, flags, text) { return JSON.stringify([source, flags, text]); }
-function statusRegexWarn() {
-    if (!statusRegexWarningShown && typeof showToast === 'function') showToast('状态正则超时或暂不可用，已保留原文；请检查状态栏设置');
+function statusRegexWarn(reason = 'pattern') {
+    const message = {
+        startup: '状态匹配脚本加载或启动失败，已保留原文；请检查网络后重试，未修改状态栏设置',
+        timeout: '状态正则执行超时，已保留原文；请检查状态栏的匹配规则',
+        unavailable: '状态匹配暂不可用或内容超出处理上限，已保留原文；未修改状态栏设置',
+        pattern: '状态正则执行失败，已保留原文；请检查状态栏的匹配规则'
+    }[reason] || '状态匹配执行中断，已保留原文；请重试';
+    if (!statusRegexWarningShown && typeof showToast === 'function') showToast(message);
     statusRegexWarningShown = true;
 }
 function statusRegexIsLiteral(source, flags) {
@@ -66,7 +72,7 @@ function createStatusRegex(source, flags = '') {
     if (statusRegexIsLiteral(source, flags)) return syntax;
     const result = text => {
         const cached = statusRegexCache.get(statusRegexKey(source, flags, String(text)));
-        if (cached?.error) statusRegexWarn();
+        if (cached?.error) statusRegexWarn(cached.error);
         return cached;
     };
     return {
@@ -93,33 +99,41 @@ async function prepareStatusRegexJobs(jobs, signal) {
         statusRegexCache.set(key, {...value, bytes});
         statusRegexCacheBytes += bytes;
     };
-    // One total budget includes worker startup and every text/flag variant.
+    // Loading is network-bound. Give it a separate finite budget; keep all
+    // regex execution off the main thread and within one shared 250ms budget.
     await new Promise((resolve, reject) => {
-        let worker, timer, settled = false;
+        let worker, timer, settled = false, started = false;
         const finish = error => {
             if (settled) return;
             settled = true; clearTimeout(timer); worker?.terminate();
             signal?.removeEventListener('abort', cancel);
             if (error?.name === 'AbortError') { reject(error); return; }
-            for (const job of pending) if (!statusRegexCache.has(statusRegexKey(job.source, job.flags, job.text))) remember(job, {error: '状态匹配未完成'});
-            if (error) statusRegexWarn();
+            // Do not permanently cache network/startup failures as regex failures.
+            if (started) for (const job of pending) if (!statusRegexCache.has(statusRegexKey(job.source, job.flags, job.text))) remember(job, {error: error || 'interrupted'});
+            if (error) statusRegexWarn(error);
             resolve();
         };
         const cancel = () => finish(aborted());
         signal?.addEventListener('abort', cancel, {once: true});
         try {
-            if (typeof Worker === 'undefined' || pending.length > 1000 || pending.some(job => job.source.length > 8192) || pending.reduce((sum, job) => sum + job.text.length, 0) > 4 * 1024 * 1024) throw new Error('状态匹配暂不可用');
-            worker = new Worker('js/workers/status_regex_worker.js?v=20261116-status-budget');
+            if (typeof Worker === 'undefined' || pending.length > 1000 || pending.some(job => job.source.length > 8192) || pending.reduce((sum, job) => sum + job.text.length, 0) > 4 * 1024 * 1024) { finish('unavailable'); return; }
+            worker = new Worker('js/workers/status_regex_worker.js?v=20261121-startup-budget');
             worker.onmessage = event => {
                 if (settled) return;
                 const value = event.data;
-                if (value?.done) finish();
-                else if (Number.isInteger(value?.index) && pending[value.index]) remember(pending[value.index], value);
+                if (value?.ready && !started) {
+                    started = true; clearTimeout(timer);
+                    timer = setTimeout(() => finish('timeout'), 250);
+                    worker.postMessage({jobs: pending});
+                } else if (started && value?.done) finish();
+                else if (started && Number.isInteger(value?.index) && pending[value.index]) {
+                    remember(pending[value.index], value);
+                    if (value.error) statusRegexWarn(value.error);
+                }
             };
-            worker.onerror = () => finish(new Error('状态匹配失败'));
-            timer = setTimeout(() => finish(new Error('状态匹配超时')), 250);
-            worker.postMessage({jobs: pending});
-        } catch (error) { finish(error); }
+            worker.onerror = () => finish(started ? 'interrupted' : 'startup');
+            timer = setTimeout(() => finish('startup'), 5000);
+        } catch (_) { finish(started ? 'interrupted' : 'startup'); }
     });
 }
 async function prepareStatusRegexHistory(chat, history, signal) {

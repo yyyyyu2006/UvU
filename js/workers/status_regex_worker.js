@@ -6,7 +6,8 @@ self.onmessage = event => {
             const match = new RegExp(source, flags).exec(text);
             const stripped = text.replace(new RegExp(source, flags), '');
             self.postMessage({index, match: match ? Array.from(match) : null, stripped});
-        } catch (error) { self.postMessage({index, error: error.message}); }
+        } catch (_) { self.postMessage({index, error: 'pattern'}); }
     }
     self.postMessage({done: true});
 };
+self.postMessage({ready: true});

@@ -2,10 +2,33 @@
 (function () {
     'use strict';
     const failedScripts = new Set();
-    window.addEventListener('error', event => { if (event.target?.tagName === 'SCRIPT' && event.target.src) failedScripts.add(event.target.src); }, true);
+    let pageLoaded = false;
+    window.addEventListener('error', event => {
+        if (event.target?.tagName !== 'SCRIPT' || !event.target.src) return;
+        failedScripts.add(event.target.src);
+        if (pageLoaded) showDependencyWarning();
+    }, true);
+    document.addEventListener('load', event => {
+        if (event.target?.tagName !== 'SCRIPT' || !event.target.src) return;
+        failedScripts.delete(event.target.src);
+        if (pageLoaded) showDependencyWarning();
+    }, true);
     const label = value => {
         try { const u = new URL(value, document.baseURI); return /^https?:$/.test(u.protocol) ? u.origin + u.pathname : (u.protocol === 'data:' ? '内嵌本地资源' : u.protocol); }
         catch (_) { return '无法解析的资源地址'; }
+    };
+    const describeScript = address => {
+        const resource = label(address);
+        const known = [
+            [/\/dexie(?:@|\/|[.-])/i, 'Dexie（本地数据库，可能影响聊天数据读取与保存）'],
+            [/\/dompurify(?:@|\/)|\/purify\.min\.js$/i, 'DOMPurify（部分 HTML 内容处理）'],
+            [/\/echarts(?:@|\/)/i, 'ECharts（图表）'],
+            [/\/html2canvas(?:@|\/)/i, 'html2canvas（部分截图与图片导出）'],
+            [/\/mammoth(?:@|\/)/i, 'Mammoth（Word 文档读取）'],
+            [/\/sortablejs(?:@|\/)/i, 'SortableJS（部分拖拽排序）'],
+            [/\/crypto-js(?:@|\/)/i, 'CryptoJS（部分加密与解密）']
+        ].find(([pattern]) => pattern.test(resource));
+        return known ? known[1] : resource;
     };
     function inspect(root = document.getElementById('home-screen')) {
         const rows = [], seen = new Set();
@@ -20,8 +43,8 @@
             const value = getComputedStyle(el).backgroundImage;
             for (const match of value.matchAll(/url\(["']?([^"')]+)["']?\)/g)) add('CSS背景', match[1], '已引用；不能仅据跨源响应判断加载成功，未修改或重新下载');
         }
-        for (const script of document.querySelectorAll('script[src]')) if (/^https?:/.test(script.src) && new URL(script.src).origin !== location.origin)
-            add('依赖脚本', script.src, failedScripts.has(script.src) ? '加载失败；可恢复网络后重新加载页面' : '未捕获加载失败；不代表所有功能均通过验证');
+        for (const script of document.querySelectorAll('script[src]')) if (/^https?:/.test(script.src) && (new URL(script.src).origin !== location.origin || failedScripts.has(script.src)))
+            add('依赖脚本', script.src, failedScripts.has(script.src) ? `加载失败：${describeScript(script.src)}；可恢复网络后重新加载页面` : '未捕获加载失败；不代表所有功能均通过验证');
         for (const link of document.querySelectorAll('link[rel=stylesheet]')) add('样式／字体入口', link.href,
             link.sheet ? '样式入口已加载，内部字体仍受外链和浏览器限制' : '尚未取得样式表；请核对网络');
         if (document.fonts) rows.push({ type: '字体', resource: '浏览器字体集合', state: document.fonts.status === 'loading' ? '仍有字体加载中' : '当前加载任务结束；缺字可能仍使用回退字体' });
@@ -40,12 +63,16 @@
         d.panel.append(help, refresh, body); render();
     }
     document.addEventListener('click', event => { if (event.target.closest?.('[data-resource-health]')) open(); });
-    window.addEventListener('load', () => {
-        if (!failedScripts.size || !document.body) return;
-        const notice = document.createElement('div'); notice.id = 'uvu-dependency-warning'; notice.setAttribute('role', 'alert');
-        const text = document.createElement('span'); text.textContent = `${failedScripts.size}个外部依赖加载失败，部分功能可能无法启动。请检查网络后重新加载；这不表示本机聊天已丢失。`;
+    function showDependencyWarning() {
+        const existing = document.getElementById('uvu-dependency-warning');
+        if (!failedScripts.size || !document.body) { existing?.remove(); return; }
+        const notice = existing || document.createElement('div'); notice.id = 'uvu-dependency-warning'; notice.setAttribute('role', 'alert');
+        const text = document.createElement('span'); text.textContent = `${failedScripts.size}个脚本加载失败：${[...failedScripts].map(describeScript).join('；')}。请检查网络后重新加载；这条提示不代表本机聊天已丢失。`;
+        const details = document.createElement('details'), summary = document.createElement('summary'); summary.textContent = '查看失败资源'; details.append(summary);
+        for (const address of failedScripts) { const row = document.createElement('p'); row.textContent = label(address); details.append(row); }
         const close = document.createElement('button'); close.type = 'button'; close.textContent = '关闭'; close.onclick = () => notice.remove();
-        notice.append(text, close); document.body.append(notice);
-    }, { once: true });
+        notice.replaceChildren(text, details, close); if (!existing) document.body.append(notice);
+    }
+    window.addEventListener('load', () => { pageLoaded = true; showDependencyWarning(); }, { once: true });
     window.UvUResourceHealth = Object.freeze({ inspect, open });
 }());

@@ -209,11 +209,12 @@ const out = path.resolve(root, process.env.UVU_SCENE_OUTPUT || 'outputs/scene-im
             await page.evaluate(({version,remote})=>{
                 const chat=db.characters[0];chat.exclusivePromptVersion=version;
                 chat.environmentProfile={remoteEnabled:remote,aiEnabled:false};db.environmentSettings={enabled:false};
-                chat.sceneMode.scene.background=remote?'双方各自在家，只有文字联系。':'双方已明确见面，正在隔桌交谈。';
+                chat.sceneMode.scene.background=remote?'旧场景误写双方已经见面，刚刚拥抱，正在隔桌交谈。':'双方已明确见面，正在隔桌交谈。';
             },{version,remote});
             await reply();
             const request=JSON.stringify(requests.at(-1));
             assert.ok(request.includes(remote?'角色设置：已开启异地模式':'角色设置：未开启异地模式'));
+            if(remote){assert.ok(request.includes('本轮必须按异地互动'));assert.ok(request.includes('只有用户在设置中关闭异地模式后'));assert.doesNotMatch(request,/没有明确、有效的临时见面事实时/);}
             assert.ok(request.includes('长期关系与本次是否同场分别承接'));
             assert.ok(request.includes('用户旁白可供读者了解'));
             assert.doesNotMatch(request,/继续虚构的线下面对面场景|同一聊天中连续发生的虚构线下面对面场景/);

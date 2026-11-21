@@ -14,7 +14,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="referrer" content="no-referrer" />
 
-    <script src="js/modules/resource_health.js?v=20261109-audit-repairs"></script>
+    <script src="js/modules/resource_health.js?v=20261121-resource-diagnostics"></script>
     <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@2.3.8/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -1391,7 +1391,7 @@ node setup-server-plugin.js</code></pre>
                 <button id="scene-help-btn" class="scene-small-btn" type="button" aria-label="使用说明" aria-controls="scene-help" aria-expanded="false">?</button>
                 <button id="scene-mode-close" class="scene-small-btn" type="button" aria-label="关闭场景设置">×</button>
             </div>
-            <div id="scene-help" tabindex="-1" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API，使用从1900线上两套复制出的独立旁白提示词，保留所选人物规则与思考预设。旁白不等于见面：面对面按现场描写，异地按实际通信渠道描写角色自己一侧；动作只进旁白，不代替你行动。异地设置不依赖天气开关。关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p><button id="scene-help-back" type="button">返回设置</button></div>
+            <div id="scene-help" tabindex="-1" hidden><p>角色说的话保留原气泡，动作以灰色斜体居中显示。正常发送后，长按用户文字消息，在原编辑面板勾选“改为旁白”，也能取消勾选恢复。</p><p>开启后使用当前聊天API，使用从1900线上两套复制出的独立旁白提示词，保留所选人物规则与思考预设。旁白不等于见面：面对面按现场描写，异地按实际通信渠道描写角色自己一侧；动作只进旁白，不代替你行动。直接沿用角色原有异地开关：开启就按异地旁白，不会因旧剧情自动切成见面；关闭后再按有效剧情判断。不依赖天气开关。关闭后恢复线上聊天，已有旁白保留。首版仅私聊，不自动配音、生图或在后台推进剧情。酒馆占用和通话保护仍有效。</p><p>格式错误或停止时，已收到的原文保存在此处，可复制找回；不会自动付费重试。</p><button id="scene-help-back" type="button">返回设置</button></div>
             <form id="scene-mode-form" aria-labelledby="scene-mode-heading">
                 <label class="scene-switch" for="scene-enabled"><span>旁白模式</span><input id="scene-enabled" name="enabled" type="checkbox"></label>
                 <label class="scene-field" for="scene-name">场景名称<input id="scene-name" name="name" maxlength="40" placeholder="未命名场景"></label>
@@ -2999,7 +2999,7 @@ node setup-server-plugin.js</code></pre>
 -->
 
 <!-- [1. 基础层] -->
-<script src="js/utils.js?v=20261121-scene"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
+<script src="js/utils.js?v=20261121-status-startup"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
 <script src="js/db.js?v=20261119-home-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
@@ -3029,7 +3029,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/chat_relationship.js?v=20261111-review-notification-guards"></script>
 <script src="js/modules/chat_scene.js?v=20261121-scene-fusion"></script>
 <script src="js/modules/chat_scene_ui.js?v=20261121-scene-review"></script>
-<script src="js/modules/chat_scene_reply.js?v=20261121-scene-fusion"></script>
+<script src="js/modules/chat_scene_reply.js?v=20261121-remote-authority"></script>
 <script src="js/modules/chat_thinking.js?v=20261118-first-bubble"></script>
 <script src="js/modules/chat_render.js?v=20261121-scene"></script>
 <script src="js/modules/chat_archives.js?v=20261121-scene"></script>
@@ -3216,7 +3216,7 @@ node setup-server-plugin.js</code></pre>
 <link rel="stylesheet" href="css/modules/notification_preferences.css?v=20261106-feature-audit">
 <link rel="stylesheet" href="css/modules/vector_memory.css?v=20261107-refinement">
 <link rel="stylesheet" href="css/modules/minimax_speech.css?v=20261107-refinement">
-<link rel="stylesheet" href="css/modules/feature_refinements.css?v=20261109-audit-repairs">
+<link rel="stylesheet" href="css/modules/feature_refinements.css?v=20261121-resource-diagnostics">
 <link rel="stylesheet" href="css/modules/ui_harmony.css?v=20261115-soft-input-focus">
 <link rel="stylesheet" href="css/modules/calendar.css?v=20261116-social-secondary-recipients">
 <script src="js/modules/feature_dialogs.js?v=20261113-audit-nine-fixes-v1"></script>
