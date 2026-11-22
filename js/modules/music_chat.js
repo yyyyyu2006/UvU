@@ -4,6 +4,7 @@
     const plans = new WeakMap(), applying = new WeakSet();
     let activeSession = null, listenIntent = 0;
     const text = (value, limit) => String(value || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, limit);
+    const songKey=t=>t.provider+':'+(t.serverId?t.serverId+':':'')+t.id;
     function safeURL(value) {
         if (typeof value !== 'string' || !value || value.length > 2048) return '';
         try {
@@ -21,7 +22,7 @@
             (provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(hostname)) ? safe : '';
     }
     function portableTrack(raw) {
-        if (!raw || !['netease', 'qq', 'local', 'gd-netease'].includes(raw.provider) || !['string', 'number'].includes(typeof raw.id) || !String(raw.id) || !raw.title) throw new Error('歌曲信息无效');
+        if (!raw || !['netease', 'qq', 'local', 'gd-netease','navidrome'].includes(raw.provider) || !['string', 'number'].includes(typeof raw.id) || !String(raw.id) || !raw.title) throw new Error('歌曲信息无效');
         if (typeof root.UvUMusic?.normalizeTrack === 'function') raw = root.UvUMusic.normalizeTrack(raw);
         const id = text(raw.id, 160).trim();
         if (!id || /[\r\n]/.test(id)) throw new Error('歌曲信息无效');
@@ -30,6 +31,7 @@
         if (safePage(raw.pageUrl, raw.provider)) result.pageUrl = safePage(raw.pageUrl, raw.provider);
         if (raw.provider === 'local' && /^[a-zA-Z0-9_-]{1,160}$/.test(raw.localId || '')) result.localId = raw.localId;
         if (raw.provider === 'gd-netease' && /^\d{1,24}$/.test(raw.artworkId || '')) result.artworkId = String(raw.artworkId);
+        if(raw.provider==='navidrome'){if(!/^[a-zA-Z0-9_-]{1,100}$/.test(raw.serverId||''))throw Error('音乐服务器身份无效');result.serverId=raw.serverId;}
         if (['unknown', 'full', 'preview', 'unavailable'].includes(raw.availability)) result.availability = raw.availability;
         return result;
     }
@@ -37,13 +39,14 @@
         if (!value || value.version !== 1 || !value.track || Object.keys(value).some(key => !['version', 'track', 'lyrics', 'invitation'].includes(key))) throw new Error('音乐消息无效');
         const track = value.track;
         portableTrack(track);
-        if (Object.keys(track).some(key => !['provider', 'id', 'title', 'artists', 'album', 'cover', 'duration', 'pageUrl', 'localId', 'artworkId', 'availability'].includes(key)) ||
+        if (Object.keys(track).some(key => !['provider', 'id', 'title', 'artists', 'album', 'cover', 'duration', 'pageUrl', 'localId', 'artworkId', 'availability','serverId'].includes(key)) ||
             typeof track.id !== 'string' || !track.id || track.id.length > 160 || /[\r\n]/.test(track.id) || typeof track.title !== 'string' || !track.title || track.title.length > 300 ||
             !Array.isArray(track.artists) || track.artists.length > 12 || track.artists.some(item => typeof item !== 'string' || item.length > 120) ||
             typeof track.album !== 'string' || track.album.length > 300 || typeof track.cover !== 'string' || (track.cover && !safeURL(track.cover)) ||
             !Number.isFinite(track.duration) || track.duration < 0 || track.duration > 86400 || (track.pageUrl && !safePage(track.pageUrl, track.provider)) ||
             (track.localId !== undefined && (track.provider !== 'local' || !/^[a-zA-Z0-9_-]{1,160}$/.test(track.localId))) ||
             (track.artworkId !== undefined && (track.provider !== 'gd-netease' || typeof track.artworkId !== 'string' || !/^\d{1,24}$/.test(track.artworkId))) ||
+            (track.serverId!==undefined&&(track.provider!=='navidrome'||!/^[a-zA-Z0-9_-]{1,100}$/.test(track.serverId))) ||
             (track.availability !== undefined && !['unknown', 'full', 'preview', 'unavailable'].includes(track.availability))) throw new Error('歌曲信息无效');
         if (value.lyrics !== undefined && (typeof value.lyrics !== 'string' || value.lyrics.length > LYRICS_LIMIT)) throw new Error('音乐歌词无效');
         if (value.invitation) {
@@ -70,7 +73,7 @@
             (typeof db === 'undefined' || db.characters?.includes(chat)));
     }
     function eligible(message, chat) {
-        if (!message || message.type !== 'music' || message.role !== 'user' || message.isWithdrawn || message.isRevoked || message.isContextDisabled || message.relationshipDelivery) return false;
+        if (!message || message.type !== 'music' || message.role !== 'user' || message.isHidden || message.isWithdrawn || message.isRevoked || message.isContextDisabled || message.relationshipDelivery) return false;
         try { validatePayload(message.music); } catch (_) { return false; }
         const invitation = message.music.invitation;
         return Boolean(invitation && invitation.status === 'pending' && invitation.expiresAt > Date.now() && bindingMatches(chat, invitation) &&
@@ -135,35 +138,38 @@
     }
     function sourceActive(record) {
         return record && record.chat.activeArchiveId === record.archiveId && record.chat.history === record.history && record.history.includes(record.message) &&
-            bindingMatches(record.chat, record.message.music?.invitation) && !record.message.isWithdrawn && !record.message.isRevoked && !record.message.isContextDisabled && !record.message.relationshipDelivery &&
+            bindingMatches(record.chat, record.message.music?.invitation) && !record.message.isHidden&&!record.message.isWithdrawn && !record.message.isRevoked && !record.message.isContextDisabled && !record.message.relationshipDelivery &&
+            payloadUnchanged(record)&&
             (typeof relationshipCanChat !== 'function' || relationshipCanChat(record.chat, 'private'));
     }
+    function payloadUnchanged(record){if(!record.signature)return true;try{return JSON.stringify(portablePayload(record.message.music))===record.signature;}catch(_){return false;}}
     function session() {
         if (!sourceActive(activeSession) || activeSession.message.music.invitation.status !== 'accepted') {activeSession=null;return null;}
         const { chat, message } = activeSession;
-        const playback = root.UvUMusic.player.snapshot(), invited = activeSession.lastTrack || message.music.track;
-        const same=playback?.track&&playback.track.provider===invited.provider&&String(playback.track.id)===invited.id;
+        const playback = (root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot()), invited = activeSession.lastTrack || message.music.track;
+        const same=playback?.track&&songKey(playback.track)===songKey(invited);
         const continuous=activeSession.continuous===true;
-        const follows = Boolean(playback?.track && (same || continuous && playback.queueVersion === activeSession.queueVersion && activeSession.allowed.has(playback.track.provider + ':' + playback.track.id)));
+        const follows = Boolean(playback?.track && (same || continuous && playback.queueVersion === activeSession.queueVersion && activeSession.allowed.has(songKey(playback.track))));
         if (follows) activeSession.lastTrack = portableTrack(playback.track);
         // Playback transport is independent from an accepted invitation. Preserve the room
         // while stopped or playing unrelated music; never attribute that music to this char.
-        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: activeSession.lastTrack || portableTrack(invited), continuous, localPlayback: follows && playback.playing === true };
+        return { id: message.music.invitation.id, chatId: chat.id, archiveId: message.music.invitation.archiveId, track: activeSession.lastTrack || portableTrack(invited), continuous, localPlayback: follows && playback.playing === true,queueKeys:[...(activeSession.allowed||[])],queueLabel:activeSession.queueLabel||'' };
     }
     function setContinuous(enabled){
-        const current = session(); if(!current)return false;const state=root.UvUMusic.player.snapshot();
-        if (enabled === true && (!state.track || state.track.provider !== current.track.provider || String(state.track.id) !== current.track.id)) {
+        const current = session(); if(!current)return false;const state=(root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot());
+        if (enabled === true && (!state.track || songKey(state.track)!==songKey(current.track))) {
             if (typeof showToast === 'function') showToast('请先继续播放这首一起听歌曲，再开启连续一起听');
             return false;
         }
         activeSession.continuous=enabled===true;activeSession.queueVersion=state.queueVersion;
-        activeSession.allowed=new Set([...(state.queue||[]),state.track].filter(Boolean).map(t=>t.provider+':'+t.id));
+        activeSession.allowed=new Set([...(state.queue||[]),state.track].filter(Boolean).map(songKey));activeSession.queueLabel=state.queueLabel;
         // Disabling continuous playback keeps the invitation and its last shared song.
         if(!enabled)session();notify();return true;
     }
+    function adoptCurrentQueue(){if(!session())return false;const state=(root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot());if(!state.track)return false;activeSession.lastTrack=portableTrack(state.track);activeSession.continuous=true;activeSession.queueVersion=state.queueVersion;activeSession.allowed=new Set([...(state.queue||[]),state.track].filter(Boolean).map(songKey));activeSession.queueLabel=state.queueLabel;notify();return true;}
     async function listen(track, binding) {
         if (!binding || !binding.chat || !binding.message || binding.message.music?.invitation?.status !== 'accepted') throw new Error('一起听邀请尚未接受');
-        const record = { chat: binding.chat, message: binding.message, archiveId: binding.chat.activeArchiveId, history: binding.chat.history };
+        const record = { chat: binding.chat, message: binding.message, archiveId: binding.chat.activeArchiveId, history: binding.chat.history,signature:JSON.stringify(portablePayload(binding.message.music)) };
         if (!sourceActive(record)) return false;
         const generation = ++listenIntent, requested = portableTrack(track);
         // Keep the accepted room while transport loads or fails. Replace it only
@@ -175,8 +181,8 @@
         if (generation !== listenIntent || !sourceActive(record) || record.message.music.invitation.status !== 'accepted') return false;
         // The core resolves play() even when browser permissions or stream loading fail.
         // Only its final state proves that this invitation's actual track started.
-        const playback = root.UvUMusic.player.snapshot();
-        const sameTrack = playback?.track && playback.track.provider === requested.provider && String(playback.track.id) === requested.id;
+        const playback = (root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot());
+        const sameTrack = playback?.track && songKey(playback.track)===songKey(requested);
         if (played === false || !sameTrack || playback.phase !== 'playing' || playback.playing !== true) {
             notify();
             throw new Error(playback?.phase === 'blocked' ? '浏览器阻止自动播放，请点击歌曲卡片的播放按钮重试' : '歌曲尚未开始播放，请点击歌曲卡片的播放按钮重试');
@@ -186,13 +192,13 @@
     }
     async function togglePlayback() {
         const current = session(); if (!current) return false;
-        const state = root.UvUMusic.player.snapshot();
-        if (state?.track && state.track.provider === current.track.provider && String(state.track.id) === current.track.id) return root.UvUMusic.player.toggle();
+        const state = (root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot());
+        if (state?.track && songKey(state.track)===songKey(current.track)) return root.UvUMusic.player.toggle();
         const record = activeSession, intent = ++listenIntent;
         const played = await root.UvUMusic.player.play(current.track);
         if (intent !== listenIntent || activeSession !== record || !sourceActive(record) || record.message.music.invitation.status !== 'accepted') return false;
-        const final = root.UvUMusic.player.snapshot();
-        if (played === false || final?.phase !== 'playing' || !final.playing || final.track?.provider !== current.track.provider || String(final.track?.id) !== current.track.id) {
+        const final = (root.UvUMusic.player.readState?.()||root.UvUMusic.player.snapshot());
+        if (played === false || final?.phase !== 'playing' || !final.playing || !final.track || songKey(final.track)!==songKey(current.track)) {
             notify(); throw new Error('歌曲未开始播放，请点击重试');
         }
         record.lastTrack = current.track; notify(); return true;
@@ -205,7 +211,7 @@
         if (scope.offers?.length) {
             const action = parsed.actions.find(item => item.action === 'invite'), offer = action && scope.offers.find(item => item.id === action.invitationId);
             if (!offer || JSON.stringify(chat.musicProfile) !== scope.profileSignature || !db.characters.includes(chat) ||
-                !(root.UvUMusicCharacter?.candidates(chat) || []).some(track => track.provider === offer.track.provider && String(track.id) === offer.track.id)) return result;
+                !(root.UvUMusicCharacter?.candidates(chat) || []).some(track => songKey(track)===songKey(offer.track))) return result;
             applying.add(chat);
             try {
                 const now = Date.now(), payload = { version: 1, track: portableTrack(offer.track), invitation: { id: 'music_' + crypto.randomUUID(), chatId: chat.id, archiveId: chat.activeArchiveId || '', status: 'pending', createdAt: now, expiresAt: now + TTL } };
@@ -390,5 +396,5 @@
         (chat.timestampStyle === 'avatar' ? info : card).append(time);
         row.append(info, card); wrapper.append(row); return wrapper;
     }
-    root.UvUMusicChat = { share, listen, end, session, setContinuous, togglePlayback, respondInvitation, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
+    root.UvUMusicChat = { share, listen, end, session, setContinuous, adoptCurrentQueue,togglePlayback, respondInvitation, createElement, requestPlan, extractActions, consumeReply, validatePayload, portablePayload };
 })(window);

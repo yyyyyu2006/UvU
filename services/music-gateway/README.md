@@ -40,6 +40,9 @@ node --env-file=services/music-gateway/.env services/music-gateway/start.mjs
 |---|---|
 |`MUSIC_HOST`|`127.0.0.1`；反向代理同机运行时保持此值|
 |`MUSIC_PORT`|`8787`|
+|`MUSIC_INSTANCES`|固定 `1`；账号会话和 Worker 容量按进程管理，填其他值拒绝启动|
+|`MUSIC_TRUSTED_PROXIES`|可选，逗号分隔的精确代理 socket IP；其他连接的 X-Forwarded-For 被忽略|
+|`MUSIC_RATE_DB`|可选的 SQLite 计数文件绝对路径；Node >=22.13，在同一主机上共享、跨重启保留限流窗口|
 |`MUSIC_ORIGINS`|以逗号分隔的完整 origin，如 `https://yyyyyu2006.github.io`；无路径、无结尾 `/`，不支持 `*`|
 |`MUSIC_VAULT_PATH`|可选的服务端加密凭据文件绝对路径|
 |`MUSIC_VAULT_KEY`|可选；32 字节随机密钥的 base64；启用凭据文件时必填|
@@ -69,17 +72,17 @@ DNS 指向服务器并开放 443，配置 `MUSIC_ORIGINS=https://你的网页域
 
 所有会话、平台和操作共享进程内最多 8 个引擎 Worker（执行单个平台操作的后台工作进程），涵盖扫码、搜索、播放地址、歌词和歌单。超量立即返回 `provider_busy`，不累积等待队列；任务成功、失败、超时或取消后，等待 Worker 终止再归还名额。单个 Worker 的 V8 老生代内存上限仍为 96 MB，这不是整个服务的总内存保证，也不能替代 Render 实际资源负载验证。
 
-这些限制只控制当前 Node 进程的资源数量。公开给玩家使用时，真正的访问准入、可信代理来源和跨实例限流仍需由部署端实现。客户端可以自行伪造 Origin，未受信任的代理转发头也不能当作访客身份；不要在公开网页中塞入固定“秘密”来冒充身份校验。当前补丁没有新增前端密钥、验证码或必须先登录才能使用的门槛。
+账号会话和 Worker 容量仍只控制当前 Node 进程，部署必须保持一个运行实例；`MUSIC_INSTANCES` 不是自动探测云平台扩容的工具，部署者仍需把实例数配置为 1。可选 `MUSIC_RATE_DB` 使用真实 SQLite 事务共享限流计数，但不会把账号会话变成分布式会话，也不授权多副本部署。公开给玩家使用时，访问准入仍由部署端维护。客户端可以自行伪造 Origin，未受信任的代理转发头也不能当作访客身份；不要在公开网页中塞入固定“秘密”来冒充身份校验。当前补丁没有新增前端密钥、验证码或必须先登录才能使用的门槛。
 
 ## HTTP 合约
 
 所有接口前缀为 `/v1`。除 health、session 创建和预检外，需要 `Authorization: Bearer <token>`。所有响应 `Cache-Control: no-store`；错误为 `{ "error": { "code": "...", "message": "..." } }`，不会回传平台错误原文。
 
-平台错误只传递固定类别：`provider_unavailable`（未能进一步分类）、`provider_invalid_response`（格式错误）、`provider_http_error`（平台 HTTP 失败）、`provider_timeout`（超时）、`provider_busy`（网关工作进程已满）和 `provider_cancelled`（任务取消）。搜索的 `errors` 也使用这些类别；任何平台原文、异常堆栈、Cookie 和原始响应体都不会作为诊断字段返回。平台引擎本身已经吞掉的错误仍可能只能表现为无结果或不可播放，固定类别不保证能识别所有登录、版权或地区问题。
+平台错误只传递固定类别：`provider_unavailable`（未能进一步分类）、`provider_invalid_response`（格式错误）、`provider_http_error`（平台 HTTP 失败）、`provider_timeout`（超时）、`provider_busy`（网关工作进程已满）、`provider_rate_limited`（平台 HTTP 429）和 `provider_cancelled`（任务取消）。搜索的 `errors` 也使用这些类别；任何平台原文、异常堆栈、Cookie 和原始响应体都不会作为诊断字段返回。平台引擎本身已经吞掉的错误仍可能只能表现为无结果或不可播放，固定类别不保证能识别所有登录、版权或地区问题。
 
 |方法与路径|响应|
 |---|---|
-|`GET /health`|`{ok,ready,providers:['netease','qq'],engine:{installed,revision},error?}`|
+|`GET /health`|`{ok,ready,providers,engine,capabilities,storage,runtime,deployment?,error?}`；不代表平台已连通、账号已登录或歌曲有播放权|
 |`POST /session`|201 `{token}`，可选请求 `{remember:true}`|
 |`DELETE /session`|`{ok:true}`，使令牌失效并清除持久化凭据|
 |`GET /accounts`|`{accounts:[{provider,loggedIn,user?:{id,name,avatar}}]}`|
@@ -87,7 +90,7 @@ DNS 指向服务器并开放 443，配置 `MUSIC_ORIGINS=https://你的网页域
 |`GET /accounts/:provider/qr/:id`|`{status:'waiting'|'scanned'|'authorized'|'expired',user?}`|
 |`DELETE /accounts/:provider`|`{ok:true}`，注销并使待授权二维码失效|
 |`GET /search?providers=netease,qq&q=关键词&page=1`|`{tracks,errors,hasMore}`；一个平台失败仍保留另一平台结果|
-|`GET /track/:provider/:id/stream`|`{url,availability,expiresAt?,message?}`|
+|`GET /track/:provider/:id/stream`|`{url,availability,expiresAt?,bitrate?,codec?,previewDuration?,message?}`；未知字段省略|
 |`GET /track/:provider/:id/lyrics`|`{lyric,translation?}`，LRC 文本|
 |`GET /accounts/:provider/playlists`|`{playlists:[{id,name,cover,count}]}`，需要该平台账号|
 |`GET /playlist/:provider/:id?page=1`|`{tracks,hasMore}`|
@@ -98,10 +101,22 @@ DNS 指向服务器并开放 443，配置 `MUSIC_ORIGINS=https://你的网页域
 
 `availability` 可为 `unknown/full/preview/unavailable`。网易云读取平台原始 `freeTrialInfo` 保留试听标记；QQ 普通 vkey 返回的链接无法可靠区分试听，使用 `unknown`。网关升级已知平台 HTTP CDN 链接到 HTTPS，并按平台域名白名单过滤；不向任意 URL 发起代理请求，不下载歌曲，不尝试解锁会员或 DRM。QQ 引擎的匿名、移动端、多策略回退和伪造 IP 请求未启用；网易云引擎的 `uf` 替代音源回退也未启用。平台拒绝、未登录、地区限制或版权限制会导致不可播放或平台错误。
 
+健康检查的 `capabilities` 分来源声明搜索、登录、歌单、歌词、分页、总数和音质选择；当前账号源音质选择为 `false`，只使用既有 128 请求，不增加流量或伪造质量选项。`storage.mode` 仅为 `memory/encrypted-file`，`restartPersistence` 在 Render Free 始终为 false；`runtime` 明示单实例、会话进程范围和限流进程/共享范围。不会暴露磁盘路径、TLS 私钥、凭据、令牌或密钥。
+
+码率只从已返回的 `br` 等已核验数值传递，编码仅接受上游明确给出的已知枚举，不以 `.flac` 或 `.mp3` URL 后缀推断。未确认单位的试听区间不转换成试听长度，字段保持缺省。适配器明确给出秒单位的 `previewDuration` 时，网关仅在 preview 状态转发。
+
+所有 429 响应包含真实 `Retry-After` 秒数，CORS 通过 `Access-Control-Expose-Headers: Retry-After` 允许前端读取；本地限流使用当前窗口剩余时间，平台 429 保留其已规范的等待时间。Worker 忙和共享限流存储失败返回 503 与短等待时间，不泄漏内部错误。
+
+## 可选共享计数与固定版本回退
+
+`createGateway({rateLimiter})` 可注入对象，其 `consume({key,limit,windowMs,now})` 返回 `{allowed,retryAfterMs}`。key 为不可逆哈希，不传原 IP 或会话令牌。提供的 `shared-rate-limit.mjs` 用 SQLite `BEGIN IMMEDIATE` 事务及 WAL 模式在同主机共享计数，不能放到网络共享文件系统冒充分布式服务。存储不可用时关闭放行并返回 `rate_store_unavailable`，部署者修复磁盘后再重试。无需该能力时不配置文件，继续原来的免费内存会话和内存限流。
+
+升级引擎先在隔离目录安装固定提交，保留旧版本源码、对应许可证和网关版本；运行本节下列夹具及 1900 兼容测试，核验实际授权播放边界后再切换。回退需恢复成套网关及其固定引擎提交并重启，不能只改版本标签，也不要用旧代码覆盖新 vault；部署者自行保留加密文件和原密钥的独立安全备份。`setup.mjs` 继续拒绝覆盖已修改的引擎，没有引入自动追随 latest 的升级行为。
+
 ## 验证与局限
 
 ```sh
-node --test tests/music_gateway.test.cjs tests/music_gateway_hardening.test.cjs tests/music_gateway_workers.test.cjs
+node --test tests/music_gateway.test.cjs tests/music_gateway_hardening.test.cjs tests/music_gateway_workers.test.cjs tests/music_gateway_operations.test.cjs
 ```
 
 本地夹具测试覆盖 HTTP 合约、账号隔离、外来及过期二维码、注销/替换/并发授权竞争、平台部分失败、URL/参数限制、CORS、超时、加密持久化和适配器格式。`createGateway({adapterFactory,now,...})` 与 `createEngineAdapter(Meting,provider,credential)` 可注入本地测试依赖，测试不使用真实账号。

@@ -4,6 +4,9 @@
     const copy = value => JSON.parse(JSON.stringify(value));
     const text = (value, max = 200) => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').slice(0, max) : '';
     const number = (value, max = 86400) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Number(value))) : 0;
+    const runtime = () => root.UvUMusicRuntime;
+    const playbackPrefs = () => runtime()?.preferences(library().tools?.playback) || {};
+    const coverURL = (value, local = false) => local && typeof value === 'string' && /^data:image\/(?:jpeg|png|webp);base64,[a-zA-Z0-9+/=]+$/.test(value) && value.length <= 2800000 ? value : safeURL(value, true);
     const abortError = () => new DOMException('Music request cancelled', 'AbortError');
     const database = () => typeof db !== 'undefined' ? db : (root.db || (root.db = {}));
     const listeners = new Set(), directSources = new Map(), sessions = new Map(), lyricCache=new Map();
@@ -43,21 +46,26 @@
         return { endpoint: customEndpoint || defaultEndpoint, customEndpoint, defaultEndpoint, usesDefault: !customEndpoint && !!defaultEndpoint };
     }
     function normalizeTrack(raw) {
-        if (!raw || typeof raw !== 'object' || !['netease', 'qq', 'local', 'gd-netease'].includes(raw.provider)) throw new Error('Invalid music provider');
+        if (!raw || typeof raw !== 'object' || !['netease', 'qq', 'local', 'gd-netease', 'navidrome'].includes(raw.provider)) throw new Error('Invalid music provider');
         const id = text(String(raw.id ?? ''), 160).trim();
         if (!id || /[\r\n]/.test(id)) throw new Error('Invalid music track ID');
         const result = { provider: raw.provider, id, title: text(raw.title, 300) || 'Untitled',
             artists: (Array.isArray(raw.artists) ? raw.artists : []).filter(value => typeof value === 'string').slice(0, 20).map(value => text(value, 160)),
-            album: text(raw.album, 300), cover: safeURL(raw.cover, true), duration: number(raw.duration),
+            album: text(raw.album, 300), cover: coverURL(raw.cover, raw.provider === 'local'), duration: number(raw.duration),
             availability: ['full', 'preview', 'unavailable'].includes(raw.availability) ? raw.availability : 'unknown' };
         const page = safeURL(raw.pageUrl, true);
         if (page && ((['netease', 'gd-netease'].includes(raw.provider) && new URL(page).hostname === 'music.163.com') || (raw.provider === 'qq' && ['y.qq.com', 'i.y.qq.com'].includes(new URL(page).hostname)))) result.pageUrl = page;
         if (raw.provider === 'gd-netease' && /^\d{1,24}$/.test(raw.artworkId || '')) result.artworkId = String(raw.artworkId);
         if (raw.provider === 'local' && /^[a-zA-Z0-9_-]{1,160}$/.test(raw.localId || '')) result.localId = raw.localId;
         if (Number.isFinite(raw.addedAt) && raw.addedAt > 0) result.addedAt = raw.addedAt;
+        if (raw.provider === 'navidrome') { if (!/^[a-zA-Z0-9_-]{1,100}$/.test(raw.serverId || '')) throw new Error('Missing music server identity'); result.serverId = raw.serverId; }
+        for (const field of ['trackNumber', 'discNumber', 'bitrate']) if (Number.isFinite(raw[field]) && raw[field] > 0) result[field] = Math.min(10000000, raw[field]);
+        if (Number.isFinite(raw.replayGainDb)) result.replayGainDb = Math.max(-30, Math.min(30, raw.replayGainDb));
+        if (typeof raw.codec === 'string') result.codec = text(raw.codec, 40);
+        if (raw.provider === 'local' && typeof raw.embeddedLyrics === 'string') result.embeddedLyrics = text(raw.embeddedLyrics, 100000);
         return result;
     }
-    const key = track => { const value = normalizeTrack(track); return value.provider + ':' + value.id; };
+    const key = track => { const value = normalizeTrack(track); return value.provider + ':' + (value.serverId ? value.serverId + ':' : '') + value.id; };
     function tracks(values, max) {
         const output = [], seen = new Set();
         for (const raw of (Array.isArray(values) ? values.slice(0, max) : [])) {
@@ -72,9 +80,22 @@
             seen.add(value.id); return true;
         }).map(value => ({ id: value.id, name: text(value.name, 160) || 'Playlist', tracks: tracks(value.tracks, 1000) })),
         recent: tracks(raw.recent, 100), queue: tracks(raw.queue, MAX_QUEUE), searches: [...new Set((Array.isArray(raw.searches) ? raw.searches : []).filter(v => typeof v === 'string').map(v => text(v,200).trim()).filter(Boolean))].slice(0,12),
-        playerPrefs: { mode: ['order', 'list', 'shuffle', 'one'].includes(raw.playerPrefs?.mode) ? raw.playerPrefs.mode : 'order', skipUnavailable: raw.playerPrefs?.skipUnavailable === true, queueLabel: text(raw.playerPrefs?.queueLabel,100) } };
+        playerPrefs: { mode: ['order', 'list', 'shuffle', 'one'].includes(raw.playerPrefs?.mode) ? raw.playerPrefs.mode : 'order', skipUnavailable: raw.playerPrefs?.skipUnavailable === true, queueLabel: text(raw.playerPrefs?.queueLabel,100) },
+        ...(raw.tools && root.UvUMusicLibraryTools ? {tools: normalizeTools(raw.tools)} : {}) };
     }
+    function normalizeTools(raw){const value=root.UvUMusicLibraryTools.normalize(raw);if(raw.playback)value.playback=runtime()?.preferences(raw.playback)||{};if(raw.lyrics&&root.UvUMusicLyrics)value.lyrics=root.UvUMusicLyrics.normalize(raw.lyrics);if(raw.matches){value.matches=[];for(const entry of(Array.isArray(raw.matches)?raw.matches:[]).slice(0,100))try{const host=entry.endpoint?endpoint(entry.endpoint):'';if(typeof entry.identity!=='string'||entry.identity.length>3000)continue;const track=normalizeTrack(entry.track);if(track.provider!=='gd-netease')continue;value.matches.push({identity:entry.identity,endpoint:host,track,confirmedAt:number(entry.confirmedAt,Number.MAX_SAFE_INTEGER)});}catch(_){}}return value;}
     const library = () => normalizeLibrary(database().musicLibrary || {});
+    const mutateLibrary = fn => persist('musicLibrary', current => { const next = fn(current); return normalizeLibrary(next || current); });
+    async function refreshLibrary() { if (typeof dexieDB !== 'undefined' && dexieDB?.globalSettings?.get) { const saved = await dexieDB.globalSettings.get('musicLibrary'); if (saved?.value) database().musicLibrary = normalizeLibrary(saved.value); } return library(); }
+    const canLockLocalFiles = () => !!root.navigator?.locks?.request;
+    const withLocalFileLock = fn => canLockLocalFiles() ? root.navigator.locks.request('uvu-music-local-files', fn) : fn();
+    async function localFileReferences() {
+        const found = new Set(), seen = new WeakSet(); let budget = 500000;
+        function visit(value) { if (!value || typeof value !== 'object' || seen.has(value)) return; if (--budget < 0) throw new Error('音乐文件引用过多，请保留文件后重试'); seen.add(value); if (value.provider === 'local' && typeof value.localId === 'string') found.add(value.localId); if (Array.isArray(value)) value.forEach(visit); else for (const [name, item] of Object.entries(value)) if (!/key|token|secret|password|cookie/i.test(name)) visit(item); }
+        visit(database());
+        if(typeof dexieDB!=='undefined')for(const name of ['characters','groups','globalSettings'])if(dexieDB[name]?.toArray)visit(await dexieDB[name].toArray());
+        return found;
+    }
     async function writeSetting(name, value) {
         if (typeof dexieDB !== 'undefined' && dexieDB?.globalSettings && typeof runDataPersistence === 'function') {
             await runDataPersistence(() => dexieDB.transaction('rw', dexieDB.globalSettings, () => typeof putGuardedSettings === 'function' ? putGuardedSettings([{ key: name, value }]) : dexieDB.globalSettings.put({ key: name, value })));
@@ -285,7 +306,7 @@
                 ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
             if (!response.ok) {
                 let detail; try { detail = await readJSON(response); } catch (_) {}
-                aborted(controller.signal); throw gatewayError(response.status, detail);
+                aborted(controller.signal); const error = gatewayError(response.status, detail); error.retryAfterMs = runtime()?.retryDelay(response.headers?.get('retry-after')) || 0; throw error;
             }
             const result = await readJSON(response); aborted(controller.signal); return result;
         } finally { clearTimeout(timer); signal?.removeEventListener('abort', relay); }
@@ -308,12 +329,18 @@
         if (typeof path !== 'string' || path.length > 3000 || !/^\/(?:health|accounts(?:\/(?:netease|qq)(?:\/qr(?:\/[a-zA-Z0-9_-]{1,200})?|\/playlists)?)?|search|track\/(?:netease|qq)\/[^/?#]+\/(?:stream|lyrics)|playlist\/(?:netease|qq)\/[^/?#]+)(?:\?[^#]*)?$/.test(path)) throw new Error('Invalid music API route');
         if (!['GET', 'POST', 'DELETE'].includes(options.method || 'GET')) throw new Error('Invalid music API method');
         return (async () => {
+            const source = path.match(/\/(netease|qq)(?:\/|\?|$)/)?.[1];
+            const health = source && runtime()?.sourceState(source);
+            if (health?.cooldownUntil > Date.now()) throw Object.assign(new Error('此音源正在冷却，请稍后重试'), {code:'rate_limited',status:429});
+            const started = Date.now();
             const host = settings().endpoint; if (!host) throw new Error('音乐登录服务尚未配置，请由部署者配置服务地址');
             aborted(options.signal);
             let token = await session(host, options.signal);
             if (settings().endpoint !== host) throw abortError();
-            try { const result = await transport(host, path, { ...options, token }); if (settings().endpoint !== host) throw abortError(); return result; }
+            try { const result = await transport(host, path, { ...options, token }); if (settings().endpoint !== host) throw abortError(); if(source) runtime()?.sourceState(source,{connected:true,failures:0,cooldownUntil:0}); runtime()?.record({provider:source,stage:'request',status:200,elapsedMs:Date.now()-started}); return result; }
             catch (error) {
+                runtime()?.record({provider:source,stage:'request',code:error.code,status:error.status,elapsedMs:Date.now()-started});
+                if (source && error.name !== 'AbortError') { const failures=(health?.failures||0)+1;runtime()?.sourceState(source,{failures,cooldownUntil:error.status===429?Date.now()+(error.retryAfterMs||60000):failures>=3?Date.now()+30000:0,...(error.status===401?{loggedIn:false}:{})}); }
                 if (error.status !== 401 || (error.code && error.code !== 'unauthorized')) throw error;
                 if (settings().endpoint !== host) throw abortError();
                 if (tokenGet(host) === token) tokenClear(host);
@@ -375,6 +402,7 @@
     const resultTracks = raw => ({ tracks: tracks(raw.tracks, 200), hasMore: raw.hasMore === true });
     async function accounts(signal) {
         const raw = await request('/accounts', { signal });
+        for (const item of raw.accounts || []) runtime()?.sourceState(item.provider,{connected:true,loggedIn:item.loggedIn===true});
         return { accounts: (Array.isArray(raw.accounts) ? raw.accounts : []).filter(item => PROVIDERS.includes(item?.provider)).slice(0, 2).map(item => ({ provider: item.provider, loggedIn: item.loggedIn === true, ...(item.user ? { user: user(item.user) } : {}) })) };
     }
     async function createQR(value, signal) {
@@ -390,6 +418,7 @@
     }
     async function search(q, selected = settings().providers, page = 1, signal) {
         const query = text(q, 200).trim(); if (!query) return { tracks: [], errors: [], hasMore: false };
+        if (selected?.includes('navidrome')) return { ...await root.UvUMusicExtensions.navidrome.search(query,{offset:(Math.max(1,page)-1)*20,count:20,signal}), errors:[] };
         if (Array.isArray(selected) && selected.includes('gd-netease')) {
             if (selected.some(value => PROVIDERS.includes(value))) throw new Error('请分别选择公共源或账号源搜索');
             const raw = await publicAdapter().search('gd-netease', query, page, signal); publicAdapter(); aborted(signal);
@@ -411,14 +440,21 @@
         return { ...resultTracks(raw), ...(Number.isInteger(raw.total) && raw.total >= 0 && raw.total <= 100000 ? { total: raw.total } : {}) };
     }
     async function lyrics(track, signal) {
-        aborted(signal);const value = normalizeTrack(track); if (value.provider === 'local') return { lyric: '', translation: '' };
-        const isPublic = usesPublic(value), resolved = isPublic ? await publicTrack(value,signal) : value;
+        aborted(signal);const value = normalizeTrack(track);
+        const finish = raw => root.UvUMusicLyrics?.resolved ? root.UvUMusicLyrics.resolved(value,raw,signal) : raw;
+        const actual=state.track&&key(state.track)===key(value)?playingSourceTrack:null,knownKey=actual?key(actual):key(value);
+        if(actual&&!playingVersionKnown)return {lyric:'',translation:'',resolvedKey:'unknown-offline',source:'offline-unknown',sourceError:true};
+        const bound=root.UvUMusicLyrics?.bound?.(value,knownKey);if(bound)return finish({...bound,resolvedKey:knownKey});
+        if (value.provider === 'local') return finish({lyric:value.embeddedLyrics||'',translation:'',resolvedKey:key(value)});
+        if (value.provider === 'navidrome') {try{const r=await root.UvUMusicExtensions.navidrome.lyrics(value,signal);return finish({...r,lyric:r.lyric||r.text||'',resolvedKey:key(value)});}catch(e){aborted(signal);if(e.name==='AbortError')throw e;return finish({lyric:'',translation:'',resolvedKey:key(value),sourceError:true});}}
+        const isPublic = actual?actual.provider==='gd-netease':usesPublic(value), resolved = actual || (isPublic ? await publicTrack(value,signal) : value),sourcePreference=usesPublic(value);
         aborted(signal);
-        const id=(isPublic?'public':settings().endpoint)+':'+key(resolved),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return copy(saved.value);
-        const raw=isPublic?await publicAdapter().lyrics(resolved,signal):await request('/track/' + provider(value.provider) + '/' + part(value.id) + '/lyrics', { signal });
-        if (isPublic !== usesPublic(value)) throw abortError();
+        const binding=root.UvUMusicLyrics?.bound?.(value,key(resolved));if(binding)return finish({...binding,resolvedKey:key(resolved)});
+        const id=(isPublic?'public':settings().endpoint)+':'+key(resolved),saved=lyricCache.get(id);if(saved&&saved.until>Date.now())return finish({...copy(saved.value),resolvedKey:key(resolved)});
+        let raw;try{raw=isPublic?await publicAdapter().lyrics(resolved,signal):await request('/track/' + provider(resolved.provider) + '/' + part(resolved.id) + '/lyrics', { signal });}catch(e){aborted(signal);if(e.name==='AbortError')throw e;if(!root.UvUMusicLyrics?.preferences?.().lrclib)throw e;raw={lyric:'',translation:'',sourceError:true};}
+        if (sourcePreference !== usesPublic(value)) throw abortError();
         if(isPublic)publicAdapter();aborted(signal);const result={lyric:text(raw.lyric,100000),translation:text(raw.translation,100000)};
-        if(lyricCache.size>=20)lyricCache.delete(lyricCache.keys().next().value);lyricCache.set(id,{value:result,until:Date.now()+600000});return copy(result);
+        if(lyricCache.size>=20)lyricCache.delete(lyricCache.keys().next().value);lyricCache.set(id,{value:result,until:Date.now()+600000});return finish({...copy(result),resolvedKey:key(resolved)});
     }
     function clearMetadataCache(){const count=lyricCache.size;lyricCache.clear();root.UvUPublicMusic?.clearCache?.();return count;}
 
@@ -453,7 +489,7 @@
             const valid = ext === 'mp3' ? ascii(0, 'ID3') || b[0] === 255 && (b[1] & 0xe0) === 0xe0 : ext === 'wav' ? ascii(0, 'RIFF') && ascii(8, 'WAVE') : ['m4a', 'mp4'].includes(ext) ? ascii(4, 'ftyp') : ext === 'ogg' ? ascii(0, 'OggS') : ext === 'flac' ? ascii(0, 'fLaC') : ext === 'aac' ? b[0] === 255 && (b[1] & 0xf6) === 0xf0 : ext === 'webm' && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
             if (!valid) throw new Error('音频格式无法确认，请选择有效音频文件');
         }
-        const meta=await root.UvUMusicMetadata?.read(file)||{},id = makeId(), value = normalizeTrack({ provider: 'local', id, localId: id, title: text(file.name, 300).replace(/\.[^.]+$/, ''), artists: [],...meta, availability: 'full' });
+        const meta=await root.UvUMusicMetadata?.read(file,{signal})||{},id = makeId(), value = normalizeTrack({ provider: 'local', id, localId: id, title: text(file.name, 300).replace(/\.[^.]+$/, ''), artists: [],...meta,cover:meta.coverData||meta.cover||'', availability: 'full' });
         aborted(signal); await localRecord('readwrite', store => store.put({ id, blob: file }));
         try { aborted(signal); await persist('musicLibrary', current => { aborted(signal); if (current.favorites.length >= 2000) throw new Error('Favorite limit reached'); current.favorites.push({ ...value, addedAt: Date.now() }); return current; }); } catch (error) { try { await localRecord('readwrite', store => store.delete(id)); } catch (_) {} throw error; }
         return value;
@@ -498,6 +534,7 @@
     const checkpointKey = 'uvu.music.position.v1:' + (root.location?.pathname || '/');
     let lastCheckpoint = 0;
     function checkpointEnabled() { try { return sessionStorage.getItem(checkpointKey) !== null; } catch (_) { return false; } }
+    const persistentKey = checkpointKey + ':persistent';
     function setCheckpoint(enabled) {
         try {
             if (!enabled) sessionStorage.removeItem(checkpointKey);
@@ -507,11 +544,12 @@
         return checkpointEnabled() === enabled;
     }
     function saveCheckpoint() {
-        if (!state.track || state.position < 1 || !checkpointEnabled()) return;
-        try { sessionStorage.setItem(checkpointKey, JSON.stringify({ provider: state.track.provider, id: state.track.id, position: state.position })); lastCheckpoint = Date.now(); } catch (_) {}
+        if (!state.track || state.position < 1) return;
+        try { if(checkpointEnabled()) sessionStorage.setItem(checkpointKey, JSON.stringify({ provider: state.track.provider, id: state.track.id, position: state.position })); if(playbackPrefs().persistentCheckpoint) localStorage.setItem(persistentKey,JSON.stringify({track:state.track,position:state.position,queue:state.queue,mode:state.mode,at:Date.now()})); lastCheckpoint = Date.now(); } catch (_) {}
     }
     function checkpoint() {
         try {
+            if(playbackPrefs().persistentCheckpoint){const saved=JSON.parse(localStorage.getItem(persistentKey));if(saved?.track&&Number.isFinite(saved.position)&&saved.position>=1&&Date.now()-saved.at<90*86400000)return {track:normalizeTrack(saved.track),position:number(saved.position),queue:tracks(saved.queue,MAX_QUEUE),mode:['order','list','shuffle','one'].includes(saved.mode)?saved.mode:'order'};}
             const saved = JSON.parse(sessionStorage.getItem(checkpointKey));
             if (!saved || !Number.isFinite(saved.position) || saved.position < 1) return null;
             const stored = library();
@@ -523,7 +561,7 @@
     const failedKeys=new Set();
     function resetShuffle(current=state.track){shuffleBag=state.queue.map(key).filter(id=>!current||id!==key(current));for(let i=shuffleBag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffleBag[i],shuffleBag[j]]=[shuffleBag[j],shuffleBag[i]];}}
     function queueChanged(){state.index=state.track?state.queue.findIndex(t=>key(t)===key(state.track)):-1;const ids=new Set(state.queue.map(key));shuffleBag=shuffleBag.filter(id=>ids.has(id));priority=priority.filter(id=>ids.has(id));saveQueue();emit();}
-    let restored = false, restoredLibrary, playerTouched = false, audio = null, objectURL = '', intent = 0, seekRevision = 0, loadController, metadataKey = '', stallTimer;
+    let restored = false, restoredLibrary, playerTouched = false, audio = null, objectURL = '', intent = 0, seekRevision = 0, loadController, metadataKey = '', stallTimer, audioCleanup, sleepRule=null, voiceLease=null,playingSourceTrack=null,playingVersionKnown=true;
     function restore(touch = false) {
         const raw = database().musicLibrary;
         if (!restored || (!playerTouched && raw !== restoredLibrary)) {
@@ -537,12 +575,13 @@
         const media = navigator.mediaSession;
         try {
             media.playbackState = state.playing ? 'playing' : state.track ? 'paused' : 'none';
-            const trackKey = state.track ? key(state.track) : '';
+            const trackKey = state.track ? JSON.stringify([key(state.track),state.track.title,state.track.artists,state.track.album,state.track.cover]) : '';
             if (trackKey !== metadataKey && typeof MediaMetadata === 'function') {
                 media.metadata = state.track ? new MediaMetadata({ title: state.track.title, artist: state.track.artists.join(', '), album: state.track.album, ...(state.track.cover ? { artwork: [{ src: state.track.cover }] } : {}) }) : null;
                 metadataKey = trackKey;
             }
             if (media.setPositionState && state.duration > 0 && Number.isFinite(state.duration)) media.setPositionState({ duration: state.duration, playbackRate: 1, position: Math.min(state.duration, state.position) });
+            else if (media.setPositionState) media.setPositionState();
         } catch (_) {}
     }
     let lastNotification;
@@ -564,6 +603,9 @@
         clearTimeout(stallTimer);
         loadController?.abort(); loadController = null;
         if (audio) { const old = audio; audio = null; old.pause(); old.removeAttribute('src'); old.load(); }
+        audioCleanup?.();audioCleanup=null;
+        playingSourceTrack=null;playingVersionKnown=true;
+        runtime()?.coordinator.release();
         if (objectURL) { URL.revokeObjectURL(objectURL); objectURL = ''; }
     }
     function fail(error) {
@@ -574,6 +616,7 @@
         state.playing=false;audio?.pause();state.phase=error?.name==='NotAllowedError'?'blocked':'error';
         const message=String(error?.message||'');state.errorCode=state.phase==='blocked'?'permission':['account_required','unauthorized'].includes(error?.code)?'account':error?.code==='stalled'?'stalled':error?.code==='public_match'?'public_match':/decode|format|could not be loaded|not supported/i.test(message)?'decode':/429|rate|limit|限流|过于频繁/i.test(message)?'rate_limit':/unavailable|not found|无.*地址|不可用|试听/i.test(message)?'unavailable':'network';
         state.error={permission:'请点击播放以允许音频播放',account:'音乐账号未登录或已过期，请重新登录',decode:'音频格式不支持或文件无法解码',rate_limit:'音乐服务请求过多，请稍后重试',public_match:'公共源未找到唯一匹配，请手动搜索歌名和歌手',unavailable:'歌曲暂无可用音源',network:'音频加载失败，请检查网络后重试',stalled:'音频缓冲超时，请检查网络后点击重试'}[state.errorCode];emit();
+        runtime()?.record({provider:state.track?.provider,stage:'playback',phase:state.phase,code:state.errorCode,status:error?.status});
         if(wasAttempting&&state.skipUnavailable&&['network','decode','unavailable','public_match'].includes(state.errorCode)&&state.track){
             failedKeys.add(key(state.track));const next=state.queue.find((t,i)=>i>state.index&&!failedKeys.has(key(t)))||state.queue.find(t=>!failedKeys.has(key(t)));
             if(next&&failedKeys.size<Math.min(state.queue.length,5))return play(next,undefined,{keepFailures:true});
@@ -590,6 +633,8 @@
         }, error => { if (generation === intent && audio === current) return fail(error); });
     }
     async function resolveSource(track, signal) {
+        const cached = await root.UvUMusicExtensions?.offline?.resolve(track); aborted(signal); if(cached) return {...cached,availability:'full'};
+        if (track.provider === 'navidrome') return root.UvUMusicExtensions.navidrome.resolve(track,signal);
         if (track.provider === 'local') {
             if (directSources.has(key(track))) return { url: directSources.get(key(track)), availability: 'full' };
             if (!track.localId) throw new Error('This direct audio URL must be imported again');
@@ -604,9 +649,9 @@
         if (isPublic) publicAdapter();
         if (result.availability === 'unavailable') throw new Error('This track is unavailable for this account');
         const url = safeURL(result.url); if (!url) throw new Error('Music gateway returned an unsafe media URL');
-        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(isPublic && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}) };
+        return { url, availability: ['preview', 'full'].includes(result.availability) ? result.availability : 'unknown', ...(isPublic && safeURL(result.cover,true) ? {cover:safeURL(result.cover,true)} : {}), ...(Number.isFinite(result.bitrate)?{bitrate:result.bitrate}:{}), ...(typeof result.codec==='string'?{codec:text(result.codec,40)}:{}), resolvedKey:key(resolved),resolvedTrack:resolved };
     }
-    function play(track, queue, options = {}) {
+    async function play(track, queue, options = {}) {
         restore(true);
         const value = normalizeTrack(track), generation = ++intent;
         const resumeAt = number(options.resumeAt), resumeSeek = seekRevision;
@@ -618,46 +663,52 @@
         if(!options.historyMove&&visits[visitIndex]!==key(value)){visits=visits.slice(0,visitIndex+1);visits.push(key(value));if(visits.length>1000)visits.shift();visitIndex=visits.length-1;}
         if(queue!==undefined)resetShuffle(value);shuffleBag=shuffleBag.filter(id=>id!==key(value));saveQueue();
         if (!options.reloadSource && audio && state.track && key(state.track) === key(value) && state.phase!=='error') return playAudio(audio, generation);
+        if(audio&&state.playing&&root.UvUMusicExtensions?.settings().fade){const fading=audio;await root.UvUMusicExtensions.audio.fadeOut(fading);if(generation!==intent||resumeSeek!==seekRevision){root.UvUMusicExtensions.audio.resetGain?.(fading);state.index=state.track?state.queue.findIndex(t=>key(t)===key(state.track)):-1;emit();return;}}
         unload(); state.track = value; state.position = resumeAt; state.duration = value.duration; state.playing = false; state.phase = 'loading'; state.error = '';state.errorCode=''; emit();
         const controller = new AbortController(); loadController = controller;
         return resolveSource(value, controller.signal).then(async source => {
             if (generation !== intent || controller.signal.aborted) return;
             if (typeof Audio !== 'function') throw new Error('Audio playback is unavailable');
             const current = new Audio(); audio = current;
+            if(playbackPrefs().singlePage) { await runtime()?.coordinator.acquire(() => { if(audio===current){++intent;unload();state.playing=false;state.phase='paused';emit();} }); if(generation!==intent||controller.signal.aborted)return; }
             try { current.volume = state.volume; if(Number.isFinite(current.volume))state.volume = current.volume; } catch (_) {}
             objectURL = source.blob ? URL.createObjectURL(source.blob) : '';
-            current.preload = 'metadata'; current.src = objectURL || source.url; current.referrerPolicy = 'no-referrer';
-            state.track = { ...value, availability: source.availability, ...(source.cover ? {cover:source.cover} : {}) };
+            const cleanup = await root.UvUMusicExtensions?.audio?.attach(current,value,{url:objectURL||source.url,signal:controller.signal});
+            if(generation!==intent||controller.signal.aborted){cleanup?.();return;} audioCleanup=cleanup;
+            current.preload = 'metadata'; current.src = cleanup?.sourceURL || objectURL || source.url; current.referrerPolicy = 'no-referrer';
+            state.track = { ...value, availability: source.availability, ...(source.cover ? {cover:source.cover} : {}), ...(source.bitrate?{bitrate:source.bitrate}:{}), ...(source.codec?{codec:source.codec}:{}) };
+            playingSourceTrack=normalizeTrack(source.resolvedTrack||value);playingVersionKnown=source.resolvedVersionKnown!==false;state.track.resolvedKey=playingVersionKnown?(source.resolvedKey||key(playingSourceTrack)):'unknown-offline';
             const valid = () => audio === current;
-            const stalled = () => { if (!valid()) return; clearTimeout(stallTimer); stallTimer = setTimeout(() => { if (valid() && (state.playing || state.phase === 'loading')) void fail(Object.assign(new Error('Audio stalled'), { code: 'stalled' })); }, 30000); stallTimer?.unref?.(); };
+            const recover = (kind,error) => {const allowed=kind==='expired'?playbackPrefs().refreshExpired:playbackPrefs().recoverNetwork;if(allowed&&!options.recovered&&valid()&&(state.playing||['loading','buffering'].includes(state.phase)))return play(value,undefined,{reloadSource:true,resumeAt:state.position,recovered:true});return fail(error);};
+            const stalled = () => { if (!valid()||(!state.playing&&state.phase!=='loading')) return; state.phase='buffering';emit();clearTimeout(stallTimer); stallTimer = setTimeout(() => { if (valid() && (state.playing || ['loading','buffering'].includes(state.phase))) void recover('network',Object.assign(new Error('Audio stalled'), { code: 'stalled' })); }, 30000); stallTimer?.unref?.(); };
             current.addEventListener('waiting', stalled); current.addEventListener('stalled', stalled);
             for (const event of ['playing', 'timeupdate', 'canplay', 'pause', 'ended']) current.addEventListener(event, () => { if (valid()) clearTimeout(stallTimer); });
-            current.addEventListener('timeupdate', () => { if (valid()) { state.position = number(current.currentTime); if (state.playing && Date.now() - lastCheckpoint >= 3000) saveCheckpoint(); emit(true); } });
+            current.addEventListener('playing',()=>{if(valid()&&state.playing&&state.phase==='buffering'){state.phase='playing';emit();}});
+            current.addEventListener('timeupdate', () => { if (valid()) { if(checkSleep())return;state.position = number(current.currentTime); if (state.playing && Date.now() - lastCheckpoint >= 3000) saveCheckpoint(); emit(true); } });
             let pendingSeek = resumeAt > 0;
             const restorePosition = () => {
                 if (!pendingSeek || !valid() || generation !== intent || seekRevision !== resumeSeek) return;
                 const ranges = current.seekable;
                 if (ranges && !ranges.length) return;
                 pendingSeek = false;
-                if (ranges && !Array.from({ length: ranges.length }, (_, i) => i).some(i => resumeAt >= ranges.start(i) && resumeAt < ranges.end(i))) return;
-                if (Number.isFinite(current.duration) && resumeAt >= current.duration) return;
+                if (ranges && !Array.from({ length: ranges.length }, (_, i) => i).some(i => resumeAt >= ranges.start(i) && resumeAt < ranges.end(i)) || Number.isFinite(current.duration) && resumeAt >= current.duration) { state.position=number(current.currentTime);return; }
                 try { current.currentTime = resumeAt; state.position = number(current.currentTime); } catch (_) {}
             };
             current.addEventListener('loadedmetadata', () => { if (valid()) { state.duration = Number.isFinite(current.duration) ? number(current.duration) : value.duration; restorePosition(); emit(); } });
             current.addEventListener('canplay', restorePosition, { once: true });
             if (current.readyState >= 1) restorePosition();
-            current.addEventListener('ended', () => { if (valid() && state.playing) { if (checkpointEnabled()) try { sessionStorage.setItem(checkpointKey, '{}'); } catch (_) {} state.playing = false; void advance(1, true); } });
-            current.addEventListener('error', () => { if (valid()) void fail(new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error')); });
+            current.addEventListener('ended', () => { if (valid() && state.playing) { if(sleepRule?.mode==='track'&&sleepRule.track===key(value)||sleepRule?.mode==='album'&&sleepRule.album===value.album&&!state.queue.slice(state.index+1).some(t=>t.album===value.album)){pauseForSleep();return;}if (checkpointEnabled()) try { sessionStorage.setItem(checkpointKey, '{}'); } catch (_) {} try{localStorage.removeItem(persistentKey);}catch(_){} state.playing = false; void advance(1, true); } });
+            current.addEventListener('error', () => { if (valid()) {const error=new Error(current.error?.code===3||current.error?.code===4?'Audio format not supported':'Network audio error');let expired=false;if(source.url&&current.error?.code===2)try{const params=new URL(source.url).searchParams;for(const name of ['expires','expire','exp']){const raw=params.get(name);if(/^\d{9,13}$/.test(raw||'')){const ms=Number(raw)*(raw.length<=10?1000:1);expired=expired||ms<Date.now();}}}catch(_){}void (expired?recover('expired',error):fail(error));} });
             current.addEventListener('pause', () => { if (valid() && current.paused && !current.ended && state.playing) { state.playing = false; state.phase = 'paused'; emit(); } });
             await playAudio(current, generation);
-            if (generation === intent && state.playing) { const played = { ...state.track }; persist('musicLibrary', stored => ({ ...stored, recent: [played, ...stored.recent.filter(item => key(item) !== key(played))].slice(0, 100) })).catch(() => {}); }
+            if (generation === intent && state.playing) { const played = { ...state.track }; persist('musicLibrary', stored => {if(stored.tools?.trackPlays){stored.tools.lastPlayed={...stored.tools.lastPlayed,[key(played)]:Date.now()};stored.tools.lastPlayed=Object.fromEntries(Object.entries(stored.tools.lastPlayed).slice(-10000));}return { ...stored, recent: [played, ...stored.recent.filter(item => key(item) !== key(played))].slice(0, 100) };}).catch(() => {}); }
         }).catch(error => { if (generation === intent && !controller.signal.aborted) return fail(error); });
     }
     function toggle() {
         if(['error','blocked'].includes(state.phase))return retry();
         restore(true); const generation = ++intent;
-        if (state.playing || state.phase === 'loading') {
-            if (state.phase === 'loading') { loadController?.abort(); unload(); }
+        if (state.playing || ['loading','buffering'].includes(state.phase)) {
+            if (['loading','buffering'].includes(state.phase)) { loadController?.abort(); unload(); }
             else audio?.pause();
             state.playing = false; state.phase = state.track ? 'paused' : 'idle'; emit(); return Promise.resolve();
         }
@@ -710,28 +761,32 @@
         if (audio) { try { audio.volume = state.volume; state.volume = audio.volume; } catch (_) {} }
         emit();
     }
-    function stop() { ++intent; unload(); state.track = null; state.index = -1; state.position = state.duration = 0; state.playing = false; state.phase = 'idle'; state.error = ''; clearTimeout(sleepTimer); state.sleepAt = 0; emit(); }
+    function stop() { ++intent; unload(); state.track = null; state.index = -1; state.position = state.duration = 0; state.playing = false; state.phase = 'idle'; state.error = ''; clearTimeout(sleepTimer); state.sleepAt = 0;sleepRule=null;try{localStorage.removeItem(persistentKey);}catch(_){} emit(); }
+    function pauseForSleep(){++intent;unload();state.playing=false;state.phase=state.track?'paused':'idle';state.sleepAt=0;sleepRule=null;clearTimeout(sleepTimer);emit();}
+    function checkSleep(){if(state.sleepAt&&Date.now()>=state.sleepAt){pauseForSleep();return true;}return false;}
     function setSleep(minutes) {
-        clearTimeout(sleepTimer); const delay = number(minutes, 1440) * 60000; state.sleepAt = delay ? Date.now() + delay : 0;
-        if (delay) { sleepTimer = setTimeout(() => { ++intent; unload(); state.playing = false; state.phase = state.track ? 'paused' : 'idle'; state.sleepAt = 0; emit(); }, delay); sleepTimer?.unref?.(); }
+        clearTimeout(sleepTimer);sleepRule=typeof minutes==='object'&&['track','album'].includes(minutes?.mode)&&state.track?{mode:minutes.mode,track:key(state.track),album:state.track.album}:null;
+        const delay = typeof minutes==='object'?0:number(minutes, 1440) * 60000; state.sleepAt = delay ? Date.now() + delay : 0;
+        if (delay) { sleepTimer = setTimeout(checkSleep, delay); sleepTimer?.unref?.(); }
+        state.sleepMode=sleepRule?.mode||'';
         emit();
     }
     function suspendVoice() {
-        const current = audio, loading = state.phase === 'loading', track = state.track, resume = state.playing || loading;
-        if (loading) { ++intent; unload(); }
-        const generation = intent, seekGeneration = seekRevision;
-        if (resume) { current?.pause(); state.playing = false; state.phase = 'paused'; emit(); }
+        if(!voiceLease){const current=audio,loading=['loading','buffering'].includes(state.phase),resume=state.playing||loading;if(resume)++intent;if(loading){unload();}voiceLease={count:0,current,loading,resume,track:state.track,generation:intent,seekGeneration:seekRevision,position:state.position};if(resume){current?.pause();state.playing=false;state.phase='paused';emit();}}
+        const lease=voiceLease;lease.count++;
         let used = false;
         return () => {
             if (used) return Promise.resolve(); used = true;
-            if (!resume || generation !== intent || seekGeneration !== seekRevision) return Promise.resolve();
-            return loading ? play(track) : audio === current ? playAudio(current, generation) : Promise.resolve();
+            if(--lease.count>0)return Promise.resolve();if(voiceLease===lease)voiceLease=null;
+            if (!lease.resume || lease.generation !== intent || lease.seekGeneration !== seekRevision || checkSleep()) return Promise.resolve();
+            return lease.loading ? play(lease.track,undefined,{resumeAt:lease.position}) : audio === lease.current ? playAudio(lease.current, lease.generation) : Promise.resolve();
         };
     }
-    const player = { snapshot, subscribe(fn) { if (typeof fn !== 'function') throw new Error('Music subscriber must be a function'); listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
+    const player = { snapshot,readState:()=>lastNotification||freezeMetadata(snapshot()), subscribe(fn) { if (typeof fn !== 'function') throw new Error('Music subscriber must be a function'); listeners.add(fn); fn(snapshot()); return () => listeners.delete(fn); },
         play, toggle, next: () => advance(1), previous: () => advance(-1), seek, setMode, enqueue, remove, move, clear, retry, setSkipUnavailable, setVolume, setSleep, stop, suspendVoice,
         checkpoint, checkpointEnabled, setCheckpoint,
-        resumeCheckpoint() { const last = checkpoint(); return last ? play(last.track, undefined, { reloadSource: true, resumeAt: last.position }) : Promise.resolve(); } };
+        resumeCheckpoint() { const last = checkpoint(); if(last?.mode)setMode(last.mode);return last ? play(last.track, last.queue, { reloadSource: true, resumeAt: last.position }) : Promise.resolve(); } };
+    root.document?.addEventListener?.('visibilitychange',checkSleep);
     root.addEventListener?.('pagehide', () => { if (state.playing || state.phase === 'paused') saveCheckpoint(); });
     if (typeof navigator !== 'undefined' && navigator.mediaSession?.setActionHandler) {
         for (const [name, action] of Object.entries({ play: () => { if (!state.playing) toggle(); }, pause: () => { if (state.playing) toggle(); }, previoustrack: player.previous, nexttrack: player.next, stop,
@@ -739,9 +794,13 @@
             try { navigator.mediaSession.setActionHandler(name, action); } catch (_) {}
         }
     }
-    const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, gateway, saveSettings, request,
+        const api = { normalizeTrack, normalizeLibrary, portableLibrary: library, key, settings, gateway, saveSettings, request, resolveSource,
         connect, accounts, createQR, pollQR, logout: (value, signal) => request('/accounts/' + provider(value), { method: 'DELETE', signal }),
-        search, playlists, playlist, parsePlaylistReference, previewPlaylist, importPlaylist, lyrics, clearMetadataCache, importLocal, importURL, deleteLocal, updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
+        search, playlists, playlist, parsePlaylistReference, previewPlaylist, importPlaylist, lyrics, clearMetadataCache, importLocal:(...args)=>withLocalFileLock(()=>importLocal(...args)), importURL, deleteLocal:(...args)=>withLocalFileLock(()=>deleteLocal(...args)), updateLocal, library, toggleFavorite, addPlaylist, addToPlaylist, removeFromPlaylist, renamePlaylist, reorderPlaylist, removePlaylistTracks,
+        mutateLibrary,refreshLibrary,withLocalFileLock,canLockLocalFiles,localFileReferences,hasDirectSource:track=>directSources.has(key(track)),
+        localFiles:{list:()=>localRecord('readonly',s=>s.getAll()),get:id=>localRecord('readonly',s=>s.get(id)),put:record=>localRecord('readwrite',s=>s.put(record)),remove:id=>localRecord('readwrite',s=>s.delete(id))},
+        capabilities:value=>runtime()?.capabilities(value)||{},diagnostics:()=>runtime()?.report()||'{}',sourceState:value=>runtime()?.sourceState(value)||{},
+        configurePlayback:async patch=>{const result=await mutateLibrary(l=>{l.tools||={};l.tools.playback=runtime().preferences({...l.tools.playback,...patch});});if(!playbackPrefs().persistentCheckpoint)try{localStorage.removeItem(persistentKey);}catch(_){}if(!playbackPrefs().singlePage)runtime().coordinator.release();else if(audio&&state.playing){const current=audio;try{await runtime().coordinator.acquire(()=>{if(audio===current){++intent;unload();state.playing=false;state.phase='paused';emit();}});}catch(error){if(audio===current){++intent;unload();state.playing=false;state.phase='paused';emit();}throw error;}}return result;},
         rememberSearch:q=>persist('musicLibrary',current=>({...current,searches:[text(q,200).trim(),...current.searches.filter(v=>v!==text(q,200).trim())].filter(Boolean).slice(0,12)})),clearSearches:()=>persist('musicLibrary',current=>({...current,searches:[]})),
         clearRecent: () => persist('musicLibrary', current => ({ ...current, recent: [] })),
         deletePlaylist: id => persist('musicLibrary', current => ({ ...current, playlists: current.playlists.filter(item => item.id !== id) })), player };

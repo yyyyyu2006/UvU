@@ -22,7 +22,7 @@
         if(current&&state.track.cover&&card.querySelector('.uvu-music-cover')?.dataset.liveCover!==state.track.cover){const cover=card.querySelector('.uvu-music-cover');cover.dataset.liveCover=state.track.cover;cover.src=state.track.cover;}
     }
     let scheduled=false,pendingForce=false,last=0,lastSignature='';
-    function refresh(force=false){pendingForce=pendingForce||force;if(scheduled)return;if(!force&&performance.now()-last<250)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;const force=pendingForce;pendingForce=false;last=performance.now();const state=M.player.snapshot();for(const card of document.querySelectorAll('.uvu-music-card')){const r=records.get(card);if(!r)continue;const rect=card.getBoundingClientRect();if(rect.width===0||rect.height===0||!force&&(rect.bottom<0||rect.top>innerHeight))continue;update(card,r,state);}});}
+    function refresh(force=false){pendingForce=pendingForce||force;if(scheduled)return;if(!force&&performance.now()-last<250)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;const force=pendingForce;pendingForce=false;last=performance.now();const state=M.player.readState?.()||M.player.snapshot();for(const card of document.querySelectorAll('.uvu-music-card')){const r=records.get(card);if(!r)continue;const rect=card.getBoundingClientRect();if(rect.width===0||rect.height===0||!force&&(rect.bottom<0||rect.top>innerHeight))continue;update(card,r,state);}});}
     function attach(r){
         const {card,body,track,message,start}=r;
         body.append(button('更多歌曲操作','ellipsis',()=>root.UvUMusicUI?.trackMenu(track,{},r.target)));

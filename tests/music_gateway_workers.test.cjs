@@ -105,7 +105,7 @@ test('real engine worker returns only safe categories for malformed, timeout and
 test('restricted upstream fetch reports safe HTTP and timeout categories without returning private response bodies', async () => {
     const { createRestrictedFetch } = await import(pathToFileURL(path.join(__dirname, '../services/music-gateway/engine-adapter.mjs')));
     const httpFailure = createRestrictedFetch(async () => new Response('PRIVATE-BODY', { status: 429 }), 'qq');
-    await assert.rejects(httpFailure('https://y.qq.com/a'), error => error.code === 'provider_http_error' && !error.message.includes('PRIVATE'));
+    await assert.rejects(httpFailure('https://y.qq.com/a'), error => error.code === 'provider_rate_limited' && error.status===429 && error.retryAfter===60 && !error.message.includes('PRIVATE'));
     const timeout = createRestrictedFetch(async () => { throw new DOMException('PRIVATE-URL', 'TimeoutError'); }, 'qq');
     await assert.rejects(timeout('https://y.qq.com/a'), error => error.code === 'provider_timeout' && !error.message.includes('PRIVATE'));
 });

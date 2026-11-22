@@ -157,3 +157,14 @@
 }
 @media(max-width:350px) { #uvu-music-screen .um-hero { padding-inline:16px; }.um-queue-sheet .um-queue-row { flex-wrap:wrap; }.um-queue-sheet .um-queue-title { flex-basis:calc(100% - 55px); } }
 @media(prefers-reduced-motion:reduce) { #uvu-music-screen .um-button,.uvu-music-sheet .um-button,.uvu-music-sheet .um-lyrics-line { transition:none;animation:none; } }
+
+/* Optional lyric controls keep the established centered 14px presentation. */
+.um-lyrics-sheet button.um-lyrics-line { display:block;width:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:center;white-space:pre-wrap;padding:0;cursor:pointer; }
+.um-lyrics-sheet button.um-lyrics-line:focus-visible { outline:2px solid currentColor;outline-offset:4px; }
+.um-lyrics-sheet .um-lyrics-word.um-word-current { color:var(--um-green);text-decoration:underline;text-underline-offset:3px; }
+.um-lyrics-sheet .um-lyrics-line small { font:inherit;opacity:.8;white-space:pre-wrap; }
+
+.um-lyrics-sheet .um-lyrics-tools { display:flex;flex-wrap:wrap;gap:8px; }
+.uvu-music-sheet.um-lyrics-sheet .um-lyrics-tools .um-button { background:rgb(0 0 0 / 20%);color:var(--um-text);border:0;min-height:44px;padding:8px 12px; }
+.uvu-music-sheet .um-playback-settings .um-check { display:flex;align-items:center;gap:10px;min-height:44px;margin-block:8px; }
+.uvu-music-sheet .um-playback-settings .um-check input { flex:none;width:18px;height:18px; }

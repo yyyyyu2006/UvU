@@ -42,7 +42,7 @@
             toggle.setAttribute('aria-label', s.localPlayback ? '暂停一起听' : '继续一起听');
             const src = 'assets/music/icons/' + (s.localPlayback ? 'pause' : 'play') + '.svg'; if (toggleIcon.getAttribute('src') !== src) toggleIcon.src = src;
         }
-        root.UvUMusic.player.subscribe(update); root.addEventListener('music-chat-state', update);
+        let playbackSignature='';root.UvUMusic.player.subscribe(state=>{const signature=JSON.stringify([state.track,state.playing,state.phase,state.queueVersion]);if(signature!==playbackSignature){playbackSignature=signature;update();}}); root.addEventListener('music-chat-state', update);
         root.addEventListener('music-sheet-state', update);
         new MutationObserver(update).observe(phone, { attributes: true, subtree: true, attributeFilter: ['class'] });
         new MutationObserver(update).observe(document.body, { childList: true });

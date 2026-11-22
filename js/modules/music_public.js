@@ -53,7 +53,7 @@
         try {
             const response = await fetch(key, {signal:controller.signal, credentials:'omit', referrerPolicy:'no-referrer', redirect:'error', headers:{Accept:'application/json'}});
             check(signal);
-            if (response.status === 429) { blockedUntil = Date.now() + WINDOW; writeBudget(); throw new Error('公共源请求过于频繁，请稍后重试或切换账号源'); }
+            if (response.status === 429) { const value=response.headers?.get('retry-after');const delay=root.UvUMusicRuntime?.retryDelay(value);blockedUntil = Date.now() + (delay||WINDOW);root.UvUMusicRuntime?.sourceState(PROVIDER,{cooldownUntil:blockedUntil});writeBudget(); throw new Error('公共源请求过于频繁，请稍后重试或切换账号源'); }
             if (!response.ok) throw Object.assign(new Error('公共音乐源暂时不可用（HTTP ' + response.status + '）'), { retryable: response.status >= 500 && response.status <= 599 });
             const value = await read(response); check(signal);
             if (timedOut) throw new Error('公共音乐源请求超时，请稍后重试');
@@ -75,13 +75,14 @@
         for (const row of raw.slice(0,20)) {
             if (!row || row.source !== 'netease' || !/^\d{1,24}$/.test(String(row.id || '')) || !clean(row.name)) continue;
             tracks.push({provider:PROVIDER,id:String(row.id),title:clean(row.name),artists:(Array.isArray(row.artist)?row.artist:[]).filter(v=>typeof v==='string').slice(0,12).map(v=>clean(v,120)),
-                album:clean(row.album),cover:'',duration:0,availability:'unknown',pageUrl:'https://music.163.com/song?id='+row.id,
+                album:clean(row.album),cover:'',duration:Number.isFinite(row.duration)&&row.duration>0?Math.min(86400,row.duration):0,availability:'unknown',pageUrl:'https://music.163.com/song?id='+row.id,
                 ...(/^\d{1,24}$/.test(String(row.pic_id || ''))?{artworkId:String(row.pic_id)}:{})});
         }
         return {tracks,errors:[],hasMore:raw.length>=20};
     }
     const canonical = value => clean(value).normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]+/gu, '');
-    const identity = track => JSON.stringify([clean(String(track.id),160),clean(track.title),(track.artists || []).slice(0,12).map(value=>clean(value,120)),clean(track.album)]);
+    const identity = track => JSON.stringify([clean(String(track.id),160),clean(track.title),(track.artists || []).slice(0,12).map(value=>clean(value,120)),clean(track.album),Number(track.duration)||0]);
+    const version = title => [...String(title||'').matchAll(/\b(live|remix|remaster(?:ed)?|instrumental|acoustic|cover|karaoke|demo)\b|现场|伴奏|翻唱|重制|不插电/gi)].map(m=>m[0].toLowerCase()).sort().join('|');
     const mismatch = message => Object.assign(new Error(message), {code:'public_match'});
     async function match(track, signal) {
         check(signal);
@@ -91,6 +92,8 @@
         if (!canonical(title) || !artists.some(canonical)) throw mismatch('缺少歌名或歌手，无法可靠匹配公共源，请手动搜索');
         const matchKey = identity(track), saved = matches.get(matchKey);
         if (saved && saved.until > Date.now()) return JSON.parse(JSON.stringify(saved.track));
+        const persistent=root.UvUMusic?.library().tools?.matches?.find(v=>v.identity===matchKey&&v.endpoint===root.UvUMusic.settings().endpoint);
+        if(persistent?.track){const found=await search(PROVIDER,(title+' '+artists[0]).slice(0,200),1,signal);check(signal);const confirmed=found.tracks.find(v=>v.id===persistent.track.id&&canonical(v.title)===canonical(persistent.track.title)&&version(v.title)===version(title)&&(!track.duration||!v.duration||Math.abs(track.duration-v.duration)<=5));if(confirmed)return confirmed;throw mismatch('保存的公共音源已变化或无法核验，请重新选择');}
         const candidates = await matchingCandidates(track, signal);
         if (!candidates.length) throw mismatch('公共源未匹配到相同歌名和歌手，请在公共源中手动搜索');
         if (candidates.length > 1 && candidates[0].score === candidates[1].score) throw mismatch('公共源存在多个同名版本，请从歌曲菜单选择公共音源');
@@ -108,11 +111,12 @@
         const candidates = [], seen = new Set(), originalSingers = new Set(artists.map(canonical).filter(Boolean));
         for (const song of found.tracks) {
             if (seen.has(song.id) || canonical(song.title) !== canonical(title)) continue;
+            if (version(song.title)!==version(title)||track.duration>0&&song.duration>0&&Math.abs(track.duration-song.duration)>5) continue;
             const singers = new Set(song.artists.map(canonical).filter(Boolean));
             if (singers.size !== originalSingers.size || ![...originalSingers].every(artist => singers.has(artist))) continue;
             seen.add(song.id);
             const albumMatch = canonical(track.album) && canonical(track.album) === canonical(song.album);
-            candidates.push({song,score:albumMatch ? 1 : 0});
+            candidates.push({song,score:(albumMatch ? 2 : 0)+(track.duration>0&&song.duration>0?1:0)});
         }
         candidates.sort((a,b) => b.score-a.score);
         return candidates;
@@ -124,11 +128,13 @@
         return JSON.parse(JSON.stringify(songs));
     }
     function chooseMatch(track, selected) {
-        const offered = proposals.get(identity(track)), song = offered?.songs.find(item => item.provider === selected?.provider && item.id === selected?.id);
-        if (!song || offered.until < Date.now()) throw new Error('候选已过期，请重新读取');
-        if (matches.size >= 100) matches.delete(matches.keys().next().value);
-        matches.set(identity(track), { track: JSON.parse(JSON.stringify(song)), until: Date.now() + 86400000 });
+        const identityKey=identity(track),offered=proposals.get(identityKey),song=offered?.songs.find(item=>item.provider===selected?.provider&&item.id===selected?.id);
+        if(!song||offered.until<Date.now())throw new Error('候选已过期，请重新读取');
+        const install=()=>{if(matches.size>=100)matches.delete(matches.keys().next().value);matches.set(identityKey,{track:JSON.parse(JSON.stringify(song)),until:Date.now()+86400000});};
+        if(root.UvUMusic?.mutateLibrary)return root.UvUMusic.mutateLibrary(l=>{l.tools||={};l.tools.matches=[{identity:identityKey,endpoint:root.UvUMusic.settings().endpoint,track:song,confirmedAt:Date.now()},...(l.tools.matches||[]).filter(v=>v.identity!==identityKey)].slice(0,100);}).then(result=>{install();return result;});
+        install();
     }
+    function clearMatch(track){const identityKey=identity(track);if(root.UvUMusic?.mutateLibrary)return root.UvUMusic.mutateLibrary(l=>{if(l.tools)l.tools.matches=(l.tools.matches||[]).filter(v=>v.identity!==identityKey);}).then(result=>{matches.delete(identityKey);return result;});matches.delete(identityKey);}
     async function artwork(track, signal) {
         source(track.provider);
         if (!/^\d{1,24}$/.test(track.artworkId || '')) return '';
@@ -164,5 +170,5 @@
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('公共源歌词格式无效');
         return {lyric:clean(raw.lyric,100000).replace(/\\r\\n|\\n/g,'\n'),translation:clean(raw.tlyric,100000).replace(/\\r\\n|\\n/g,'\n')};
     }
-    root.UvUPublicMusic = {search,match,stream,artwork,lyrics,candidates,chooseMatch,clearMatch:track=>matches.delete(identity(track)),clearCache:()=>{cache.clear();matches.clear();proposals.clear();}};
+    root.UvUPublicMusic = {search,match,stream,artwork,lyrics,candidates,chooseMatch,clearMatch,clearCache:()=>{cache.clear();matches.clear();proposals.clear();}};
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -85,7 +85,8 @@ export function createEngineAdapter(Meting, provider, credential = '') {
                 const raw = await rawApi(engine.provider.url(id, 128));
                 const item = raw.data?.[0];
                 if (!item?.url || Number(item.code || 200) >= 400) return { url: '', availability: 'unavailable' };
-                return { url: item.url, availability: item.freeTrialInfo ? 'preview' : 'full', ...(Number(item.expi) > 0 ? { expiresAt: Date.now() + Math.min(item.expi, 86400) * 1000 } : {}) };
+                const trial=item.freeTrialInfo;
+                return { url: item.url, availability: trial ? 'preview' : 'full', ...(Number.isFinite(item.br)&&item.br>0?{bitrate:item.br}:{}), ...(['mp3','aac','flac','alac','opus','vorbis','pcm'].includes(item.type)?{codec:item.type}:{}), ...(Number(item.expi) > 0 ? { expiresAt: Date.now() + Math.min(item.expi, 86400) * 1000 } : {}) };
             }
             // Use only the account's ordinary web vkey request. The pinned engine's
             // alternative anonymous/mobile and spoofed-IP playback fallbacks are unused.
@@ -139,7 +140,7 @@ export function createRestrictedFetch(fetchImpl, provider) {
                 if (url.protocol === 'http:') url.protocol = 'https:';
                 if (url.protocol !== 'https:') throw Error('Upstream protocol denied');
                 const response = await fetchImpl(url, { ...requestOptions, redirect: 'manual' });
-                if (response.status >= 400) { await response.body?.cancel(); throw providerError('provider_http_error'); }
+                if (response.status >= 400) { await response.body?.cancel(); if(response.status===429){const wait=response.headers.get('retry-after'),seconds=/^\d+$/.test(wait||'')?Number(wait):Math.max(0,(Date.parse(wait)-Date.now())/1000);throw Object.assign(providerError('provider_rate_limited'),{retryAfter:Number.isFinite(seconds)&&seconds>0?Math.min(3600,Math.ceil(seconds)):60});}throw providerError('provider_http_error'); }
                 if (options.redirect !== 'manual' && [301, 302, 303, 307, 308].includes(response.status)) {
                     const location = response.headers.get('location');
                     if (!location) throw Error('Invalid redirect');

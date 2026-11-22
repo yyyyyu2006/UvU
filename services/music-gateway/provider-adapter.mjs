@@ -8,6 +8,7 @@ let activeWorkers = 0;
 const MAX_WORKERS = 8;
 
 export const ENGINE_REVISION = '4d83862b063b31af3eab1d823cfc7ff584609234';
+export const SOURCE_CAPABILITIES = Object.freeze(Object.fromEntries(['netease','qq'].map(provider => [provider,Object.freeze({search:true,login:true,playlists:true,lyrics:true,qualitySelection:false,pagination:true,searchTotal:false,playlistTotal:true})])));
 export const ENGINE_DIRECTORY = fileURLToPath(new URL('./.runtime/engine/', import.meta.url));
 export async function engineInstalled() {
     try {

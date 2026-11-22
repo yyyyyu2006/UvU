@@ -10,5 +10,5 @@ try {
     const value = await adapter[operation](...args);
     parentPort.postMessage({ ok: true, value });
 } catch (error) {
-    parentPort.postMessage({ ok: false, error: { code: safeProviderFailure(error).code } });
+    const safe=safeProviderFailure(error);parentPort.postMessage({ ok: false, error: { code:safe.code,...(safe.retryAfter?{retryAfter:safe.retryAfter}:{}) } });
 }

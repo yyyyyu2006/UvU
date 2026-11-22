@@ -4,7 +4,7 @@ import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { isIP } from 'node:net';
-import { createProviderAdapter, engineInstalled, ENGINE_REVISION } from './provider-adapter.mjs';
+import { createProviderAdapter, engineInstalled, ENGINE_REVISION, SOURCE_CAPABILITIES } from './provider-adapter.mjs';
 import { safeProviderFailure } from './provider-errors.mjs';
 
 const PROVIDERS = ['netease', 'qq'];
@@ -72,6 +72,9 @@ function trackFacts(raw, provider) {
 }
 
 export async function createGateway(options = {}) {
+    if (options.instanceCount !== undefined && options.instanceCount !== 1) throw Error('Music gateway requires a single instance: account sessions are process-local');
+    const sharedLimiter = options.rateLimiter;
+    if (sharedLimiter && typeof sharedLimiter.consume !== 'function') throw Error('Invalid shared rate limiter');
     const now = options.now || Date.now;
     const origins = new Set(options.origins || ['http://localhost:3000', 'http://127.0.0.1:3000']);
     for (const origin of origins) {
@@ -184,9 +187,15 @@ export async function createGateway(options = {}) {
         for (const [ip, rate] of ipRates) if (now() - rate.at > 60000) ipRates.delete(ip);
         if (changed) await save();
     }
-    function rateLimit(rate, limit) {
+    async function rateLimit(rate, limit, scopeKey) {
+        if (sharedLimiter) {
+            let result;try { result=await sharedLimiter.consume({key:hash(scopeKey),limit,windowMs:60000,now:now()}); } catch (_) { throw error(503,'rate_store_unavailable'); }
+            if (!result || typeof result.allowed !== 'boolean') throw error(503,'rate_store_unavailable');
+            if (!result.allowed) throw Object.assign(error(429,'rate_limited'),{retryAfter:Math.max(1,Math.min(3600,Math.ceil(Number(result.retryAfterMs || 60000)/1000)))});
+            return;
+        }
         if (now() - rate.at >= 60000) { rate.at = now(); rate.count = 0; }
-        if (++rate.count > limit) throw error(429, 'rate_limited');
+        if (++rate.count > limit) throw Object.assign(error(429, 'rate_limited'),{retryAfter:Math.max(1,Math.ceil((rate.at+60000-now())/1000))});
     }
 
     async function dispatch(input) {
@@ -201,6 +210,7 @@ export async function createGateway(options = {}) {
                 headers['Access-Control-Allow-Origin'] = origin;
                 headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
                 headers['Access-Control-Allow-Methods'] = 'GET, POST, DELETE, OPTIONS';
+                headers['Access-Control-Expose-Headers'] = 'Retry-After';
             }
             if (input.method === 'OPTIONS') return { status: 204, headers, body: null };
             if (typeof input.path !== 'string' || input.path.length > 4096) throw error(414, 'request_too_large');
@@ -210,7 +220,7 @@ export async function createGateway(options = {}) {
             if (method === 'GET' && route === '/v1/health') {
                 const ready = await engineReady();
                 assertOpen();
-                return { status: 200, headers, body: { ok: ready, ready, providers: PROVIDERS, engine: { installed: ready, revision: ENGINE_REVISION }, ...(options.ephemeralDeployment === true ? { deployment: { provider: 'render', ephemeral: true } } : {}), ...(!ready ? { error: 'engine_not_installed' } : {}) } };
+                return { status: 200, headers, body: { ok: ready, ready, providers: PROVIDERS, engine: { installed: ready, revision: ENGINE_REVISION }, capabilities:SOURCE_CAPABILITIES, storage:{mode:persistPath?'encrypted-file':'memory',restartPersistence:!!persistPath&&options.ephemeralDeployment!==true}, runtime:{mode:'single-instance',sessionScope:'process',rateScope:sharedLimiter?'shared':'process'}, ...(options.ephemeralDeployment === true ? { deployment: { provider: 'render', ephemeral: true } } : {}), ...(!ready ? { error: 'engine_not_installed' } : {}) } };
             }
             await cleanup();
             assertOpen();
@@ -220,7 +230,7 @@ export async function createGateway(options = {}) {
                     if (ipRates.size > 1000) throw error(429, 'rate_limited');
                     ipRates.set(ip, { at: now(), count: 0 });
                 }
-                rateLimit(ipRates.get(ip), 10);
+                await rateLimit(ipRates.get(ip), 10, 'new-session:'+ip);
                 if (sessions.size >= maxSessions || [...sessions.values()].filter(session => !session.hasLoggedIn).length >= maxAnonymousSessions) throw error(429, 'session_limit');
                 const remember = input.body?.remember === true;
                 if (remember && !persistPath) throw error(400, 'persistence_disabled');
@@ -232,7 +242,7 @@ export async function createGateway(options = {}) {
             if (typeof authorization !== 'string' || !/^Bearer [A-Za-z0-9_-]{40,100}$/.test(authorization)) throw error(401, 'unauthorized');
             const session = sessions.get(hash(authorization.slice(7)));
             if (!session) throw error(401, 'unauthorized');
-            rateLimit(session.rate, 180);
+            await rateLimit(session.rate, 180, 'session:'+authorization.slice(7));
             if (session.inflight >= 8) throw error(429, 'request_limit');
             session.lastUsed = now(); session.inflight++; activeSession = session;
             let body;
@@ -329,6 +339,10 @@ export async function createGateway(options = {}) {
                     const safeUrl = safeProviderUrl(result.url || '', provider);
                     body = { url: safeUrl, availability: safeUrl ? (['full', 'preview'].includes(result.availability) ? result.availability : 'unknown') : 'unavailable', ...(!safeUrl ? { message: 'Platform did not return an allowed playable URL; login or playback rights may be required.' } : {}) };
                     if (safeUrl && Number.isFinite(result.expiresAt) && result.expiresAt > now()) body.expiresAt = result.expiresAt;
+                    // Only adapter facts pass through. Never guess codec or losslessness from a URL extension.
+                    if (safeUrl && Number.isFinite(result.bitrate) && result.bitrate >= 8000 && result.bitrate <= 10000000) body.bitrate=Math.round(result.bitrate);
+                    if (safeUrl && ['mp3','aac','flac','alac','opus','vorbis','pcm'].includes(result.codec)) body.codec=result.codec;
+                    if (safeUrl && body.availability==='preview' && Number.isFinite(result.previewDuration) && result.previewDuration>0 && result.previewDuration<=86400) body.previewDuration=result.previewDuration;
                 }
             } else if (method === 'GET' && /^\/v1\/playlist\/[^/]+\/[^/]+$/.test(route)) {
                 const [, , , providerValue, encodedId] = route.split('/');
@@ -341,6 +355,7 @@ export async function createGateway(options = {}) {
         } catch (e) {
             if (closed) e = error(503, 'gateway_closed');
             const status = e.status || (e instanceof URIError ? 400 : 502);
+            if (status===429 || e.code==='provider_busy' || e.code==='rate_store_unavailable') headers['Retry-After']=String(Number.isFinite(e.retryAfter)?Math.max(1,Math.ceil(e.retryAfter)):status===429?60:2);
             return { status, headers, body: { error: { code: e.code && e.status ? e.code : (status === 400 ? 'invalid_parameter' : 'provider_unavailable'), message: status === 502 ? 'Platform request failed' : 'Request could not be completed' } } };
         } finally { if (activeSession) { activeSession.inflight--; activeSession.lastUsed = now(); } }
     }

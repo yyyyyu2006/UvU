@@ -16,13 +16,17 @@ try {
         tls = { cert: await readFile(env.MUSIC_TLS_CERT), key: await readFile(env.MUSIC_TLS_KEY), minVersion: 'TLSv1.2' };
     }
     const trustedProxies = (env.MUSIC_TRUSTED_PROXIES || '').split(',').map(value => value.trim()).filter(Boolean);
-    const gateway = await createGateway({ origins, persistPath, encryptionKey, tls, trustedProxies, ephemeralDeployment: env.MUSIC_DEPLOYMENT === 'render-free' });
+    const instanceCount=Number(env.MUSIC_INSTANCES || 1);
+    if(instanceCount!==1)throw Error('MUSIC_INSTANCES must be 1: account sessions and Worker budgets are process-local');
+    let rateLimiter;
+    if(env.MUSIC_RATE_DB){const {createSqliteRateLimiter}=await import('./shared-rate-limit.mjs');rateLimiter=await createSqliteRateLimiter(env.MUSIC_RATE_DB);}
+    const gateway = await createGateway({ origins, persistPath, encryptionKey, tls, trustedProxies, rateLimiter,instanceCount, ephemeralDeployment: env.MUSIC_DEPLOYMENT === 'render-free' });
     await new Promise((resolve, reject) => { gateway.server.once('error', reject); gateway.server.listen(port, host, resolve); });
     console.log('UvU music gateway listening on ' + (tls ? 'https://' : 'http://') + host + ':' + port + '/v1');
     let stopping = false;
-    const stop = async () => { if (stopping) return; stopping = true; await gateway.close(); };
+    const stop = async () => { if (stopping) return; stopping = true; await gateway.close();rateLimiter?.close(); };
     process.once('SIGINT', stop); process.once('SIGTERM', stop);
 } catch (e) {
-    console.error(/^Invalid MUSIC_PORT|^MUSIC_VAULT_KEY|^Both MUSIC_TLS/.test(e.message) ? e.message : 'Music gateway could not start. Check origin, TLS and encrypted vault configuration.');
+    console.error(/^Invalid MUSIC_PORT|^MUSIC_VAULT_KEY|^Both MUSIC_TLS|^MUSIC_INSTANCES/.test(e.message) ? e.message : 'Music gateway could not start. Check origin, TLS and encrypted vault configuration.');
     process.exitCode = 1;
 }
