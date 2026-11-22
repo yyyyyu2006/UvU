@@ -207,6 +207,7 @@ const VectorMemoryTools = (() => {
         const old = cache.get(key);
         return old && old.index === chat.memoryVectorIndex && old.until > Date.now() ? old : null;
     }
+    function invalidateResultCache(chat) { resultCache.delete(chat); }
     function indexScope(chat, api, type) {
         type ||= (typeof db !== 'undefined' && db.groups?.includes(chat) ? 'group' : 'character');
         return JSON.stringify([type, chat.id, chat.activeArchiveId || 'default', api]);
@@ -306,5 +307,5 @@ const VectorMemoryTools = (() => {
         text.textContent = '先保存向量设置，在记忆库点击“续建索引”。暂停后可续建；“只检索已有索引”不会在回复前补建。正文预览不修改聊天。修改正文标签、分块或模型后再次续建即可。混合检索偏重精确词，重排最低分仅适用于返回分数的专用接口。Token 是本机估算，按所用模型留出余量；重叠也计入用量。独立索引先保留旧数据，完整备份会带上有效缓存；关闭后下一次建库改回原保存方式。查询整理失败会用原查询。';
         help.append(text);
     }
-    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, weightedLexical, fuseRanks, diversify, expandRange, queryEmbedding, rewrite, sourceIds, chunkSettings, chunks, topK, cachedResult, indexScope, portableExport, setupForm });
+    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, weightedLexical, fuseRanks, diversify, expandRange, queryEmbedding, rewrite, sourceIds, chunkSettings, chunks, topK, cachedResult, invalidateResultCache, indexScope, portableExport, setupForm });
 })();

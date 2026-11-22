@@ -28,16 +28,19 @@ globalThis.VectorIndexStore = (() => {
     }
     const equal = (a, b) => a?.length === b?.length && a.every((n, i) => n === b[i]);
     const valid = v => Array.isArray(v) && v.length > 0 && v.length <= 65536 && v.every(Number.isFinite) && v.some(n => n !== 0);
-    async function read(scope) {
+    async function read(scope, inspect = false) {
         const db = await open();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(['manifests', 'chunks'], 'readonly');
             const meta = tx.objectStore('manifests').get(scope);
-            const vectors = new Map();
+            const vectors = new Map(), inventory = [];
             const rows = tx.objectStore('chunks').index('scope').openCursor(scope);
             rows.onsuccess = () => {
                 const cursor = rows.result; if (!cursor) return;
-                if (valid(cursor.value.vector)) vectors.set(cursor.value.key, cursor.value.vector);
+                const row = cursor.value, usable = valid(row.vector);
+                if (usable) vectors.set(row.key, row.vector);
+                if (inspect) inventory.push({ key: row.key, valid: usable, dimension: Array.isArray(row.vector) ? row.vector.length : 0,
+                    estimatedVectorBytes: Array.isArray(row.vector) ? row.vector.length * 8 : 0 });
                 cursor.continue();
             };
             tx.onabort = tx.onerror = () => reject(tx.error || Error('独立向量索引读取失败'));
@@ -50,7 +53,8 @@ globalThis.VectorIndexStore = (() => {
                     if (chunks.length) index[entry.id] = { version: 2, chunks };
                 }
                 resolve({ index, fingerprint: meta.result?.fingerprint || '', updatedAt: meta.result?.updatedAt || 0,
-                    descriptor: meta.result?.descriptor || null, estimatedVectorBytes: meta.result?.estimatedVectorBytes ?? null });
+                    descriptor: meta.result?.descriptor || null, estimatedVectorBytes: meta.result?.estimatedVectorBytes ?? null,
+                    ...(inspect ? { inventory, entries: meta.result?.entries || [] } : {}) });
                 } catch (error) { reject(error); }
             };
         });

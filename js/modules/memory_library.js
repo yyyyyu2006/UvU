@@ -495,8 +495,9 @@ function openMemoryLibrary() {
     migration.addEventListener('toggle', () => { if (migration.open) loadMigration(); });
     const pagination = element('div', undefined, 'memory-library-toolbar'); list.after(pagination);
     overlay.querySelector('.feature-dialog-card').append(tuning, diagnostics, migration);
+    let maintenanceCaches, refreshMaintenanceCaches;
     if (typeof VectorIndexStore !== 'undefined' && typeof VectorMemoryTools !== 'undefined') {
-        const caches = element('details', undefined, 'memory-library-cache');
+        const caches = element('details', undefined, 'memory-library-cache'); maintenanceCaches = caches;
         caches.append(element('summary', '独立索引缓存'));
         const cacheList = element('div', undefined, 'memory-library-cache-list');
         const loadCaches = async () => {
@@ -531,10 +532,13 @@ function openMemoryLibrary() {
                 }
             } catch (error) { if (!closed) cacheList.textContent = error.message; }
         };
+        refreshMaintenanceCaches = loadCaches;
         caches.append(button('刷新清单', loadCaches), cacheList);
         caches.addEventListener('toggle', () => { if (caches.open) loadCaches(); });
         overlay.querySelector('.feature-dialog-card').append(caches);
     }
+    if (typeof mountVectorMemoryMaintenance === 'function') mountVectorMemoryMaintenance({ chat, diagnostics, caches: maintenanceCaches,
+        refreshCaches: refreshMaintenanceCaches, element, button, assertCurrent, jobs, isBusy: () => Boolean(indexJob) });
     const describe = journal => `剧情时间：${journal.timeline || '未指定'} · 创建：${new Date(journal.createdAt || 0).toLocaleString()} · 分类：${journal.category || '未分类'}`;
     const original = (journal, host) => {
         const details = element('details'), summary = element('summary', '对照原始聊天 / 合并来源'); details.append(summary);

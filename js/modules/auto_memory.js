@@ -944,6 +944,7 @@ async function scoreVectorMemoryChunks(query, rows, assertCurrent, signal) {
 async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}) {
     const settings = getAutoMemorySettings(chat);
     const trial = typeof options.trial === 'function' ? options.trial : null;
+    const calibration = Boolean(trial && options.calibrateThresholds && typeof sampleVectorMemoryThresholds === 'function');
     const candidate = options.candidateModel;
     const diagnostic = fields => trial || candidate ? fields : updateVectorMemoryDiagnostics(chat, fields);
     if (!settings.vectorSearchEnabled || !String(queryText || '').trim()) return '';
@@ -1109,7 +1110,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         const hit = scoredHits[i], item = hit, lexical = hit.lexical;
         if(settings.vectorHybridEnabled){const prior=rankingComparisonRows.get(item.journal.id);rankingComparisonRows.set(item.journal.id,{id:item.journal.id,vector:Math.max(prior?.vector??-1,scores[i]),lexical:Math.max(prior?.lexical??0,lexical)});}
         scoreByJournal.set(hit.journal.id, Math.max(scoreByJournal.get(hit.journal.id) ?? -Infinity, hit.score));
-        if (hit.vectorScore < settings.vectorThreshold && (!settings.vectorHybridEnabled || hit.lexical < 0.6)) continue;
+        if (!calibration && hit.vectorScore < settings.vectorThreshold && (!settings.vectorHybridEnabled || hit.lexical < 0.6)) continue;
         if (!byJournal.has(hit.journal.id)) byJournal.set(hit.journal.id, []);
         const kept = byJournal.get(hit.journal.id); kept.push(hit);
         if (kept.length > 3) { kept.sort((a, b) => b.score - a.score); kept.length = 3; }
@@ -1133,6 +1134,10 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         return { journal: { ...hits[0].journal, content }, score: Math.max(...usableHits.map(hit => hit.score)),
             vectorScore: Math.max(...usableHits.map(hit => hit.vectorScore)), lexicalScore: Math.max(...usableHits.map(hit => hit.lexical)), candidateRanges: ranges };
     }).filter(Boolean);
+    if (calibration) {
+        const report = await sampleVectorMemoryThresholds(chat, rawQuery, ranked, config, signal, assertCurrent, options.trialRerank === true);
+        assertCurrent(true); trial({ ...report, sourceSnapshot: snapshot, pendingCount }); return '';
+    }
     // Equal RRF sums must not fall back to journal insertion order: an older
     // plan can otherwise win a tie solely because it was saved first.
     if (settings.vectorHybridEnabled && settings.vectorRRFEnabled) ranked.sort((a, b) => b.score - a.score || b.vectorScore - a.vectorScore || b.lexicalScore - a.lexicalScore);
