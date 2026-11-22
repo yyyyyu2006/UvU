@@ -815,6 +815,6 @@ function setupMemoryLibrary() {
     const entry = document.querySelector('#memory-journal-screen .auto-memory-entry');
     if (!entry || document.getElementById('memory-library-open')) return;
     const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-secondary';
-    button.id = 'memory-library-open'; button.textContent = '记忆管理 / 手动合并'; button.onclick = openMemoryLibrary;
+    button.id = 'memory-library-open'; button.textContent = '管理 / 合并'; button.title = '记忆管理 / 手动合并'; button.setAttribute('aria-label', button.title); button.onclick = openMemoryLibrary;
     entry.append(button);
 }

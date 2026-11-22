@@ -27,7 +27,7 @@ test('summary sentence lookup links only literal fragments in its own source flo
 });
 test('refreshing derived memory entry never duplicates the management button',()=>{
     const {c}=fixture(),children=[],entry={append:el=>children.push(el)};
-    c.document={querySelector:()=>entry,getElementById:id=>children.find(e=>e.id===id),createElement:()=>({})};
+    c.document={querySelector:()=>entry,getElementById:id=>children.find(e=>e.id===id),createElement:()=>({setAttribute(name,value){this[name]=value;}})};
     c.setupMemoryLibrary();c.setupMemoryLibrary();assert.equal(children.length,1);
 });
 test('memory groups are kept within category and configured size', () => {

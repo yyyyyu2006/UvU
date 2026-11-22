@@ -1,7 +1,7 @@
 /* --- 记忆日记 (Memory Journal) 样式 --- */
 
-.auto-memory-entry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(44px, 1fr); align-items: stretch; gap: 7px; margin-bottom: 15px; }
-#memory-journal-screen .auto-memory-entry .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; height: 100%; margin: 0; padding: 6px 8px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; color: #444; }
+#memory-journal-screen .auto-memory-entry { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 8px; margin-bottom: 15px; }
+#memory-journal-screen .auto-memory-entry .btn { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; height: 34px; margin: 0; padding: 6px 4px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; line-height: 1.3; white-space: nowrap; border: 0; border-radius: 11px; background: #e9efef; color: #566160; }
 #auto-memory-modal { z-index: 2100; padding: 14px; box-sizing: border-box; }
 #auto-memory-modal .auto-memory-dialog { width: 100%; max-width: 560px; max-height: 88dvh; overflow-y: auto; box-sizing: border-box; padding: 20px; color: #333; background: #fff; overscroll-behavior: contain; }
 .auto-memory-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

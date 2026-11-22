@@ -43,7 +43,7 @@
     <link rel="stylesheet" href="css/modules/character_card_export.css?v=20261108-id-cover-finish">
     <link rel="stylesheet" href="css/modules/search.css">
     <link rel="stylesheet" href="css/modules/worldbook.css">
-    <link rel="stylesheet" href="css/modules/journal.css?v=20261106-feature-audit">
+    <link rel="stylesheet" href="css/modules/journal.css?v=20261122-panel-layout">
     <link rel="stylesheet" href="css/modules/chat_archives.css">
     <link rel="stylesheet" href="css/modules/steps.css">
     <link rel="stylesheet" href="css/modules/more.css">
@@ -1835,8 +1835,8 @@ node setup-server-plugin.js</code></pre>
         </header>
         <main class="content">
             <div class="auto-memory-entry">
-                <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn">自动总结设置</button>
-                <button type="button" class="btn btn-secondary" id="vector-memory-settings-btn">向量记忆设置</button>
+                <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn" title="自动总结设置" aria-label="自动总结设置">自动总结</button>
+                <button type="button" class="btn btn-secondary" id="vector-memory-settings-btn" title="向量记忆设置" aria-label="向量记忆设置">向量记忆</button>
             </div>
             <ul class="list-container" id="journal-list-container">
                 <!-- Journal cards will be rendered here -->
@@ -3183,7 +3183,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
 <script src="js/modules/story_bridge.js?v=20261114-bridge-date-v1"></script>
 <script src="js/modules/memory_fact_review.js?v=20261122-fact-review"></script>
-<script src="js/modules/memory_library.js?v=20261122-fact-review"></script>
+<script src="js/modules/memory_library.js?v=20261122-panel-layout"></script>
 <script src="js/modules/storage_html.js?v=20261116-panel-help-tabs"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/backup_integrity.js?v=20261111-review-recovery-v1"></script>
 <script src="js/modules/storage.js?v=20261122-fact-review"></script>
@@ -3228,7 +3228,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/panel_layout.js?v=20261122-summary-reading"></script>
 <link rel="stylesheet" href="css/modules/music.css?v=20261108-playlist-review-ui">
 <link rel="stylesheet" href="css/modules/music_apple.css?v=20261108-playlist-public">
-<link rel="stylesheet" href="css/modules/music_v2.css?v=20261122-music-complete-v1">
+<link rel="stylesheet" href="css/modules/music_v2.css?v=20261122-panel-layout">
 <link rel="stylesheet" href="css/modules/monochrome_panels.css?v=20261115-soft-input-focus">
 <link rel="stylesheet" href="css/modules/panel_sheets.css?v=20261122-worldbook-1900">
 <link rel="stylesheet" href="css/modules/lenso_panels.css?v=20261122-worldbook-1900">
@@ -3245,10 +3245,10 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_chat.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/music_lyrics.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/music_catalog.js?v=20261112-compact-music-v1"></script>
-<script src="js/modules/music_ui.js?v=20261122-music-complete-v1"></script>
-<script src="js/modules/music_tools_ui.js?v=20261122-music-complete-v1"></script>
+<script src="js/modules/music_ui.js?v=20261122-panel-layout"></script>
+<script src="js/modules/music_tools_ui.js?v=20261122-panel-layout"></script>
 <script src="js/modules/music_lyrics_ui.js?v=20261122-music-complete-v1"></script>
-<script src="js/modules/music_extensions_ui.js?v=20261122-music-complete-v1"></script>
+<script src="js/modules/music_extensions_ui.js?v=20261122-panel-layout"></script>
 <script src="js/modules/music_together_ui.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/desktop_pet.js?v=20261119-pet-shapes"></script>
 <script src="js/main.js?v=20261121-scene-review"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->

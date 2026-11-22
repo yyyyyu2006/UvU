@@ -19,6 +19,26 @@
 .um-settings-sheet .um-settings-pane > .um-section > .um-section-head { display:none; }
 .um-settings-sheet .um-settings-help { font-size:13px;line-height:1.7; }
 .um-settings-sheet .um-settings-help .um-tutorial { padding-top:0;border:0; }
+.um-character-options .um-sheet-body label { display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:14px 0;min-width:0;font-size:13px;line-height:1.6;overflow-wrap:anywhere; }
+.um-character-options .um-sheet-body .um-check { flex-direction:row;align-items:flex-start;gap:9px; }
+.um-character-options .um-check input { flex:0 0 16px;width:16px;height:16px;margin:3px 0 0; }
+.um-character-options .um-check span { min-width:0; }
+.um-character-options .um-sheet-body .um-character-source,.um-character-options .um-sheet-body .um-character-cooldown { flex-direction:row;align-items:center;justify-content:space-between;gap:12px; }
+.um-character-options .um-character-source select { min-width:0;flex:1;max-width:180px;min-height:36px;padding:6px 10px;border:0;border-radius:10px;background:var(--um-control);color:inherit;font:inherit; }
+.um-character-options .um-sheet-body .um-character-cooldown input { width:74px;min-height:34px;padding:6px 8px; }
+.um-character-options .um-sheet-body textarea { margin-top:0;min-height:96px; }
+.uvu-music-sheet.um-character-options .um-character-manage .um-track { flex-wrap:wrap;gap:6px;padding:10px 0; }
+.um-character-options .um-character-manage .um-track-info { flex:1 0 100%;white-space:normal;overflow-wrap:anywhere; }
+.um-character-options .um-character-manage .um-button { min-height:31px;padding:6px 10px;font-size:12px; }
+.um-character-options-footer { flex:0 0 auto;display:flex;justify-content:flex-end;padding:10px 20px max(16px,env(safe-area-inset-bottom)); }
+.um-character-options-footer .um-button { min-height:34px;border:0;background:var(--um-control);padding:6px 18px; }
+.um-extension-sheet .um-sheet-card { position:relative; }
+.um-extension-sheet .um-sheet-head .um-extension-help-button { flex:0 0 34px;width:34px;height:34px;min-height:34px;padding:0;border:0;background:transparent; }
+.um-extension-help-glyph { display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--um-control);color:var(--um-text);font-size:13px;line-height:1; }
+.um-extension-sheet .um-extension-help { position:absolute;z-index:3;top:62px;right:20px;width:min(218px,calc(100% - 40px));max-height:min(174px,calc(100% - 78px));padding:12px 14px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--um-line);border-radius:13px;background:var(--um-surface,#fff);box-shadow:0 8px 24px #00000014;font-size:12px;line-height:1.65;overflow-wrap:anywhere; }
+.um-extension-sheet .um-extension-help[hidden] { display:none; }
+.um-extension-help p { margin:0 0 10px; }
+.um-extension-help p:last-child { margin-bottom:0; }
 #uvu-music-screen .um-main { padding-bottom:calc(160px + env(safe-area-inset-bottom)); }
 #uvu-music-screen .um-hero { min-height:76px;padding:16px 20px 12px; }
 #uvu-music-screen .um-hero h1 { font-size:34px; }
