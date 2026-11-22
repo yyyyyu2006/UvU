@@ -1,12 +1,14 @@
 // 分层自动总结。生成与读取分开：原文始终保留，收藏或向量检索独立选择资料。
 const AUTO_MEMORY_DEFAULTS = Object.freeze({
     enabled: false, useTargetLength: false, summaryQualityReviewEnabled: false,
+    summarySmartBatchEnabled: false, summaryInputMaxTokens: 6000,
     keepRecent: 20, threshold: 30, batchSize: 30, targetLength: 800,
     mergeEnabled: true, mergeThreshold: 6, mergeBatchSize: 6, mergeTargetLength: 1500,
     vectorSearchEnabled: false, vectorRerankEnabled: false, vectorTopK: 3, vectorThreshold: 0.25,
     vectorIndexBudgetEnabled: false, vectorIndexMaxBatches: 2, vectorIndexTimeBudgetMs: 5000, vectorContextBudgetEnabled: false, vectorContextMaxChars: 6000,
     vectorBodyTags: '', vectorExcludeTags: '', vectorStableSources: false, vectorRetrievalOnly: false, vectorQueryCache: false,
     vectorHybridEnabled: false, vectorDeduplicateSources: false, vectorRewriteEnabled: false, vectorRerankThresholdEnabled: false,
+    vectorRRFEnabled: false, vectorWeightedLexicalEnabled: false, vectorDiversityEnabled: false, vectorNeighborExpansionEnabled: false,
     vectorRerankThreshold: 0.3, vectorChunkSize: 1200, vectorChunkOverlap: 180, vectorTokenBudgetEnabled: false, vectorContextMaxTokens: 1500,
     vectorExternalIndex: false, vectorChunkTokenBudgetEnabled: false, vectorChunkMaxTokens: 512, vectorBatchMaxTokens: 8192,
     vectorPipelineBudgetEnabled: false, vectorPipelineMaxRequests: 6, vectorPipelineTimeoutMs: 15000,
@@ -56,7 +58,7 @@ function buildPromptWithVectorMemory(chat, build, context) {
     const hasResult = result?.context === context;
     if (hasResult && !result.isCurrent()) {
         result.injectedContext = '';
-        updateVectorMemoryDiagnostics(chat, { injectedContext: '', injectedIds: [], injectionWarning: '检索后来源、存档或设置已变化，本次未引用旧结果' });
+        updateVectorMemoryDiagnostics(chat, { injectedContext: '', injectedIds: [], injectionState: '来源变化，未组装', injectionWarning: '检索后来源、存档或设置已变化，本次未引用旧结果' });
         return build();
     }
     let effectiveEntries = hasResult ? result.entries.filter(item => {
@@ -68,7 +70,7 @@ function buildPromptWithVectorMemory(chat, build, context) {
         const entries = effectiveEntries.filter(item => !fixed.has(item.journal.id));
         context = entries.length ? result.header + entries.map(result.format).join('\n\n') : '';
         result.injectedContext = context;
-        updateVectorMemoryDiagnostics(chat, { injectedContext: context, injectedIds: entries.map(item => item.journal.id),
+        updateVectorMemoryDiagnostics(chat, { injectedContext: context, injectedIds: entries.map(item => item.journal.id), injectionState: context ? '已组装至上下文，发送状态另见请求诊断' : '无新增片段',
             favoriteDeduplication: result.entries.filter(item => fixed.has(item.journal.id)).map(item => ({ id: item.journal.id, reason: '已收藏来源沿用原收藏注入，向量片段不重复注入' })) });
     }
     vectorMemoryPromptChats.set(chat, new Set(effectiveEntries.map(item => item.journal.id)));
@@ -83,7 +85,7 @@ function getAutoMemorySettings(chat) {
         targetLength: [50, 20000], mergeThreshold: [2, 100], mergeBatchSize: [2, 100], mergeTargetLength: [50, 30000],
         vectorTopK: [1, 10], vectorThreshold: [0, 1], vectorIndexMaxBatches: [0, 100], vectorIndexTimeBudgetMs: [100, 120000], vectorContextMaxChars: [200, 60000], vectorChunkSize: [200, 4000], vectorChunkOverlap: [0, 600],
         vectorRerankThreshold: [0, 1], vectorContextMaxTokens: [100, 16000], vectorChunkMaxTokens: [100, 4000], vectorBatchMaxTokens: [200, 32000],
-        vectorPipelineMaxRequests: [1, 100], vectorPipelineTimeoutMs: [100, 120000] };
+        vectorPipelineMaxRequests: [1, 100], vectorPipelineTimeoutMs: [100, 120000], summaryInputMaxTokens: [500, 64000] };
     for (const [key, [min, max]] of Object.entries(bounds)) {
         const value = Number(settings[key]);
         settings[key] = Number.isFinite(value) ? Math.max(min, Math.min(max, ['vectorThreshold', 'vectorRerankThreshold'].includes(key) ? Math.round(value * 100) / 100 : Math.floor(value))) : AUTO_MEMORY_DEFAULTS[key];
@@ -99,6 +101,8 @@ function getAutoMemorySettings(chat) {
     settings.vectorChunkOverlap = Math.min(settings.vectorChunkOverlap, Math.floor(settings.vectorChunkSize / 3));
     settings.vectorChunkTokenBudgetEnabled = settings.vectorChunkTokenBudgetEnabled === true;
     settings.vectorPipelineBudgetEnabled = settings.vectorPipelineBudgetEnabled === true;
+    settings.summarySmartBatchEnabled = settings.summarySmartBatchEnabled === true;
+    for (const key of ['vectorRRFEnabled', 'vectorWeightedLexicalEnabled', 'vectorDiversityEnabled', 'vectorNeighborExpansionEnabled']) settings[key] = settings[key] === true;
     settings.vectorBatchMaxTokens = Math.max(settings.vectorChunkMaxTokens, settings.vectorBatchMaxTokens);
     if (!['follow', 'primary', 'secondary', 'memory'].includes(settings.apiSource)) settings.apiSource = 'follow';
     return settings;
@@ -303,9 +307,38 @@ function getAutoMemoryPlan(chat, force = false) {
     const old = floors.slice(0, Math.max(0, floors.length - settings.keepRecent));
     const pending = getPendingAutoMemoryReviewIds(chat);
     const available = old.filter(message => !state.covered.has(message.id) && !pending.has(message.id));
-    const batch = force || available.length >= settings.threshold ? available.slice(0, settings.batchSize) : [];
+    const ready = force || available.length >= settings.threshold;
+    const selection = ready && settings.summarySmartBatchEnabled ? selectAutoMemoryBatch(chat, available, settings) : null;
+    const batch = selection ? selection.batch : ready ? available.slice(0, settings.batchSize) : [];
     const merge = getAutoMemoryMergeBatch(chat, settings, state);
-    return { settings, state, available, batch, merge };
+    return { settings, state, available, batch, merge, batchWarning: selection?.warning || '' };
+}
+
+function estimateAutoMemoryInput(messages) {
+    const text = messages.map(message => String(message.content || '')).join('\n');
+    return (typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.tokens(text) :
+        Array.from(text).reduce((n, char) => n + (/[^\x00-\x7f]/u.test(char) ? 1.5 : 0.4), 0)) + messages.length * 8;
+}
+function selectAutoMemoryBatch(chat, available, settings) {
+    const batch = [], type = typeof db !== 'undefined' && db.groups?.includes(chat) ? 'group' : 'private';
+    // Preserve adjacent user + assistant runs. This is a speaker boundary, not
+    // a guess about where an event or a novel scene ends.
+    const positions = new Map((chat.history || []).map((message, index) => [message.id, index]));
+    for (let i = 0; i < available.length;) {
+        const unit = [available[i++]];
+        while (i < available.length && available[i].role === 'assistant' &&
+            positions.get(available[i].id) === positions.get(unit.at(-1).id) + 1) unit.push(available[i++]);
+        const next = chat.history?.[positions.get(unit.at(-1).id) + 1];
+        if (unit.at(-1).role === 'user' && next?.role === 'assistant' && isAutoMemoryFloor(next))
+            return { batch, warning: batch.length ? '' : '问答跨入保留区或已处理区，本次等待完整来源；可调整保留楼层。' };
+        const proposed = [...batch, ...unit];
+        const tooMany = proposed.length > settings.batchSize;
+        const tooLong = !tooMany && estimateAutoMemoryInput(buildAutoMemoryPrompt(chat, type, proposed, 'summary', settings)) > settings.summaryInputMaxTokens;
+        if (tooMany || tooLong) return { batch, warning: batch.length ? '' :
+            `单条消息或连续问答超过${tooMany ? '每批条数' : '输入 Token 估算'}上限，本次未请求、未截断；请提高预算或手动划分范围。` };
+        batch.push(...unit);
+    }
+    return { batch, warning: '' };
 }
 
 function getAutoMemoryMergeBatch(chat, settings, state = getAutoMemoryState(chat)) {
@@ -600,6 +633,21 @@ function updateVectorMemoryDiagnostics(chat, fields) {
     vectorMemoryDiagnostics.set(chat, next);
     return next;
 }
+function getRedactedVectorMemoryReport(chat) {
+    const diag = getVectorMemoryDiagnostics(chat), number = value => Number.isFinite(value) ? value : null;
+    return { version: 1, queryIncluded: false, contentIncluded: false,
+        modelFingerprint: vectorMemoryApiFingerprint(resolveVectorMemoryApi()),
+        sourceSnapshotCurrent: Boolean(diag.sourceSnapshot && diag.sourceSnapshot === vectorSourceFingerprint(chat)),
+        preparedSourceKeys: (diag.injectedIds || []).map(id => autoMemoryFingerprint(String(id))),
+        rerank: { requested: diag.rerank?.requested === true, executed: diag.rerank?.executed === true, succeeded: diag.rerank?.succeeded === true },
+        selected: (diag.selected || []).map(item => ({ sourceKey: autoMemoryFingerprint(String(item.id)),
+            retrievalScore: number(item.score), cosine: number(item.vectorScore), lexical: number(item.lexicalScore), rerank: number(item.rerankScore),
+            ranges: (item.candidateRanges || []).map(range => ({ start: number(range.start), end: number(range.end) })) })),
+        excludedCounts: Object.fromEntries(['index', 'similarity', 'neighbor-budget', 'candidate-topk', 'rerank', 'rerank-threshold', 'final-topk', 'character-budget', 'token-budget']
+            .map(stage => [stage, (diag.excluded || []).filter(item => item.stage === stage).length])),
+        pendingChunks: number(diag.pendingChunks), resultCacheHit: diag.resultCacheHit === true,
+        pipelineBudget: diag.pipelineBudget ? { used: number(diag.pipelineBudget.used), maxRequests: number(diag.pipelineBudget.maxRequests), timedOut: diag.pipelineBudget.timedOut === true } : null };
+}
 function stripVectorBinary(value) {
     return String(value || '').replace(/data:[^\s<>"']*/gi, '')
         .replace(/\b[A-Za-z0-9+/]{256,}={0,2}(?![A-Za-z0-9+/])/g, '').slice(0, 120000);
@@ -659,6 +707,11 @@ function vectorMemoryApiFingerprint(config) {
     return autoMemoryFingerprint([config.provider, config.url, config.embeddingModel,
         ...(adaptation ? [config.documentPrefix || '', config.provider === 'gemini' ? config.embeddingTaskMode || 'default' : 'default'] : [])]);
 }
+function vectorMemoryIndexDescriptor(chat, config) {
+    return { model: config.embeddingModel || '', provider: config.provider || 'newapi', cleanerVersion: 'story-cleaner-2', chunkerVersion: 'sentence-offsets-2',
+        taskMode: config.provider === 'gemini' ? config.embeddingTaskMode || 'default' : 'default', documentPrefixHash: autoMemoryFingerprint(config.documentPrefix || ''),
+        chunkSettingsHash: autoMemoryFingerprint(typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.chunkSettings(chat) : {}) };
+}
 function getVectorMemorySourceStates(chat) {
     const candidates = getVectorMemoryCandidates(chat), index = chat.memoryVectorIndex || {};
     const apiFingerprint = vectorMemoryApiFingerprint(resolveVectorMemoryApi());
@@ -702,20 +755,29 @@ function getVectorMemoryCandidates(chat) {
     let current = settings.vectorDeduplicateSources ? getAutoMemoryContextHistory(chat) : [];
     if (current.length && typeof filterHistoryForAI === 'function') current = filterHistoryForAI(chat, current);
     const currentIds = new Set(current.filter(item => !item.isThinking && !item.isContextDisabled).map(item => item.id));
+    const currentText = current.map(item => getVectorMemoryMessageText(chat, item)).join('\n');
     const journals = (chat.memoryJournals || []).filter(journal => memoryJournalSourcesAllowed(chat, journal) && !journal.vectorSupersededBy &&
         (!journal.autoMemory || state.active.some(active => active.id === journal.id)))
-        .filter(journal => { const ids = tools?.sourceIds(journal, chat) || []; return !ids.length || !ids.every(id => currentIds.has(id)); })
+        .filter(journal => { const ids = tools?.sourceIds(journal, chat) || []; return journal.isFavorited || !ids.length || !ids.every(id => currentIds.has(id)) ||
+            !currentText.includes(cleanVectorStoryText(chat, journal.content).trim()); })
         .map(journal => ({ ...journal, content: cleanVectorStoryText(chat, journal.content) }));
-    const summarySources = new Set(settings.vectorDeduplicateSources ? journals.flatMap(journal => tools?.sourceIds(journal, chat) || []) : []);
+    // A source link alone does not mean a compressed summary preserved every fact.
+    // Suppress a raw message only when its actual cleaned text is present as well.
+    const summarySources = new Map();
+    if (settings.vectorDeduplicateSources) for (const journal of journals) for (const id of tools?.sourceIds(journal, chat) || []) {
+        if (!summarySources.has(id)) summarySources.set(id, []);
+        summarySources.get(id).push(journal.content);
+    }
     const eligible = (chat.history || []).map((message, index) => ({ message, floor: index + 1 }))
         .filter(({ message }) => ['user', 'assistant'].includes(message.role) && message.id &&
             !message.isThinking && !message.isHidden && !message.isWithdrawn && !message.isContextDisabled && !message.isStatusUpdate && !message.relationshipDelivery);
     const old = eligible.slice(0, Math.max(0, eligible.length - settings.keepRecent));
     const groups = new Map();
     for (const { message, floor } of old) {
-        if (currentIds.has(message.id) || summarySources.has(message.id)) continue;
+        if (currentIds.has(message.id)) continue;
         const content = getVectorMemoryMessageText(chat, message);
         if (!content) continue;
+        if (summarySources.get(message.id)?.some(text => text.includes(content))) continue;
         const bucket = settings.vectorStableSources ? message.id : Math.floor((floor - 1) / 12);
         if (!groups.has(bucket)) groups.set(bucket, []);
         const stamp = Number(message.timestamp);
@@ -724,15 +786,20 @@ function getVectorMemoryCandidates(chat) {
 
         groups.get(bucket).push({ id: message.id, hash: autoMemoryMessageHash(message), floor, timestamp: stamp || 0, content: `[${date} · ${message.role === 'user' ? '用户' : '角色'}] ${content}` });
     }
-    for (const [bucket, items] of groups) journals.push({ id: settings.vectorStableSources ? 'message:' + bucket : 'history:' + bucket,
+    const oldRows = new Map([...groups.values()].flat().map(item => [item.floor, item]));
+    for (const [bucket, own] of groups) {
+        const items = settings.vectorStableSources && settings.vectorNeighborExpansionEnabled ?
+            [oldRows.get(own[0].floor - 1), ...own, oldRows.get(own.at(-1).floor + 1)].filter(Boolean) : own;
+        journals.push({ id: settings.vectorStableSources ? 'message:' + bucket : 'history:' + bucket,
         title: settings.vectorStableSources ? '历史剧情' : `历史剧情 · 楼层 ${items[0].floor}–${items.at(-1).floor}`,
         sourceMessageIds: items.map(item => item.id), sourceHashes: items.map(item => ({ id: item.id, hash: item.hash })),
         sourceFloors: items.map(item => item.floor), content: items.map(item => item.content).join('\n'), timeline: '', createdAt: items[0].timestamp, derivedHistory: true });
+    }
     const seen = new Set();
     return journals.filter(journal => {
         if (!journal.content) return false;
         if (!settings.vectorDeduplicateSources) return true;
-        const key = autoMemoryFingerprint(journal.content.trim()); if (seen.has(key)) return false; seen.add(key); return true;
+        const key = autoMemoryFingerprint(journal.content.trim()); if (seen.has(key) && !journal.isFavorited) return false; seen.add(key); return true;
     });
 }
 
@@ -757,6 +824,10 @@ function getVectorMemoryContext(chat, queryText, signal, options = {}) {
     const previous = vectorMemoryQueues.get(chat) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
         if (chat.activeArchiveId !== archive || chat.history !== history || signal?.aborted) throw cancelled();
+        if (!options.trial && !options.candidateModel) {
+            vectorMemoryResults.delete(chat);
+            vectorMemoryDiagnostics.set(chat, { archiveId: archive, selected: [], excluded: [], injectedIds: [], injectedContext: '', injectionState: '未组装' });
+        }
         const cleaning = { key: '', entries: new Map(), chars: 0, hits: 0 }; vectorCleaningSessions.set(chat, cleaning);
         try {
             if (chat.statusPanel?.enabled && chat.statusPanel.regexPattern) {
@@ -912,7 +983,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     const cachedResult = !trial && !options.indexOnly && !options.rebuild && tools?.cachedResult(chat, resultKey);
     if (cachedResult) {
         assertCurrent(true); vectorMemoryResults.set(chat, { ...cachedResult.result, isCurrent: resultIsCurrent, injectedContext: undefined });
-        updateVectorMemoryDiagnostics(chat, { ...cachedResult.diagnostics, resultCacheHit: true }); return cachedResult.context;
+        updateVectorMemoryDiagnostics(chat, { ...cachedResult.diagnostics, injectedIds: [], injectedContext: '', injectionState: '未组装', resultCacheHit: true }); return cachedResult.context;
     }
     const external = settings.vectorExternalIndex && typeof VectorIndexStore !== 'undefined' && tools;
     if (candidate && !external) throw new Error('独立向量索引不可用');
@@ -992,12 +1063,12 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         assertCurrent(true, true);
         const committedIndex = nextIndex; // Keep only valid completed chunks, never stale sources.
         if (candidate && options.indexOnly && indexCollected && pendingCount === 0 && !signal?.aborted) {
-            await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true), indexRevision);
+            await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true), indexRevision, vectorMemoryIndexDescriptor(chat, config));
         }
         if (!candidate && !trial && indexCollected && (external || !sameMemoryVectorIndex(oldIndex, committedIndex))) {
             chat.memoryVectorIndex = committedIndex;
             try {
-                if (external) await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true, true), indexRevision);
+                if (external) await VectorIndexStore.commit(indexScope, committedIndex, snapshot, () => assertCurrent(true, true), indexRevision, vectorMemoryIndexDescriptor(chat, config));
                 else await saveData();
             }
             catch (error) {
@@ -1019,7 +1090,7 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         updateVectorMemoryDiagnostics(chat, { dimension: queryVector.length });
         recordVectorMemoryStatus(chat, `索引已保存，剩余 ${pendingCount} 块待续建`); return '';
     }
-    const hitLimit = settings.vectorTopK * (settings.vectorRerankEnabled ? 3 : 1);
+    const hitLimit = settings.vectorTopK * (settings.vectorRerankEnabled || settings.vectorDiversityEnabled ? 3 : 1);
     const byJournal = new Map(), scoreByJournal = new Map();
     const rankingComparisonRows=new Map();
     const scores = await scoreVectorMemoryChunks(queryVector, chunkHits, assertCurrent, signal);
@@ -1027,10 +1098,15 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         const more = await scoreVectorMemoryChunks(vector, chunkHits, assertCurrent, signal);
         for (let i = 0; i < scores.length; i++) scores[i] = Math.max(scores[i], more[i]);
     }
-    for (let i = 0; i < chunkHits.length; i++) {
-        const item = chunkHits[i];
-        const lexical = settings.vectorHybridEnabled && tools ? tools.lexical(rawQuery, item.journal.title + '\n' + item.journal.content.slice(item.chunk.start, item.chunk.end)) : 0;
-        const hit = { ...item, vectorScore: scores[i], lexical, score: settings.vectorHybridEnabled ? 0.4 * scores[i] + 0.6 * lexical : scores[i] };
+    const lexicalScores = settings.vectorHybridEnabled && tools && settings.vectorWeightedLexicalEnabled ?
+        await tools.weightedLexical(rawQuery, chunkHits.map(item => item.journal.title + '\n' + item.journal.content.slice(item.chunk.start, item.chunk.end)), assertCurrent) : null;
+    let scoredHits = chunkHits.map((item, i) => {
+        const lexical = settings.vectorHybridEnabled && tools ? lexicalScores?.[i] ?? tools.lexical(rawQuery, item.journal.title + '\n' + item.journal.content.slice(item.chunk.start, item.chunk.end)) : 0;
+        return { ...item, vectorScore: scores[i], lexical, score: settings.vectorHybridEnabled ? 0.4 * scores[i] + 0.6 * lexical : scores[i] };
+    });
+    if (settings.vectorHybridEnabled && settings.vectorRRFEnabled && tools) scoredHits = tools.fuseRanks(scoredHits);
+    for (let i = 0; i < scoredHits.length; i++) {
+        const hit = scoredHits[i], item = hit, lexical = hit.lexical;
         if(settings.vectorHybridEnabled){const prior=rankingComparisonRows.get(item.journal.id);rankingComparisonRows.set(item.journal.id,{id:item.journal.id,vector:Math.max(prior?.vector??-1,scores[i]),lexical:Math.max(prior?.lexical??0,lexical)});}
         scoreByJournal.set(hit.journal.id, Math.max(scoreByJournal.get(hit.journal.id) ?? -Infinity, hit.score));
         if (hit.vectorScore < settings.vectorThreshold && (!settings.vectorHybridEnabled || hit.lexical < 0.6)) continue;
@@ -1038,20 +1114,28 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         const kept = byJournal.get(hit.journal.id); kept.push(hit);
         if (kept.length > 3) { kept.sort((a, b) => b.score - a.score); kept.length = 3; }
     }
+    const incompleteNeighbors = new Set();
     let ranked = [...byJournal.values()].map(allHits => {
         // 篇数限额在聚合之后应用；单篇最多选三个片段，控制注入体积。
         const hits = allHits.sort((a, b) => b.score - a.score).slice(0, 3).sort((a, b) => a.chunk.start - b.chunk.start);
-        const ranges = [];
+        const ranges = [], usableHits = [];
         for (const hit of hits) {
+            const expanded = settings.vectorNeighborExpansionEnabled && tools ? tools.expandRange(hit.journal.content, hit.chunk) : hit.chunk;
+            if (!expanded) { incompleteNeighbors.add(hit.journal.id); continue; }
+            usableHits.push(hit);
             const last = ranges.at(-1);
-            if (last && hit.chunk.start <= last.end + 1) last.end = Math.max(last.end, hit.chunk.end);
-            else ranges.push({ start: hit.chunk.start, end: hit.chunk.end });
+            if (last && expanded.start <= last.end + 1) last.end = Math.max(last.end, expanded.end);
+            else ranges.push({ start: expanded.start, end: expanded.end });
         }
+        if (!ranges.length) return null;
         const source = hits[0].journal.content;
         const content = [...new Set(ranges.map(range => source.slice(range.start, range.end).trim()))].join('\n[…]\n');
-        return { journal: { ...hits[0].journal, content }, score: Math.max(...hits.map(hit => hit.score)),
-            vectorScore: Math.max(...hits.map(hit => hit.vectorScore)), lexicalScore: Math.max(...hits.map(hit => hit.lexical)), candidateRanges: ranges };
-    });
+        return { journal: { ...hits[0].journal, content }, score: Math.max(...usableHits.map(hit => hit.score)),
+            vectorScore: Math.max(...usableHits.map(hit => hit.vectorScore)), lexicalScore: Math.max(...usableHits.map(hit => hit.lexical)), candidateRanges: ranges };
+    }).filter(Boolean);
+    // Equal RRF sums must not fall back to journal insertion order: an older
+    // plan can otherwise win a tie solely because it was saved first.
+    if (settings.vectorHybridEnabled && settings.vectorRRFEnabled) ranked.sort((a, b) => b.score - a.score || b.vectorScore - a.vectorScore || b.lexicalScore - a.lexicalScore);
     ranked = tools ? tools.topK(ranked, hitLimit) : ranked.sort((a, b) => b.score - a.score).slice(0, hitLimit);
     const beforeRerank = ranked.map(item => item.journal.id);
     let warning = rewritten.warning || '';
@@ -1074,12 +1158,14 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
     const afterRerank = ranked.map(item => item.journal.id);
     if (needsScore && rerank.succeeded) ranked = ranked.filter(item => Number.isFinite(item.rerankScore) && item.rerankScore >= settings.vectorRerankThreshold);
     const candidateIds = new Set(beforeRerank), rerankedIds = new Set(afterRerank), thresholdIds = new Set(ranked.map(item => item.journal.id));
+    if (settings.vectorDiversityEnabled && tools) ranked = tools.diversify(ranked, chat);
     ranked = ranked.slice(0, settings.vectorTopK);
     const selectedIds = new Set(ranked.map(item => item.journal.id));
     const excluded = candidates.flatMap(item => {
         if (selectedIds.has(item.id)) return [];
         const [stage, reason] = !scoreByJournal.has(item.id) ? ['index', '尚无有效索引，等待续建'] :
             !byJournal.has(item.id) ? ['similarity', '未通过向量或关键词阈值'] :
+            incompleteNeighbors.has(item.id) && !candidateIds.has(item.id) ? ['neighbor-budget', '相邻句段过长，未截断引用；可调整分块或关闭相邻扩展后人工核对'] :
             !candidateIds.has(item.id) ? ['candidate-topk', '超过候选 TopK 限额'] :
             !rerankedIds.has(item.id) ? ['rerank', '重排未返回此候选'] :
             !thresholdIds.has(item.id) ? ['rerank-threshold', '重排分数缺失或低于阈值'] : ['final-topk', '超过最终 TopK 限额'];
@@ -1089,6 +1175,9 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
         let remaining = settings.vectorContextMaxChars;
         ranked = ranked.flatMap(item => {
             if (remaining <= 0) { excluded.push({ id: item.journal.id, stage: 'character-budget', reason: '上下文字数预算' }); return []; }
+            if (settings.vectorNeighborExpansionEnabled && item.journal.content.length > remaining) {
+                excluded.push({ id: item.journal.id, stage: 'character-budget', reason: '预算不足，跳过整段相邻资料，避免丢失后续限定' }); return [];
+            }
             const content = tools ? tools.sentenceBudget(item.journal.content, remaining) : item.journal.content.slice(0, remaining); remaining -= content.length;
             if (content.length < item.journal.content.length) excluded.push({ id: item.journal.id, stage: 'character-budget', reason: '按上下文字数预算截断' });
             return [{ ...item, journal: { ...item.journal, content } }];
@@ -1102,14 +1191,17 @@ async function retrieveVectorMemoryContext(chat, queryText, signal, options = {}
             const prefix = header + selected.join('\n\n') + (selected.length ? '\n\n' : '') + format({ ...item, journal: { ...item.journal, content: '' } }, selected.length);
             let content = tools.tokenBudget(item.journal.content, Math.max(0, settings.vectorContextMaxTokens - tools.tokens(prefix)));
             while (content && tools.tokens(prefix + content) > settings.vectorContextMaxTokens) content = tools.sentenceBudget(content, content.length - 1);
+            if (settings.vectorNeighborExpansionEnabled && content.length < item.journal.content.length) {
+                excluded.push({ id: item.journal.id, stage: 'token-budget', reason: '预算不足，跳过整段相邻资料，避免丢失后续限定' }); return [];
+            }
             if (!content) { excluded.push({ id: item.journal.id, stage: 'token-budget', reason: 'Token 预算（含标题与说明）' }); return []; }
             if (content.length < item.journal.content.length) excluded.push({ id: item.journal.id, stage: 'token-budget', reason: '按 Token 预算截断（含标题与说明）' });
             const result = { ...item, journal: { ...item.journal, content } }; selected.push(format(result, selected.length)); return [result];
         });
     }
-    const trialReport = diagnostic({ originalQuery: rawQuery, queries: rewritten.queries, rerank, beforeRerank, afterRerank, scores: [...scoreByJournal].map(([id, score]) => ({ id, score })), selected: ranked.map(item => ({ id: item.journal.id, title: item.journal.title, score: item.score, vectorScore: item.vectorScore, lexicalScore: item.lexicalScore, rerankScore: item.rerankScore, candidateRanges: item.candidateRanges,
+    const trialReport = diagnostic({ sourceSnapshot: snapshot, originalQuery: rawQuery, queries: rewritten.queries, rerank, beforeRerank, afterRerank, scores: [...scoreByJournal].map(([id, score]) => ({ id, score })), selected: ranked.map(item => ({ id: item.journal.id, title: item.journal.title, score: item.score, vectorScore: item.vectorScore, lexicalScore: item.lexicalScore, rerankScore: item.rerankScore, candidateRanges: item.candidateRanges,
         timeline: item.journal.timeline || '', createdAt: item.journal.createdAt, content: item.journal.content })), excluded,
-        ranking: rerank.succeeded ? '重排' : settings.vectorHybridEnabled ? '关键词与向量融合' : '余弦相似度', warning, resultCacheHit: false,
+        ranking: rerank.succeeded ? '重排' : settings.vectorHybridEnabled ? settings.vectorRRFEnabled ? 'RRF名次融合' : '关键词与向量融合' : '余弦相似度', warning, resultCacheHit: false,
         rankingComparison:settings.vectorHybridEnabled&&typeof compareCharacterMemoryRanking==='function'?compareCharacterMemoryRanking([...rankingComparisonRows.values()]):null });
     if (trial) { assertCurrent(true); trial({ ...trialReport, pendingCount }); return ''; }
     recordVectorMemoryStatus(chat, warning || `已索引 ${Object.keys(nextIndex).length} 篇，命中 ${ranked.length} 篇相关记忆${pendingCount ? `；剩余 ${pendingCount} 个分块待续建，本轮使用已有有效记忆` : ''}`, Boolean(warning));
@@ -1180,6 +1272,8 @@ async function requestAutoMemory(chat, type, sources, kind, settings, control) {
         }
     }
     const messages = buildAutoMemoryPrompt(chat, type, sources, kind, settings);
+    if (kind === 'summary' && settings.summarySmartBatchEnabled && estimateAutoMemoryInput(messages) > settings.summaryInputMaxTokens)
+        throw new Error('本批完整提示超过总结输入 Token 估算上限，未发送请求、未截断原文；请缩小范围或提高预算。');
     const request = buildChatApiRequest(config, messages, { temperature: 0.7 });
     const controller = new AbortController();
     if (control) {
@@ -1351,6 +1445,7 @@ async function runAutoMemory(chatId, type, { force = false, range = null, review
                 if (!stillCurrent()) throw new Error('存档或设置已改变，剩余整理已停止。');
                 const plan = getAutoMemoryPlan(chat, force);
                 const sources = step.sources || (kind === 'summary' ? plan.batch : plan.merge);
+                if (!step.sources && kind === 'summary' && !sources.length && plan.batchWarning) throw new Error(plan.batchWarning);
                 if (!sources.length) continue;
                 if (step.sources) {
                     const current = new Map(chat.history.map(message => [message.id, message]));
@@ -1467,7 +1562,7 @@ function renderAutoMemoryStatus() {
         `\n保留最近 ${stats.retained} 条 · 可整理旧楼层 ${stats.available} 条 · 生效记忆 ${plan.state.active.length} 篇` +
         `\n${stats.next ? `下一条未覆盖：聊天记录第 ${stats.next.floor} 楼` : '当前没有未覆盖的有效楼层'}` +
         (stats.exclusions.length ? `\n排除原因：${Object.entries(stats.exclusions.reduce((counts, item) => { counts[item.reason] = (counts[item.reason] || 0) + 1; return counts; }, {})).map(([reason, count]) => `${reason} ${count} 条`).join('；')}` : '') +
-        (status ? `\n${status.text}` : '');
+        (plan.batchWarning ? `\n${plan.batchWarning}` : '') + (status ? `\n${status.text}` : '');
     element.classList.toggle('memory-error', Boolean(status?.error));
     const busy = autoMemoryJobs.has(autoMemoryKey(chat, currentChatType));
     const run = document.getElementById('auto-memory-run');

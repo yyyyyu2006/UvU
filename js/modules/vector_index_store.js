@@ -49,22 +49,30 @@ globalThis.VectorIndexStore = (() => {
                     const chunks = entry.chunks.flatMap(chunk => vectors.has(chunk.key) ? [{ ...chunk, vector: vectors.get(chunk.key) }] : []);
                     if (chunks.length) index[entry.id] = { version: 2, chunks };
                 }
-                resolve({ index, fingerprint: meta.result?.fingerprint || '', updatedAt: meta.result?.updatedAt || 0 });
+                resolve({ index, fingerprint: meta.result?.fingerprint || '', updatedAt: meta.result?.updatedAt || 0,
+                    descriptor: meta.result?.descriptor || null, estimatedVectorBytes: meta.result?.estimatedVectorBytes ?? null });
                 } catch (error) { reject(error); }
             };
         });
     }
-    async function commit(scope, index, fingerprint, guard = () => {}, expectedUpdatedAt) {
+    async function commit(scope, index, fingerprint, guard = () => {}, expectedUpdatedAt, descriptor) {
         guard();
         const wanted = new Map(), entries = [];
+        let dimension = 0;
         for (const [id, entry] of Object.entries(index)) {
             if (entry?.version !== 2 || !Array.isArray(entry.chunks)) throw Error('独立向量 index 结构无效');
             const chunks = entry.chunks.map(chunk => {
                 if (!valid(chunk.vector) || typeof chunk.key !== 'string' || !Number.isInteger(chunk.start) || chunk.start < 0 || !Number.isInteger(chunk.end) || chunk.end < chunk.start) throw Error('独立向量 index 分块无效');
+                if (dimension && dimension !== chunk.vector.length) throw Error('同一索引的向量维度不一致，本次未覆盖旧索引');
+                dimension = chunk.vector.length;
                 wanted.set(chunk.key, chunk.vector); return { key: chunk.key, start: chunk.start, end: chunk.end };
             });
             entries.push({ id, chunks });
         }
+        const estimatedVectorBytes = [...wanted.values()].reduce((bytes, vector) => bytes + vector.length * 8, 0);
+        const safeDescriptor = descriptor ? Object.fromEntries(['model', 'provider', 'cleanerVersion', 'chunkerVersion', 'taskMode', 'documentPrefixHash', 'chunkSettingsHash']
+            .map(key => [key, String(descriptor[key] || '').slice(0, 200)])) : null;
+        if (safeDescriptor) { safeDescriptor.version = 1; safeDescriptor.dimension = dimension; }
         const db = await open(); guard();
         return new Promise((resolve, reject) => {
             const tx = db.transaction(['manifests', 'chunks'], 'readwrite'), chunks = tx.objectStore('chunks');
@@ -86,7 +94,9 @@ globalThis.VectorIndexStore = (() => {
                     for (const [key, vector] of wanted) {
                         chunks.put({ id: [scope, key], scope, key, vector }); written++;
                     }
-                    tx.objectStore('manifests').put({ id: scope, entries, fingerprint, updatedAt: Math.max(Date.now(), (previousMeta.result?.updatedAt || 0) + 1) });
+                    const manifestDescriptor = safeDescriptor || (previousMeta.result?.descriptor ? { ...previousMeta.result.descriptor, dimension } : null);
+                    tx.objectStore('manifests').put({ id: scope, entries, fingerprint, descriptor: manifestDescriptor,
+                        estimatedVectorBytes, updatedAt: Math.max(Date.now(), (previousMeta.result?.updatedAt || 0) + 1) });
                 } catch (error) { thrown = error; tx.abort(); }
             };
         });
@@ -100,7 +110,8 @@ globalThis.VectorIndexStore = (() => {
                 const cursor = request.result; if (!cursor) return;
                 const meta = cursor.value, entries = Array.isArray(meta.entries) ? meta.entries : [];
                 rows.push({ id: meta.id, sourceCount: entries.length,
-                    chunkCount: entries.reduce((count, entry) => count + (Array.isArray(entry?.chunks) ? entry.chunks.length : 0), 0), updatedAt: meta.updatedAt || 0 });
+                    chunkCount: entries.reduce((count, entry) => count + (Array.isArray(entry?.chunks) ? entry.chunks.length : 0), 0), updatedAt: meta.updatedAt || 0,
+                    descriptor: meta.descriptor || null, estimatedVectorBytes: meta.estimatedVectorBytes ?? null, fingerprint: meta.fingerprint || '' });
                 cursor.continue();
             };
             tx.oncomplete = () => resolve(rows);

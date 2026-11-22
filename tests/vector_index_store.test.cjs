@@ -10,6 +10,16 @@ function fixture(indexedDB = new IDBFactory()) {
     return c;
 }
 const index = (value = 1) => ({ source: { version: 2, chunks: [{ key: 'hash', start: 0, end: 10, vector: [value, 0] }] } });
+test('manifest records processing versions and estimated vector bytes without copying configuration secrets', async () => {
+    const store = fixture().VectorIndexStore;
+    await store.commit('scope', index(), 'sources', undefined, 0, { model: 'fixed', cleanerVersion: '2', chunkerVersion: '2', taskMode: 'retrieval', key: 'PRIVATE', url: 'PRIVATE' });
+    const saved = await store.read('scope'), row = (await store.listScopes())[0];
+    assert.equal(saved.descriptor.model, 'fixed'); assert.equal(saved.descriptor.dimension, 2);
+    assert.equal(row.estimatedVectorBytes, 16); assert.equal(JSON.stringify(row).includes('PRIVATE'), false);
+    const mixed = index(); mixed.source.chunks.push({ key: 'mixed', start: 10, end: 20, vector: [1, 0, 0] });
+    await assert.rejects(store.commit('scope', mixed, 'bad'), /维度/);
+    assert.equal((await store.read('scope')).fingerprint, 'sources');
+});
 
 test('stale builders in separate pages cannot replace a newer committed scope, including first creation', async () => {
     const factory = new IDBFactory(), first = fixture(factory).VectorIndexStore, second = fixture(factory).VectorIndexStore;

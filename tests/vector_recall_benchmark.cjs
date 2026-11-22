@@ -4,7 +4,8 @@ const { performance } = require('node:perf_hooks'), cases = require('./fixtures/
 async function run(mode, query) {
     const chat = { id: 'fixture', activeArchiveId: 'a', history: [], memoryJournals: cases.documents.map(({ vector, ...journal }) => journal),
         autoMemorySettings: { vectorSearchEnabled: true, vectorTopK: 1, vectorThreshold: .8, keepRecent: 0,
-            vectorHybridEnabled: mode !== 'cosine', vectorRerankEnabled: mode === 'hybrid+rerank', vectorRewriteEnabled: mode === 'hybrid+rewrite' } };
+            vectorHybridEnabled: mode !== 'cosine', vectorRerankEnabled: mode === 'hybrid+rerank', vectorRewriteEnabled: mode === 'hybrid+rewrite',
+            vectorRRFEnabled: mode.includes('rrf'), vectorWeightedLexicalEnabled: mode.includes('weighted') } };
     let requests = 0;
     const c = vm.createContext({ db: { characters: [chat], groups: [], vectorMemoryApiSettings: { provider: 'newapi', url: 'https://fixture.invalid', key: 'fixture', embeddingModel: 'fixed', batchSize: 16,
         ...(mode === 'hybrid+rerank' ? { rerankModel: 'fixture-rerank', rerankMode: 'native' } : {}), rewriteUrl: 'https://fixture.invalid', rewriteKey: 'fixture', rewriteModel: 'fixture-rewrite' } },
@@ -21,8 +22,11 @@ async function run(mode, query) {
     const found = Array.from(diagnostics.selected || [], item => item.id), expected = new Set(query.expected);
     assert.equal(found.some(id => expected.has(id)), expected.size > 0, query.kind + '/' + mode);
     assert.ok(found.every(id => expected.has(id)), 'false reference ' + query.kind + '/' + mode);
+    const relevant = found.filter(id => expected.has(id)).length, first = found.findIndex(id => expected.has(id));
     return { case: query.kind, mode, hit: expected.size ? found.some(id => expected.has(id)) : found.length === 0,
+        precision: found.length ? relevant / found.length : null, recall: expected.size ? relevant / expected.size : null,
+        reciprocalRank: first >= 0 ? 1 / (first + 1) : expected.size ? 0 : null, correctAbstention: !expected.size && !found.length,
         falseReferences: found.filter(id => !expected.has(id)).length, estimatedTokens: vm.runInContext('VectorMemoryTools', c).tokens(text), requests,
         milliseconds: +(performance.now() - started).toFixed(2) };
 }
-(async () => { for (const mode of ['cosine', 'hybrid', 'hybrid+rerank', 'hybrid+rewrite']) for (const query of cases.queries) console.log(JSON.stringify(await run(mode, query))); })().catch(error => { console.error(error); process.exitCode = 1; });
+(async () => { for (const mode of ['cosine', 'hybrid', 'hybrid+rerank', 'hybrid+rewrite', 'hybrid+weighted', 'hybrid+rrf', 'hybrid+rrf+weighted']) for (const query of cases.queries) console.log(JSON.stringify(await run(mode, query))); })().catch(error => { console.error(error); process.exitCode = 1; });

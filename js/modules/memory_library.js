@@ -4,6 +4,18 @@ function memoryLibrarySnapshot(chat) {
     return () => chat.activeArchiveId === archive && chat.history === history && chat.memoryJournals === journals &&
         [...(db.characters || []), ...(db.groups || [])].includes(chat);
 }
+function memoryVectorSourcePreview(chat, hit, snapshot) {
+    if (!snapshot || snapshot !== vectorSourceFingerprint(chat)) return '来源或设置已变化，请重新检索；此处不展示旧正文。';
+    const source = getVectorMemoryCandidates(chat).find(item => item.id === hit.id);
+    if (!source) return '来源已不可用，原文未恢复。';
+    const excerpts = (hit.candidateRanges || []).filter(range => Number.isInteger(range.start) && Number.isInteger(range.end) && range.start >= 0 && range.end <= source.content.length && range.end > range.start)
+        .map(range => `清洗后正文 ${range.start}–${range.end}：\n${source.content.slice(range.start, range.end)}`);
+    const ids = typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.sourceIds(source, chat) : [];
+    const originals = (chat.history || []).flatMap((message, index) => ids.includes(message.id) &&
+        !message.isWithdrawn && !message.isHidden && !message.isContextDisabled && !message.isThinking ?
+        [`第 ${index + 1} 楼 · ${message.role}\n${getVectorMemoryMessageText(chat, message)}`] : []);
+    return [...excerpts, ...originals].join('\n\n') || '没有可定位的来源片段。';
+}
 function memorySummaryDependencies(chat, start, end) {
     const ids = new Set((chat.history || []).slice(start - 1, end).map(message => message.id));
     const journals = (chat.memoryJournals || []).filter(journal => journal.autoMemory);
@@ -297,6 +309,15 @@ function openMemoryLibrary() {
     }));
     const diagnostics = element('details', undefined, 'memory-library-diagnostics'); diagnostics.append(element('summary', '本轮检索诊断 / 来源索引状态'));
     const diagnosticText = element('pre'); diagnostics.append(diagnosticText);
+    const diagnosticLinks = element('div'); diagnostics.append(diagnosticLinks);
+    const reportFallback = element('textarea'); reportFallback.readOnly = true; reportFallback.hidden = true; reportFallback.setAttribute('aria-label', '脱敏检索报告');
+    diagnostics.append(button('复制脱敏报告', async () => {
+        try {
+            assertCurrent(); const text = JSON.stringify(getRedactedVectorMemoryReport(chat), null, 2);
+            try { await navigator.clipboard.writeText(text); status.textContent = '已复制，不含查询、正文、人名、接口地址或密钥；来源编号已转为校验标记。'; }
+            catch (_) { reportFallback.value = text; reportFallback.hidden = false; reportFallback.focus(); reportFallback.select(); status.textContent = '浏览器不允许自动复制，请复制已选中的脱敏报告。'; }
+        } catch (error) { status.textContent = error.message; }
+    }), reportFallback);
     const trial = element('details'), trialInput = element('input'), trialOutput = element('pre');
     trialInput.type = 'search'; trialInput.maxLength = 500; trialInput.setAttribute('aria-label', '试查记忆');
     trialOutput.setAttribute('aria-live', 'polite');
@@ -489,7 +510,10 @@ function openMemoryLibrary() {
                 for (const row of rows) {
                     const archive = chat.archives?.find(item => item.id === row.archiveId);
                     const item = element('div', undefined, 'memory-library-cache-row');
-                    const label = `${archive?.name || (row.archiveId === (chat.activeArchiveId || 'default') ? '当前存档' : '旧存档')} · ${row.sourceCount} 个来源 / ${row.chunkCount} 块`;
+                    const label = `${archive?.name || (row.archiveId === (chat.activeArchiveId || 'default') ? '当前存档' : '旧存档')} · ${row.sourceCount} 个来源 / ${row.chunkCount} 块` +
+                        (row.descriptor ? ` · ${row.descriptor.model} / ${row.descriptor.dimension}维 · 清洗${row.descriptor.cleanerVersion} / 分块${row.descriptor.chunkerVersion}` : ' · 旧缓存，处理版本未记录') +
+                        (row.estimatedVectorBytes !== null && row.estimatedVectorBytes !== undefined ? ` · 向量数据估算 ${(row.estimatedVectorBytes / 1024).toFixed(1)} KiB（非实际磁盘占用）` : '') +
+                        (row.current && row.fingerprint !== vectorSourceFingerprint(chat) ? ' · 来源或设置已变化，需续建校验' : row.current ? ' · 当前模型缓存' : ' · 其他模型或存档缓存，可保留回退');
                     item.append(element('span', label));
                     const remove = button(row.current ? '使用中' : '清理', async event => {
                         if (indexJob) return showToast('请等待建库完成后清理');
@@ -602,6 +626,14 @@ function openMemoryLibrary() {
         pagination.replaceChildren(button('上一页', () => { page--; refresh(); }), element('span', `第 ${page + 1}/${result.pages} 页 · 匹配 ${result.total} 篇`), button('下一页', () => { page++; refresh(); }));
         pagination.firstChild.disabled = page === 0; pagination.lastChild.disabled = page + 1 >= result.pages;
         const diag = getVectorMemoryDiagnostics(chat);
+        diagnosticLinks.replaceChildren();
+        for (const hit of diag.selected || []) {
+            const details = element('details'), excerpt = element('pre'); details.append(element('summary', '查看来源 · ' + (hit.title || '记忆')), excerpt);
+            details.addEventListener('toggle', () => { if (details.open) {
+                try { assertCurrent(); excerpt.textContent = memoryVectorSourcePreview(chat, hit, diag.sourceSnapshot); }
+                catch (error) { excerpt.textContent = error.message; }
+            } }); diagnosticLinks.append(details);
+        }
         const indexPreview = getVectorMemoryIndexPreview(chat, sourceStates);
         diagnosticText.textContent = [diag.cleaningWarning || '', diag.query ? `查询：${diag.query}` : '尚无本轮查询',
             diag.rankingComparison?`排序对照（不改变本轮结果）：加权 ${(diag.rankingComparison.weighted||[]).join(' → ')}；RRF ${(diag.rankingComparison.rrf||[]).join(' → ')}`:'',
@@ -611,6 +643,7 @@ function openMemoryLibrary() {
             `重排前：${(diag.beforeRerank || []).join(' → ') || '无'}；重排后：${(diag.afterRerank || []).join(' → ') || '无'}`,
             ...sourceStates.map(item => `${item.title}：${stateLabels[item.status]}（${item.chunks}/${item.totalChunks} 块）`),
             diag.rerank ? `重排：${diag.rerank.succeeded ? '已完成' : diag.rerank.executed ? '请求失败，使用原排序' : diag.rerank.skipped}；分数不是事实正确率。` : '',
+            `上下文：${diag.injectionState || '未组装'}；${(diag.injectedIds || []).length} 个新增来源。检索命中不代表已发送请求。`,
             ...(diag.selected || []).map(item => `命中 ${item.title} · 检索分 ${item.score.toFixed(3)}${Number.isFinite(item.vectorScore) ? ` · 最高片段余弦 ${item.vectorScore.toFixed(3)}` : ''}${Number.isFinite(item.lexicalScore) ? ` · 最高片段词匹配 ${item.lexicalScore.toFixed(3)}` : ''}${Number.isFinite(item.rerankScore) ? ` · 重排分 ${item.rerankScore.toFixed(3)}` : ''} · ${diag.ranking} · ${item.timeline || '时间未指定'}\n${item.content}`),
             ...(diag.favoriteDeduplication || []).map(item => `${item.id}：${item.reason}`),
             ...(diag.excluded || []).map(item => `未完整注入 ${item.id}：${item.reason}`)

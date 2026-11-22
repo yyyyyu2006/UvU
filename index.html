@@ -3106,6 +3106,8 @@ node setup-server-plugin.js</code></pre>
                 <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
                 <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
                 <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
+                <label class="auto-memory-check"><input name="summarySmartBatchEnabled" type="checkbox"> 按完整问答与输入预算分批</label>
+                <label>每批输入 Token 估算上限<input name="summaryInputMaxTokens" type="number" min="500" max="64000" required></label>
                 <label class="auto-memory-check"><input name="useTargetLength" type="checkbox"> 为小总结和大总结追加目标字数约束</label>
                 <label>总结目标字数<input name="targetLength" type="number" min="50" max="20000" required></label>
             </div><p class="auto-memory-help">一条有效用户或角色消息算一楼；思考、撤回和手动禁用消息不计。先保留最近楼层，剩余未总结旧楼层达到阈值才触发；按时间从旧到新整理。</p></fieldset>
@@ -3168,9 +3170,9 @@ node setup-server-plugin.js</code></pre>
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261122-summary-reading"></script>   <!-- 回忆日记生成 -->
-<script src="js/modules/vector_index_store.js?v=20261111-persistence-vector-v1"></script>
-<script src="js/modules/vector_memory_tools.js?v=20261122-summary-reading"></script>
-<script src="js/modules/auto_memory.js?v=20261122-summary-reading"></script>
+<script src="js/modules/vector_index_store.js?v=20261122-memory-quality"></script>
+<script src="js/modules/vector_memory_tools.js?v=20261122-memory-quality"></script>
+<script src="js/modules/auto_memory.js?v=20261122-memory-quality"></script>
 <script src="js/modules/character_memos.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/character_memos_tools_ui.js?v=20261112-memory20-v1"></script>
 <script src="js/modules/character_memos_ui.js?v=20261114-memo-legacy-navigation"></script>
@@ -3179,7 +3181,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/bridge_summary.js?v=20261114-summary-cancel-v2"></script>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
 <script src="js/modules/story_bridge.js?v=20261114-bridge-date-v1"></script>
-<script src="js/modules/memory_library.js?v=20261122-summary-reading"></script>
+<script src="js/modules/memory_library.js?v=20261122-memory-quality"></script>
 <script src="js/modules/storage_html.js?v=20261116-panel-help-tabs"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/backup_integrity.js?v=20261111-review-recovery-v1"></script>
 <script src="js/modules/storage.js?v=20261121-scene"></script>

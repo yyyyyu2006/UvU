@@ -60,6 +60,55 @@ const VectorMemoryTools = (() => {
         const q = terms(query); if (!q.length) return 0;
         const value = text.toLowerCase(); return q.reduce((sum, word) => sum + (value.includes(word) ? 1 : 0), 0) / q.length;
     }
+    async function weightedLexical(query, texts, guard = () => {}) {
+        const q = terms(query), counts = [], frequencies = q.map(() => 0);
+        let deadline = Date.now() + 40;
+        for (const source of texts) {
+            guard(); const text = String(source).toLowerCase();
+            counts.push(q.map((word, index) => {
+                let count = 0, at = 0;
+                while ((at = text.indexOf(word, at)) !== -1) { count++; at += word.length; }
+                if (count) frequencies[index]++; return count;
+            }));
+            if (Date.now() >= deadline) {
+                if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') await scheduler.yield();
+                else await new Promise(resolve => setTimeout(resolve, 0));
+                guard(); deadline = Date.now() + 40;
+            }
+        }
+        // BM25-style frequency/length weighting over the existing Chinese grams.
+        // Normalize by query IDF, not by the best document: no-match stays zero.
+        const weights = frequencies.map(df => Math.log(1 + (texts.length - df + 0.5) / (df + 0.5)));
+        const total = weights.reduce((sum, n) => sum + n, 0), average = texts.reduce((n, text) => n + text.length, 0) / (texts.length || 1);
+        return counts.map((row, i) => total ? Math.min(1, row.reduce((n, tf, j) => n + weights[j] *
+            (tf ? tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * texts[i].length / (average || 1))) : 0), 0) / total) : 0);
+    }
+    function fuseRanks(hits) {
+        const scores = new Map(hits.map(hit => [hit, 0]));
+        for (const key of ['vectorScore', 'lexical']) {
+            const route = hits.filter(hit => hit[key] > 0).sort((a, b) => b[key] - a[key]);
+            route.forEach((hit, index) => scores.set(hit, scores.get(hit) + 1 / (61 + index)));
+        }
+        return hits.map(hit => ({ ...hit, score: scores.get(hit) }));
+    }
+    function diversify(items, chat) {
+        const chosen = [], deferred = [], seen = new Set();
+        for (const item of items) {
+            const ids = sourceIds(item.journal, chat).sort();
+            const key = ids.length ? JSON.stringify(ids) : item.journal.id;
+            (seen.has(key) ? deferred : chosen).push(item); seen.add(key);
+        }
+        return chosen.concat(deferred);
+    }
+    function expandRange(text, range, extra = 320) {
+        const boundaries = [...text.matchAll(/[。！？.!?\n]/gu)].map(match => match.index + 1);
+        const before = boundaries.filter(end => end <= range.start);
+        const currentStart = before.at(-1) ?? 0, previous = before.at(-2) ?? 0;
+        const following = boundaries.filter(end => end >= range.end);
+        const end = following[1] ?? following[0] ?? text.length;
+        if (range.start - currentStart > extra || end - range.end > extra) return null;
+        return { start: range.start - previous <= extra ? previous : currentStart, end };
+    }
     async function queryEmbedding(chat, query, config, create) {
         if (!getAutoMemorySettings(chat).vectorQueryCache) return create();
         const key = autoMemoryFingerprint([vectorMemoryApiFingerprint(config), config.queryPrefix, config.embeddingTaskMode, config.key, query]);
@@ -102,6 +151,7 @@ const VectorMemoryTools = (() => {
         const ids = [...(Array.isArray(journal.sourceMessageIds) ? journal.sourceMessageIds : []),
             ...(Array.isArray(journal.autoMemory?.sources) ? journal.autoMemory.sources : []).map(x => x?.id)];
         for (const child of Array.isArray(journal.autoMemory?.children) ? journal.autoMemory.children : []) ids.push(...sourceIds(chat?.memoryJournals?.find(x => x.id === child?.id), chat, seen));
+        for (const source of Array.isArray(journal.manualMergeSources) ? journal.manualMergeSources : []) ids.push(...sourceIds(source, chat, seen));
         return [...new Set(ids.filter(x => typeof x === 'string' && x))];
     }
     function chunkSettings(chat) {
@@ -228,6 +278,10 @@ const VectorMemoryTools = (() => {
         field(recall, 'vectorRetrievalOnly', '聊天时只检索已有索引');
         field(recall, 'vectorQueryCache', '短时复用相同查询与结果');
         field(recall, 'vectorHybridEnabled', '结合关键词匹配');
+        field(recall, 'vectorRRFEnabled', '混合检索按名次融合（RRF）');
+        field(recall, 'vectorWeightedLexicalEnabled', '关键词按稀有程度和文本长度加权');
+        field(recall, 'vectorDiversityEnabled', '优先选择不同来源');
+        field(recall, 'vectorNeighborExpansionEnabled', '命中后补全相邻句段');
         field(recall, 'vectorRerankThresholdEnabled', '过滤低分重排结果');
         const threshold = field(recall, 'vectorRerankThreshold', '重排最低分', 'number', 0, 1); threshold.step = '0.01';
         field(recall, 'vectorTokenBudgetEnabled', '限制召回 Token 估算');
@@ -252,5 +306,5 @@ const VectorMemoryTools = (() => {
         text.textContent = '先保存向量设置，在记忆库点击“续建索引”。暂停后可续建；“只检索已有索引”不会在回复前补建。正文预览不修改聊天。修改正文标签、分块或模型后再次续建即可。混合检索偏重精确词，重排最低分仅适用于返回分数的专用接口。Token 是本机估算，按所用模型留出余量；重叠也计入用量。独立索引先保留旧数据，完整备份会带上有效缓存；关闭后下一次建库改回原保存方式。查询整理失败会用原查询。';
         help.append(text);
     }
-    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, queryEmbedding, rewrite, sourceIds, chunkSettings, chunks, topK, cachedResult, indexScope, portableExport, setupForm });
+    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, weightedLexical, fuseRanks, diversify, expandRange, queryEmbedding, rewrite, sourceIds, chunkSettings, chunks, topK, cachedResult, indexScope, portableExport, setupForm });
 })();
