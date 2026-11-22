@@ -372,8 +372,10 @@ function setupMemoryJournalScreen() {
 
         if (target.closest('.favorite-journal-btn')) {
             if (journal.source === 'sillytavern' && journal.bridgeReview?.status !== 'approved') { showToast('请到酒馆互通页逐条审核后应用这场剧情。'); return; }
+            if (!journal.isFavorited && journal.autoMemory && !getAutoMemoryState(chat).validIds.has(journal.id)) { showToast('请先审核总结并核对来源。'); return; }
+            const previous = journal.isFavorited;
             journal.isFavorited = !journal.isFavorited;
-            await saveData();
+            try { await saveData(); } catch (error) { journal.isFavorited = previous; showToast('收藏保存失败，请重试。'); return; }
             target.closest('.favorite-journal-btn').classList.toggle('favorited', journal.isFavorited);
             showToast(journal.isFavorited ? '已收藏' : '已取消收藏');
             return;
@@ -527,13 +529,14 @@ function renderJournalList() {
         if (journal.autoMemory) {
             const badge = document.createElement('div');
             badge.className = 'auto-memory-badge';
-            badge.textContent = !memoryState?.validIds.has(journal.id) ? '来源变化或未提交 · 原楼层已恢复'
-                : memoryState.consumed.has(journal.id) ? '已纳入上层大总结 · 保留原摘要供查看'
-                : !getAutoMemorySettings(chat).useMemory ? '记忆注入已暂停 · 使用原楼层' : '自动注入上下文 · 原楼层可恢复';
+            const valid = memoryState?.validIds.has(journal.id);
+            badge.textContent = !valid ? '待审核、来源变化或未提交 · 不参与读取'
+                : journal.isFavorited ? '已收藏 · 按原收藏位置读取'
+                : memoryState.consumed.has(journal.id) ? '已纳入大总结 · 原摘要和收藏保留' : '已生成 · 可收藏或另行开启向量检索';
             card.querySelector('.journal-card-header').after(badge);
             const favorite = card.querySelector('.favorite-journal-btn');
-            favorite.disabled = true;
-            favorite.title = '自动记忆无需收藏；可在自动记忆设置中暂停注入';
+            favorite.disabled = !valid && !journal.isFavorited;
+            favorite.title = valid ? '收藏后按原收藏位置读取；原文保留' : '来源无效或尚未审核，不能新增收藏';
         }
         if (journal.isFavorited) {
             card.querySelector('.favorite-journal-btn').classList.add('favorited');

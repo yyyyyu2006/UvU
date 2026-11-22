@@ -38,7 +38,7 @@ test('sequential render predecessor matches prior-history filtering for all stat
     }
 });
 
-test('full renders preserve continuous bubbles across pages, hidden memories and status records', () => {
+test('full renders preserve continuous bubbles across pages, retired folding flags and status records', () => {
     for (const showStatus of [false, true]) {
         const history = Array.from({ length: 110 }, (_, index) => ({ id: String(index), role: index % 3 ? 'assistant' : 'user',
             senderId: index % 4 ? 'a' : 'b', timestamp: 1700000000000 + index * 10000,
@@ -64,10 +64,9 @@ test('full renders preserve continuous bubbles across pages, hidden memories and
                 const expected = [];
                 for (let index = first; index < end; index++) {
                     const message = history[index];
-                    if (hidden.has(message.id)) continue;
                     let previous = null;
                     for (let cursor = index - 1; cursor >= 0; cursor--) {
-                        if (!hidden.has(history[cursor].id) && !regex.test(history[cursor].content)) { previous = history[cursor]; break; }
+                        if (!regex.test(history[cursor].content)) { previous = history[cursor]; break; }
                     }
                     const sender = item => item.role === 'user' ? 'user' : (item.senderId || 'assistant');
                     const system = /\[system:.*?\]|\[system-display:.*?\]/.test(message.content);

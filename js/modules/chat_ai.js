@@ -209,7 +209,7 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
     try {
         const memoryArchiveId = chat.activeArchiveId;
         const relationshipRevision = chat.friendRelationship?.revision;
-        if (typeof runAutoMemory === 'function') await awaitChatPreparation(runAutoMemory(chatId, chatType), generationController?.signal);
+        // Only completed summaries are read here; new summaries are scheduled after delivery.
         if (generationController?.signal.aborted || chat.history !== generationRequest.history || chat.activeArchiveId !== memoryArchiveId || (!isBackground && (currentChatId !== chatId || currentChatType !== chatType))) return;
         const requestHistory = chat.history;
         const requestIsCurrent = () => !generationController?.signal.aborted && chat.activeArchiveId === memoryArchiveId && chat.history === requestHistory &&

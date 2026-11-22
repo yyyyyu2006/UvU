@@ -12,21 +12,32 @@ function harness(name, exports) {
     return c.fixtureExports;
 }
 
-test('stop while awaiting a shared auto summary promptly releases the reply controls', async () => {
+test('main reply reaches provider without waiting for a summary; stop only cancels the reply', async () => {
     const { fixture } = harness('chat_safety.test.cjs', 'fixture');
-    const f = fixture(); let release, finished = false, sharedCancelled = false;
-    f.c.runAutoMemory = () => new Promise(resolve => { release = resolve; });
+    const f = fixture(); let summaryCalls = 0, replyCalls = 0, sharedCancelled = false;
+    f.c.runAutoMemory = () => { summaryCalls++; return new Promise(() => {}); };
     f.c.cancelAutoMemory = () => { sharedCancelled = true; };
-    const pending = f.c.getAiReply('a', 'private').then(() => { finished = true; });
+    f.c.fetch = (_, init) => { replyCalls++; return new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(Object.assign(Error('cancelled'), { name: 'AbortError' })), { once: true })); };
+    const pending = f.c.getAiReply('a', 'private');
     await new Promise(setImmediate);
-    assert.equal(f.c.stopAiReply(), true);
-    await new Promise(setImmediate);
-    // Release the mock even on the failing baseline so no task is left hanging.
-    const immediate = finished, disabled = f.c.getReplyBtn.disabled;
-    release(); await pending;
-    assert.equal(immediate, true);
-    assert.equal(disabled, false);
+    assert.equal(replyCalls, 1);
+    assert.equal(summaryCalls, 0);
+    assert.equal(f.c.stopAiReply(), true); await pending;
+    assert.equal(f.c.getReplyBtn.disabled, false);
     assert.equal(sharedCancelled, false);
+});
+
+test('a retrieval deadline failure still permits the ordinary provider reply', async () => {
+    const { fixture } = harness('chat_safety.test.cjs', 'fixture');
+    const f = fixture(); let requests = 0;
+    f.c.getMixedContent = text => [{ type: 'text', content: text }];
+    f.c.escapeMessageRegex = text => text;
+    f.c.showIncomingMessageNotifications = () => {};
+    f.c.getVectorMemoryContext = async () => { const error = new Error('整轮检索超时'); error.name = 'TimeoutError'; throw error; };
+    f.c.fetch = async () => { requests++; return { ok: true, json: async () => ({ choices: [{ message: { content: '[a的消息：reply]' } }] }) }; };
+    await f.c.getAiReply('a', 'private', true);
+    assert.equal(requests, 1); assert.equal(f.c.getReplyBtn.disabled, false);
+    assert.ok(f.chats[0].history.some(message => message.role === 'assistant' && message.content.includes('reply')));
 });
 
 test('MCP automatic planner excludes withdrawn, rejected, hidden and status records', async () => {

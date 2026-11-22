@@ -48,7 +48,7 @@ const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
         await page.locator('.memory-library').last().locator('textarea').fill('核对后的去海边看日落约定。');
         await page.locator('.memory-library').last().getByRole('button', { name: '确认并启用总结', exact: true }).click();
         assert.equal(await page.evaluate(() => getAutoMemoryState(db.characters[0]).covered.size), 1);
-        assert.ok(await page.getByText('引用：摘要替代', { exact: true }).count());
+        assert.ok(await page.getByText('引用：未启用引用', { exact: true }).count());
         await page.locator('.memory-library-migration > summary').click();
         await page.waitForFunction(()=>document.querySelector('.memory-library-migration pre').textContent.includes('旧篇'));
         assert.match(await page.locator('.memory-library-migration pre').textContent(),/其他模型版本 1 份 \/ 3 块/);

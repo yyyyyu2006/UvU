@@ -84,8 +84,16 @@ const VectorMemoryTools = (() => {
             const raw = data.choices?.[0]?.message?.content;
             if (typeof raw !== 'string' || raw.length > 4000) return fallback();
             const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-            const queries = [...new Set((Array.isArray(value.queries) ? value.queries : []).filter(x => typeof x === 'string' && x.trim() && x.length <= 300).map(x => x.trim()))].slice(0, 2);
-            return queries.length ? { queries, query: queries.join('\n') } : fallback();
+            const anchors = [...new Set([
+                ...[chat.realName, chat.remarkName, chat.myName].filter(name => name && query.includes(name)),
+                ...(query.match(/\d{4}[-年/]\d{1,2}(?:[-月/]\d{1,2}日?)?|\d{1,2}月\d{1,2}日|异地|网恋|未见面|取消|改期/g) || [])
+            ])];
+            const negated = /不|没|未|拒绝/.test(query);
+            const additions = [...new Set((Array.isArray(value.queries) ? value.queries : []).filter(x => typeof x === 'string' && x.trim() && x.length <= 300).map(x => x.trim()))]
+                .filter(x => x !== query && anchors.every(anchor => x.includes(anchor)) && (!negated || /不|没|未|拒绝/.test(x))).slice(0, 1);
+            // The original route is always first. These conservative checks are guards,
+            // not a claim that arbitrary semantic drift can be detected locally.
+            return additions.length ? { queries: [query, ...additions], query: [query, ...additions].join('\n') } : fallback();
         } catch (error) { if (signal?.aborted || error.name === 'AbortError') throw error; return fallback(); }
     }
     function sourceIds(journal, chat, seen = new Set()) {
@@ -224,6 +232,9 @@ const VectorMemoryTools = (() => {
         const threshold = field(recall, 'vectorRerankThreshold', '重排最低分', 'number', 0, 1); threshold.step = '0.01';
         field(recall, 'vectorTokenBudgetEnabled', '限制召回 Token 估算');
         field(recall, 'vectorContextMaxTokens', '召回 Token 预算', 'number', 100, 16000);
+        field(recall, 'vectorPipelineBudgetEnabled', '限制整轮检索耗时与请求数');
+        field(recall, 'vectorPipelineMaxRequests', '整轮最多请求数', 'number', 1, 100);
+        field(recall, 'vectorPipelineTimeoutMs', '整轮最长毫秒数', 'number', 100, 120000);
         const index = section('分块与索引');
         field(index, 'vectorChunkSize', '每块最多字符', 'number', 200, 4000);
         field(index, 'vectorChunkOverlap', '相邻重叠字符', 'number', 0, 600);

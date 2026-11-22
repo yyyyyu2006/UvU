@@ -70,22 +70,8 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false, rebuild
     const messagesToRender = chat.history.slice(start, end);
     if (!isLoadMore) messageArea.innerHTML = '';
     const fragment = document.createDocumentFragment();
-    const memorySettings = typeof getAutoMemorySettings === 'function' ? getAutoMemorySettings(chat) : null;
-    const memoryCovered = memorySettings?.useMemory && memorySettings.hideSummarized &&
-        !autoMemoryShowOriginal.has(autoMemoryKey(chat, currentChatType)) ? getAutoMemoryState(chat).covered : new Set();
-    const hiddenCount = messagesToRender.filter(message => memoryCovered.has(message.id)).length;
-    if (hiddenCount) {
-        const notice = document.createElement('button');
-        notice.type = 'button';
-        notice.className = 'auto-memory-fold-notice';
-        notice.textContent = `本页 ${hiddenCount} 条已总结楼层已折叠 · 点击查看原文`;
-        notice.addEventListener('click', () => {
-            autoMemoryShowOriginal.add(autoMemoryKey(chat, currentChatType));
-            renderMessages(false, false, true);
-        });
-        fragment.appendChild(notice);
-    }
-    
+    const memoryCovered = new Set(); // Summaries never hide original bubbles.
+
     let lastMsgTime = 0;
     
     if (start > 0) {

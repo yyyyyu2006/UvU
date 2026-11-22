@@ -342,7 +342,7 @@ test('default is off and disabled automation makes no paid API request', async (
     await f.run(); assert.equal(f.requests.length, 0);
 });
 
-test('small summary commits before covering originals; context includes memory without a favorite', async () => {
+test('small summary commits dedup markers but never replaces history or auto-favorites', async () => {
     const f = fixture();
     const coveredDuringSave = [];
     f.context.saveData = async () => coveredDuringSave.push(f.context.getAutoMemoryState(f.chat).covered.size);
@@ -351,22 +351,25 @@ test('small summary commits before covering originals; context includes memory w
     assert.deepEqual(coveredDuringSave, [0, 0]);
     assert.equal(f.chat.history.length, 12);
     assert.deepEqual([...f.context.getAutoMemoryState(f.chat).covered], ['m0', 'm1', 'm2', 'm3']);
-    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
-    assert.deepEqual(ids(f.context.getAutoMemoryContextHistory(f.chat)), ['m4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10', 'm11']);
-});
-
-test('big summary replaces children, and deleting it restores children without duplicate injection', async () => {
-    const f = fixture();
-    await f.run(); await f.run();
-    assert.equal(f.requests.length, 3);
-    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
-    const parent = f.context.getAutoMemoryState(f.chat).active[0];
-    assert.equal(parent.autoMemory.kind, 'merged');
-    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 8);
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 0);
+    assert.deepEqual(ids(f.context.getAutoMemoryContextHistory(f.chat)), ids(f.chat.history));
     f.chat.memoryJournals[0].isFavorited = true;
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
+});
+
+test('automatic merge preserves favorited children and never auto-favorites the parent', async () => {
+    const f = fixture(); await f.run();
+    const child = f.chat.memoryJournals[0]; child.isFavorited = true;
+    await f.run();
+    assert.equal(f.requests.length, 3);
+    const parent = f.context.getAutoMemoryState(f.chat).active[0];
+    assert.equal(parent.autoMemory.kind, 'merged');
+    assert.equal(parent.isFavorited, false);
+    assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 8);
+    assert.deepEqual(ids(f.context.getContextMemoryJournals(f.chat)), [child.id]);
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 12);
     f.chat.memoryJournals = f.chat.memoryJournals.filter(j => j.id !== parent.id);
-    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 2);
+    assert.deepEqual(ids(f.context.getContextMemoryJournals(f.chat)), [child.id]);
     assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 8);
     f.chat.memoryJournals.shift();
     assert.equal(f.context.getAutoMemoryState(f.chat).covered.size, 4);
@@ -379,11 +382,11 @@ test('big summaries keep separate levels, persist and recover from source editin
     const second = fixture();
     Object.assign(second.chat, snapshot);
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.size, 12);
-    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 2);
+    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 0);
     second.chat.history[0].content = '已修正的事件';
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.has('m0'), false);
     assert.equal(second.context.getAutoMemoryState(second.chat).covered.size, 8);
-    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 2);
+    assert.equal(second.context.getContextMemoryJournals(second.chat).length, 0);
 });
 
 test('pausing injection restores raw context while automatic summaries continue, manual favorites remain', async () => {
@@ -397,7 +400,7 @@ test('pausing injection restores raw context while automatic summaries continue,
 });
 
 test('disabling automatic generation still keeps existing memories in context', async () => {
-    const f = fixture(); await f.run(); f.chat.autoMemorySettings.enabled = false;
+    const f = fixture(); await f.run(); f.chat.memoryJournals[0].isFavorited = true; f.chat.autoMemorySettings.enabled = false;
     await f.run();
     assert.equal(f.requests.length, 1);
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
@@ -422,14 +425,16 @@ test('default summary and merge send original prompt builders unchanged; custom 
     assert.equal(merge[0].content, c.buildJournalMergePrompt(chat, '楼层 1-4\n标题：A\n事实'));
 });
 
-test('automatic summaries stay outside context until memory injection is enabled', async () => {
+test('automatic summaries require explicit favorites regardless of retired injection flags', async () => {
     const f = fixture(6, { useMemory: false, keepRecent: 1, threshold: 4, batchSize: 4 });
     await f.run();
     assert.equal(f.requests.length, 1);
     assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 6);
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 0);
     f.chat.autoMemorySettings.useMemory = true;
-    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 2);
+    assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 6);
+    assert.equal(f.context.getContextMemoryJournals(f.chat).length, 0);
+    f.chat.memoryJournals[0].isFavorited = true;
     assert.equal(f.context.getContextMemoryJournals(f.chat).length, 1);
 });
 
@@ -439,7 +444,8 @@ test('legacy saved useMemory defaults do not opt into context replacement after 
     assert.equal(f.context.getAutoMemorySettings(f.chat).useMemory, false);
     assert.equal(f.context.getAutoMemoryContextHistory(f.chat).length, 6);
     f.chat.autoMemorySettings.contextInjectionOptIn = true;
-    assert.equal(f.context.getAutoMemorySettings(f.chat).useMemory, true);
+    assert.equal(f.context.getAutoMemorySettings(f.chat).useMemory, false);
+    assert.equal(f.chat.autoMemorySettings.useMemory, true, 'raw rollback setting is preserved');
 });
 
 test('API source routing supports primary, secondary, follow and rejects incomplete secondary', () => {
@@ -696,7 +702,7 @@ test('summary and vector settings update independently without overwriting each 
     const f = fixture(1, { enabled: true, hideSummarized: false, vectorSearchEnabled: true, vectorRerankEnabled: true, vectorTopK: 7, vectorThreshold: 0.61 });
     const initial = JSON.parse(JSON.stringify(f.context.getAutoMemorySettings(f.chat)));
     const summary = f.context.mergeAutoMemorySettings(initial, { hideSummarized: true, keepRecent: 42 });
-    assert.equal(summary.hideSummarized, true);
+    assert.equal(summary.hideSummarized, false);
     assert.equal(summary.keepRecent, 42);
     assert.equal(summary.vectorSearchEnabled, true);
     assert.equal(summary.vectorRerankEnabled, true);
@@ -705,6 +711,32 @@ test('summary and vector settings update independently without overwriting each 
     const vector = f.context.mergeAutoMemorySettings(summary, { vectorSearchEnabled: false, vectorTopK: 2 });
     assert.equal(vector.vectorSearchEnabled, false);
     assert.equal(vector.vectorTopK, 2);
-    assert.equal(vector.hideSummarized, true);
+    assert.equal(vector.hideSummarized, false);
     assert.equal(vector.keepRecent, 42);
+});
+
+test('legacy settings survive edits and backup roundtrips while retired reading stays off in every archive', () => {
+    const { context: c, chat } = fixture(3, { useMemory: true, hideSummarized: true });
+    chat.archives = [{ id: 'old', data: { history: chat.history, memoryJournals: [], autoMemorySettings: { ...chat.autoMemorySettings } } }];
+    const before = JSON.stringify(chat);
+    assert.match(c.getAutoMemoryMigrationNotice(chat), /读取方式已更新/);
+    assert.equal(c.getAutoMemorySettings(chat.archives[0].data).useMemory, false);
+    assert.equal(c.getAutoMemoryContextHistory(chat.archives[0].data, 3).length, 3);
+    assert.equal(JSON.stringify(chat), before, 'opening old data is read-only');
+    chat.autoMemorySettings = c.mergeAutoMemorySettings(chat.autoMemorySettings, { keepRecent: 2, summaryReadingVersion: 2 });
+    assert.equal(chat.autoMemorySettings.useMemory, true); assert.equal(chat.autoMemorySettings.hideSummarized, true);
+    assert.equal(chat.autoMemorySettings.contextInjectionOptIn, true);
+    assert.equal(c.getAutoMemoryMigrationNotice(chat), '');
+    const imported = JSON.parse(JSON.stringify(chat));
+    assert.equal(c.getAutoMemorySettings(imported).useMemory, false);
+    assert.equal(c.getAutoMemoryContextHistory(imported, 0).length, 0);
+    assert.equal(imported.archives[0].data.autoMemorySettings.useMemory, true);
+});
+
+test('summary quality warnings retain negation, attribution and cancelled plans without rewriting text', () => {
+    const { context: c, chat } = fixture();
+    const result = { content: '两人见面并约定旅行。' }, before = JSON.stringify(result);
+    const warnings = c.inspectAutoMemoryQuality(result, [{ role: 'user', content: '以前计划见面，后来取消，没见过。' }, { role: 'assistant', content: '如果见面再说。' }], 'merged', c.getAutoMemorySettings(chat));
+    for (const pattern of [/否定/, /时间/, /说话人/, /约定/, /多代/]) assert.ok(warnings.some(text => pattern.test(text)));
+    assert.equal(JSON.stringify(result), before);
 });

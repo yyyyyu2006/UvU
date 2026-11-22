@@ -100,9 +100,9 @@
     function summary(root) {
         const form = q(root, '#auto-memory-form'); if (!form) return;
         const field = name => form.elements.namedItem(name)?.closest('label');
-        const switches = group([field('enabled'), field('useMemory'), field('hideSummarized')], '', 'panel-summary-switches');
-        ['enabled', 'useMemory', 'hideSummarized', 'mergeEnabled', 'vectorSearchEnabled', 'vectorRerankEnabled'].forEach(name => asSwitch(form.elements.namedItem(name)));
-        const short = { enabled: '自动总结', useMemory: '使用自动记忆', hideSummarized: '折叠并替代已总结楼层', vectorSearchEnabled: '向量记忆', vectorRerankEnabled: '重排', mergeEnabled: '合并已有记忆' };
+        const switches = group([field('enabled')], '', 'panel-summary-switches');
+        ['enabled', 'mergeEnabled', 'vectorSearchEnabled', 'vectorRerankEnabled'].forEach(name => asSwitch(form.elements.namedItem(name)));
+        const short = { enabled: '自动总结', vectorSearchEnabled: '向量记忆', vectorRerankEnabled: '重排', mergeEnabled: '合并已有记忆' };
         for (const [name, text] of Object.entries(short)) {
             const wrap = field(name); if (!wrap) continue;
             const input = form.elements.namedItem(name), old = wrap.textContent.trim();
@@ -1175,10 +1175,10 @@
             const owner=make('div','draft-memory-owner');form.prepend(owner);
             const updateOwner=()=>{const chat=typeof db!=='undefined'&&db.characters.find(c=>c.id===currentChatId);if(chat){const stamp=chat.id+':'+chat.activeArchiveId;if(owner.dataset.owner!==stamp){owner.dataset.owner=stamp;owner.replaceChildren(identityRow(chat));}}};
             new MutationObserver(updateOwner).observe(root,{attributes:true,attributeFilter:['class']});updateOwner();
-            const switches=q(form,'.panel-summary-switches'),hide=field('hideSummarized'),floors=field('keepRecent')?.closest('fieldset');
+            const switches=q(form,'.panel-summary-switches'),floors=field('keepRecent')?.closest('fieldset');
             if(switches&&floors){
                 const range=make('section','draft-summary-range'),columns=make('div','draft-columns');
-                const advanced=disclose([field('threshold'),hide],'触发与上下文规则','draft-card');
+                const advanced=disclose([field('threshold')],'总结触发规则','draft-card');
                 columns.append(field('batchSize'),field('keepRecent'));range.append(make('h3','','整理范围'),columns);switches.after(range);
                 if(advanced)floors.append(advanced);
                 const floorDetails=disclose([floors],'高级整理规则','draft-summary-advanced');if(floorDetails)range.after(floorDetails);

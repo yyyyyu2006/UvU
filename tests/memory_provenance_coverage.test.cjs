@@ -71,27 +71,39 @@ test('mixed and repeated manual merges retain ST and TT source permission throug
     await c.undoLibraryMemoryMerge(chat, again);
     assert.ok(c.getContextMemoryJournals(chat).some(item => item.id === merged.id));
 });
-test('summary manual replacement only hides raw floors while its effective replacement is injected', async () => {
+test('summary manual replacement never hides original history', async () => {
     const { c, chat, summary } = fixture(); chat.memoryJournals.push(summary);
     const merged = await c.saveLibraryMemory(chat, { title: '整理', content: '周五还书' }, { sources: [summary] });
-    assert.equal(c.getAutoMemoryContextHistory(chat).length, 0);
+    assert.equal(c.getAutoMemoryContextHistory(chat).length, 1);
     merged.isFavorited = false;
     assert.deepEqual(Array.from(c.getAutoMemoryContextHistory(chat), item => item.id), ['m']);
     assert.equal(c.getContextMemoryJournals(chat).length, 0);
     merged.isFavorited = true; chat.memoryJournals = chat.memoryJournals.filter(item => item.id !== merged.id);
     assert.deepEqual(Array.from(c.getAutoMemoryContextHistory(chat), item => item.id), ['m']);
 });
-test('revoked imported replacement and unfavorited vector miss restore the summary source floor', async () => {
+
+test('manual merges cannot re-enable stale auto summaries through saved snapshots', async () => {
+    const { c, chat, summary } = fixture(); chat.memoryJournals.push(summary);
+    const merged = await c.saveLibraryMemory(chat, { title: '整理', content: '周五还书' }, { sources: [summary] });
+    assert.ok(c.getContextMemoryJournals(chat).some(item => item.id === merged.id));
+    chat.memoryJournals = chat.memoryJournals.filter(item => item.id !== summary.id);
+    assert.ok(c.getContextMemoryJournals(chat).some(item => item.id === merged.id));
+    chat.history[0].content = '已取消还书约定';
+    assert.equal(c.getContextMemoryJournals(chat).length, 0);
+    assert.ok(!c.getVectorMemoryCandidates(chat).some(item => item.id === merged.id));
+    assert.equal(c.getAutoMemoryContextHistory(chat)[0].content, '已取消还书约定');
+});
+test('revoked imported replacement and vector miss preserve originals and favorite permissions', async () => {
     const { c, chat, summary, enabled } = fixture();
     const source = { id: 'tt', title: '剧情', content: '其他约定', source: 'sillytavern', isFavorited: true, bridgeReview: { channel: 'tt', archiveId: 'a', status: 'approved' } };
-    chat.memoryJournals.push(summary, source);
+    summary.isFavorited = true; chat.memoryJournals.push(summary, source);
     const merged = await c.saveLibraryMemory(chat, { title: '混合', content: '两项约定' }, { sources: [summary, source] });
     enabled.tt = false;
     assert.equal(c.getAutoMemoryContextHistory(chat)[0].id, 'm');
     enabled.tt = true; merged.isFavorited = false; chat.autoMemorySettings.vectorSearchEnabled = true;
     assert.equal(c.buildPromptWithVectorMemory(chat, () => c.getAutoMemoryContextHistory(chat).map(item => item.content).join(''), ''), '周五还书');
     await c.undoLibraryMemoryMerge(chat, merged);
-    assert.equal(c.getAutoMemoryContextHistory(chat).length, 0);
+    assert.equal(c.getAutoMemoryContextHistory(chat).length, 1);
     assert.ok(c.getContextMemoryJournals(chat).some(item => item.id === 'summary'));
 });
 test('fact checklist preserves same-name attribution, unknown dates and contradictory commitments without requests', () => {

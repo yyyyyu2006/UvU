@@ -273,7 +273,7 @@ function openMemoryLibrary() {
     const tuningInputs = {};
     const settings = getAutoMemorySettings(chat);
     for (const [key, label, type, min, max] of [
-        ['summaryQualityReviewEnabled', '自动总结先保存为待审草稿；人工确认后才覆盖来源', 'checkbox'],
+        ['summaryQualityReviewEnabled', '自动总结先保存为待审草稿；人工确认后才可收藏或参与检索', 'checkbox'],
         ['vectorIndexBudgetEnabled', '启用每轮建库限额，未完成时使用已有有效索引', 'checkbox'],
         ['vectorIndexMaxBatches', '每轮最多嵌入批次（0 = 只检索已有索引）', 'number', 0, 100],
         ['vectorIndexTimeBudgetMs', '建库等待预算（毫秒；单请求计时精度 1 秒）', 'number', 100, 120000],
@@ -610,7 +610,8 @@ function openMemoryLibrary() {
             `分块：${diag.totalChunks || 0}；待续建：${diag.pendingChunks || 0}；本次完成 ${diag.completedBatches || 0} 批`,
             `重排前：${(diag.beforeRerank || []).join(' → ') || '无'}；重排后：${(diag.afterRerank || []).join(' → ') || '无'}`,
             ...sourceStates.map(item => `${item.title}：${stateLabels[item.status]}（${item.chunks}/${item.totalChunks} 块）`),
-            ...(diag.selected || []).map(item => `命中 ${item.title} · 相似度 ${item.score.toFixed(3)} · ${diag.ranking} · ${item.timeline || '时间未指定'}\n${item.content}`),
+            diag.rerank ? `重排：${diag.rerank.succeeded ? '已完成' : diag.rerank.executed ? '请求失败，使用原排序' : diag.rerank.skipped}；分数不是事实正确率。` : '',
+            ...(diag.selected || []).map(item => `命中 ${item.title} · 检索分 ${item.score.toFixed(3)}${Number.isFinite(item.vectorScore) ? ` · 最高片段余弦 ${item.vectorScore.toFixed(3)}` : ''}${Number.isFinite(item.lexicalScore) ? ` · 最高片段词匹配 ${item.lexicalScore.toFixed(3)}` : ''}${Number.isFinite(item.rerankScore) ? ` · 重排分 ${item.rerankScore.toFixed(3)}` : ''} · ${diag.ranking} · ${item.timeline || '时间未指定'}\n${item.content}`),
             ...(diag.favoriteDeduplication || []).map(item => `${item.id}：${item.reason}`),
             ...(diag.excluded || []).map(item => `未完整注入 ${item.id}：${item.reason}`)
         ].filter(Boolean).join('\n\n');
@@ -625,7 +626,7 @@ function openMemoryLibrary() {
                 floors: journal.bridgeReview?.selectedFloorIds?.join('、') ||
                     (journal.range?.start ? journal.range.start + '—' + journal.range.end : ''),
                 favorite: Boolean(journal.isFavorited),
-                canFavorite: !journal.autoMemory && !journal.vectorSupersededBy &&
+                canFavorite: (!journal.autoMemory || valid.has(journal.id)) && journal.qualityReview?.status !== 'pending' && !journal.vectorSupersededBy &&
                     (journal.source !== 'sillytavern' || journal.bridgeReview?.status === 'approved'),
                 edit: () => edit(journal),
                 source: host => { assertCurrent(); original(journal, host); },

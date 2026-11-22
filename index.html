@@ -1837,7 +1837,6 @@ node setup-server-plugin.js</code></pre>
             <div class="auto-memory-entry">
                 <button type="button" class="btn btn-secondary" id="auto-memory-settings-btn">自动总结设置</button>
                 <button type="button" class="btn btn-secondary" id="vector-memory-settings-btn">向量记忆设置</button>
-                <button type="button" class="btn btn-secondary" id="auto-memory-show-original">显示 / 折叠原楼层</button>
             </div>
             <ul class="list-container" id="journal-list-container">
                 <!-- Journal cards will be rendered here -->
@@ -3031,14 +3030,14 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/chat_scene_ui.js?v=20261121-scene-review"></script>
 <script src="js/modules/chat_scene_reply.js?v=20261122-worldbook-1900"></script>
 <script src="js/modules/chat_thinking.js?v=20261118-first-bubble"></script>
-<script src="js/modules/chat_render.js?v=20261121-scene"></script>
+<script src="js/modules/chat_render.js?v=20261122-summary-reading"></script>
 <script src="js/modules/chat_archives.js?v=20261121-scene"></script>
     <script src="js/modules/chat_ai_airdrop.js?v=20261115-airdrop-recovery"></script>
     <script src="js/modules/chat_ai_prompt.js?v=20261122-worldbook-1900"></script>
     <script src="js/modules/chat_ai_call.js?v=20261122-worldbook-1900"></script>
     <script src="js/modules/notifications.js?v=20261111-review-notification-guards"></script>
     <script src="js/modules/request_memory_diagnostics.js?v=20261111-rules-request-v1"></script>
-    <script src="js/modules/chat_ai.js?v=20261122-worldbook-1900"></script>
+    <script src="js/modules/chat_ai.js?v=20261122-summary-reading"></script>
 <script src="js/modules/minimax_speech.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/voice_director.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/chat_image_generation.js?v=20261111-media-preview-guards"></script>
@@ -3088,12 +3087,12 @@ node setup-server-plugin.js</code></pre>
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
     <div class="modal-window auto-memory-dialog">
         <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
-        <p class="auto-memory-help">仅当前存档。自动整理与记忆注入分别开启。</p>
+        <p class="auto-memory-help">仅当前存档。自动总结只整理保存，收藏与向量检索分别决定是否读取。</p>
         <p id="auto-memory-status" role="status" aria-live="polite"></p>
         <form id="auto-memory-form">
+        <p id="auto-memory-migration-notice" class="auto-memory-help" hidden role="status"></p>
             <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
-            <label class="auto-memory-check"><input name="useMemory" type="checkbox"> 使用自动记忆，替代已总结原文进入上下文</label>
-            <details class="auto-memory-guide"><summary>记忆注入说明</summary><p class="auto-memory-help">关闭“使用自动记忆”会让原楼层继续进入上下文（仍受原有条数限制）；关闭自动整理仅停止后续调用。默认只沿用 1900 版上下文，不自动注入新总结。</p></details>
+            <details class="auto-memory-guide"><summary>总结读取说明</summary><p class="auto-memory-help">自动总结默认不收藏，不改变聊天原文的显示和历史条数。审核通过、来源有效的总结可手动收藏，按原收藏位置供角色读取；向量检索另行开启。旧版自动替代设置仅保留用于备份和回退，新版本不再执行。</p></details>
             <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">下方独立记忆 API</option></select></label>
             <details id="memory-api-panel"><summary>独立总结 API 配置（全局共用）</summary>
                 <p class="auto-memory-help">仅当上方总结 API 选择“下方独立记忆 API”时使用，不会改变聊天主 API。</p>
@@ -3103,7 +3102,7 @@ node setup-server-plugin.js</code></pre>
                 <label>模型名称<input id="memory-api-model" type="text" list="memory-api-models" autocomplete="off" placeholder="输入模型名或拉取后选择"><datalist id="memory-api-models"></datalist></label>
                 <button type="button" class="btn btn-secondary" id="memory-api-fetch-models">拉取模型列表</button>
             </details>
-            <fieldset><legend>楼层记忆</legend><label class="auto-memory-check"><input name="hideSummarized" type="checkbox"> 使用自动记忆时，折叠并替代已总结楼层</label><div class="auto-memory-grid">
+            <fieldset><legend>楼层总结</legend><div class="auto-memory-grid">
                 <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
                 <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
                 <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
@@ -3113,7 +3112,7 @@ node setup-server-plugin.js</code></pre>
             <fieldset><legend>大总结</legend>
                 <label class="auto-memory-check"><input name="mergeEnabled" type="checkbox"> 自动进一步压缩已有记忆</label>
                 <div class="auto-memory-grid">
-                    <label>生效记忆达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
+                    <label>同层总结达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
                     <label>每次最多合并几篇（不低于阈值）<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
                     <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
                 </div><details class="auto-memory-guide"><summary>合并规则</summary><p class="auto-memory-help">默认直接使用原日记与大总结提示词。只有勾选目标字数或填写自定义要求时才会追加规则。严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；已被合并的摘要不重复计数。</p></details>
@@ -3168,10 +3167,10 @@ node setup-server-plugin.js</code></pre>
         </fieldset>
     </div>
 </div>
-<script src="js/modules/journal.js?v=20261122-worldbook-1900"></script>   <!-- 回忆日记生成 -->
+<script src="js/modules/journal.js?v=20261122-summary-reading"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/vector_index_store.js?v=20261111-persistence-vector-v1"></script>
-<script src="js/modules/vector_memory_tools.js?v=20261109-audit-repairs"></script>
-<script src="js/modules/auto_memory.js?v=20261121-scene"></script>
+<script src="js/modules/vector_memory_tools.js?v=20261122-summary-reading"></script>
+<script src="js/modules/auto_memory.js?v=20261122-summary-reading"></script>
 <script src="js/modules/character_memos.js?v=20261113-security-local-v1"></script>
 <script src="js/modules/character_memos_tools_ui.js?v=20261112-memory20-v1"></script>
 <script src="js/modules/character_memos_ui.js?v=20261114-memo-legacy-navigation"></script>
@@ -3180,7 +3179,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/bridge_summary.js?v=20261114-summary-cancel-v2"></script>
 <script src="js/modules/bridge_file.js?v=20261105-tt-summary"></script>
 <script src="js/modules/story_bridge.js?v=20261114-bridge-date-v1"></script>
-<script src="js/modules/memory_library.js?v=20261113-security-local-v1"></script>
+<script src="js/modules/memory_library.js?v=20261122-summary-reading"></script>
 <script src="js/modules/storage_html.js?v=20261116-panel-help-tabs"></script> <!-- 存储空间HTML注入 -->
 <script src="js/modules/backup_integrity.js?v=20261111-review-recovery-v1"></script>
 <script src="js/modules/storage.js?v=20261121-scene"></script>
@@ -3222,7 +3221,7 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/feature_dialogs.js?v=20261122-worldbook-1900"></script>
 <script src="js/modules/panel_artwork.js?v=20261113-mixed-artwork-v1"></script>
 <script src="js/modules/lenso_panels.js?v=20261113-panel-flow-v1"></script>
-<script src="js/modules/panel_layout.js?v=20261122-worldbook-1900"></script>
+<script src="js/modules/panel_layout.js?v=20261122-summary-reading"></script>
 <link rel="stylesheet" href="css/modules/music.css?v=20261108-playlist-review-ui">
 <link rel="stylesheet" href="css/modules/music_apple.css?v=20261108-playlist-public">
 <link rel="stylesheet" href="css/modules/music_v2.css?v=20261116-settings-colors-lines">

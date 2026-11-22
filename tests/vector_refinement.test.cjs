@@ -19,6 +19,102 @@ function fixture(settings = {}) {
     return { c, chat, calls };
 }
 
+test('chat rerank accepts only complete structured or whole-string legacy permutations', async () => {
+    const { c } = fixture();
+    c.buildChatApiRequest = () => ({ requestBody: {}, headers: {}, endpoint: '' });
+    const items = [1, 2].map(id => ({ journal: { id, content: 'synthetic' } }));
+    const api = { url: 'https://test.invalid', key: 'synthetic', rerankMode: 'chat', rerankModel: 'chat' };
+    for (const response of ['说明有2点：当前无法判断排序。', '2026-11-22', '2,1 正文', '[2,2]', '[2]', '[3,1]', '{"order":["2",1]}', '{"order":[2,1.5]}']) {
+        c.fetchAiResponse = async () => response;
+        await assert.rejects(c.rerankMemoryCandidates('test', items, api), /完整有效/);
+        assert.deepEqual(items.map(x => x.journal.id), [1, 2]);
+    }
+    for (const response of ['{"order":[2,1]}', '[2,1]', '2, 1']) {
+        c.fetchAiResponse = async () => response;
+        assert.deepEqual(Array.from(await c.rerankMemoryCandidates('test', items, api), x => x.journal.id), [2, 1]);
+    }
+});
+
+test('single native candidate is actually scored when the minimum gate is enabled', async () => {
+    const { c, chat, calls } = fixture({ vectorRerankEnabled: true, vectorRerankThresholdEnabled: true, vectorRerankThreshold: .9 });
+    Object.assign(c.db.vectorMemoryApiSettings, { rerankMode: 'native', rerankModel: 'rerank' });
+    chat.memoryJournals = [{ id: 'one', content: 'synthetic fact' }];
+    const embeddingFetch = c.fetch;
+    c.fetch = async (url, init) => {
+        if (!url.endsWith('/rerank')) return embeddingFetch(url, init);
+        calls.push({ url }); return { ok: true, json: async () => ({ results: [{ index: 0, relevance_score: .1 }] }) };
+    };
+    assert.equal(await c.getVectorMemoryContext(chat, 'test'), '');
+    assert.equal(calls.filter(call => call.url.endsWith('/rerank')).length, 1);
+    const diag = c.getVectorMemoryDiagnostics(chat);
+    assert.equal(diag.rerank.executed, true); assert.equal(diag.rerank.succeeded, true);
+    assert.ok(diag.excluded.some(item => item.stage === 'rerank-threshold'));
+    chat.autoMemorySettings.vectorRerankThresholdEnabled = false;
+    assert.match(await c.getVectorMemoryContext(chat, 'test'), /synthetic fact/);
+    assert.equal(c.getVectorMemoryDiagnostics(chat).rerank.executed, false);
+    assert.match(c.getVectorMemoryDiagnostics(chat).rerank.skipped, /单候选/);
+    assert.notEqual(c.getVectorMemoryDiagnostics(chat).ranking, '重排');
+});
+
+test('rewrites retain original query and reject loss of explicit identity, date or distance', async () => {
+    const { c, chat } = fixture({ vectorRewriteEnabled: true });
+    chat.realName = '晴';
+    const api = { rewriteUrl: 'https://test.invalid', rewriteKey: 'synthetic', rewriteModel: 'rewrite' };
+    const tools = vm.runInContext('VectorMemoryTools', c);
+    c.requestVectorJson = async () => ({ choices: [{ message: { content: '{"queries":["已经见面拥抱"]}' } }] });
+    const original = '晴在2026-11-22取消见面，我们异地，还没见面';
+    assert.deepEqual(Array.from((await tools.rewrite(chat, original, api)).queries), [original]);
+    c.requestVectorJson = async () => ({ choices: [{ message: { content: '{"queries":["寻找旧约定","第二个额外查询"]}' } }] });
+    assert.deepEqual(Array.from((await tools.rewrite(chat, '旧约定', api)).queries), ['旧约定', '寻找旧约定']);
+});
+
+test('whole retrieval request budget bounds query, indexing and reranking together', async () => {
+    const { c, chat, calls } = fixture({ vectorPipelineBudgetEnabled: true, vectorPipelineMaxRequests: 1, vectorRerankEnabled: true });
+    chat.memoryJournals = [{ id: 'one', content: 'synthetic fact' }];
+    await assert.rejects(c.getVectorMemoryContext(chat, 'test'), { name: 'TimeoutError' });
+    assert.equal(calls.length, 1); assert.equal(c.getVectorMemoryDiagnostics(chat).pipelineBudget.used, 1);
+    assert.equal(c.getVectorMemoryDiagnostics(chat).injectedIds?.length || 0, 0);
+    assert.equal(chat.memoryJournals[0].content, 'synthetic fact');
+});
+
+test('exhausted budget before rerank is reported as unexecuted rather than a dispatched request', async () => {
+    const { c, chat, calls } = fixture({ vectorPipelineBudgetEnabled: true, vectorPipelineMaxRequests: 2, vectorRerankEnabled: true });
+    Object.assign(c.db.vectorMemoryApiSettings, { rerankMode: 'native', rerankModel: 'rerank' });
+    chat.memoryJournals = [{ id: 'one', content: 'synthetic fact' }, { id: 'two', content: 'another fact' }];
+    assert.match(await c.getVectorMemoryContext(chat, 'test'), /synthetic fact/);
+    assert.equal(calls.length, 2);
+    const diag = c.getVectorMemoryDiagnostics(chat);
+    assert.equal(diag.rerank.executed, false); assert.equal(diag.rerank.succeeded, false);
+    assert.match(diag.rerank.skipped, /预算已用尽/);
+    assert.notEqual(diag.ranking, '重排');
+});
+
+test('whole retrieval timeout differs from user cancellation and frees the next queued retrieval', async () => {
+    const { c, chat } = fixture({ vectorPipelineBudgetEnabled: true, vectorPipelineTimeoutMs: 100 });
+    chat.memoryJournals = [{ id: 'one', content: 'synthetic fact' }];
+    const normal = c.fetch;
+    c.fetch = (_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(Object.assign(Error('abort'), { name: 'AbortError' })), { once: true }));
+    await assert.rejects(c.getVectorMemoryContext(chat, 'test'), { name: 'TimeoutError' });
+    const abort = new AbortController(), pending = c.getVectorMemoryContext(chat, 'test', abort.signal);
+    await new Promise(setImmediate); abort.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    c.fetch = normal;
+    assert.match(await c.getVectorMemoryContext(chat, 'test'), /synthetic fact/);
+});
+
+test('whole retrieval deadline also bounds time spent behind an older unbudgeted request', async () => {
+    const { c, chat } = fixture(); chat.memoryJournals = [{ id: 'one', content: 'synthetic' }];
+    const normal = c.fetch; let release, entered;
+    const ready = new Promise(resolve => entered = resolve);
+    c.fetch = async (url, init) => { entered(); await new Promise(resolve => release = resolve); return normal(url, init); };
+    const first = c.getVectorMemoryContext(chat, 'one').catch(() => 'stale'); await ready;
+    Object.assign(chat.autoMemorySettings, { vectorPipelineBudgetEnabled: true, vectorPipelineTimeoutMs: 100 });
+    await assert.rejects(c.getVectorMemoryContext(chat, 'two'), { name: 'TimeoutError' });
+    assert.equal(c.getVectorMemoryDiagnostics(chat).pipelineBudget.stage, '排队');
+    c.fetch = normal; release(); await first;
+    assert.match(await c.getVectorMemoryContext(chat, 'three'), /synthetic/);
+});
+
 test('candidate vectors and manual trial are isolated from live memory and its diagnostics', async () => {
     const f = fixture({ vectorExternalIndex: true, vectorRewriteEnabled: true, vectorRerankEnabled: true });
     f.chat.memoryJournals = [{ id: 'story', title: '猫猫', content: '猫猫喜欢在窗台睡觉' }];
