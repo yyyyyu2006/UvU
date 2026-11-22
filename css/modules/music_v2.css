@@ -1,25 +1,24 @@
 /* Screenshot-led Apple Music layout. Only the added music app owns these rules.
  * Craft guidance: Unslop by Damir Sokolovsky, CC BY 4.0. */
 #uvu-music-screen,.uvu-music-sheet { --um-green:#fa233b;--um-nav-accent:#007aff; }
-.uvu-music-sheet.um-settings-sheet { --um-text:#6a6a72;--um-gray:var(--um-text);--um-green:var(--um-text);align-items:center;padding:0; }
+.uvu-music-sheet.um-settings-sheet { --um-text:#6a6a72;--um-gray:var(--um-text);--um-green:#435f75;--um-settings-blue:#d4e5ef;--um-settings-ink:#334f65;align-items:center;padding:0;font-size:var(--uvu-panel-body);line-height:1.6; }
 .uvu-music-sheet.um-settings-sheet.um-dark { --um-text:#b9b9c0; }
 .uvu-music-sheet.um-settings-sheet :is(.um-account,.um-gateway-settings,.um-appearance-settings,.um-wide,.um-tutorial) { border-top:0;border-bottom:0; }
 .uvu-music-sheet.um-settings-sheet .um-primary { color:var(--um-text); }
 .uvu-music-sheet.um-settings-sheet .um-sheet-card { width:min(398px,calc(100% - 24px));height:min(704px,calc(100dvh - 140px));max-height:calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));border-radius:28px; }
 .um-settings-sheet .um-sheet-head { min-height:60px;padding:12px 20px;gap:12px; }
-.um-settings-sheet .um-sheet-head h2 { margin:0;flex:1;font-size:22px; }
+.um-settings-sheet .um-sheet-head h2 { margin:0;flex:1;min-width:0;font-size:var(--uvu-panel-h2);line-height:1.2;overflow-wrap:anywhere; }
 .um-settings-sheet .um-sheet-head .um-icon { width:34px;height:34px;min-height:34px;flex:0 0 34px;padding:8px;border:0;border-radius:50%;background:var(--um-control); }
 .um-settings-sheet .um-settings-help-button svg { display:block;width:18px;height:18px; }
 .um-settings-sheet .um-settings-tabs { display:flex;flex:0 0 auto;gap:8px;margin:0 20px 12px; }
 .um-settings-sheet .um-settings-tabs > button { position:relative;flex:1;min-height:40px;border:0;border-radius:18px;background:var(--um-control);font-size:14px;color:var(--um-gray); }
-.um-settings-sheet .um-settings-tabs > [aria-selected=true] { color:var(--um-text); }
-.um-settings-sheet .um-settings-tabs > [aria-selected=true]::after { content:'';position:absolute;inset:auto 20% 3px;border-bottom:2px solid var(--um-green); }
+.um-settings-sheet .um-settings-tabs > [aria-selected=true] { color:var(--um-settings-ink);background:var(--um-settings-blue); }
 .um-settings-sheet .um-sheet-body { flex:1;padding:0 20px 24px; }
 .um-settings-sheet :is(.um-settings-pane,.um-settings-help,.um-settings-tabs)[hidden] { display:none; }
 .um-settings-sheet .um-settings-pane > .um-section > .um-section-head { display:none; }
-.um-settings-sheet .um-settings-help { font-size:13px;line-height:1.7; }
+.um-settings-sheet .um-settings-help { font-size:var(--uvu-panel-caption);line-height:1.6; }
 .um-settings-sheet .um-settings-help .um-tutorial { padding-top:0;border:0; }
-.um-character-options .um-sheet-body label { display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:14px 0;min-width:0;font-size:13px;line-height:1.6;overflow-wrap:anywhere; }
+.um-character-options .um-sheet-body label { display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:16px 0;min-width:0;font-size:var(--uvu-panel-body-sm);line-height:1.6;overflow-wrap:anywhere; }
 .um-character-options .um-sheet-body .um-check { flex-direction:row;align-items:flex-start;gap:9px; }
 .um-character-options .um-check input { flex:0 0 16px;width:16px;height:16px;margin:3px 0 0; }
 .um-character-options .um-check span { min-width:0; }
@@ -34,11 +33,25 @@
 .um-character-options-footer .um-button { min-height:34px;border:0;background:var(--um-control);padding:6px 18px; }
 .um-extension-sheet .um-sheet-card { position:relative; }
 .um-extension-sheet .um-sheet-head .um-extension-help-button { flex:0 0 34px;width:34px;height:34px;min-height:34px;padding:0;border:0;background:transparent; }
-.um-extension-help-glyph { display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--um-control);color:var(--um-text);font-size:13px;line-height:1; }
-.um-extension-sheet .um-extension-help { position:absolute;z-index:3;top:62px;right:20px;width:min(218px,calc(100% - 40px));max-height:min(174px,calc(100% - 78px));padding:12px 14px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--um-line);border-radius:13px;background:var(--um-surface,#fff);box-shadow:0 8px 24px #00000014;font-size:12px;line-height:1.65;overflow-wrap:anywhere; }
+.um-extension-help-glyph { display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--um-control);color:var(--um-text);font-size:var(--uvu-panel-body-sm);line-height:1.6; }
+.um-extension-sheet .um-extension-help { position:absolute;z-index:3;top:62px;right:20px;width:min(218px,calc(100% - 40px));max-height:min(174px,calc(100% - 78px));padding:12px 14px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--um-line);border-radius:13px;background:var(--um-surface,#fff);box-shadow:0 8px 24px #00000014;font-size:var(--uvu-panel-caption);line-height:1.6;overflow-wrap:anywhere; }
 .um-extension-sheet .um-extension-help[hidden] { display:none; }
 .um-extension-help p { margin:0 0 10px; }
 .um-extension-help p:last-child { margin-bottom:0; }
+/* Settings keep the existing sheet; the music player and lyrics keep their own type. */
+.uvu-music-sheet:is(.um-settings-sheet,.um-character-options) :is(label,p,button,summary) { font-size:var(--uvu-panel-body-sm);line-height:1.6; }
+.uvu-music-sheet:is(.um-settings-sheet,.um-character-options) :is(h3,.um-account strong) { font-size:var(--uvu-panel-body-base);line-height:1.4; }
+.uvu-music-sheet:is(.um-settings-sheet,.um-character-options) :is(small,.um-hint,.um-status) { font-size:var(--uvu-panel-caption);line-height:1.6; }
+.uvu-music-sheet:is(.um-settings-sheet,.um-character-options) .um-sheet-body :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea) { font-size:var(--uvu-panel-body-base);line-height:1.6;min-width:0;max-width:100%;box-sizing:border-box; }
+.uvu-music-sheet:is(.um-settings-sheet,.um-character-options) .um-sheet-body { min-height:0;overscroll-behavior:contain;scroll-padding-block:16px; }
+.uvu-music-sheet.um-settings-sheet .um-settings-pane label { gap:8px; }
+.uvu-music-sheet.um-character-options .um-sheet-head h2 { font-size:var(--uvu-panel-h2);line-height:1.2; }
+.uvu-music-sheet.um-character-options .um-character-options-footer .um-button { background:#d4e5ef;color:#334f65; }
+.uvu-music-sheet.um-settings-sheet.um-tools nav [aria-pressed=true] { background:var(--um-settings-blue);color:var(--um-settings-ink);box-shadow:none; }
+.uvu-music-sheet.um-settings-sheet .um-primary { background:var(--um-settings-blue);color:var(--um-settings-ink); }
+@media (max-width:360px) {
+    .uvu-music-sheet.um-character-options .um-character-source select { max-width:150px; }
+}
 #uvu-music-screen .um-main { padding-bottom:calc(160px + env(safe-area-inset-bottom)); }
 #uvu-music-screen .um-hero { min-height:76px;padding:16px 20px 12px; }
 #uvu-music-screen .um-hero h1 { font-size:34px; }

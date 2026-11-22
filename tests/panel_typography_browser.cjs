@@ -1,0 +1,19 @@
+// Inspect the real app, using isolated fixtures and no account/API requests.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {fullApp,stableUI,root}=require('./helpers/full_app_browser.cjs');
+const out=path.join(root,'outputs/existing-panels-20261122/additional');fs.mkdirSync(out,{recursive:true});
+const sizes=[[320,568],[390,844],[768,1024],[844,390]],allowed=[12,14,16,20,24,32];
+(async()=>{const app=await fullApp(),checks=[];try{const {page,errors}=await app.page({reducedMotion:'reduce'});
+await page.evaluate(async()=>{db.characters=[{id:'type-char',realName:'排版测试',history:[],maxMemory:20,memoryJournals:[]}];await saveData();openChatRoom('type-char','private');});
+async function audit(name,selector){await stableUI(page,selector);for(const [width,height] of sizes){await page.setViewportSize({width,height});const result=await page.locator(selector).evaluate(panel=>{const r=panel.getBoundingClientRect(),fonts=[...panel.querySelectorAll('*')].filter(e=>e.checkVisibility()&&!e.closest('svg')&&([...e.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())||e.matches('select,textarea,input:not([type=hidden],[type=range],[type=checkbox],[type=radio],[type=color],[type=file])'))).map(e=>({tag:e.tagName,cls:e.className,id:e.id,text:e.textContent.slice(0,30),font:parseFloat(getComputedStyle(e).fontSize),line:getComputedStyle(e).lineHeight}));return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,overflow:panel.scrollWidth-panel.clientWidth,fonts};});assert(result.x>=-1&&result.y>=-1&&result.right<=width+1&&result.bottom<=height+1,name+' bounds '+JSON.stringify(result));assert(result.overflow<=1,name+' overflow');const bad=result.fonts.filter(e=>!allowed.includes(e.font));assert.deepEqual(bad,[],name+' uses approved font sizes');checks.push({name,width,height,...result});if(width===390)await page.screenshot({path:path.join(out,name+'.png'),animations:'disabled'});}}
+await page.evaluate(()=>{switchScreen('api-settings-screen');document.getElementById('uvu-pet-settings-entry').click();});await audit('pet','#uvu-pet-settings');await page.locator('#uvu-pet-settings [data-close]').click();
+await page.evaluate(()=>{openChatRoom('type-char','private');UvUScene.open();});await audit('scene','#scene-mode-modal .modal-window');await page.locator('#scene-help-btn').click();assert(await page.locator('#scene-help').isVisible());await page.locator('#scene-help-back').click();await page.evaluate(()=>UvUScene.close());
+await page.evaluate(()=>{UvUMusicUI.open();UvUMusicUI.accounts();});await audit('music-settings','.um-settings-sheet .um-sheet-card');await page.evaluate(()=>UvUMusicUI.close());
+await page.evaluate(()=>UvUMusicExtensionsUI.open());await audit('music-extensions','.um-extension-sheet .um-sheet-card');await page.keyboard.press('Escape');
+await page.evaluate(()=>UvUMusicToolsUI.open());await audit('music-tools','.um-tools .um-sheet-card');await page.keyboard.press('Escape');
+// Text preferences remain constrained to the same supported tokens.
+await page.evaluate(()=>{openChatRoom('type-char','private');openCharacterMemos(db.characters[0]);});
+for(const size of [12,14,16]){await page.evaluate(value=>document.documentElement.style.setProperty('--uvu-derived-body-size',value+'px'),size);assert.equal(await page.locator('#character-memos-dialog .uvu-lenso-panel').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)),size);}
+await page.evaluate(()=>document.documentElement.style.removeProperty('--uvu-derived-body-size'));
+assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify({checks,errors},null,2));console.log('PASS typography and viewport bounds for pet, scene, music settings, extensions and tools');
+}finally{await app.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
 const { chromium } = require('./helpers/browser_runtime.cjs').playwright();
 const root = path.resolve(__dirname, '..');
-const out = path.resolve(root, 'outputs/fusion-detail-fixes-20261112');
+const out = path.resolve(root, process.env.UVU_PANEL_OUTPUT || 'outputs/lenso-panels');
 fs.mkdirSync(out, { recursive: true });
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const libs = require('./helpers/browser_runtime.cjs').assetMap(html);
@@ -45,6 +45,8 @@ const server = http.createServer((req, res) => {
                 await page.setViewportSize({width,height});
                 const value=await panel.evaluate(p=>{const r=p.getBoundingClientRect(),c=getComputedStyle(p);return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,overflow:p.scrollWidth-p.clientWidth,bg:c.backgroundColor,canvas:c.getPropertyValue('--draft-canvas'),title:p.querySelector('.lenso-title')?.textContent}});
                 assert.ok(value.x>=-1&&value.y>=-1&&value.right<=width+1&&value.bottom<=height+1,id+' bounds '+JSON.stringify(value));assert.ok(value.overflow<=1,id+' overflow '+JSON.stringify(value));geometry.push({width,height,...value});
+                const typography = await panel.evaluate(p => [...p.querySelectorAll('*')].filter(e => e.checkVisibility() && !e.closest('svg') && ([...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) || e.matches('select,textarea,input:not([type=hidden],[type=range],[type=checkbox],[type=radio],[type=color],[type=file])'))).map(e => ({tag:e.tagName,cls:e.className,font:parseFloat(getComputedStyle(e).fontSize)})));
+                assert.deepEqual(typography.filter(e => ![12,14,16,20,24,32].includes(e.font)), [], id+' typography '+width);
             }
             await page.setViewportSize({width:390,height:844});
             await panel.evaluate(el=>{for(const b of el.querySelectorAll('.draft-scroll,.derived-body,.draft-form-scroll,.mcp-body,.calendar-body,.mono-memory-body,#auto-memory-form'))b.scrollTop=0;});
@@ -210,9 +212,9 @@ const server = http.createServer((req, res) => {
         const nativeStyle=await page.locator('#api-settings-screen .kkt-group').filter({hasNot:page.locator('#minimax-tts-settings')}).first().evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};});
         const voiceStyle=await voice.evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};});
         assert.deepEqual(voiceStyle,nativeStyle,'MiniMax matches native API group surface and corners');
-        assert.deepEqual(await page.locator('.minimax-speech-group').evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};}),nativeStyle,'speech group uses native card finish');
+        assert.deepEqual(await page.locator('#minimax-speech-advanced > .minimax-speech-group').evaluate(el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,radius:s.borderRadius,shadow:s.boxShadow,border:s.borderTopWidth};}),nativeStyle,'speech group uses native card finish');
         for(const style of await page.locator('.minimax-speech-group > details > summary').evaluateAll(items=>items.map(el=>({color:getComputedStyle(el).color,weight:getComputedStyle(el).fontWeight}))))assert.deepEqual(style,{color:'rgb(102, 102, 102)',weight:'400'},'speech summaries are regular gray');
-        assert.equal(await page.locator('#minimax-speech-advanced > .minimax-speech-group > details').count(),4,'four MiniMax sections share one group');
+        assert.deepEqual(await page.locator('#minimax-speech-advanced > .minimax-speech-group > details > summary').allTextContents(),['选择音色','对比试听','播放与缓存','默认读音词典','使用说明'],'all speech sections share the native group');
         const voiceRows=await page.locator('.minimax-speech-group > details > summary').evaluateAll(items=>items.map(el=>el.getBoundingClientRect().height));for(const h of voiceRows)assert(h<=52,'compact MiniMax rows');
         await page.screenshot({path:path.join(out,'voice-inline.png')});
         await page.evaluate(()=>switchScreen('storage-analysis-screen'));await page.locator('#storage-import-label').scrollIntoViewIfNeeded();

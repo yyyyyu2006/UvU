@@ -5,16 +5,16 @@
     const node=(tag,text,cls='')=>{const e=document.createElement(tag);e.className=cls;if(text!==undefined)e.textContent=text;return e;};
     const bytes=value=>value==null?'未知':value<1024*1024?(value/1024).toFixed(1)+' KiB':(value/1024/1024).toFixed(1)+' MiB';
     function styles(){if(document.getElementById('uvu-music-tools-style'))return;const s=node('style');s.id='uvu-music-tools-style';s.textContent=`
-.uvu-music-sheet.um-tools .um-sheet-body{overflow:auto;min-height:0;overscroll-behavior:contain;font-size:13px}
+.uvu-music-sheet.um-tools .um-sheet-body{overflow:auto;min-height:0;overscroll-behavior:contain;font-size:var(--uvu-panel-body-sm,14px);line-height:1.6}
 .um-tools nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:0 0 auto;gap:8px;margin:0 20px 12px}
 .uvu-music-sheet.um-tools nav button{padding:6px 4px;min-width:0;border:0;background:var(--um-control);font-size:12px}
 .uvu-music-sheet.um-tools nav [aria-pressed=true]{color:var(--um-text);font-weight:650;box-shadow:inset 0 -2px var(--um-text)}
-.um-tools section{margin:0 0 20px}.um-tools h3{font-size:14px;margin:14px 0 10px;font-weight:600}.um-tools p{overflow-wrap:anywhere}
+.um-tools section{margin:0 0 24px}.um-tools h3{font-size:var(--uvu-panel-body-base,16px);line-height:1.4;margin:16px 0 8px;font-weight:600}.um-tools p{overflow-wrap:anywhere}
 .um-tools .umt-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.um-tools .umt-source-row{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);align-items:end;margin:12px 0}
 .um-tools label{display:flex;gap:8px;align-items:center;min-width:0;overflow-wrap:anywhere}.um-tools .umt-field{display:flex;flex-direction:column;align-items:stretch;gap:5px;flex:1;min-width:0;margin-bottom:10px}
 .uvu-music-sheet.um-tools .um-sheet-body input:not([type=checkbox]),.uvu-music-sheet.um-tools select{box-sizing:border-box;width:100%;max-width:100%;min-height:36px;border:0;border-radius:10px;background:var(--um-control);color:inherit;padding:6px 10px;font:inherit}
-.uvu-music-sheet.um-tools .um-button{min-height:31px;padding:6px 10px;border:0;background:var(--um-control);font-size:12px}
-.um-tools .umt-actions{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:8px;margin:10px 0}.uvu-music-sheet.um-tools .umt-actions .um-button{min-width:0;height:31px;white-space:nowrap;padding:6px 4px}
+.uvu-music-sheet.um-tools .um-button{min-height:31px;padding:5px 10px;border:0;background:var(--um-control);font-size:var(--uvu-panel-caption,12px);line-height:1.6}
+.um-tools .umt-actions{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:8px;margin:8px 0}.uvu-music-sheet.um-tools .umt-actions .um-button{min-width:0;min-height:31px;white-space:nowrap;padding:5px 4px}
 .um-tools .umt-tracks{list-style:none;padding:0;margin:8px 0}.um-tools .umt-tracks li{padding:8px 0;border-bottom:1px solid var(--um-line);overflow-wrap:anywhere}.um-tools .umt-tracks label{align-items:flex-start}.um-tools input[type=checkbox]{flex-shrink:0;width:16px;height:16px;margin:2px 0}
 .um-tools .umt-status{font-size:12px;margin:8px 0}.um-tools .umt-status:empty{display:none}.um-tools .umt-busy{position:sticky;top:0;z-index:1;background:var(--um-surface,#fff)}.um-tools .umt-error{color:#c52b3e}
 .um-tools .umt-order li{display:flex;align-items:center;gap:8px}.um-tools .umt-order li>span{flex:1;min-width:0}.um-tools .umt-order .umt-field{flex:0 0 48px;margin:0}.um-tools .umt-order .umt-field>span{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden;white-space:nowrap}

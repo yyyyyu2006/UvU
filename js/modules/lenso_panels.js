@@ -30,6 +30,10 @@
         if (panel.matches('.uvu-calendar,.text-editor-card,.draft-mood-editor')) panel.classList.add('lenso-large');
         if (panel.matches('.model-picker-card,.relationship-dialog,.sticker-description-card')) panel.classList.add('lenso-compact');
         title.classList.add('lenso-title');
+        if (!/^H[1-6]$/.test(title.tagName)) {
+            title.setAttribute('role', 'heading');
+            title.setAttribute('aria-level', '2');
+        }
         (q(body,':scope > .draft-form-scroll') || body).prepend(title);
         for (const button of panel.querySelectorAll('footer button[type=submit],.draft-fixed-actions button[type=submit]')) button.classList.add('panel-primary');
         head.prepend(make('span', 'lenso-nav-space'));
