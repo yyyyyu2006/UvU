@@ -20,6 +20,39 @@ function memoJournal(f) {
     chat.characterMemos={settings:{enabled:true},notes:[note]};
     const journal={id:'memo-journal',source:'character-memo',characterMemoId:note.id,content:'周五还书',title:'约定',isFavorited:true};chat.memoryJournals.push(journal);return {note,journal};
 }
+
+test('opt-in cross-channel dedup requires shared provenance and the entire fact, preserving unique qualifiers', () => {
+    const f = fixture(), { c, chat } = f, { note } = memoJournal(f);
+    chat.characterMemos.settings.useContext = true;
+    chat.autoMemorySettings.vectorDeduplicateSources = true;
+    note.fact = '周五还书，后来取消'; note.pinned = true;
+    chat.memoryJournals = []; c.filterHistoryForAI = (_, rows) => rows;
+    assert.equal(c.selectCharacterMemos(chat).length, 1, 'a source match alone must not remove a cancellation');
+    note.fact = '周五还书';
+    assert.equal(c.selectCharacterMemos(chat).length, 0, 'same full fact in actual recent history is redundant');
+    assert.equal(c.inspectCharacterMemos(chat).rows[0].code, 'duplicate');
+    chat.maxMemory = 0;
+    assert.equal(c.selectCharacterMemos(chat).length, 1, 'zero history does not count as covered');
+    assert.equal(c.selectCharacterMemos(chat, '别人的事情：周五还书').length, 1, 'unrelated equal text is not evidence');
+    chat.autoMemorySettings.vectorDeduplicateSources = false;
+    assert.equal(c.selectCharacterMemos(chat, '周五还书').length, 0, 'disabled retains previous selector behavior');
+});
+
+test('only vector sources actually assembled in this prompt can suppress the equivalent memo', () => {
+    const f = fixture(), { c, chat } = f, { note, journal } = memoJournal(f);
+    chat.characterMemos.settings.useContext = true; chat.maxMemory = 0; note.pinned = true;
+    chat.autoMemorySettings.vectorDeduplicateSources = true; journal.isFavorited = false;
+    let current = true;
+    c.mockResult = { context: 'vector', injectedContext: 'vector', entries: [{ journal }], isCurrent: () => current };
+    vm.runInContext('vectorMemoryResults.set(db.characters[0], mockResult)', c);
+    c.updateVectorMemoryDiagnostics(chat, { injectedIds: [journal.id] });
+    assert.equal(c.selectCharacterMemos(chat, 'base vector').length, 0);
+    assert.equal(c.selectCharacterMemos(chat, 'base without retrieval').length, 1);
+    current = false; assert.equal(c.selectCharacterMemos(chat, 'base vector').length, 1);
+    current = true; journal.content = '周五还书，后来取消'; note.fact = journal.content;
+    c.mockResult.entries[0] = { journal: { ...journal, content: '周五还书' } };
+    assert.equal(c.selectCharacterMemos(chat, 'base vector').length, 1, 'truncated vector result cannot cover unique text');
+});
 test('a memo copied into diary cannot bypass edited-source invalidation or a changed user persona',()=>{
     const f=fixture(),{c,chat}=f;memoJournal(f);assert.equal(c.getContextMemoryJournals(chat).length,1);
     chat.history[0].content='已取消约定';assert.equal(c.getContextMemoryJournals(chat).length,0);assert.ok(!c.getVectorMemoryCandidates(chat).some(j=>j.id==='memo-journal'));

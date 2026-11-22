@@ -8,6 +8,19 @@ function fixture(files = ['storage', 'character_memos', 'memory_library']) {
     for (const file of files) vm.runInContext(fs.readFileSync(path.join(__dirname, '../js/modules', file+'.js'),'utf8'),c);
     return {c,chat};
 }
+
+test('fact annotations round-trip in backup validation while malformed imported labels are rejected', () => {
+    const { c } = fixture(['storage']);
+    const fact = { id: 'f', fact: '喜欢茶', subject: 'user', entityId: 'user:scope', attribute: '饮品', value: '茶', polarity: 'positive',
+        period: 'unknown', from: '', to: '', owner: 'scope', sourceStamp: 'hash', recordedAt: 10, sourceRecordedAt: null, confirmed: true };
+    const journal = { id: 'j', memoryFacts: [fact], memoryFactRelations: [{ key: 'a|b', stamp: 'hash', owner: 'scope', decision: 'coexist', at: 10 }] };
+    assert.doesNotThrow(() => c.storageValidateModules({ characters: [{ id: 'c', memoryJournals: [journal] }] }));
+    for (const update of [{ memoryFacts: [null] }, { memoryFacts: Array(21).fill(fact) }, { memoryFacts: [{ ...fact, subject: 'someone' }] },
+        { memoryFacts: [{ ...fact, confirmed: 'true' }] }, { memoryFactRelations: [{ key: 'k', stamp: 's', owner: 'o', decision: 'replace-everything' }] }]) {
+        assert.throws(() => c.storageValidateModules({ characters: [{ id: 'c', memoryJournals: [{ ...journal, ...update }] }] }), /memoryFact/);
+        assert.throws(() => c.storageValidateModules({ characters: [{ id: 'c', archives: [{ id: 'a', data: { memoryJournals: [{ ...journal, ...update }] } }] }] }), /memoryFact/);
+    }
+});
 test('B01 backup rejects corrupt memo structures before import, including archived data', async () => {
     const {c,chat}=fixture(); const note=await c.addManualCharacterMemo(chat,{fact:'喜欢喝茶'});
     const good=structuredClone(chat.characterMemos);

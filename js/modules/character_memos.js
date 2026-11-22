@@ -472,15 +472,36 @@ function characterMemoContextJournals(chat) {
     // Reuse the established eligibility rules without changing journal injection.
     return typeof getContextMemoryJournals==='function'?getContextMemoryJournals(chat):[];
 }
+function characterMemoCoverageSources(chat, existingContext) {
+    const normalize = text => String(text || '').replace(/\s+/gu, '');
+    const context = normalize(existingContext);
+    const journals = characterMemoContextJournals(chat).filter(journal => journal.content && context.includes(normalize(journal.content)));
+    if (typeof getPreparedVectorMemorySources === 'function') journals.push(...getPreparedVectorMemorySources(chat, existingContext));
+    const rows = journals.map(journal => ({ content: normalize(journal.content), memoId: journal.characterMemoId,
+        ids: new Set(typeof VectorMemoryTools !== 'undefined' ? VectorMemoryTools.sourceIds(journal, chat) : []) }));
+    if (typeof getAutoMemoryContextHistory === 'function' && typeof filterHistoryForAI === 'function') {
+        const recent = filterHistoryForAI(chat, getAutoMemoryContextHistory(chat));
+        for (const message of recent.filter(characterMemoEligible)) rows.push({ content: normalize(message.content), ids: new Set([message.id]) });
+    }
+    return rows;
+}
+function characterMemoCovered(note, rows) {
+    const fact = String(note.fact || '').replace(/\s+/gu, '');
+    if (!fact) return false;
+    return rows.some(row => row.content.includes(fact) && (row.memoId === note.id ||
+        note.sources?.length && note.sources.every(source => row.ids.has(source.id))));
+}
 function selectCharacterMemos(chat, existingContext = '') {
     const settings=characterMemoSettings(chat);if(!settings.enabled||!settings.useContext)return [];
     const query=characterMemoTokens((chat.history||[]).filter(m=>m.role==='user'&&characterMemoEligible(m)).slice(-3).map(m=>m.content).join('\n'));
     let candidates=characterMemoRecords(chat).filter(n=>n.status==='approved'&&characterMemoPrivacyAllowed(chat,n.fact+' '+(n.content||''))&&!n.localOnly&&n.useContext!==false&&characterMemoAt(n)&&characterMemoSourceValid(chat,n))
         .map(n=>({note:n,score:(n.pinned?100:0)+[...characterMemoTokens(n.fact)].filter(t=>query.has(t)).length,semantic:characterMemoCachedScore(chat,n)})).filter(n=>n.score>0||n.semantic>=.82).sort((a,b)=>b.score-a.score||b.semantic-a.semantic);
     if(settings.ranking==='rrf')candidates=characterMemoRRF(candidates);
+    const sourceDedup = typeof getAutoMemorySettings === 'function' && getAutoMemorySettings(chat).vectorDeduplicateSources;
+    const coverage = sourceDedup ? characterMemoCoverageSources(chat, existingContext) : [];
     let used=0;const selected=[],journals=characterMemoContextJournals(chat);
-    for(const {note}of candidates){if(existingContext.includes(note.fact))continue;if(settings.diversity&&selected.some(n=>characterMemoSameFact(n,note)))continue;const size=JSON.stringify({subject:note.subject,fact:note.fact}).length;if(used+size>settings.budget)continue;
-        if(journals.some(j=>String(j.content||'').includes(note.fact)))continue;
+    for(const {note}of candidates){if(sourceDedup ? characterMemoCovered(note,coverage) : existingContext.includes(note.fact))continue;if(settings.diversity&&selected.some(n=>characterMemoSameFact(n,note)))continue;const size=JSON.stringify({subject:note.subject,fact:note.fact}).length;if(used+size>settings.budget)continue;
+        if(!sourceDedup&&journals.some(j=>String(j.content||'').includes(note.fact)))continue;
         selected.push(note);used+=size;if(selected.length===6)break;}
     return selected;
 }
@@ -492,6 +513,8 @@ function getCharacterMemoContext(chat, existingContext = '') {
 // On-demand explanation only; the established selector above remains the source of truth.
 function inspectCharacterMemos(chat, existingContext = '') {
     const settings = characterMemoSettings(chat), notes = characterMemoRecords(chat), now = Date.now(), journals=characterMemoContextJournals(chat);
+    const sourceDedup = typeof getAutoMemorySettings === 'function' && getAutoMemorySettings(chat).vectorDeduplicateSources;
+    const coverage = sourceDedup ? characterMemoCoverageSources(chat, existingContext) : [];
     const selected = new Set(selectCharacterMemos(chat, existingContext));
     const owner = characterMemoIdentity(chat), query = characterMemoTokens((chat.history || []).filter(m => m.role === 'user' && characterMemoEligible(m)).slice(-3).map(m => m.content).join('\n'));
     const rows = notes.filter(n => n.owner === owner).map(note => {
@@ -506,7 +529,7 @@ function inspectCharacterMemos(chat, existingContext = '') {
         else if(!characterMemoAt(note)){code='time';reason='不在事实有效期内';}
         else if (!characterMemoSourceValid(chat, note)) { const source = characterMemoSourceStatus(chat, note); code = source.code; reason = source.message; }
         else if (selected.has(note)) { code = 'selected'; reason = note.pinned ? '置顶入选' : '与最近用户消息相关'; }
-        else if (existingContext.includes(note.fact) || journals.some(j => String(j.content || '').includes(note.fact))) { code = 'duplicate'; reason = '已在现有上下文或可用日记中'; }
+        else if (sourceDedup ? characterMemoCovered(note, coverage) : existingContext.includes(note.fact) || journals.some(j => String(j.content || '').includes(note.fact))) { code = 'duplicate'; reason = sourceDedup ? '同来源的完整事实已在本轮历史或记忆中' : '已在现有上下文或可用日记中'; }
         else {
             if (!note.pinned && ![...characterMemoTokens(note.fact)].some(t => query.has(t))) { code = 'unrelated'; reason = '与最近用户消息无匹配'; }
         }

@@ -29,4 +29,6 @@ async function run(mode, query) {
         falseReferences: found.filter(id => !expected.has(id)).length, estimatedTokens: vm.runInContext('VectorMemoryTools', c).tokens(text), requests,
         milliseconds: +(performance.now() - started).toFixed(2) };
 }
-(async () => { for (const mode of ['cosine', 'hybrid', 'hybrid+rerank', 'hybrid+rewrite', 'hybrid+weighted', 'hybrid+rrf', 'hybrid+rrf+weighted']) for (const query of cases.queries) console.log(JSON.stringify(await run(mode, query))); })().catch(error => { console.error(error); process.exitCode = 1; });
+const modes = ['cosine', 'hybrid', 'hybrid+rerank', 'hybrid+rewrite', 'hybrid+weighted', 'hybrid+rrf', 'hybrid+rrf+weighted'];
+module.exports = { run, modes, cases };
+if (require.main === module) (async () => { for (const mode of modes) for (const query of cases.queries) console.log(JSON.stringify(await run(mode, query))); })().catch(error => { console.error(error); process.exitCode = 1; });

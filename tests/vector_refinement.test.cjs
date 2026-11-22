@@ -244,12 +244,16 @@ test('source states use configured chunk size and malformed provenance is ignore
     await c.getVectorMemoryContext(chat, 'ignored', undefined, { indexOnly: true, fullIndex: true });
     const row = c.getVectorMemorySourceStates(chat)[0]; assert.equal(row.status, 'valid'); assert.ok(row.totalChunks > 1);
 });
-test('summary provenance wins over raw old floors and exact duplicate memories when dedup enabled', () => {
+test('summary provenance covers raw floors and same-source copies while preserving unanchored independent memories', () => {
     const { c, chat } = fixture({ vectorDeduplicateSources: true, vectorStableSources: true });
     chat.maxMemory = 1;
     chat.history = [{ id: 'old', role: 'assistant', content: '曾相约海边' }, { id: 'new', role: 'user', content: '现在' }];
     chat.memoryJournals = [{ id: 'summary', content: '曾相约海边', sourceMessageIds: ['old'] }, { id: 'copy', content: '曾相约海边' }];
+    assert.deepEqual(Array.from(c.getVectorMemoryCandidates(chat), x => x.id), ['summary', 'copy']);
+    chat.memoryJournals[1].sourceMessageIds = ['old'];
     assert.deepEqual(Array.from(c.getVectorMemoryCandidates(chat), x => x.id), ['summary']);
+    chat.memoryJournals[1].content += '，后来取消';
+    assert.deepEqual(Array.from(c.getVectorMemoryCandidates(chat), x => x.id), ['summary', 'copy']);
 });
 test('bounded topK preserves strongest scores and tie order without sorting the full input', () => {
     const { c } = fixture(), tool = vm.runInContext('VectorMemoryTools', c);

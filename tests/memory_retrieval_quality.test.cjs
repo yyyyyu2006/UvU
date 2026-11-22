@@ -22,6 +22,40 @@ const ids = items => Array.from(items, x => x.id);
 function history(chat, count) {
     chat.history = Array.from({ length: count }, (_, i) => ({ id: 'm' + i, role: i % 2 ? 'assistant' : 'user', content: '合成消息' + i, timestamp: 1700000000000 + i }));
 }
+
+test('smart manual ranges repartition by complete exchanges, explicit events and full input limits', () => {
+    const { c, chat, calls } = fixture({ summarySmartBatchEnabled: true, batchSize: 4, summaryInputMaxTokens: 6000 }); history(chat, 8);
+    const batches = c.planAutoMemoryRange(chat, 1, 8, 1, '5').batches;
+    assert.deepEqual(Array.from(batches, rows => ids(rows)), [['m0', 'm1', 'm2', 'm3'], ['m4', 'm5', 'm6', 'm7']]);
+    const split = c.planAutoMemoryRange(chat, 1, 8, 3).batches;
+    assert.deepEqual(Array.from(split, rows => rows.length), [4, 4], 'requested count is a target; complete answers stay together');
+    assert.throws(() => c.planAutoMemoryRange(chat, 1, 8, 2, '9'), /本次待整理来源/);
+    assert.throws(() => c.planAutoMemoryRange(chat, 1, 8, 2, '5abc'), /整数/);
+    chat.history[0].content = '很长的消息'.repeat(4000);
+    assert.throws(() => c.planAutoMemoryRange(chat, 1, 8, 2), /不会截断或发出请求/);
+    assert.equal(calls.length, 0);
+});
+
+test('confirmed alias dictionaries apply only to optional local lexical scoring and exact English names', async () => {
+    const { tools } = fixture(), settings = { vectorVocabularyEnabled: true, vectorAliases: '许见青=小青,见青\nAnn=安', vectorWorkTerms: '量子海\n2026-11-22' };
+    assert.equal(tools.lexical('小青', '许见青', settings), 1);
+    assert.equal(tools.lexical('小青', '许见青'), 0);
+    assert.ok(tools.lexical('安', 'Ann', settings) > 0);
+    assert.equal(tools.lexical('安', 'Anna', settings), 0);
+    assert.equal(tools.lexical('2026年11月22日', '2026-11-22', settings), 1);
+    assert.ok((await tools.weightedLexical('小青', ['许见青在量子海。', '其他角色。'], () => {}, settings))[0] > 0);
+    assert.throws(() => tools.vocabulary({ vectorAliases: '甲=小青\n乙=小青' }), /不同标准名/);
+    assert.throws(() => tools.vocabulary({ vectorAliases: '缺少等号' }), /每行/);
+});
+
+test('source-aware coverage retains independent text, and anchored manual summaries recover source identity', () => {
+    const { tools, chat } = fixture(); history(chat, 3);
+    const journal = { content: '约好周五。后来取消。', startMessageId: 'm0', endMessageId: 'm1' };
+    assert.deepEqual(ids(tools.sourceIds(journal, chat).map(id => ({ id }))), ['m0', 'm1']);
+    assert.equal(tools.coveredBy(journal, [{ content: '约好周五。', sourceMessageIds: ['m0', 'm1'] }], chat), false);
+    assert.equal(tools.coveredBy(journal, [{ content: journal.content, sourceMessageIds: ['other'] }], chat), false);
+    assert.equal(tools.coveredBy(journal, [{ content: journal.content, sourceMessageIds: ['m0', 'm1'] }], chat), true);
+});
 test('smart summary batches preserve adjacent Q&A and keep legacy batches when disabled', () => {
     const { c, chat } = fixture(); history(chat, 6);
     assert.deepEqual(ids(c.getAutoMemoryPlan(chat).batch), ['m0', 'm1', 'm2']);

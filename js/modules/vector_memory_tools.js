@@ -56,18 +56,61 @@ const VectorMemoryTools = (() => {
         }
         return [...out].slice(0, 256);
     }
-    function lexical(query, text) {
-        const q = terms(query); if (!q.length) return 0;
-        const value = text.toLowerCase(); return q.reduce((sum, word) => sum + (value.includes(word) ? 1 : 0), 0) / q.length;
+    function vocabulary(settings = {}) {
+        const aliases = new Map(), words = [], lines = String(settings.vectorAliases || '').split(/\n/u).map(line => line.trim()).filter(Boolean);
+        if (lines.length > 40) throw Error('别名最多40组');
+        for (const line of lines) {
+            const parts = line.split('=');
+            if (parts.length !== 2) throw Error('别名每行使用：标准名=别名1,别名2');
+            const canonical = parts[0].trim().toLowerCase(), names = [canonical, ...parts[1].split(/[,，]/u).map(text => text.trim().toLowerCase())];
+            if (names.length > 9 || names.some(name => !name || name.length > 40)) throw Error('每组最多8个别名，每个名称1至40字');
+            for (const name of names) {
+                if (aliases.has(name) && aliases.get(name) !== canonical) throw Error('同一个别名不能指向不同标准名：' + name);
+                aliases.set(name, canonical);
+            }
+        }
+        for (const word of String(settings.vectorWorkTerms || '').split(/\n/u).map(value => value.trim().toLowerCase()).filter(Boolean)) {
+            if (word.length > 40 || words.length >= 80) throw Error('作品词最多80个，每个1至40字');
+            words.push(word);
+        }
+        const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = aliases.size ? new RegExp([...aliases.keys()].sort((a, b) => b.length - a.length).map(escape).join('|'), 'gu') : null;
+        const process = value => {
+            const text = String(value || '').toLowerCase();
+            const normalized = pattern ? text.replace(pattern, (match, offset) => {
+                if (/^[a-z0-9_]/u.test(match) && /[a-z0-9_]/u.test(text[offset - 1] || '') ||
+                    /[a-z0-9_]$/u.test(match) && /[a-z0-9_]/u.test(text[offset + match.length] || '')) return match;
+                return aliases.get(match);
+            }) : text;
+            return normalized.replace(/(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})日?/gu, (_, y, m, d) => `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+        };
+        return { process, terms: text => [...new Set([...terms(text), ...words.filter(word => text.includes(process(word)))])].slice(0, 336) };
     }
-    async function weightedLexical(query, texts, guard = () => {}) {
-        const q = terms(query), counts = [], frequencies = q.map(() => 0);
+    function vocabularyFor(settings) {
+        if (!settings?.vectorVocabularyEnabled) return { process: text => String(text || '').toLowerCase(), terms };
+        try { return vocabulary(settings); } catch (_) { return { process: text => String(text || '').toLowerCase(), terms }; }
+    }
+    function lexical(query, text, settings) {
+        const dictionary = vocabularyFor(settings), q = dictionary.terms(dictionary.process(query)); if (!q.length) return 0;
+        const value = dictionary.process(text); return q.reduce((sum, word) => sum + (wordCount(value, word, settings) ? 1 : 0), 0) / q.length;
+    }
+    function wordCount(text, word, settings) {
+        let count = 0, at = 0;
+        while ((at = text.indexOf(word, at)) !== -1) {
+            const bounded = !settings?.vectorVocabularyEnabled || !/^[a-z0-9_:-]+$/u.test(word) ||
+                !/[a-z0-9_:-]/u.test(text[at - 1] || '') && !/[a-z0-9_:-]/u.test(text[at + word.length] || '');
+            if (bounded) count++; at += word.length;
+        }
+        return count;
+    }
+    async function weightedLexical(query, texts, guard = () => {}, settings) {
+        const dictionary = vocabularyFor(settings); query = dictionary.process(query); texts = texts.map(dictionary.process);
+        const q = dictionary.terms(query), counts = [], frequencies = q.map(() => 0);
         let deadline = Date.now() + 40;
         for (const source of texts) {
             guard(); const text = String(source).toLowerCase();
             counts.push(q.map((word, index) => {
-                let count = 0, at = 0;
-                while ((at = text.indexOf(word, at)) !== -1) { count++; at += word.length; }
+                const count = wordCount(text, word, settings);
                 if (count) frequencies[index]++; return count;
             }));
             if (Date.now() >= deadline) {
@@ -150,9 +193,27 @@ const VectorMemoryTools = (() => {
         seen.add(journal.id);
         const ids = [...(Array.isArray(journal.sourceMessageIds) ? journal.sourceMessageIds : []),
             ...(Array.isArray(journal.autoMemory?.sources) ? journal.autoMemory.sources : []).map(x => x?.id)];
+        if (journal.startMessageId && journal.endMessageId) {
+            const start = (chat?.history || []).findIndex(message => message.id === journal.startMessageId);
+            const end = (chat?.history || []).findIndex(message => message.id === journal.endMessageId);
+            if (start >= 0 && end >= start) ids.push(...chat.history.slice(start, end + 1).map(message => message.id));
+        }
+        if (journal.characterMemoId && typeof characterMemoJournalAllowed === 'function' && characterMemoJournalAllowed(chat, journal)) {
+            const note = characterMemoRecords(chat).find(item => item.id === journal.characterMemoId);
+            ids.push(...(note?.sources || []).map(source => source.id));
+        }
         for (const child of Array.isArray(journal.autoMemory?.children) ? journal.autoMemory.children : []) ids.push(...sourceIds(chat?.memoryJournals?.find(x => x.id === child?.id), chat, seen));
         for (const source of Array.isArray(journal.manualMergeSources) ? journal.manualMergeSources : []) ids.push(...sourceIds(source, chat, seen));
         return [...new Set(ids.filter(x => typeof x === 'string' && x))];
+    }
+    function coveredBy(journal, others, chat) {
+        const ids = sourceIds(journal, chat), normalize = text => String(text || '').replace(/\s+/gu, '');
+        const text = normalize(journal.content);
+        if (!text || !ids.length) return false;
+        return others.some(other => {
+            const covered = new Set(sourceIds(other, chat));
+            return ids.every(id => covered.has(id)) && normalize(other.content).includes(text);
+        });
     }
     function chunkSettings(chat) {
         const s = getAutoMemorySettings(chat); return { size: s.vectorChunkSize || 1200, overlap: s.vectorChunkOverlap ?? 180,
@@ -255,7 +316,7 @@ const VectorMemoryTools = (() => {
         const section = title => { const details = document.createElement('details'), summary = document.createElement('summary');
             summary.textContent = title; details.append(summary); root.append(details); const body = document.createElement('div'); body.className = 'vector-refinement-fields'; details.append(body); return body; };
         const field = (body, name, text, type = 'checkbox', min, max, id) => {
-            const label = document.createElement('label'), input = document.createElement('input'); input.type = type;
+            const label = document.createElement('label'), input = document.createElement(type === 'textarea' ? 'textarea' : 'input'); if (type !== 'textarea') input.type = type;
             if (name) input.name = name; if (id) input.id = id;
             if (min !== undefined) input.min = min; if (max !== undefined) input.max = max;
             if (type === 'checkbox') { label.className = 'auto-memory-check'; label.append(input, document.createTextNode(text)); }
@@ -281,6 +342,9 @@ const VectorMemoryTools = (() => {
         field(recall, 'vectorHybridEnabled', '结合关键词匹配');
         field(recall, 'vectorRRFEnabled', '混合检索按名次融合（RRF）');
         field(recall, 'vectorWeightedLexicalEnabled', '关键词按稀有程度和文本长度加权');
+        field(recall, 'vectorVocabularyEnabled', '使用我确认的别名与作品词（仅本地关键词检索）');
+        const aliases = field(recall, 'vectorAliases', '别名：每行 标准名=别名1,别名2', 'textarea'); aliases.maxLength = 4000; aliases.rows = 3;
+        const workTerms = field(recall, 'vectorWorkTerms', '作品词：每行一个', 'textarea'); workTerms.maxLength = 3200; workTerms.rows = 3;
         field(recall, 'vectorDiversityEnabled', '优先选择不同来源');
         field(recall, 'vectorNeighborExpansionEnabled', '命中后补全相邻句段');
         field(recall, 'vectorRerankThresholdEnabled', '过滤低分重排结果');
@@ -307,5 +371,5 @@ const VectorMemoryTools = (() => {
         text.textContent = '先保存向量设置，在记忆库点击“续建索引”。暂停后可续建；“只检索已有索引”不会在回复前补建。正文预览不修改聊天。修改正文标签、分块或模型后再次续建即可。混合检索偏重精确词，重排最低分仅适用于返回分数的专用接口。Token 是本机估算，按所用模型留出余量；重叠也计入用量。独立索引先保留旧数据，完整备份会带上有效缓存；关闭后下一次建库改回原保存方式。查询整理失败会用原查询。';
         help.append(text);
     }
-    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, weightedLexical, fuseRanks, diversify, expandRange, queryEmbedding, rewrite, sourceIds, chunkSettings, chunks, topK, cachedResult, invalidateResultCache, indexScope, portableExport, setupForm });
+    return Object.freeze({ clean, tags, sentenceBudget, tokens, tokenBudget, lexical, vocabulary, weightedLexical, fuseRanks, diversify, expandRange, queryEmbedding, rewrite, sourceIds, coveredBy, chunkSettings, chunks, topK, cachedResult, invalidateResultCache, indexScope, portableExport, setupForm });
 })();

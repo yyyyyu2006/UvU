@@ -706,6 +706,20 @@ function storageValidateModules(modules) {
             for (const key of ['id', 'title', 'content', 'timeline', 'category', 'vectorSupersededBy']) optional(journal[key], location + '.' + key, 'string');
             timestamp(journal.createdAt, location + '.createdAt');
             optional(journal.isFavorited, location + '.isFavorited', 'boolean');
+            for (const [key, maximum] of [['memoryFacts', 20], ['memoryFactRelations', 60]]) {
+                if (journal[key] === undefined) continue;
+                if (!Array.isArray(journal[key]) || journal[key].length > maximum) fail(location + '.' + key, '有界事实核对列表');
+                list(journal[key], location + '.' + key, (entry, entryPath) => {
+                    const fields = key === 'memoryFacts' ? ['id', 'fact', 'subject', 'entityId', 'attribute', 'value', 'polarity', 'period', 'from', 'to', 'owner', 'sourceStamp'] : ['key', 'stamp', 'decision', 'owner'];
+                    for (const field of fields) {
+                        if (typeof entry[field] !== 'string' || entry[field].length > (['sourceStamp', 'stamp'].includes(field) ? 10000 : field === 'key' || field === 'owner' || field === 'entityId' ? 2000 : 600)) fail(entryPath + '.' + field, '有界文本');
+                    }
+                    for (const field of ['recordedAt', 'sourceRecordedAt', 'at']) timestamp(entry[field], entryPath + '.' + field);
+                    if (key === 'memoryFacts') {
+                        if (entry.confirmed !== true || !['user', 'char', 'unknown'].includes(entry.subject) || !['positive', 'negative', 'unknown'].includes(entry.polarity) || !['current', 'range', 'unknown'].includes(entry.period)) fail(entryPath, '有效的人工事实标签');
+                    } else if (!['coexist', 'changed', 'unresolved'].includes(entry.decision)) fail(entryPath + '.decision', '有效的人工关系');
+                });
+            }
             if (journal.range !== undefined) {
                 object(journal.range, location + '.range');
                 if (!Number.isInteger(journal.range.start) || journal.range.start < 0 || !Number.isInteger(journal.range.end) || journal.range.end < journal.range.start) fail(location + '.range', '非负且有序的整数范围');

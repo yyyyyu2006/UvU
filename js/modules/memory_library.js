@@ -577,6 +577,7 @@ function openMemoryLibrary() {
                     item.append(excerpt); links.append(item);
                 }
             }); details.append(links);
+            if (typeof mountMemoryFactReview === 'function') mountMemoryFactReview({ chat, journal, host: details, element, button, assertCurrent });
         });
         host.append(details);
     };
