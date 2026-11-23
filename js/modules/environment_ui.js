@@ -6,7 +6,8 @@ function environmentDataStatus(data = {}, options = {}) {
     const ageMinutes=known?Math.max(0,Math.floor(age/60000)):null;
     const freshness={unknown:'获取时间未知', 'clock-skew':'获取时间在设备未来，请核对设备时钟',stale:'缓存已过建议时效，请刷新',fresh:'数据在缓存时效内（可能来自缓存）'}[status];
     const location=options.location || {},region=[location.countryCode,location.subdivision].filter(Boolean).join(' / ') || '地区未知';
-    const text='来源：'+String(data.source || '未知')+' · 年份：'+(options.year || '以观测时间为准')+' · 地区：'+region+' · 时区：'+(location.timezone || '未知')+' · '+freshness+(known?' · 获取于（设备时间） '+new Date(time).toLocaleString()+' · 约 '+ageMinutes+' 分钟前':'');
+    const observed = data.observedAt && Number.isFinite(Date.parse(data.observedAt)) && location.timezone ? new Intl.DateTimeFormat('zh-CN',{timeZone:location.timezone,dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(data.observedAt)) : '';
+    const text='来源：'+String(data.source || '未知')+' · 年份：'+(options.year || '以观测时间为准')+' · 地区：'+region+' · 时区：'+(location.timezone || '未知')+' · '+freshness+(observed?' · 数据时间 '+observed:' · 数据时间未知')+(known?' · 本机获取于 '+new Date(time).toLocaleString()+' · 约 '+ageMinutes+' 分钟前':'');
     return {status,ageMinutes,text};
 }
 function environmentNode(tag, text, className = '') {
@@ -52,7 +53,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
     const dialog = createMessageForwardDialog(chat ? '天气与异地模式' : '日历与环境设置', 'environment-settings', () => controller.abort());
     dialog.panel.classList.add('derived-settings');
     const form = environmentNode('form', undefined, 'derived-body'); dialog.panel.appendChild(form);
-    form.innerHTML = '<label class="derived-check"><input type="checkbox" name="enabled">开启真实日历与天气</label><p class="derived-help">默认使用内置免密钥服务，无需配置 API 或 MCP。点击“定位并获取天气”即可启用；char 的城市由你设定。公共服务受网络与限流影响，Open-Meteo 免费接口用于非商业用途。</p><details data-service><summary>高级：自定义环境服务</summary><label>环境服务<select name="service"><option value="public">内置免密钥服务（默认）</option><option value="mcp">自定义远程 MCP</option></select></label></details><p class="derived-help">手动选城市或主动授权定位。定位会将坐标发送到所选地区服务；保存位置精度约为城市附近。天气和假日仅在打开界面或启用 AI 感知时查询。</p><section data-place="user"><strong>我的位置</strong></section><section data-chat hidden><label class="derived-check"><input type="checkbox" name="remoteEnabled">开启异地模式</label><section data-place="char"><strong>char 的位置</strong></section><label class="derived-check"><input type="checkbox" name="aiEnabled">允许本角色的 AI 感知真实环境</label><p class="derived-help">独立开关，默认关闭。开启后只在原有系统提示词末尾附加环境资料，不改原提示词正文和世界书位置。增加资料会增加输入用量，也可能影响回复。char 的位置由你设定。</p></section><details data-mcp><summary>MCP 服务与工具配置</summary><label>HTTPS 服务地址<input name="mcpUrl" type="url" placeholder="https://你的服务/mcp"></label><label>访问令牌（按需）<input name="mcpToken" type="password" autocomplete="off"></label><p class="derived-help">服务需允许此 Pages 站点跨域访问，并暴露 Mcp-Session-Id 响应头。支持 JSON／SSE 响应。令牌仅保存在本机及你导出的设置备份中，请勿填写到 GitHub 源码。</p><div data-tools></div><p class="derived-help">结果使用 structuredContent 或 JSON 文本：城市搜索返回 {results:[{name,latitude,longitude,countryCode,timezone,subdivision}]}；逆定位返回同样的单个地点；天气返回 {temperature,text,observedAt}（摄氏度）；节假日返回 {days:[{date,name,isOffDay,counties}]}，日期为 YYYY-MM-DD，counties 为适用行政区代码数组；全国条目省略 counties。</p><button type="button" data-test>测试 MCP 连接和工具</button></details><p class="derived-status" aria-live="polite"></p><footer><button type="submit">保存</button></footer>';
+    form.innerHTML = '<label class="derived-check"><input type="checkbox" name="enabled">开启日历与环境资料</label><details data-privacy><summary>位置权限与数据来源</summary><p class="derived-help">只有主动点定位才会请求浏览器授权；定位坐标会发给反查地区服务，城市和坐标会发给天气服务。手动选城市也会把搜索词发给地名服务。保存坐标约按1公里网格取整，不是精确地址。公共 Open-Meteo 服务按其公开条件使用并保留署名；自定义 MCP 由你选择和负责。关闭环境资料不会向 AI 追加天气或时差。</p><a href="https://open-meteo.com/en/terms" target="_blank" rel="noopener noreferrer">查看公共服务使用条件</a><button type="button" data-clear-location>清除已保存地点与环境缓存</button></details><label>温度单位<select name="temperatureUnit"><option value="C">摄氏度</option><option value="F">华氏度</option></select></label><label>时间格式<select name="timeFormat"><option value="24h">24小时制</option><option value="12h">12小时制</option></select></label><label>地点名称语言<select name="locationLanguage"><option value="zh">中文</option><option value="en">English</option></select></label><p class="derived-help">默认使用免密钥公共服务，也可配置 MCP。公共服务可能限流；天气是模型资料，不保证等同当地实测。</p><details data-service><summary>高级：自定义环境服务</summary><label>环境服务<select name="service"><option value="public">内置免密钥服务（默认）</option><option value="mcp">自定义远程 MCP</option></select></label></details><p class="derived-help">手动搜索或主动授权定位。选择结果后才会保存；角色地点由你单独设置。</p><section data-place="user"><strong>我的位置</strong></section><section data-chat hidden><label class="derived-check"><input type="checkbox" name="remoteEnabled">开启异地模式</label><section data-place="char"><strong>char 的位置</strong></section><label class="derived-check"><input type="checkbox" name="timeAiEnabled">允许 AI 参考双方当地时间与时差</label><label class="derived-check"><input type="checkbox" name="weatherAiEnabled">允许 AI 参考天气与节日</label><p class="derived-help">默认关闭。仅在单独开启时，才把对应资料作为独立附加内容加入请求；异地模式仍只控制空间互动规则，不依赖天气开关。</p></section><details data-mcp><summary>MCP 服务与工具配置</summary><label>HTTPS 服务地址<input name="mcpUrl" type="url" placeholder="https://你的服务/mcp"></label><label>访问令牌（按需）<input name="mcpToken" type="password" autocomplete="off"></label><p class="derived-help">服务需允许此 Pages 站点跨域访问，并暴露 Mcp-Session-Id 响应头。支持 JSON／SSE 响应。令牌仅保存在本机及你导出的设置备份中，请勿填写到 GitHub 源码。</p><div data-tools></div><p class="derived-help">结果使用 structuredContent 或 JSON 文本：天气需返回 temperature、可选 feelsLike/text/observedAt（温度以摄氏度传入）；地点需含城市、国家和 IANA 时区；节假日日期为 YYYY-MM-DD。</p><button type="button" data-test>测试 MCP 连接和工具</button></details><p class="derived-status" aria-live="polite"></p><footer><button type="submit">保存</button></footer>';
     const fields = form.elements, settings = getEnvironmentSettings(), profile = getChatEnvironmentProfile(chat);
     const centerLabel = environmentNode('label', '复用 MCP 服务中心（可选）'), center = environmentNode('select'); center.name = 'centerServiceId';
     center.appendChild(new Option('原独立 MCP 配置', ''));
@@ -62,13 +63,15 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
     const updateCenter = () => { fields.mcpUrl.parentElement.hidden = !!center.value; fields.mcpToken.parentElement.hidden = !!center.value; };
     center.onchange = updateCenter; updateCenter();
     fields.enabled.checked = settings.enabled; fields.service.value = settings.service;
+    fields.temperatureUnit.value = settings.temperatureUnit; fields.timeFormat.value = settings.timeFormat; fields.locationLanguage.value = settings.locationLanguage;
     fields.mcpUrl.value = settings.mcp.url; fields.mcpToken.value = settings.mcp.token;
-    fields.remoteEnabled.checked = profile.remoteEnabled; fields.aiEnabled.checked = profile.aiEnabled;
+    if (chat) { fields.remoteEnabled.checked = profile.remoteEnabled; fields.timeAiEnabled.checked = profile.timeAiEnabled; fields.weatherAiEnabled.checked = profile.weatherAiEnabled; }
     const updateService = () => { form.querySelector('[data-mcp]').hidden = fields.service.value !== 'mcp'; };
     fields.service.onchange = updateService; updateService();
     form.querySelector('[data-service]').open = settings.service === 'mcp';
     form.querySelector('[data-chat]').hidden = !chat;
     const status = form.querySelector('.derived-status'), places = { user: settings.userLocation, char: profile.charLocation };
+    let pendingUserLocation = null;
     const toolsArea = form.querySelector('[data-tools]');
     for (const [operation, title] of Object.entries({ search: '城市搜索', reverse: '坐标转地区', weather: '天气', holidays: '节假日' })) {
         const label = environmentNode('label', title + '工具名');
@@ -77,7 +80,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         label.append(name, environmentNode('span', 'JSON 参数模板'), args); toolsArea.appendChild(label);
     }
     function readSettings() {
-        return { enabled: fields.enabled.checked, service: fields.service.value, userLocation: places.user,
+        return { enabled: fields.enabled.checked, service: fields.service.value, userLocation: places.user, temperatureUnit: fields.temperatureUnit.value, timeFormat: fields.timeFormat.value, locationLanguage: fields.locationLanguage.value,
             mcp: { centerServiceId: center.value, url: fields.mcpUrl.value.trim(), token: fields.mcpToken.value.trim(), tools: Object.fromEntries(Object.keys(ENVIRONMENT_TOOL_DEFAULTS).map(operation => [operation, { name: fields['tool-' + operation].value.trim(), args: fields['args-' + operation].value }])) } };
     }
     form.querySelector('[data-mcp]').before(form.querySelector('[data-service]'));
@@ -89,6 +92,14 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         catch (error) { if (valid()) status.textContent = error.name === 'AbortError' ? '请求超时或已取消，请重试' : error.message; }
         finally { if (valid()) form.querySelectorAll('button').forEach(button => button.disabled = false); }
     }
+    form.querySelector('[data-clear-location]').onclick = () => run(async () => {
+        places.user = null; places.char = null; pendingUserLocation = null; fields.enabled.checked = false;
+        form.querySelector('[data-location-confirm]').hidden = true;
+        await saveSettings(readSettings());
+        try { localStorage.removeItem('uvu-environment-cache'); } catch (_) {}
+        renderPlace('user'); renderPlace('char');
+        status.textContent = '已清除已保存的用户与角色地点及环境缓存；日历记录未删除。';
+    });
     function renderPlace(who) {
         const label = form.querySelector(`[data-current="${who}"]`), place = places[who];
         label.textContent = place ? `${place.name} · ${place.countryCode} · ${place.timezone}` : '尚未选择城市';
@@ -100,41 +111,52 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         const row = environmentNode('div', undefined, 'derived-search');
         const input = environmentNode('input'); input.placeholder = '搜索城市，例如 上海 / Tokyo'; input.setAttribute('aria-label', who === 'user' ? '我的城市' : '角色城市');
         const button = environmentNode('button', '搜索'); button.type = 'button'; row.append(input, button);
-        const results = environmentNode('div', undefined, 'derived-city-results');
+        const results = environmentNode('div', undefined, 'derived-city-results'); results.setAttribute('aria-live', 'polite');
         const subdivision = environmentNode('label', '行政区代码（可选，如 US-CA；留空仅全国假日）');
         const code = environmentNode('input'); code.dataset.subdivision = ''; code.maxLength = 30; subdivision.appendChild(code);
         code.onchange = () => { if (places[who]) places[who] = { ...places[who], subdivision: code.value.trim().toUpperCase() }; };
         section.append(current, row, results, subdivision); renderPlace(who);
-        button.onclick = () => run(async () => {
+        let searchController, searchTimer;
+        async function search() {
+            searchController?.abort(); searchController = new AbortController();
+            const request = searchController, abort = () => request.abort();
+            controller.signal.addEventListener('abort', abort, { once: true });
             status.textContent = '正在搜索城市…';
-            const found = await searchEnvironmentCities(input.value, readSettings(), controller.signal);
-            if (!valid()) return;
-            results.replaceChildren();
-            found.forEach(place => {
-                const pick = environmentNode('button', `${place.name} · ${place.countryCode} · ${place.timezone}`); pick.type = 'button';
-                pick.onclick = () => { places[who] = place; renderPlace(who); results.replaceChildren(); status.textContent = '城市已选择，点击保存生效'; };
-                results.appendChild(pick);
-            }); status.textContent = found.length ? '请选择搜索结果' : '未找到城市，可尝试英文名称或更大的城市';
-        });
+            try {
+                const found = await searchEnvironmentCities(input.value, readSettings(), request.signal);
+                if (!valid() || request.signal.aborted) return;
+                results.replaceChildren();
+                found.forEach(place => {
+                    const pick = environmentNode('button', `${place.name} · ${place.subdivision || place.countryCode} · ${place.countryCode} · ${place.timezone}`); pick.type = 'button'; pick.setAttribute('aria-label', `${place.name}, ${place.subdivision || ''}, ${place.countryCode}, ${place.timezone}`);
+                    pick.onclick = () => { places[who] = place; renderPlace(who); results.replaceChildren(); status.textContent = '城市已选；保存后才会应用'; };
+                    results.appendChild(pick);
+                }); status.textContent = found.length ? '请选择城市和时区正确的结果' : '未找到城市，可尝试英文名称或更大的城市';
+            } finally { controller.signal.removeEventListener('abort', abort); }
+        }
+        button.onclick = () => run(search);
+        input.oninput = () => { clearTimeout(searchTimer); searchController?.abort(); results.replaceChildren(); if (input.value.trim().length < 2) return; searchTimer = setTimeout(() => search().catch(error => { if (valid() && error.name !== 'AbortError') status.textContent = error.message; }), 350); };
         input.onkeydown = event => { if (event.isComposing || event.keyCode === 229) return; if (event.key === 'Enter') { event.preventDefault(); button.click(); } };
         if (who === 'user') {
             const locate = environmentNode('button', '定位并获取天气'); locate.type = 'button'; locate.dataset.locate = '';
+            const confirm = environmentNode('div', undefined, 'environment-location-confirm'); confirm.dataset.locationConfirm = ''; confirm.hidden = true;
+            const candidate = environmentNode('p', '', 'derived-help'); candidate.dataset.locationCandidate = '';
+            const accept = environmentNode('button', '使用此城市'); accept.type = 'button';
+            const cancel = environmentNode('button', '取消'); cancel.type = 'button';
+            confirm.append(candidate, accept, cancel); section.appendChild(confirm);
             locate.onclick = () => run(async () => {
                 status.textContent = '正在定位并识别地区…'; const place = await locateEnvironmentUser({ ...readSettings(), service: 'public' }, controller.signal);
                 if (!valid()) return;
-                const next = { ...readSettings(), service: 'public', enabled: true, userLocation: place };
-                // This shortcut saves global location only; unsaved character options stay untouched.
-                await saveSettings(next, false);
-                if (!valid()) return;
-                places.user = place; fields.service.value = 'public'; updateService(); fields.enabled.checked = true; renderPlace('user');
-                status.textContent = `已定位并启用：${place.name}。正在获取天气…`;
-                try {
-                    const weather = await getEnvironmentWeather(place, next, controller.signal);
-                    if (valid()) status.textContent = `已定位并启用：${place.name} · ${weather.text} · ${weather.temperature}℃。节假日可在日历中查看，无需再点保存。`;
-                } catch (error) {
-                    if (valid()) status.textContent = `位置已保存并启用；天气暂未获取：${error.message}。可打开日历刷新。`;
-                }
+                pendingUserLocation = place; candidate.textContent = `识别为 ${place.name} · ${place.countryCode} · ${place.timezone}。仅保存城市级位置。`;
+                confirm.hidden = false; status.textContent = '请确认定位结果后再保存；取消不会保存坐标。'; accept.focus();
             }); section.appendChild(locate);
+            accept.onclick = () => run(async () => {
+                if (!pendingUserLocation) return;
+                const place = pendingUserLocation, next = { ...readSettings(), service: 'public', enabled: true, userLocation: place };
+                await saveSettings(next, false); if (!valid()) return;
+                pendingUserLocation = null; confirm.hidden = true; places.user = place; fields.service.value = 'public'; updateService(); fields.enabled.checked = true; renderPlace('user');
+                status.textContent = `已保存城市位置：${place.name}。天气和节日仅在你打开日历时读取。`;
+            });
+            cancel.onclick = () => { pendingUserLocation = null; confirm.hidden = true; status.textContent = '已取消；位置未保存。'; locate.focus(); };
         }
     }
     form.querySelector('[data-test]').onclick = () => run(async () => {
@@ -149,7 +171,6 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
     });
     async function saveSettings(next, saveProfile = true) {
         if (next.enabled && !next.userLocation) throw new Error('请先选择或定位你的城市');
-        if (saveProfile && chat && fields.remoteEnabled.checked && !places.char) throw new Error('请先选择 char 的城市');
         if (next.service === 'mcp') {
         if (next.mcp.centerServiceId) window.MCPServices.service(next.mcp.centerServiceId);
         else environmentEndpoint(next.mcp.url);
@@ -160,7 +181,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         }
         const before = db.environmentSettings; db.environmentSettings = next;
         try {
-        if (saveProfile && chat) await saveDerivedChatFields(chat, { environmentProfile: { remoteEnabled: fields.remoteEnabled.checked, aiEnabled: fields.aiEnabled.checked, charLocation: places.char } });
+        if (saveProfile && chat) await saveDerivedChatFields(chat, { environmentProfile: { remoteEnabled: fields.remoteEnabled.checked, timeAiEnabled: fields.timeAiEnabled.checked, weatherAiEnabled: fields.weatherAiEnabled.checked, aiEnabled: fields.timeAiEnabled.checked || fields.weatherAiEnabled.checked, charLocation: places.char } });
         else await saveData();
         } catch (error) { if (db.environmentSettings === next) { if (before === undefined) delete db.environmentSettings; else db.environmentSettings = before; } throw error; }
         document.dispatchEvent(new CustomEvent('uvu-environment-settings-changed'));
@@ -214,7 +235,8 @@ function openEnvironmentCalendar() {
         clock.textContent = location ? `${location.name} · ${environmentClock(location, now)}（${location.timezone}）` : '请在设置中开启功能并选择城市';
         if (location && profile.remoteEnabled && settings.userLocation && profile.charLocation) {
             const minutes = environmentTimezoneOffset(profile.charLocation.timezone, now) - environmentTimezoneOffset(settings.userLocation.timezone, now);
-            clock.textContent += `\n${minutes === 0 ? (chat?.remarkName || chat?.realName || chat?.name || '角色') + ' 与我时间相同' : (chat?.remarkName || chat?.realName || chat?.name || '角色') + ' 比我' + (minutes > 0 ? '快' : '慢') + Math.abs(minutes / 60).toFixed(2).replace(/\.?0+$/, '') + '小时'}（包含夏令时）`;
+            const name = chat?.remarkName || chat?.realName || chat?.name || '角色';
+            clock.textContent += `\n我：${environmentClock(settings.userLocation, now)} · ${settings.userLocation.timezone}\n${name}：${environmentClock(profile.charLocation, now)} · ${profile.charLocation.timezone}\n${environmentTimeDifferenceLabel(minutes, name)}（按各地时区规则）`;
         }
     }
     async function render(reset = false) {
@@ -264,12 +286,15 @@ function openEnvironmentCalendar() {
         const [w, h] = results;
         if (w.status === 'fulfilled') {
             metadata.textContent=environmentDataStatus(w.value,{kind:'weather',location}).text+(w.value.observedAt?' · 提供方观测时间：'+w.value.observedAt:' · 观测时间未提供');
-            weather.replaceChildren(environmentNode('span', `${w.value.text} · ${w.value.temperature}℃ · 更新于 ${new Date(w.value.fetchedAt).toLocaleTimeString('zh-CN')} · `));
+            const details = [`${w.value.text} · ${environmentTemperature(w.value.temperature)}`];
+            if (Number.isFinite(w.value.feelsLike)) details.push(`体感 ${environmentTemperature(w.value.feelsLike)}`);
+            if (Number.isFinite(w.value.next12Hours?.precipitationProbabilityMax)) details.push(`未来12小时降水概率最高 ${w.value.next12Hours.precipitationProbabilityMax}%`);
+            weather.replaceChildren(environmentNode('span', `${w.value.stale ? '上次天气（已过期）· ' : ''}${details.join(' · ')} · 更新于 ${new Date(w.value.fetchedAt).toLocaleTimeString('zh-CN')} · `));
             if (w.value.source === 'Open-Meteo') {
                 const credit = environmentNode('a', 'Open-Meteo'); credit.href = 'https://open-meteo.com/'; credit.target = '_blank'; credit.rel = 'noopener noreferrer'; weather.appendChild(credit);
             } else weather.appendChild(environmentNode('span', w.value.source));
             weather.appendChild(environmentNode('span', '（提供方数据，不代表设备精确实况）'));
-        } else {weather.textContent = '天气获取失败，可检查网络／服务后刷新';metadata.textContent='天气获取失败；未将缺少数据视为晴天或零度。';}
+        } else {weather.textContent = '天气暂不可用，可检查网络或服务后刷新';metadata.textContent='天气获取失败；未将缺少数据视为晴天或零度。';}
         if (h.status === 'fulfilled') {
             holidayData = h.value;
             cells.forEach((_,key)=>paintDay(key));

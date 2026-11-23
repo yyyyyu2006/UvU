@@ -393,7 +393,7 @@
             const service = q(body, '[data-service]'), mcp = q(body, '[data-mcp]');
             if (service && mcp) { const advanced = disclose([service, mcp], '数据服务', 'panel-environment-service'); const footer = q(body, ':scope > footer'); if (footer) footer.before(advanced); }
         }
-        ['enabled', 'remoteEnabled', 'aiEnabled'].forEach(name => asSwitch(q(body, 'input[name="' + name + '"]')));
+        ['enabled', 'remoteEnabled', 'timeAiEnabled', 'weatherAiEnabled'].forEach(name => asSwitch(q(body, 'input[name="' + name + '"]')));
     }
     function mcp(root) {
         const body = q(root, '.mcp-body'); if (!body || !root.closest('#mcp-services')) return;
@@ -1316,8 +1316,8 @@
         const text = make('div'); text.append(make('strong', '', name), make('small', '', detail || '当前存档')); row.append(avatar, text); return row;
     }
     function compactEnvironment(root,body) {
-        const enabled=q(body,'[name=enabled]')?.closest('label'),sync=q(body,'[name=aiEnabled]')?.closest('label');
-        if(enabled){label(enabled,'启用环境信息');if(sync)label(sync,'向当前角色同步');group([enabled,sync],'','draft-card draft-environment-switches');}
+        const enabled=q(body,'[name=enabled]')?.closest('label'),time=q(body,'[name=timeAiEnabled]')?.closest('label'),weather=q(body,'[name=weatherAiEnabled]')?.closest('label');
+        if(enabled){label(enabled,'启用环境信息');if(time)label(time,'同步当地时间');if(weather)label(weather,'同步天气与节日');group([enabled,time,weather],'','draft-card draft-environment-switches');}
         const mine=q(body,'[data-place=user]'),remote=q(body,'[data-chat]');
         if(mine){
             mine.classList.add('draft-environment-location');const heading=q(mine,':scope > strong'),current=q(mine,'[data-current]'),search=q(mine,'.derived-search'),locate=q(mine,'[data-locate]'),admin=q(mine,'label:has([data-subdivision])');

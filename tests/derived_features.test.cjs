@@ -48,6 +48,7 @@ test('environment coordinates, country, timezone and endpoints are validated', (
     assert.equal(c.normalizeEnvironmentLocation({ ...shanghai, timezone: 'missing/zone' }), null);
     assert.equal(c.normalizeEnvironmentLocation({ ...shanghai, countryCode: 'fake' }), null);
     assert.equal(c.normalizeEnvironmentLocation(shanghai).timezone, 'Asia/Shanghai');
+    assert.equal(c.normalizeEnvironmentLocation({ ...shanghai, latitude: 31.23456, longitude: 121.47654 }).latitude, 31.23, 'stored coordinates are rounded to an approximately 1 km grid');
     for (const value of ['javascript:alert(1)', 'http://remote.test/mcp', 'https://user:secret@test.invalid']) assert.throws(() => c.environmentEndpoint(value));
     assert.equal(c.environmentEndpoint('http://127.0.0.1:9000/mcp'), 'http://127.0.0.1:9000/mcp');
 });
@@ -58,6 +59,16 @@ test('timezone offsets handle DST, fractional hours and different local dates', 
     assert.equal(c.environmentTimezoneOffset('Asia/Kathmandu', new Date('2026-11-04T00:00:00Z')), 345);
     assert.equal(c.environmentDateKey(ny.timezone, new Date('2026-11-04T01:00:00Z')), '2026-11-03');
     assert.equal(c.environmentDateKey(shanghai.timezone, new Date('2026-11-04T01:00:00Z')), '2026-11-04');
+});
+test('timezone and temperature preferences format human-readable values without changing stored Celsius data', () => {
+    const { c } = fixture();
+    c.db.environmentSettings = { temperatureUnit: 'F', timeFormat: '12h' };
+    assert.equal(c.environmentTemperature(0), '32°F');
+    assert.equal(c.environmentTemperature(20), '68°F');
+    assert.equal(c.environmentTimeDifferenceLabel(345, '角色'), '角色比你快5小时45分钟');
+    assert.equal(c.environmentTimeDifferenceLabel(-30, '角色'), '角色比你慢30分钟');
+    assert.equal(c.environmentTimeDifferenceLabel(0, '角色'), '角色与你时间相同');
+    assert.equal(c.getEnvironmentSettings().timeFormat, '12h');
 });
 test('holiday scope excludes other states and preserves Chinese working-day adjustments', () => {
     const { c } = fixture();
@@ -87,6 +98,20 @@ test('weather cache avoids repeated calls; failed weather is not cached as sunsh
     c.fetch = async () => ({ ok: true, json: async () => ({ current: { temperature_2m: 0, weather_code: 0 } }) });
     assert.equal((await c.getEnvironmentWeather(ny, settings)).temperature, 0);
 });
+test('weather uses feels-like values and returns bounded UTC hourly forecast summaries', async () => {
+    const { c, requests } = fixture(), now = Math.floor(Date.now() / 1000);
+    c.fetch = async (url) => {
+        requests.push({ url });
+        return { ok: true, json: async () => ({
+            current: { time: now, temperature_2m: 12.5, apparent_temperature: 8, weather_code: 61, relative_humidity_2m: 82, wind_speed_10m: 14 },
+            hourly: { time: [now, now + 3600, now + 13 * 3600], temperature_2m: [12, 9, -20], precipitation_probability: [15, 70, 99], weather_code: [61, 61, 75] }
+        }) };
+    };
+    const result = await c.getEnvironmentWeather(shanghai);
+    assert.equal(result.feelsLike, 8); assert.equal(result.humidity, 82); assert.equal(result.windSpeed, 14);
+    assert.equal(result.next12Hours.temperatureMin, 9); assert.equal(result.next12Hours.precipitationProbabilityMax, 70);
+    assert.match(requests[0].url, /timezone=UTC&timeformat=unixtime/);
+});
 test('unsupported holidays report unavailable instead of an empty supported calendar', async () => {
     const { c } = fixture(); c.fetch = async () => ({ ok: true, json: async () => [{ countryCode: 'US' }] });
     await assert.rejects(c.getEnvironmentHolidays({ ...shanghai, countryCode: 'ZZ' }, 2026), /不覆盖/);
@@ -96,6 +121,12 @@ test('geolocation denial leaves manual city search available', async () => {
     await assert.rejects(c.locateEnvironmentUser(), /定位失败或未授权/);
     c.fetch = async () => ({ ok: true, json: async () => ({ results: [{ ...shanghai, country_code: 'CN' }] }) });
     assert.equal((await c.searchEnvironmentCities('上海'))[0].name, '上海');
+});
+test('city search language follows the saved language preference and keeps administrative-area labels', async () => {
+    const { c, requests } = fixture(); c.db.environmentSettings = { locationLanguage: 'en' };
+    c.fetch = async url => { requests.push(url); const { subdivision, ...location } = shanghai; return { ok: true, json: async () => ({ results: [{ ...location, country_code: 'CN', admin1: 'Shanghai Municipality' }] }) }; };
+    const places = await c.searchEnvironmentCities('Shanghai');
+    assert.match(requests[0], /language=en/); assert.equal(places[0].subdivision, 'Shanghai Municipality');
 });
 test('environment tool templates escape city strings and preserve numeric types', () => {
     const { c } = fixture();
@@ -150,6 +181,16 @@ test('AI environment awareness is separately gated, uses both locations and omit
     const context = await c.getEnvironmentContext(chat);
     assert.match(context, /上海/); assert.match(context, /纽约/); assert.match(context, /时差/);
     assert.equal(context.includes('latitude'), false); assert.equal(context.includes('longitude'), false);
+});
+test('AI local-time and weather sharing have independent opt-ins; time-only mode makes no network requests', async () => {
+    const { c, chat, requests } = fixture();
+    c.db.environmentSettings = { enabled: true, userLocation: { ...shanghai } };
+    chat.environmentProfile = { remoteEnabled: true, timeAiEnabled: true, weatherAiEnabled: false, charLocation: { ...ny } };
+    const context = await c.getEnvironmentContext(chat);
+    assert.match(context, /localTime/); assert.match(context, /时差/); assert.doesNotMatch(context, /weather|temperature|holidays/);
+    assert.equal(requests.length, 0);
+    const legacy = c.getChatEnvironmentProfile({ environmentProfile: { aiEnabled: true } });
+    assert.equal(legacy.timeAiEnabled, true); assert.equal(legacy.weatherAiEnabled, true);
 });
 test('avatar candidates only include real delivered images from the current character archive', async () => {
     const { c, chat } = fixture();
@@ -356,12 +397,14 @@ test('deep validation rejects corrupt new fields before import without rejecting
     c.storageValidateModules({ characters: [{ id: 'old', history: [] }] });
     for (const payload of [
         { environmentSettings: { enabled: 'yes' } },
+        { environmentSettings: { temperatureUnit: 'K' } },
         { environmentSettings: { userLocation: { latitude: 91 } } },
         { environmentSettings: { mcp: { tools: { weather: 'not an object' } } } },
         { characters: [{ id: 'a', avatarAutonomy: { cache: { img: { description: [] } } } }] },
         { characters: [{ id: 'a', avatarAutonomy: { initiative: 'unbounded' } }] },
         { characters: [{ id: 'a', avatarAutonomy: { cooldownHours: 'soon' } }] },
-        { characters: [{ id: 'a', archives: [{ id: 'b', data: { environmentProfile: { aiEnabled: 'yes' } } }] }] }
+        { characters: [{ id: 'a', archives: [{ id: 'b', data: { environmentProfile: { aiEnabled: 'yes' } } }] }] },
+        { characters: [{ id: 'a', archives: [{ id: 'b', data: { environmentProfile: { weatherAiEnabled: 'yes' } } }] }] }
     ]) assert.throws(() => c.storageValidateModules(payload));
 });
 test('cancelled environment request and changed settings never inject stale location data', async () => {

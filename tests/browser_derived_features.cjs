@@ -20,11 +20,14 @@ const root = path.join(__dirname, '..');
         await page.route('https://api.bigdatacloud.net/**', route => route.fulfill({ json: { city: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai' } }));
         await page.route('https://api.bigdatacloud.net/**', route => route.fulfill({ json: { city: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai' } }));
         await page.route('https://api.open-meteo.com/**', route => { apiCalls.push(route.request().url()); return route.fulfill({ json: { current: { temperature_2m: 21, weather_code: 2, time: '2026-11-04T12:00' } } }); });
-        await context.grantPermissions(['geolocation']);
-        await context.setGeolocation({ latitude: 31.23, longitude: 121.47 });
-        await context.grantPermissions(['geolocation']);
-        await context.setGeolocation({ latitude: 31.23, longitude: 121.47 });
         await page.goto('https://uvu-derived.test/');
+        await page.evaluate(() => {
+            window.testGeolocationDenied = false;
+            Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success, error) {
+                if (window.testGeolocationDenied) error(new Error('denied'));
+                else success({ coords: { latitude: 31.23, longitude: 121.47 } });
+            } } });
+        });
         for (const file of ['css/chat.css', 'css/modules/derived_features.css', 'css/modules/panel_layout.css']) await page.addStyleTag({ content: fs.readFileSync(path.join(root, file), 'utf8') });
         await page.evaluate(() => {
             window.db = { characters: [{ id: 'c', activeArchiveId: 'a', realName: '测试角色', history: [], statusPanel: { history: [3, 2, 1].map(n => ({ timestamp: n, html: `<style>body{margin:0;background:#edf3fb}main{padding:32px;height:1800px}</style><main>历史状态 ${n}</main>` })) } }], groups: [] };
@@ -55,8 +58,8 @@ const root = path.join(__dirname, '..');
         assert.equal(await page.locator('.status-swiper').evaluate(e => e.scrollLeft), previous);
         await swipe({ x: 320, y: 340 }, { x: 80, y: 340 });
         assert.ok(await page.locator('.status-swiper').evaluate(e => e.scrollLeft) > previous + 100);
-        page.on('dialog', dialog => dialog.accept());
         const deleteControl = page.getByRole('button', { name: '删除当前这张状态栏', exact: true });
+        await page.evaluate(() => { window.confirm = () => true; });
         assert.equal(await deleteControl.locator('svg[aria-hidden=true]').count(), 1);
         const controls = await Promise.all([page.locator('[data-token-flip]'), page.locator('#close-status-panel-btn'), deleteControl].map(control => control.boundingBox()));
         assert.ok(controls.every(r => Math.abs(r.width - 44) < 1 && Math.abs(r.height - 44) < 1));
@@ -109,6 +112,7 @@ const root = path.join(__dirname, '..');
         }
         // Default public path: location authorization saves and reads weather without Save/MCP.
         await page.evaluate(() => { delete db.environmentSettings; openEnvironmentSettings(true); });
+        assert.equal(await page.locator('[data-location-confirm]').isVisible(), false, 'location confirmation stays hidden until geolocation returns');
         assert.equal(await page.locator('[data-service]').evaluate(e => e.open), false);
         assert.equal(await page.locator('[data-mcp]').isVisible(), false);
         await page.locator('.panel-environment-service > summary').click();
@@ -117,23 +121,34 @@ const root = path.join(__dirname, '..');
         // Unsaved character controls must not be persisted by the location shortcut.
         await page.locator('.draft-environment-remote > summary').click();
         await page.locator('[name=remoteEnabled]').check();
-        await page.locator('[name=aiEnabled]').check();
+        await page.locator('[name=timeAiEnabled]').check();
+        await page.locator('[name=weatherAiEnabled]').check();
         await page.locator('[data-locate]').click();
-        await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('无需再点保存'),null,{timeout:5000}).catch(async e=>{console.log('LOCATION STATUS',await page.locator('#environment-settings .derived-status').textContent());throw e;});
+        await page.waitForFunction(() => document.querySelector('[data-location-confirm]')?.hidden === false, { timeout: 8000 }).catch(async error => {
+            const state = await page.evaluate(() => ({ status: document.querySelector('#environment-settings .derived-status')?.textContent, permission: navigator.permissions?.query ? 'available' : 'unavailable' }));
+            throw new Error(`${error.message}; location-confirm state: ${JSON.stringify(state)}`);
+        });
+        assert.equal(await page.locator('[data-location-confirm]').isVisible(), true, 'location confirmation appears after geolocation');
+        assert.equal(await page.evaluate(() => db.environmentSettings?.userLocation), undefined, 'location must wait for user confirmation');
+        await page.locator('[data-location-confirm] button').first().click();
+        await page.waitForFunction(() => db.environmentSettings?.userLocation?.name === '上海');
         const saved = await page.evaluate(() => ({ settings: db.environmentSettings, profile: db.characters[0].environmentProfile }));
         assert.equal(saved.settings.enabled, true); assert.equal(saved.settings.service, 'public');
         assert.equal(saved.settings.userLocation.name, '上海'); assert.equal(saved.profile.aiEnabled, false);
+        assert.equal(saved.profile.timeAiEnabled, false); assert.equal(saved.profile.weatherAiEnabled, false);
         assert.equal(saved.profile.remoteEnabled, false);
         assert.ok(apiCalls.some(url => url.includes('api.open-meteo.com')), 'built-in weather works without configuring MCP');
         await page.locator('#environment-settings .message-forward-close').click();
         // Save failure keeps the original global configuration and reports failure.
         await page.evaluate(() => { window.savedEnvironment = JSON.stringify(db.environmentSettings); window.saveData = async () => { throw Error('存储不足'); }; openEnvironmentSettings(); });
         await page.locator('[data-locate]').click();
+        await page.waitForFunction(() => document.querySelector('[data-location-confirm]')?.hidden === false);
+        await page.locator('[data-location-confirm] button').first().click();
         await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('存储不足'));
         assert.equal(await page.evaluate(() => JSON.stringify(db.environmentSettings) === window.savedEnvironment), true);
         await page.locator('#environment-settings .message-forward-close').click();
         // Denied permission is visible and leaves manual city selection available.
-        await context.clearPermissions();
+        await page.evaluate(() => { window.testGeolocationDenied = true; });
         await page.evaluate(() => { window.saveData = async () => {}; openEnvironmentSettings(); });
         await page.locator('[data-locate]').click();
         await page.waitForFunction(() => document.querySelector('#environment-settings .derived-status').textContent.includes('定位失败或未授权'));

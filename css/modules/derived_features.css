@@ -40,6 +40,9 @@
 .derived-settings .derived-toolbar strong { flex: 1; text-align: center; font-size: 13px; white-space: nowrap; }
 .environment-calendar .derived-toolbar button { padding-inline: 7px; }
 .derived-settings .environment-clock { margin: 0; font-size: 13px; line-height: 1.7; white-space: pre-line; }
+.derived-settings .environment-location-confirm:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: 9px; background: #f3f8fc; }
+.derived-settings .environment-location-confirm p { flex: 1 1 100%; }
+#environment-settings :is(button,input,select):focus-visible { outline: 2px solid #769bb4; outline-offset: 2px; }
 .derived-settings .environment-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .derived-settings .environment-weekday { text-align: center; font-size: 11px; padding: 4px; color: #8a929e; }
 .derived-settings .environment-day { position: relative; min-width: 0; height: 38px; padding: 4px 2px; border-color: transparent; background: #f7f8fa; }

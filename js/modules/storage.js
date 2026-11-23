@@ -542,6 +542,8 @@ function storageValidateModules(modules) {
         if (item.environmentProfile) {
             optional(item.environmentProfile.remoteEnabled, path + '.environmentProfile.remoteEnabled', 'boolean');
             optional(item.environmentProfile.aiEnabled, path + '.environmentProfile.aiEnabled', 'boolean');
+            optional(item.environmentProfile.timeAiEnabled, path + '.environmentProfile.timeAiEnabled', 'boolean');
+            optional(item.environmentProfile.weatherAiEnabled, path + '.environmentProfile.weatherAiEnabled', 'boolean');
             environmentLocation(item.environmentProfile.charLocation, path + '.environmentProfile.charLocation');
         }
         if (item.avatarAutonomy) {
@@ -992,6 +994,10 @@ function storageValidateModules(modules) {
     if (modules.environmentSettings !== undefined) {
         const e = modules.environmentSettings;
         optional(e.enabled, 'environmentSettings.enabled', 'boolean'); optional(e.service, 'environmentSettings.service', 'string');
+        optional(e.temperatureUnit, 'environmentSettings.temperatureUnit', 'string'); optional(e.timeFormat, 'environmentSettings.timeFormat', 'string'); optional(e.locationLanguage, 'environmentSettings.locationLanguage', 'string');
+        if (e.temperatureUnit !== undefined && !['C', 'F'].includes(e.temperatureUnit)) fail('environmentSettings.temperatureUnit', 'C 或 F');
+        if (e.timeFormat !== undefined && !['12h', '24h'].includes(e.timeFormat)) fail('environmentSettings.timeFormat', '12h 或 24h');
+        if (e.locationLanguage !== undefined && !['zh', 'en'].includes(e.locationLanguage)) fail('environmentSettings.locationLanguage', 'zh 或 en');
         environmentLocation(e.userLocation, 'environmentSettings.userLocation');
         if (e.mcp !== undefined) {
             object(e.mcp, 'environmentSettings.mcp');
