@@ -403,7 +403,7 @@ function openCharacterAvatarSettings() {
     const dialog = createMessageForwardDialog('角色自主头像', 'character-avatar-settings');
     dialog.panel.classList.add('derived-settings');
     const body = document.createElement('form'); body.className = 'derived-body avatar-autonomy-body';
-    body.innerHTML = '<label class="derived-check"><input name="enabled" type="checkbox">允许 char 自主更换资料头像</label><fieldset><legend>候选来源</legend><label><input name="sourceUser" type="checkbox">用户发送的图片</label><label><input name="sourceCharacter" type="checkbox">聊天中的角色图片</label><label><input name="sourceGenerated" type="checkbox">本存档角色生图</label></fieldset><fieldset><legend>数据授权</legend><label><input name="allowImageAnalysis" type="checkbox">允许把候选图片发送给独立识图 API</label><label><input name="sharePersona" type="checkbox">允许向判断 API 提供角色人设</label><label><input name="shareRecentChat" type="checkbox">允许向判断 API 提供近期聊天和换头像请求原文</label></fieldset><label>判断后如何处理<select name="changePolicy"><option value="suggest">仅生成建议，不应用</option><option value="confirm">你确认后才更换</option><option value="automatic">自动更换</option></select></label><label>自主判断积极程度<select name="initiative"><option value="conservative">保守</option><option value="balanced">适中</option><option value="active">积极</option></select></label><label>两次主动更换间隔（小时）<input name="cooldownHours" type="number" min="0" max="720"></label><label>日常自主检查间隔（用户消息条数）<input name="every" type="number" min="1" max="100"></label><label>自主换头像条件<textarea name="condition" rows="3" placeholder="例如：收到喜欢的照片，或经历重要事件后，主动挑选合适的照片。"></textarea></label><p class="derived-help">关闭图片识别授权时不会把图片送往识图服务；不开启聊天授权时，模型只收到本地判断出的触发类型，不含聊天原文。此功能只修改资料头像，不控制临时表情或立绘。</p><details class="avatar-candidate-preview"><summary>候选图片</summary><p class="derived-help">只从你勾选的来源中读取；去重后最多 6 张。排除表情包、截图等不适合做资料头像的图片。</p><div class="avatar-candidate-list">正在读取候选…</div></details><p class="derived-status" aria-live="polite"></p><footer><button type="submit">保存</button><button type="button" data-check>保存并检查</button><button type="button" data-apply-suggestion hidden>应用待确认建议</button><button type="button" data-restore>恢复上个头像</button></footer>';
+    body.innerHTML = '<label class="derived-check"><input name="enabled" type="checkbox">允许 char 自主更换资料头像</label><fieldset><legend>候选来源</legend><label><input name="sourceUser" type="checkbox">用户发送的图片</label><label><input name="sourceCharacter" type="checkbox">聊天中的角色图片</label><label><input name="sourceGenerated" type="checkbox">本存档角色生图</label></fieldset><fieldset><legend>数据授权</legend><label><input name="allowImageAnalysis" type="checkbox">允许把候选图片发送给独立识图 API</label><label><input name="sharePersona" type="checkbox">允许向判断 API 提供角色人设</label><label><input name="shareRecentChat" type="checkbox">允许向判断 API 提供近期聊天和换头像请求原文</label></fieldset><label>判断后如何处理<select name="changePolicy"><option value="suggest">仅生成建议，不应用</option><option value="confirm">你确认后才更换</option><option value="automatic">自动更换</option></select></label><label>自主判断积极程度<select name="initiative"><option value="conservative">保守</option><option value="balanced">适中</option><option value="active">积极</option></select></label><label>两次主动更换间隔（小时）<input name="cooldownHours" type="number" min="0" max="720"></label><label>日常自主检查间隔（用户消息条数）<input name="every" type="number" min="1" max="100"></label><label>自主换头像条件<textarea name="condition" rows="3" placeholder="例如：收到喜欢的照片，或经历重要事件后，主动挑选合适的照片。"></textarea></label><p class="derived-help">关闭图片识别授权时不会把图片送往识图服务；不开启聊天授权时，模型只收到本地判断出的触发类型，不含聊天原文。此功能只修改资料头像，不控制临时表情或立绘。</p><details class="avatar-candidate-preview"><summary>候选图片</summary><p class="derived-help">只从你勾选的来源中读取；去重后最多 6 张。排除表情包、截图等不适合做资料头像的图片。</p><div class="avatar-candidate-list">正在读取候选…</div></details><p class="derived-status" aria-live="polite"></p><footer><button type="submit">保存</button><button type="button" data-check>保存并检查</button><button type="button" data-clear-avatar-cache>清除识图缓存</button><button type="button" data-apply-suggestion hidden>应用待确认建议</button><button type="button" data-restore>撤销上次换头像</button></footer>';
     dialog.panel.appendChild(body);
     const fields = body.elements, settings = characterAvatarSettings(chat);
     fields.enabled.checked = settings.enabled; fields.every.value = settings.every; fields.condition.value = settings.condition;
@@ -412,6 +412,8 @@ function openCharacterAvatarSettings() {
     fields.allowImageAnalysis.checked = settings.allowImageAnalysis; fields.sharePersona.checked = settings.sharePersona; fields.shareRecentChat.checked = settings.shareRecentChat;
     fields.sourceUser.checked = settings.candidateSources.user; fields.sourceCharacter.checked = settings.candidateSources.character; fields.sourceGenerated.checked = settings.candidateSources.generated;
     const status = body.querySelector('.derived-status');
+    const clearCacheButton = body.querySelector('[data-clear-avatar-cache]');
+    clearCacheButton.disabled = Object.keys(settings.cache).length === 0;
     const applySuggestionButton = body.querySelector('[data-apply-suggestion]');
     const preview = document.createElement('div');
     preview.className = 'avatar-suggestion';
@@ -509,6 +511,7 @@ function openCharacterAvatarSettings() {
             await refreshUndo().catch(() => {});
             dialog.setBusy(false);
             body.querySelectorAll('button').forEach(button => button.disabled = false);
+            clearCacheButton.disabled = Object.keys(characterAvatarSettings(chat).cache).length === 0;
         }
     };
     const save = async () => {
@@ -531,6 +534,12 @@ function openCharacterAvatarSettings() {
         if (!(await collectAvatarCandidates(chat)).length) { status.textContent = '没有符合设置的候选图片'; return; }
         status.textContent = '正在识图和判断…'; await checkCharacterAvatar(chat, true);
         status.textContent = valid() ? characterAvatarSettings(chat).lastResult || '没有可用的真实图片，或当前状态已改变' : '存档已切换，已丢弃结果';
+    });
+    clearCacheButton.onclick = () => run(async () => {
+        const current = characterAvatarSettings(chat);
+        if (!Object.keys(current.cache).length) { status.textContent = '当前没有保存的识图缓存'; return; }
+        await saveDerivedChatFields(chat, { avatarAutonomy: { ...current, cache: {} } });
+        status.textContent = '识图缓存已清除';
     });
     applySuggestionButton.onclick = () => run(async () => {
         if (displayedSuggestion && await applyCharacterAvatarSuggestion(chat, displayedSuggestion)) { status.textContent = characterAvatarSettings(chat).lastResult; }
