@@ -13,6 +13,7 @@ const derivedChatWrites = new WeakSet();
 const avatarGlobalFields = new Set(['avatar', 'avatarPrevious', 'avatarChangeHistory']);
 const avatarChangeHistoryLimit = 5;
 const avatarChangeHistorySize = 8 * 1024 * 1024;
+const avatarRoutineCheckCooldown = 5 * 60 * 1000;
 
 async function saveDerivedChatFields(chat, changes) {
     if (!db.characters.includes(chat) || derivedChatWrites.has(chat)) throw new Error('角色正在保存或已不存在');
@@ -259,6 +260,8 @@ async function runCharacterAvatarCheck(chat, force = false) {
     const lastAttempt = characterAvatarAttempts.get(chat), avatarRequest = characterAvatarRequest(history);
     const requestKey = avatarRequest ? await avatarImageFingerprint(avatarRequest.key) : '';
     const explicit = avatarRequest && requestKey !== settings.lastRequestKey;
+    if (!force && !explicit && settings.lastCheck > 0 && settings.lastCheck <= Date.now() &&
+        Date.now() - settings.lastCheck < avatarRoutineCheckCooldown) return false;
     const candidates = await collectAvatarCandidates(chat);
     const newImage = candidates.some(candidate => !settings.cache[candidate.id]);
     const intervalDue = userCount >= settings.lastUserCount + settings.every;

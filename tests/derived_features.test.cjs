@@ -523,6 +523,20 @@ test('a newly received image can trigger one proactive avatar decision before th
     assert.equal(decisions, 1); assert.equal(descriptions, 1);
 });
 
+test('routine avatar checks throttle repeated new images while explicit requests bypass the cooldown', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    let decisions = 0, descriptions = 0;
+    f.c.recognizeStickerImage = async () => { descriptions++; return '照片'; };
+    f.c.fetchAiResponse = async () => { decisions++; return '{"action":"keep"}'; };
+    await f.c.checkCharacterAvatar(f.chat);
+    f.chat.history.push({ id: 'new-photo', role: 'user', parts: [{ type: 'image', data: 'data:image/png;base64,Yg==' }] });
+    assert.equal(await f.c.checkCharacterAvatar(f.chat), false);
+    assert.equal(decisions, 1); assert.equal(descriptions, 1);
+    f.chat.history.push({ id: 'request', role: 'user', content: '请换头像' });
+    assert.equal(await f.c.checkCharacterAvatar(f.chat), false);
+    assert.equal(decisions, 2);
+});
+
 test('in-flight avatar decisions coalesce a newer request and discard the stale result', async () => {
     const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
     f.chat.history.push({ id: 'ask', role: 'user', content: '换这对情头吧' });
