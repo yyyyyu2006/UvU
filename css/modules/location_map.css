@@ -223,7 +223,7 @@
     background: linear-gradient(180deg, #343a3be8 0%, #343a3bc9 72%, #343a3b00 100%);
     box-sizing: border-box;
 }
-.uvu-location-map .location-map-expanded-back { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); width: 44px; height: 44px; border: 0; border-radius: 50%; background: #ffffff20; color: #fff; font: inherit; font-size: 30px; line-height: 1; cursor: pointer; }
+.uvu-location-map .location-map-expanded-back { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); width: 44px; height: 44px; border: 0; border-radius: 50%; background: transparent; color: #fff; font: inherit; font-size: 30px; line-height: 1; text-shadow: 0 1px 4px #172b4670; cursor: pointer; }
 .uvu-location-map .location-map-expanded-summary { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
 .uvu-location-map .location-map-expanded-people { display: flex; justify-content: center; align-items: center; gap: 14px; min-width: 0; }
 .uvu-location-map .location-map-expanded-person { display: flex; align-items: center; min-width: 0; }
@@ -231,6 +231,7 @@
 .uvu-location-map .location-map-expanded-avatar { display: grid; place-items: center; flex: none; width: 50px; height: 50px; box-sizing: border-box; border: 2px solid #ffffffd9; border-radius: 50%; background: #dceafa; color: #486b98; font-size: 13px; object-fit: cover; }
 .uvu-location-map .location-map-expanded-person:nth-child(2) .location-map-expanded-avatar { background: #e9e4fa; color: #7765a2; }
 .uvu-location-map .location-map-expanded-share { color: #fff; font-size: 15px; font-weight: 500; text-align: center; }
+#shared-location-map .uvu-location-map .location-map-expanded-share { color: #fff !important; font-size: 14px !important; font-weight: 600; text-shadow: 0 1px 4px #172b4670; }
 .uvu-location-map .location-map-recenter { position: absolute; z-index: 1000; left: max(16px, env(safe-area-inset-left)); bottom: calc(24px + env(safe-area-inset-bottom)); display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: 0; border-radius: 16px; background: #fff; color: #263a50; font: inherit; font-size: 30px; line-height: 1; box-shadow: 0 3px 16px #172b4630; cursor: pointer; }
 .uvu-location-map .location-map-recenter[hidden] { display: none !important; }
 .uvu-location-map .location-map-marker { padding: 0; border: 0; background: transparent; }

@@ -72,6 +72,8 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
         assert.equal(await chatPanel.locator('.location-map-expanded-header').isVisible(), true);
         assert.equal(await chatPanel.locator('.location-map-expanded-share').textContent(), '双方城市位置');
         assert.equal(await chatPanel.locator('.location-map-expanded-avatar').count(), 2, 'expanded view centers both avatars above the map');
+        assert.equal(await chatPanel.locator('.location-map-expanded-share').evaluate(node => getComputedStyle(node).color), 'rgb(255, 255, 255)', 'expanded title stays readable over map tiles');
+        assert.equal(await chatPanel.locator('.location-map-expanded-share').evaluate(node => getComputedStyle(node).fontSize), '14px');
         assert.equal(await chatPanel.getByRole('button', { name: '重新定位到双方城市' }).isVisible(), true);
         await chatPanel.getByRole('button', { name: '重新定位到双方城市' }).click();
         await page.waitForFunction(() => window.mapFitBoundsCalls >= 3);
