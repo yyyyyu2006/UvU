@@ -10,6 +10,9 @@ async function avatarReadImage(response) {
     finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 const derivedChatWrites = new WeakSet();
+const avatarGlobalFields = new Set(['avatar', 'avatarPrevious', 'avatarChangeHistory']);
+const avatarChangeHistoryLimit = 5;
+const avatarChangeHistorySize = 8 * 1024 * 1024;
 
 async function saveDerivedChatFields(chat, changes) {
     if (!db.characters.includes(chat) || derivedChatWrites.has(chat)) throw new Error('角色正在保存或已不存在');
@@ -17,14 +20,14 @@ async function saveDerivedChatFields(chat, changes) {
     const archiveId = chat.activeArchiveId;
     const before = Object.fromEntries(Object.keys(changes).map(key => [key, { exists: Object.hasOwn(chat, key), value: chat[key] }]));
     const archive = chat.archives?.find(item => item.id === archiveId);
-    const storedBefore = Object.fromEntries(Object.keys(changes).filter(key => key !== 'avatar' && key !== 'avatarPrevious')
+    const storedBefore = Object.fromEntries(Object.keys(changes).filter(key => !avatarGlobalFields.has(key))
         .map(key => [key, { exists: Boolean(archive?.data && Object.hasOwn(archive.data, key)), value: archive?.data?.[key] === undefined ? undefined :
             (typeof structuredClone === 'function' ? structuredClone(archive.data[key]) : JSON.parse(JSON.stringify(archive.data[key]))) }]));
     Object.assign(chat, changes);
     try { await saveData(); }
     catch (error) {
         for (const [key, old] of Object.entries(before)) {
-            const globalField = key === 'avatar' || key === 'avatarPrevious';
+            const globalField = avatarGlobalFields.has(key);
             if ((globalField || chat.activeArchiveId === archiveId) && chat[key] === changes[key]) {
                 if (old.exists) chat[key] = old.value; else delete chat[key];
             }
@@ -61,6 +64,62 @@ function avatarImageSource(value) {
     if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z\d+/=\s]+$/i.test(value)) return value;
     try { const url = new URL(value); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : ''; }
     catch (_) { return ''; }
+}
+
+function readAvatarChangeHistory(chat, currentFingerprint) {
+    const entries = chat.avatarChangeHistory;
+    if (!Array.isArray(entries)) {
+        const old = characterAvatarSettings(chat);
+        return old.currentAvatarFingerprint === currentFingerprint && avatarImageSource(chat.avatarPrevious) &&
+            chat.avatarPrevious.length <= avatarChangeHistorySize && chat.avatarPrevious !== chat.avatar
+            ? [{ previous: chat.avatarPrevious, resultFingerprint: currentFingerprint, changedAt: old.lastChangedAt, action: 'legacy' }]
+            : [];
+    }
+    if (entries[0]?.resultFingerprint !== currentFingerprint) return [];
+    let size = 0;
+    return entries.slice(0, avatarChangeHistoryLimit).filter(entry =>
+        entry && (entry.previous === '' || avatarImageSource(entry.previous)) &&
+        /^[a-f0-9]{64}$/.test(entry.resultFingerprint) &&
+        Number.isFinite(new Date(entry.changedAt).getTime()) &&
+        (size += entry.previous.length) <= avatarChangeHistorySize);
+}
+
+function avatarChangeFields(chat, avatar, beforeFingerprint, nextAvatar, resultFingerprint, changedAt, action) {
+    if (beforeFingerprint === resultFingerprint) return {};
+    const previous = avatar || '';
+    let size = previous.length;
+    const entries = (previous === '' || avatarImageSource(previous)) && size <= avatarChangeHistorySize
+        ? [{ previous, resultFingerprint, changedAt, action }, ...readAvatarChangeHistory(chat, beforeFingerprint)
+            .slice(0, avatarChangeHistoryLimit - 1).filter(entry => (size += entry.previous.length) <= avatarChangeHistorySize)]
+        : [];
+    return { avatar: nextAvatar, avatarPrevious: entries[0]?.previous || '', avatarChangeHistory: entries };
+}
+
+async function inspectAvatarUndo(chat) {
+    if (!db.characters.includes(chat)) return null;
+    const { avatar, avatarChangeHistory, avatarPrevious, avatarAutonomy, activeArchiveId } = chat;
+    if (Array.isArray(avatarChangeHistory) ? !avatarChangeHistory.length : !avatarPrevious) return null;
+    const entries = readAvatarChangeHistory(chat, await avatarImageFingerprint(avatar || ''));
+    const isCurrent = () => db.characters.includes(chat) && chat.avatar === avatar && chat.avatarAutonomy === avatarAutonomy &&
+        chat.avatarChangeHistory === avatarChangeHistory && chat.avatarPrevious === avatarPrevious && chat.activeArchiveId === activeArchiveId;
+    return isCurrent() && entries.length ? { entries, isCurrent } : null;
+}
+
+async function undoCharacterAvatarChange(chat, expectedFingerprint, canApply = () => true) {
+    const undo = await inspectAvatarUndo(chat);
+    if (!undo || undo.entries[0].resultFingerprint !== expectedFingerprint) return false;
+    const [entry, ...remaining] = undo.entries;
+    const restoredFingerprint = await avatarImageFingerprint(entry.previous);
+    if (!undo.isCurrent() || !canApply()) return false;
+    const history = remaining[0]?.resultFingerprint === restoredFingerprint ? remaining : [];
+    const settings = characterAvatarSettings(chat);
+    await saveDerivedChatFields(chat, {
+        avatar: entry.previous, avatarPrevious: history[0]?.previous || '', avatarChangeHistory: history,
+        avatarAutonomy: { ...settings, currentImageId: '', currentAvatarFingerprint: restoredFingerprint, pendingSuggestion: null,
+            lastResult: '已撤销上一次头像更换' }
+    });
+    refreshCharacterAvatar(chat);
+    return true;
 }
 
 function avatarHistoryText(history) {
@@ -260,6 +319,7 @@ async function runCharacterAvatarCheck(chat, force = false) {
             if (!avatarImageSource(nextAvatar)) throw new Error('头像图片无法读取');
         }
         const nextFingerprint = nextAvatar ? await avatarImageFingerprint(nextAvatar) : avatarFingerprint;
+        if (nextFingerprint === avatarFingerprint) nextAvatar = '';
         if (selected && !await avatarCandidateAvailable(chat, selected)) return false;
         if (!valid() || controller.signal.aborted) return false;
         const reason = typeof decision.reason === 'string' ? decision.reason.trim().slice(0, 300) : '';
@@ -269,13 +329,15 @@ async function runCharacterAvatarCheck(chat, force = false) {
             avatarFingerprint, historyFingerprint: await avatarImageFingerprint(signature), reason: explanation, createdAt: Date.now()
         } : null;
         if (!valid() || controller.signal.aborted) return false;
-        const next = { ...settings, cache, lastCheck: Date.now(), lastUserCount: userCount,
+        const changedAt = Date.now();
+        const next = { ...settings, cache, lastCheck: changedAt, lastUserCount: userCount,
             lastRequestKey: requestKey || (/^[a-f0-9]{64}$/.test(settings.lastRequestKey) ? settings.lastRequestKey : ''),
             pendingSuggestion,
-            ...(nextAvatar ? { lastChangedAt: Date.now() } : {}),
+            ...(nextAvatar ? { lastChangedAt: changedAt } : {}),
             ...(selected && (nextAvatar || isCurrent(selected)) ? { currentImageId: selected.id, currentAvatarFingerprint: nextFingerprint } : {}),
             lastResult: (nextAvatar ? '角色已自主更换头像：' : pendingSuggestion ? (changePolicy === 'confirm' ? '有一条待你确认的头像建议：' : '头像建议已生成：') : '角色本次选择保留头像：') + explanation };
-        await saveDerivedChatFields(chat, { avatarAutonomy: next, ...(nextAvatar ? { avatar: nextAvatar, avatarPrevious: avatar || '' } : {}) });
+        const change = nextAvatar ? avatarChangeFields(chat, avatar, avatarFingerprint, nextAvatar, nextFingerprint, changedAt, 'automatic') : {};
+        await saveDerivedChatFields(chat, { avatarAutonomy: next, ...change });
         if (nextAvatar) refreshCharacterAvatar(chat);
         return Boolean(nextAvatar);
     } catch (error) {
@@ -321,8 +383,10 @@ async function applyCharacterAvatarSuggestion(chat, expectedSuggestion = chat?.a
         if (!avatarImageSource(nextAvatar) || !stillCurrent() || !await avatarCandidateAvailable(chat, candidate)) return false;
         const nextFingerprint = await avatarImageFingerprint(nextAvatar);
         if (!await avatarCandidateAvailable(chat, candidate) || !stillCurrent() || controller.signal.aborted) return false;
-        await saveDerivedChatFields(chat, { avatar: nextAvatar, avatarPrevious: avatar || '', avatarAutonomy: { ...settings, pendingSuggestion: null,
-            lastChangedAt: Date.now(), currentImageId: candidate.id, currentAvatarFingerprint: nextFingerprint,
+        const changedAt = Date.now();
+        const change = avatarChangeFields(chat, avatar, suggestion.avatarFingerprint, nextAvatar, nextFingerprint, changedAt, 'confirmed');
+        await saveDerivedChatFields(chat, { ...change, avatarAutonomy: { ...settings, pendingSuggestion: null,
+            lastChangedAt: Object.hasOwn(change, 'avatar') ? changedAt : settings.lastChangedAt, currentImageId: candidate.id, currentAvatarFingerprint: nextFingerprint,
             lastResult: '已确认并应用头像建议：' + String(suggestion.reason || '').slice(0, 300) } });
         refreshCharacterAvatar(chat);
         return true;
@@ -375,7 +439,30 @@ function openCharacterAvatarSettings() {
     const valid = () => db.characters.includes(chat) && chat.activeArchiveId === archiveId &&
         currentChatId === chat.id && currentChatType === 'private';
     const excluded = new Set(settings.excludedCandidateIds); let preferred = settings.preferredCandidateId;
-    const restoreButton = body.querySelector('[data-restore]'); restoreButton.hidden = !avatarImageSource(chat.avatarPrevious);
+    const restoreButton = body.querySelector('[data-restore]');
+    restoreButton.textContent = '撤销上次换头像';
+    restoreButton.hidden = true;
+    const changeHistory = document.createElement('details');
+    changeHistory.className = 'avatar-candidate-preview';
+    changeHistory.innerHTML = '<summary>头像更换记录</summary><ol></ol>';
+    changeHistory.hidden = true;
+    status.before(changeHistory);
+    let undoFingerprint = '', undoVersion = 0;
+    const refreshUndo = async () => {
+        const version = ++undoVersion;
+        const undo = await inspectAvatarUndo(chat);
+        if (!valid() || !body.isConnected || version !== undoVersion) return;
+        const entries = undo?.entries || [];
+        undoFingerprint = entries[0]?.resultFingerprint || '';
+        changeHistory.hidden = restoreButton.hidden = !undoFingerprint;
+        const list = changeHistory.querySelector('ol');
+        list.replaceChildren(...entries.map(entry => {
+            const item = document.createElement('li');
+            const action = { automatic: '自动更换', confirmed: '确认后更换', legacy: '上次更换' }[entry.action] || '更换';
+            item.textContent = entry.changedAt ? new Date(entry.changedAt).toLocaleString() + ' · ' + action : action;
+            return item;
+        }));
+    };
     const getSources = () => ({ user: fields.sourceUser.checked, character: fields.sourceCharacter.checked, generated: fields.sourceGenerated.checked });
     let listVersion = 0;
     const refreshCandidates = async () => {
@@ -408,6 +495,7 @@ function openCharacterAvatarSettings() {
     }
     refreshCandidates();
     refreshSuggestion().catch(() => {});
+    refreshUndo().catch(() => {});
     const run = async action => {
         if (!valid()) return showToast('存档已切换，请重新打开');
         dialog.setBusy(true); body.querySelectorAll('button').forEach(button => button.disabled = true);
@@ -415,9 +503,9 @@ function openCharacterAvatarSettings() {
         catch (error) { status.textContent = error.name === 'AbortError' ? '头像检查超时，未更换头像' : error.message; }
         finally {
             await refreshSuggestion().catch(() => {});
+            await refreshUndo().catch(() => {});
             dialog.setBusy(false);
             body.querySelectorAll('button').forEach(button => button.disabled = false);
-            restoreButton.hidden = !avatarImageSource(chat.avatarPrevious);
         }
     };
     const save = async () => {
@@ -445,9 +533,9 @@ function openCharacterAvatarSettings() {
         if (displayedSuggestion && await applyCharacterAvatarSuggestion(chat, displayedSuggestion)) { status.textContent = characterAvatarSettings(chat).lastResult; }
         else { status.textContent = '建议已过期或候选图片已变化，请重新检查。'; applySuggestionButton.hidden = true; }
     });
-    body.querySelector('[data-restore]').onclick = () => run(async () => {
-        if (!avatarImageSource(chat.avatarPrevious)) { status.textContent = '没有可恢复的头像'; return; }
-        await saveDerivedChatFields(chat, { avatar: chat.avatarPrevious, avatarPrevious: chat.avatar || '' });
-        refreshCharacterAvatar(chat); status.textContent = '已恢复上个头像';
+    restoreButton.onclick = () => run(async () => {
+        const undone = await undoCharacterAvatarChange(chat, undoFingerprint, () => valid() && body.isConnected);
+        status.textContent = undone ? '已撤销上一次头像更换' : '头像已变化，没有可撤销的记录';
+        if (undone) body.querySelector('[type=submit]').focus();
     });
 }

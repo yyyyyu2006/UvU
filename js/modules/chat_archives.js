@@ -2,7 +2,7 @@
 
 const CHAT_ARCHIVE_META_KEYS = new Set([
     'id', 'archives', 'activeArchiveId', 'isPinned', 'unreadCount',
-    'realName', 'remarkName', 'name', 'avatar', 'avatarPrevious', 'folderId', 'folderIds', 'derivedPanelAppearance'
+    'realName', 'remarkName', 'name', 'avatar', 'avatarPrevious', 'avatarChangeHistory', 'folderId', 'folderIds', 'derivedPanelAppearance'
 ]);
 
 function cloneArchiveValue(value) {

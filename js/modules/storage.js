@@ -430,6 +430,7 @@ function storageSocialError(error, path) {
 }
 function storageContactData(chat, options = {}) {
     const excluded = new Set([...STORAGE_CHAT_KEYS, 'archives', 'activeArchiveId', 'gallery']);
+    if (options.archive) excluded.add('avatarChangeHistory');
     const result = {};
     Object.keys(chat).forEach(key => { if (!excluded.has(key)) result[key] = storageClone(chat[key]); });
     if (result.musicProfile !== undefined) result.musicProfile = window.UvUMusicCharacter.validateProfile(result.musicProfile);
@@ -454,7 +455,7 @@ function storageExportChat(chat, contacts, chats, options = {}) {
         result.archives = (chat.archives || []).map((archive, index) => {
             const metadata = {};
             Object.keys(archive).forEach(key => { if (key !== 'data') metadata[key] = storageClone(archive[key]); });
-            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}, { ...options, path: `${options.path || '角色'}.archives[${index}].data` }), ...storageRuntimeData(archive.data || {}, options) } : storageRuntimeData(archive.data || {}, options) };
+            return { ...metadata, data: contacts ? { ...storageContactData(archive.data || {}, { ...options, archive: true, path: `${options.path || '角色'}.archives[${index}].data` }), ...storageRuntimeData(archive.data || {}, options) } : storageRuntimeData(archive.data || {}, options) };
         });
         result.archives.forEach(archive => {
             if (contacts && archive.data.statusPanel && chat.archives.find(item => item.id === archive.id)?.data?.statusPanel) {
@@ -877,6 +878,19 @@ function storageValidateModules(modules) {
         list(modules[key], key, (item, path) => {
             if (key === 'characters' || key === 'groups') {
                 runtime(item, path);
+                if (key === 'characters' && item.avatarChangeHistory !== undefined) {
+                    const entries = item.avatarChangeHistory, location = path + '.avatarChangeHistory';
+                    if (!Array.isArray(entries) || entries.length > 5) fail(location, '最多 5 条的头像记录');
+                    let size = 0;
+                    list(entries, location, (entry, entryPath) => {
+                        if (typeof entry.previous !== 'string' || (size += entry.previous.length) > 8 * 1024 * 1024 ||
+                            (entry.previous !== '' && !avatarImageSource(entry.previous))) fail(entryPath + '.previous', '有效的头像图片');
+                        if (typeof entry.resultFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(entry.resultFingerprint)) fail(entryPath + '.resultFingerprint', '有效的头像指纹');
+                        if (typeof entry.changedAt !== 'number') fail(entryPath + '.changedAt', '有效时间戳');
+                        timestamp(entry.changedAt, entryPath + '.changedAt');
+                        if (!['automatic', 'confirmed', 'legacy'].includes(entry.action)) fail(entryPath + '.action', '有效的头像更换来源');
+                    });
+                }
                 optional(item.activeArchiveId, path + '.activeArchiveId', 'string');
                 list(item.archives, path + '.archives', (archive, location) => {
                     if (archive.data !== undefined) { object(archive.data, location + '.data'); runtime(archive.data, location + '.data'); }
@@ -1007,6 +1021,10 @@ function storageMergeChats(targets, incoming, contacts, chats) {
         if (!target) { target = { id: imported.id, history: [], callHistory: [], memoryJournals: [] }; targets.push(target); }
         if (contacts) {
             const contact = storageContactData(imported);
+            if (contact.avatar !== undefined && contact.avatar !== target.avatar && contact.avatarChangeHistory === undefined) {
+                delete target.avatarChangeHistory;
+                delete target.avatarPrevious;
+            }
             if (contact.statusPanel) contact.statusPanel = { ...target.statusPanel, ...contact.statusPanel };
             Object.assign(target, contact);
         }
@@ -1030,7 +1048,8 @@ function storageMergeChats(targets, incoming, contacts, chats) {
             const previous = target.archives || [];
             const archives = imported.archives.map(archive => {
                 const existing = previous.find(item => item.id === archive.id);
-                const data = contacts ? storageContactData(archive.data || {}) : { ...storageContactData(target), ...storageContactData(existing?.data || {}) };
+                const data = contacts ? storageContactData(archive.data || {}, { archive: true }) :
+                    { ...storageContactData(target, { archive: true }), ...storageContactData(existing?.data || {}, { archive: true }) };
                 applyRuntime(data, archive.data || {});
                 if (contacts && archive.data?.statusPanel) data.statusPanel = storageClone(archive.data.statusPanel);
                 if (existing?.data?.gallery) data.gallery = existing.data.gallery;

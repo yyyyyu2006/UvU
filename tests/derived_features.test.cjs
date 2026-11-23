@@ -217,6 +217,7 @@ test('confirm policy stores an avatar suggestion and applies it only after a fre
     assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
     assert.equal(f.chat.avatarPrevious, 'https://test.invalid/old.png');
     assert.equal(f.chat.avatarAutonomy.pendingSuggestion, null);
+    assert.equal(f.chat.avatarChangeHistory[0].action, 'confirmed');
 });
 test('confirm policy drops a suggestion when the user has changed the current avatar', async () => {
     const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.changePolicy = 'confirm';
@@ -236,6 +237,7 @@ test('avatar action uses validated image ID, compresses a Blob and can preserve 
     f.c.refreshCharacterAvatar = () => {};
     assert.equal(await f.c.checkCharacterAvatar(f.chat, true), true);
     assert.equal(f.chat.avatarPrevious, 'https://test.invalid/old.png'); assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
+    assert.equal(f.chat.avatarChangeHistory[0].action, 'automatic');
     f.c.fetchAiResponse = async () => '{"action":"keep"}';
     assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false); assert.equal(descriptions, 1); assert.equal(decisions, 1);
     f.c.resolveAuxiliaryApiConfig = () => ({ url: 'https://test.invalid', provider: 'newapi', model: 'different', key: 'fake' });
@@ -248,6 +250,73 @@ test('invalid avatar IDs and stale archive decisions cannot change the avatar', 
         if (stale) assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
         else await assert.rejects(f.c.checkCharacterAvatar(f.chat, true), /不存在/);
         assert.equal(f.chat.avatar, 'https://test.invalid/old.png');
+    }
+});
+
+test('avatar history crosses archives without duplication, is capped, and undoes one change at a time', async () => {
+    const { c, chat, requests } = fixture();
+    c.refreshCharacterAvatar = () => {};
+    vm.runInContext(source('chat_archives.js'), c);
+    for (let i = 1; i <= 7; i++) {
+        const previous = chat.avatar, next = 'https://test.invalid/avatar-' + i + '.png';
+        const fields = c.avatarChangeFields(chat, previous, await c.avatarImageFingerprint(previous), next,
+            await c.avatarImageFingerprint(next), Date.now(), 'automatic');
+        await c.saveDerivedChatFields(chat, fields);
+    }
+    assert.equal(chat.avatarChangeHistory.length, 5);
+    assert.equal(c.captureArchiveData(chat).avatarChangeHistory, undefined);
+    chat.activeArchiveId = 'different';
+    chat.avatarAutonomy = { pendingSuggestion: { candidateId: 'stale' } };
+    for (let i = 6; i >= 2; i--) {
+        const undo = await c.inspectAvatarUndo(chat);
+        assert.equal(await c.undoCharacterAvatarChange(chat, undo.entries[0].resultFingerprint), true);
+        assert.equal(chat.avatar, 'https://test.invalid/avatar-' + i + '.png');
+        assert.equal(chat.avatarAutonomy.pendingSuggestion, null);
+    }
+    assert.equal(await c.inspectAvatarUndo(chat), null);
+    assert.equal(requests.length, 0);
+});
+
+test('old single-step undo is consumed once, and a failed write or a stale current image cannot replace the avatar', async () => {
+    const { c, chat } = fixture();
+    c.refreshCharacterAvatar = () => {};
+    const avatar = chat.avatar;
+    chat.avatarPrevious = 'https://test.invalid/older.png';
+    const fingerprint = await c.avatarImageFingerprint(avatar);
+    chat.avatarAutonomy = { currentAvatarFingerprint: fingerprint };
+    assert.equal((await c.inspectAvatarUndo(chat)).entries[0].action, 'legacy');
+    c.saveData = async () => { throw Error('disk full'); };
+    await assert.rejects(c.undoCharacterAvatarChange(chat, fingerprint), /保存失败/);
+    assert.equal(chat.avatar, avatar);
+    assert.equal(chat.avatarChangeHistory, undefined);
+    assert.equal(chat.avatarPrevious, 'https://test.invalid/older.png');
+    c.saveData = async () => {};
+    chat.avatar = 'https://test.invalid/manual.png';
+    assert.equal(await c.undoCharacterAvatarChange(chat, fingerprint), false);
+    assert.equal(chat.avatar, 'https://test.invalid/manual.png');
+    chat.avatar = avatar;
+    assert.equal(await c.undoCharacterAvatarChange(chat, fingerprint, () => false), false);
+    assert.equal(await c.undoCharacterAvatarChange(chat, fingerprint), true);
+    assert.equal(await c.inspectAvatarUndo(chat), null);
+});
+
+test('contact backup preserves only character-level avatar undo history and rejects malformed history', async () => {
+    const { c, chat } = fixture(); vm.runInContext(source('storage.js'), c);
+    const first = { previous: 'https://test.invalid/previous.png', resultFingerprint: await c.avatarImageFingerprint(chat.avatar),
+        changedAt: Date.now(), action: 'confirmed' };
+    chat.avatarChangeHistory = [first];
+    chat.archives[0].data.avatarChangeHistory = [first];
+    const backup = c.storageExportChat(chat, true, true);
+    c.storageValidateModules({ characters: [backup] });
+    assert.equal(backup.archives[0].data.avatarChangeHistory, undefined);
+    assert.equal(c.storageExportChat(chat, false, true).avatarChangeHistory, undefined);
+    const target = [{ id: chat.id, avatar: 'https://test.invalid/other.png' }];
+    c.storageMergeChats(target, [backup], true, true);
+    assert.deepEqual(plain(target[0].avatarChangeHistory), [first]);
+    c.storageMergeChats(target, [{ id: chat.id, avatar: 'https://test.invalid/imported.png' }], true, false);
+    assert.equal(target[0].avatarChangeHistory, undefined);
+    for (const entries of [Array(6).fill(first), [{ ...first, previous: 'javascript:void(0)' }], [{ ...first, resultFingerprint: 'not-a-hash' }]]) {
+        assert.throws(() => c.storageValidateModules({ characters: [{ id: chat.id, avatarChangeHistory: entries }] }), /avatarChangeHistory/);
     }
 });
 test('failed derived save restores only its fields and preserves a newly switched archive', async () => {
