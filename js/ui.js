@@ -510,7 +510,8 @@ function setupHomeScreen() {
         'app-widget-market': `<div class="grid-item-1x1" data-id="app-widget-market"><a href="#" class="app-icon" data-target="widget-market-screen"><img src="${getIcon('widget-market-screen')}" alt="小组件" class="icon-img"><span class="app-name">小组件</span></a></div>`,
         'app-reader': `<div class="grid-item-1x1" data-id="app-reader"><a href="#" class="app-icon" data-target="reader-bookshelf-screen"><img src="${getIcon('reader-bookshelf-screen')}" alt="阅读器" class="icon-img"><span class="app-name">${defaultIcons['reader-bookshelf-screen'].name}</span></a></div>`,
         'app-placeholder': `<div class="grid-item-1x1" data-id="app-placeholder"><a href="#" class="app-icon" data-target="uvu-story-bridge-screen"><img src="${getIcon('placeholder-app')}" alt="酒馆" class="icon-img"><span class="app-name">${defaultIcons['placeholder-app'].name}</span></a></div>`,
-        'app-uvu-music': `<div class="grid-item-1x1" data-id="app-uvu-music"><a href="#" class="app-icon" data-target="uvu-music-screen"><img src="${getIcon('uvu-music-screen')}" alt="音乐" class="icon-img"><span class="app-name">${defaultIcons['uvu-music-screen'].name}</span></a></div>`
+        'app-uvu-music': `<div class="grid-item-1x1" data-id="app-uvu-music"><a href="#" class="app-icon" data-target="uvu-music-screen"><img src="${getIcon('uvu-music-screen')}" alt="音乐" class="icon-img"><span class="app-name">${defaultIcons['uvu-music-screen'].name}</span></a></div>`,
+        'app-minesweeper': `<div class="grid-item-1x1" data-id="app-minesweeper"><a href="#" class="app-icon" data-target="uvu-minesweeper-screen"><img src="${getIcon('uvu-minesweeper-screen')}" alt="扫雷" class="icon-img"><span class="app-name">扫雷</span></a></div>`
     };
 
     // 收集需要执行的 JS 代码
@@ -565,6 +566,13 @@ function setupHomeScreen() {
     const allItemIds = Object.keys(allItems);
     
     // 数据结构迁移与初始化
+    if (db.homeLayoutPages && typeof window.UvUDefaultHome?.migrateLayout === 'function') {
+        const migrated = window.UvUDefaultHome.migrateLayout(db.homeLayoutPages);
+        if (migrated !== db.homeLayoutPages) {
+            db.homeLayoutPages = migrated;
+            saveData();
+        }
+    }
     if (!db.homeLayoutPages) {
         const order = db.homeLayoutOrder || ['app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-console', 'app-widget-market', 'app-placeholder'];
         db.homeLayoutPages = calculatePagesFromIds(order, allItems);

@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
     <link rel="stylesheet" href="css/modules/home_drag.css?v=20261107-drag">
     <link rel="stylesheet" href="css/modules/home_default_layout.css?v=20261119-home-v1">
+    <link rel="stylesheet" href="css/modules/minesweeper.css?v=20261123-minesweeper-v2">
 
     <!-- CSS Split: Core Features -->
     <link rel="stylesheet" href="css/chat.css?v=20261115-theme-stop-compat">
@@ -82,6 +83,44 @@
 </svg>
 <div class="phone-screen">
     <div id="home-screen" class="screen active"></div>
+    <section id="uvu-minesweeper-screen" class="screen" aria-label="扫雷">
+        <header class="ms-header">
+            <button class="ms-icon-btn back-btn" type="button" data-target="home-screen" aria-label="返回桌面"><span data-ms-icon="chevron-left"></span></button>
+            <h1>扫雷</h1>
+            <button class="ms-icon-btn" type="button" data-ms-help aria-label="扫雷玩法说明"><span data-ms-icon="circle-help"></span></button>
+        </header>
+        <main class="ms-content">
+            <div class="ms-play">
+                <nav class="ms-difficulties" aria-label="选择难度">
+                    <button type="button" data-ms-level="beginner" aria-pressed="true">初级</button>
+                    <button type="button" data-ms-level="intermediate" aria-pressed="false">中级</button>
+                    <button type="button" data-ms-level="expert" aria-pressed="false">高级</button>
+                </nav>
+                <dl class="ms-score" aria-label="本局信息">
+                    <div><dt>剩余地雷</dt><dd class="ms-mines">10</dd></div>
+                    <div><dt>用时</dt><dd class="ms-time">00:00</dd></div>
+                </dl>
+                <div class="ms-actions">
+                    <button class="ms-pill" type="button" data-ms-flag aria-pressed="false"><span data-ms-icon="flag"></span>插旗模式</button>
+                    <button class="ms-pill" type="button" data-ms-reset><span data-ms-icon="refresh-cw"></span>重新开始</button>
+                </div>
+                <p class="ms-status" role="status" aria-live="polite">点开任意一格开始</p>
+                <p class="ms-scroll-hint" hidden>左右滑动查看棋盘</p>
+                <div class="ms-board-viewport" tabindex="0" aria-label="扫雷棋盘，可左右滑动">
+                    <div class="ms-board" role="grid" aria-label="扫雷棋盘" aria-rowcount="9" aria-colcount="9"></div>
+                </div>
+            </div>
+        </main>
+        <dialog class="ms-help" aria-labelledby="ms-help-title">
+            <header><h1 id="ms-help-title">玩法说明</h1><button class="ms-icon-btn" type="button" data-ms-help-close aria-label="关闭说明">×</button></header>
+            <ul>
+                <li>翻开没有地雷的格子；数字表示周围八格的地雷数。</li>
+                <li>点“插旗模式”后，可标记或取消未翻开的格子；电脑也可右键插旗。</li>
+                <li>翻开所有安全格即可通关。第一次翻格不会踩雷。</li>
+                <li>初级 9×9／10 雷，中级 16×16／40 雷，高级 16×30／99 雷。</li>
+            </ul>
+        </dialog>
+    </section>
 
     <div id="chat-list-screen" class="screen">
         <header class="app-header chat-list-header">
@@ -3000,17 +3039,17 @@ node setup-server-plugin.js</code></pre>
 
 <!-- [1. 基础层] -->
 <script src="js/utils.js?v=20261121-status-startup"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
-<script src="js/db.js?v=20261119-home-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
+<script src="js/db.js?v=20261123-minesweeper-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
-<script src="js/ui.js?v=20261119-home-v1"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
+<script src="js/ui.js?v=20261123-minesweeper-v1"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261118-settings-retry"></script>
 <script src="js/modules/worldbook_rules.js?v=20261122-worldbook-1900"></script>
 <script src="js/modules/document_import.js?v=20261113-audit-nine-fixes-v1"></script>
 <script src="js/modules/chat_documents.js?v=20261109-audit-repairs"></script>
-<script src="js/vendor/lucide/uvu-icons.js?v=20261110-approved-atlas-v4"></script>
+<script src="js/vendor/lucide/uvu-icons.js?v=20261123-minesweeper-v1"></script>
 <script src="js/modules/derived_icons.js?v=20261108-settings-ui"></script>
 <script src="js/modules/chat_documents_ui.js?v=20261111-sheets"></script>
 <link rel="stylesheet" href="css/modules/chat_documents.css?v=20261107-panel-system">
@@ -3075,8 +3114,8 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/model_picker.js?v=20261109-audit-repairs"></script>
 <script src="js/modules/settings_api.js?v=20261119-pet"></script> <!-- API 设置与预设 -->
 <script src="js/modules/settings_presets.js?v=20261118-preset-save"></script> <!-- 预设管理 (气泡、人设等) -->
-<script src="js/modules/settings_customize.js?v=20261119-pet-entry"></script> <!-- 个性化与外观设置 -->
-<script src="js/modules/home_presets.js?v=20261119-home-v1"></script> <!-- 主页预设导入导出 -->
+<script src="js/modules/settings_customize.js?v=20261123-minesweeper-v1"></script> <!-- 个性化与外观设置 -->
+<script src="js/modules/home_presets.js?v=20261123-minesweeper-v1"></script> <!-- 主页预设导入导出 -->
 
 <!-- [3. 独立功能模块 (Plugins)] -->
 <script src="js/modules/sticker.js?v=20261106-quote-sticker"></script>   <!-- 表情包管理系统 -->
@@ -3192,7 +3231,9 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/storage_features.js?v=20261120-backup-social"></script>   <!-- 存储空间分析图表 -->
 <script src="js/modules/widgets.js"></script>   <!-- 桌面小组件设置 -->
 <script src="js/modules/widget_market.js?v=20261115-search-widget-recovery"></script> <!-- 小组件市场 -->
-<script src="js/modules/home_default_layout.js?v=20261119-home-v1"></script>
+<script src="js/modules/home_default_layout.js?v=20261123-minesweeper-v1"></script>
+<script src="js/modules/minesweeper_logic.js?v=20261123-minesweeper-v1"></script>
+<script src="js/modules/minesweeper_ui.js?v=20261123-minesweeper-v1"></script>
 <script src="js/modules/tutorial.js?v=20261114-cloud-restore-latest"></script>  <!-- 教程、更新日志、GitHub备份 -->
 <script src="js/modules/more_menu.js?v=20261104-derived-features"></script> <!-- 更多菜单与状态栏管理 -->
 <script src="js/modules/search.js?v=20261115-search-widget-recovery"></script> <!-- 聊天记录搜索模块 -->
@@ -3253,6 +3294,6 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_extensions_ui.js?v=20261122-panel-layout"></script>
 <script src="js/modules/music_together_ui.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/desktop_pet.js?v=20261119-pet-shapes"></script>
-<script src="js/main.js?v=20261121-scene-review"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261123-minesweeper-v1"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

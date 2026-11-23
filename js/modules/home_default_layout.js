@@ -5,12 +5,16 @@
     const IDS = { top: 'uvu-home-v1-top', ins: 'uvu-home-v1-ins', photo: 'uvu-home-v1-photo', quote: 'uvu-home-v1-quote' };
     const PAGES = [
         [IDS.top, IDS.ins, 'app-chat', 'app-uvu-music', 'app-reader', 'app-placeholder'],
+        [IDS.photo, 'app-worldbook', 'app-api', 'app-customize', 'app-widget-market', 'app-wallpaper', IDS.quote, 'app-tutorial', 'app-console', 'app-minesweeper']
+    ];
+    const LEGACY_PAGES = [
+        [IDS.top, IDS.ins, 'app-chat', 'app-uvu-music', 'app-reader', 'app-placeholder'],
         [IDS.photo, 'app-worldbook', 'app-api', 'app-customize', 'app-widget-market', 'app-wallpaper', IDS.quote, 'app-tutorial', 'app-console']
     ];
     // [起始列，起始行，列数，行数]，顺序同时对应从上到下、从左到右的阅读顺序。
     const CELLS = [
         [[1,1,4,2], [1,3,2,2], [3,3,1,1], [4,3,1,1], [3,4,1,1], [4,4,1,1]],
-        [[1,1,2,2], [3,1,1,1], [4,1,1,1], [3,2,1,1], [1,3,1,1], [2,3,1,1], [3,3,2,2], [1,4,1,1], [2,4,1,1]]
+        [[1,1,2,2], [3,1,1,1], [4,1,1,1], [3,2,1,1], [1,3,1,1], [2,3,1,1], [3,3,2,2], [1,4,1,1], [2,4,1,1], [4,5,1,1]]
     ];
     const WHITE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiPjxyZWN0IHdpZHRoPSIxIiBoZWlnaHQ9IjEiIGZpbGw9IndoaXRlIi8+PC9zdmc+';
     const AVATAR = 'assets/home/default-avatar.jpg';
@@ -58,6 +62,12 @@ window.uvuDefaultHomeClock = setInterval(tick, 1000); tick();`;
         return PAGES.findIndex(page => JSON.stringify(page) === JSON.stringify(ids));
     }
 
+    function migrateLayout(pages) {
+        if (!Array.isArray(pages) || pages.length !== LEGACY_PAGES.length ||
+            pages.some((page, index) => JSON.stringify(page) !== JSON.stringify(LEGACY_PAGES[index]))) return pages;
+        return pages.map((page, index) => index === 1 ? [...page, 'app-minesweeper'] : page.slice());
+    }
+
     function decorate(home) {
         let active = false;
         home.querySelectorAll('.home-grid-layout').forEach(grid => {
@@ -85,5 +95,5 @@ window.uvuDefaultHomeClock = setInterval(tick, 1000); tick();`;
         });
     }
 
-    window.UvUDefaultHome = Object.freeze({ createSettings, decorate, releasePositions });
+    window.UvUDefaultHome = Object.freeze({ createSettings, decorate, releasePositions, migrateLayout });
 })();

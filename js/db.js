@@ -85,6 +85,7 @@ const defaultIcons = {
     'night-mode-btn': {name: '夜间模式', url: 'https://i.postimg.cc/htYvkdQK/chan-146.png'},
     'music-screen': {name: '音乐', url: 'https://i.postimg.cc/ydd65txK/1758451018266.png'},
     'uvu-music-screen': {name: '音乐', url: 'assets/music/app-icon.png?v=20261119-icon-small'},
+    'uvu-minesweeper-screen': {name: '扫雷', url: 'assets/icons/minesweeper.svg'},
     'console-screen': {name: '控制台', url: 'https://i.postimg.cc/sfMwnRvn/ji-lichan-(128).png'},
     'storage-analysis-screen': {name: '存储分析', url: 'https://i.postimg.cc/J0F3Lt0T/chan-107.png'},
     'widget-market-screen': {name: '小组件', url: 'https://i.postimg.cc/NG2k67zS/ji-lichan-(138).png'},
@@ -585,7 +586,7 @@ function initDatabase() {
             },
             workshopLlmPresets: [],
             workshopPromptPresets: [],
-            homeLayoutOrder: ['widget-top', 'widget-ins', 'app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-reader', 'widget-heart', 'app-placeholder'],
+            homeLayoutOrder: ['widget-top', 'widget-ins', 'app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-reader', 'widget-heart', 'app-placeholder', 'app-minesweeper'],
             widgetTemplates: [],
             addedWidgets: []
         };
@@ -840,7 +841,7 @@ const loadData = async () => {
             },
             workshopLlmPresets: [],
             workshopPromptPresets: [],
-            homeLayoutOrder: ['widget-top', 'widget-ins', 'app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-reader', 'widget-heart', 'app-placeholder'],
+            homeLayoutOrder: ['widget-top', 'widget-ins', 'app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-reader', 'widget-heart', 'app-placeholder', 'app-minesweeper'],
             homeLayoutPages: null,
             backupReminderSettings: { enabled: true, interval: 3, lastReminderTime: 0 },
             stUnlocked: false

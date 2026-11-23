@@ -77,9 +77,10 @@ test('preset resource summary exposes dependencies without loading external file
 });
 
 test('home presets round-trip the derivative music entry without allowing unknown app identifiers', async () => {
-    const f = fixture(); f.db.homeLayoutPages[0].push('app-uvu-music');
+    const f = fixture(); f.db.homeLayoutPages[0].push('app-uvu-music', 'app-minesweeper');
     const preset = await f.api.createPreset('music home', false);
     assert.ok(preset.settings.homeLayoutPages[0].includes('app-uvu-music'));
+    assert.ok(preset.settings.homeLayoutPages[0].includes('app-minesweeper'));
     await f.api.applyPreset(preset); await f.api.undoPreset();
     const invalid = plain(preset); invalid.settings.homeLayoutPages[0].push('app-unregistered');
     assert.throws(() => f.api.validate(invalid), /无法识别/);

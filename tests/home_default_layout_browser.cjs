@@ -43,9 +43,9 @@ const server = http.createServer((req, res) => {
         await page.goto(base, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.getElementById('message-area')?.dataset.replyGesturesBound === 'true');
         const expected = await page.evaluate(() => db.homeLayoutPages);
-        assert.deepEqual(expected.map(ids => ids.filter(id => id.startsWith('app-')).length), [4,7]);
+        assert.deepEqual(expected.map(ids => ids.filter(id => id.startsWith('app-')).length), [4,8]);
         assert.deepEqual(expected.map(ids => ids.filter(id => id.startsWith('uvu-home-')).length), [2,2]);
-        assert.equal(new Set(expected.flat()).size, 15);
+        assert.equal(new Set(expected.flat()).size, 16);
         assert.equal(await page.locator('.uvu-home-default-page').count(), 2);
         assert.equal(await page.evaluate(() => atob(db.wallpaper.split(',')[1]).includes('fill="white"')), true);
         await page.waitForFunction(async () => (await dexieDB.globalSettings.get('homeLayoutPages'))?.value?.length === 2);
@@ -136,13 +136,13 @@ const server = http.createServer((req, res) => {
         await page.waitForFunction(()=>db.homeLayoutPages[0].indexOf('app-uvu-music')<db.homeLayoutPages[0].indexOf('app-chat'));
         await page.waitForFunction(async()=>JSON.stringify((await dexieDB.globalSettings.get('homeLayoutPages')).value)===JSON.stringify(db.homeLayoutPages));
         const reordered=await page.evaluate(()=>db.homeLayoutPages);
-        assert.equal(new Set(reordered.flat()).size,15);
+        assert.equal(new Set(reordered.flat()).size,16);
         assert.deepEqual(reordered[1],expected[1]);
         await page.reload({waitUntil:'domcontentloaded'});
         await page.waitForFunction(()=>document.querySelector('.uvu-home-default-page'));
         assert.deepEqual(await page.evaluate(()=>db.homeLayoutPages),reordered);
         assert.deepEqual(errors,[]);
         fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({completeApp:true,checks,existingSettingsPreserved:true,applyCancelUndo:true,editableVariablesPersist:true,exportImport:true,realTouchReorderAndReload:true,errors},null,2));
-        console.log('Default home checks passed: white new database, 4/7 apps and four editable widgets, 4 viewports, reload, existing settings, apply/cancel/undo, preset roundtrip and edit-mode positions.');
+        console.log('Default home checks passed: white new database, 4/8 apps and four editable widgets, 4 viewports, reload, existing settings, apply/cancel/undo, preset roundtrip and edit-mode positions.');
     } finally {await browser.close();server.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -6,7 +6,7 @@
     const VERSION = 1;
     const MAX_BYTES = 50 * 1024 * 1024;
     const APP_IDS = new Set(['app-chat', 'app-api', 'app-wallpaper', 'app-worldbook',
-        'app-customize', 'app-tutorial', 'app-console', 'app-widget-market', 'app-reader', 'app-placeholder', 'app-uvu-music']);
+        'app-customize', 'app-tutorial', 'app-console', 'app-widget-market', 'app-reader', 'app-placeholder', 'app-uvu-music', 'app-minesweeper']);
     const HOME_KEYS = ['wallpaper', 'homeScreenMode', 'customIcons', 'homeSignature',
         'insWidgetSettings', 'homeWidgetSettings', 'homeLayoutPages'];
     const clone = value => JSON.parse(JSON.stringify(value));
