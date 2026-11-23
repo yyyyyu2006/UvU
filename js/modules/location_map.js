@@ -82,11 +82,13 @@
         if (userLocation && characterLocation) summary.append(element('span', '按已保存的城市位置估算；角色地点是手动设置，不是实时 GPS。', 'location-map-note'));
         body.append(summary);
 
-        const sharing = element('section', undefined, 'location-map-sharing');
-        sharing.append(element('h2', '位置共享', 'location-map-section-title'));
-        sharing.append(element('p', '地图仅在本机显示。开启聊天引用后，才会把城市名称和估算公里数加入对话；不会发送坐标，也不会后台定位。', 'location-map-note'));
+        const sharing = element('details', undefined, 'location-map-sharing');
+        const shareActive = profile.mapShareEnabled === true && profile.mapShareUntil > Date.now();
+        const sharingSummary = element('summary', shareActive ? '位置共享 · 已开启' : '位置共享设置'); sharing.append(sharingSummary);
+        const sharingContent = element('div', undefined, 'location-map-sharing-content');
+        sharingContent.append(element('p', '地图仅在本机显示。聊天引用需单独开启；只引用城市与约公里距离，不发送坐标。', 'location-map-note'));
         if (!target) {
-            sharing.append(element('p', '从日历选择一个角色后，可为该角色和当前存档设置分享期限。', 'location-map-note'));
+            sharingContent.append(element('p', '从日历选择一个角色后，可为该角色和当前存档设置分享期限。', 'location-map-note'));
         } else {
             const currentShareKey = root.environmentLocationShareKey?.(userLocation) || '';
             const share = element('input'); share.type = 'checkbox'; share.checked = profile.mapShareEnabled === true && profile.mapShareUntil > Date.now() && profile.mapShareLocationKey === currentShareKey;
@@ -105,9 +107,9 @@
             const save = element('button', '保存共享设置', 'location-map-save'); save.type = 'button';
             const revoke = element('button', '立即撤销', 'location-map-revoke'); revoke.type = 'button'; revoke.disabled = !profile.mapShareEnabled;
             actions.append(save, revoke);
-            sharing.append(shareLabel, expiryRow, referenceLabel, actions, status);
-            if (!userLocation) sharing.append(element('p', '先在环境设置中保存我的城市，才能开启共享。', 'location-map-note'));
-            else if (!characterLocation) sharing.append(element('p', '先为角色设置城市，才能允许聊天引用两地距离。', 'location-map-note'));
+            sharingContent.append(shareLabel, expiryRow, referenceLabel, actions, status);
+            if (!userLocation) sharingContent.append(element('p', '先在环境设置中保存我的城市，才能开启共享。', 'location-map-note'));
+            else if (!characterLocation) sharingContent.append(element('p', '先为角色设置城市，才能允许聊天引用两地距离。', 'location-map-note'));
             share.onchange = () => { reference.disabled = !share.checked || !userLocation || !characterLocation; if (reference.disabled) reference.checked = false; };
             const persist = async (enabled, includeInChat) => {
                 if (!valid()) throw new Error('当前角色或存档已切换，请重新打开地图');
@@ -116,12 +118,14 @@
                     mapShareLocationKey: enabled ? currentShareKey : '' };
                 await root.saveDerivedChatFields(target, { environmentProfile: next });
                 if (!valid()) throw new Error('设置已保存到原存档；当前已切换到其他存档');
+                sharingSummary.textContent = enabled ? '位置共享 · 已开启' : '位置共享设置';
                 status.textContent = enabled ? `已保存，将在 ${expiry.options[expiry.selectedIndex].text} 后自动失效。` : '已撤销共享。';
                 revoke.disabled = !enabled;
             };
             save.onclick = () => persist(share.checked, reference.checked).catch(error => { status.textContent = error.message; });
             revoke.onclick = () => { share.checked = false; reference.checked = false; persist(false, false).catch(error => { status.textContent = error.message; }); };
         }
+        sharing.append(sharingContent);
         body.append(sharing);
 
         loadButton.onclick = async () => {
@@ -146,7 +150,7 @@
                 tiles.on('tileerror', () => { mapStatus.textContent = '底图暂不可用；仍可查看上方地点和公里距离。'; });
                 if (points.length > 1) leafletMap.fitBounds(points, { padding: [36, 36], maxZoom: 5 });
                 else leafletMap.setView(points[0], 5);
-                mapStatus.textContent = '地图仅展示你已保存的城市位置；拖动或缩放不会改变分享设置。';
+                mapStatus.textContent = '城市位置 · 非实时 GPS'; mapStatus.classList.add('location-map-status-loaded');
                 loadButton.hidden = true;
             } catch (error) { mapStatus.textContent = error.message || '地图暂不可用；地点和公里距离仍可查看。'; loadButton.disabled = false; }
         };

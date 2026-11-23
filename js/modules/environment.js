@@ -245,7 +245,10 @@ async function searchEnvironmentCities(name, settings = getEnvironmentSettings()
 
 async function locateEnvironmentUser(settings = getEnvironmentSettings(), signal) {
     if (!navigator.geolocation) throw new Error('当前浏览器不支持定位，请手动搜索城市');
-    const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('定位失败或未授权，请手动搜索城市')), { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }));
+    const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, error => {
+        const reason = error?.code === 1 ? '浏览器或系统拒绝了定位权限' : error?.code === 2 ? '设备暂时无法提供位置' : error?.code === 3 ? '获取位置超时（12 秒）' : '浏览器未能获取设备位置';
+        reject(new Error(`定位失败或未授权：${reason}。请检查浏览器和系统的位置权限，或手动搜索城市。`));
+    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }));
     if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
     const { latitude, longitude } = position.coords;
     const data = settings.service === 'mcp' ? await callEnvironmentMcp('reverse', { latitude, longitude }, settings, signal) :

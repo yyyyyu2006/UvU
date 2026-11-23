@@ -118,9 +118,15 @@ test('unsupported holidays report unavailable instead of an empty supported cale
 });
 test('geolocation denial leaves manual city search available', async () => {
     const { c } = fixture(); c.navigator.geolocation = { getCurrentPosition: (_, reject) => reject({ code: 1 }) };
-    await assert.rejects(c.locateEnvironmentUser(), /定位失败或未授权/);
+    await assert.rejects(c.locateEnvironmentUser(), /浏览器或系统拒绝了定位权限/);
     c.fetch = async () => ({ ok: true, json: async () => ({ results: [{ ...shanghai, country_code: 'CN' }] }) });
     assert.equal((await c.searchEnvironmentCities('上海'))[0].name, '上海');
+});
+test('geolocation reports unavailable position and timeout separately', async () => {
+    for (const [code, expected] of [[2, '设备暂时无法提供位置'], [3, '获取位置超时（12 秒）']]) {
+        const { c } = fixture(); c.navigator.geolocation = { getCurrentPosition: (_, reject) => reject({ code }) };
+        await assert.rejects(c.locateEnvironmentUser(), new RegExp(expected));
+    }
 });
 test('city search language follows the saved language preference and keeps administrative-area labels', async () => {
     const { c, requests } = fixture(); c.db.environmentSettings = { locationLanguage: 'en' };
