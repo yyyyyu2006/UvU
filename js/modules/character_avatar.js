@@ -14,6 +14,8 @@ const avatarGlobalFields = new Set(['avatar', 'avatarPrevious', 'avatarChangeHis
 const avatarChangeHistoryLimit = 5;
 const avatarChangeHistorySize = 8 * 1024 * 1024;
 const avatarRoutineCheckCooldown = 5 * 60 * 1000;
+const avatarRecognitionCacheLimit = 24;
+const avatarRecognitionCacheTtl = 30 * 24 * 60 * 60 * 1000;
 
 async function saveDerivedChatFields(chat, changes) {
     if (!db.characters.includes(chat) || derivedChatWrites.has(chat)) throw new Error('角色正在保存或已不存在');
@@ -51,7 +53,11 @@ function characterAvatarSettings(chat) {
         changePolicy: ['suggest', 'confirm', 'automatic'].includes(raw.changePolicy) ? raw.changePolicy : 'confirm',
         pendingSuggestion: raw.pendingSuggestion && typeof raw.pendingSuggestion === 'object' ? raw.pendingSuggestion : null,
         cooldownHours: Number.isFinite(cooldownHours) ? Math.max(0, Math.min(720, cooldownHours)) : 24, lastChangedAt: Math.max(0, Number(raw.lastChangedAt) || 0),
-        condition: String(raw.condition || '').slice(0, 4000), cache: raw.cache && typeof raw.cache === 'object' ? raw.cache : {},
+        condition: String(raw.condition || '').slice(0, 4000), cache: raw.cache && typeof raw.cache === 'object' ? Object.fromEntries(
+            Object.entries(raw.cache).filter(([, entry]) => entry && typeof entry === 'object' &&
+                Number.isFinite(entry.cachedAt) && entry.cachedAt <= Date.now() && Date.now() - entry.cachedAt < avatarRecognitionCacheTtl &&
+                /^[a-f0-9]{64}$/.test(entry.hash || '') && typeof entry.vision === 'string' && typeof entry.description === 'string')
+                .sort((a, b) => b[1].cachedAt - a[1].cachedAt).slice(0, avatarRecognitionCacheLimit)) : {},
         lastUserCount: Math.max(0, Number(raw.lastUserCount) || 0), lastCheck: Number(raw.lastCheck) || 0,
         currentImageId: String(raw.currentImageId || ''), currentAvatarFingerprint: String(raw.currentAvatarFingerprint || ''),
         lastRequestKey: String(raw.lastRequestKey || '').slice(0, 2400),
@@ -271,7 +277,7 @@ async function runCharacterAvatarCheck(chat, force = false) {
     if (!force && cooling && (!explicit || (lastAttempt.error && lastAttempt.requestKey === requestKey))) return false;
     if (!valid() || !candidates.length) return false;
     const visionConfig = resolveAuxiliaryApiConfig('imageRecognition');
-    const visionFingerprint = JSON.stringify([visionConfig.provider, visionConfig.url, visionConfig.model]);
+    const visionFingerprint = await avatarImageFingerprint(JSON.stringify([visionConfig.provider, visionConfig.url, visionConfig.model]));
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 90000);
     const monitor = setInterval(() => { if (!valid()) controller.abort(); }, 300);
     characterAvatarAttempts.set(chat, { at: Date.now(), archiveId, requestKey: explicit ? requestKey : '' });
@@ -285,9 +291,11 @@ async function runCharacterAvatarCheck(chat, force = false) {
             const hash = await avatarImageFingerprint(candidate.src);
             if (!await avatarCandidateAvailable(chat, candidate) || !valid() || controller.signal.aborted) return false;
             const old = settings.cache[candidate.id];
-            const description = old?.hash === hash && old.vision === visionFingerprint && typeof old.description === 'string' ? old.description :
+            const description = old?.hash === hash && old.vision === visionFingerprint &&
+                typeof old.description === 'string' && Number.isFinite(old.cachedAt) &&
+                old.cachedAt <= Date.now() && Date.now() - old.cachedAt < avatarRecognitionCacheTtl ? old.description :
                 await recognizeStickerImage(candidate.src, controller.signal, 'avatar');
-            cache[candidate.id] = { hash, vision: visionFingerprint, description: description.slice(0, 1500) };
+            cache[candidate.id] = { hash, vision: visionFingerprint, description: description.slice(0, 1500), cachedAt: Date.now() };
             candidate.description = description;
         }
         if (!valid()) return false;

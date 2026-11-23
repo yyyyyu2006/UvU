@@ -338,11 +338,15 @@ test('new environment settings and archive extensions survive the existing backu
     const { c, chat } = fixture(); vm.runInContext(source('storage.js'), c);
     c.db.environmentSettings = { enabled: true, userLocation: shanghai };
     chat.environmentProfile = { aiEnabled: false, remoteEnabled: true, charLocation: ny };
-    chat.avatarAutonomy = { enabled: true, every: 5, initiative: 'active', cooldownHours: 48, lastChangedAt: 1700000000000 };
+    chat.avatarAutonomy = { enabled: true, every: 5, initiative: 'active', cooldownHours: 48, lastChangedAt: 1700000000000,
+        cache: { image: { hash: 'a'.repeat(64), vision: 'model', description: '临时图片描述', cachedAt: Date.now() } } };
+    chat.archives[0].data.avatarAutonomy = structuredClone(chat.avatarAutonomy);
     const backup = c.storageExportChat(chat, true, true);
     assert.deepEqual(plain(backup.environmentProfile), chat.environmentProfile);
     assert.equal(backup.avatarAutonomy.enabled, true);
     assert.equal(backup.avatarAutonomy.initiative, 'active');
+    assert.equal(backup.avatarAutonomy.cache, undefined);
+    assert.equal(backup.archives[0].data.avatarAutonomy.cache, undefined);
     const contact = c.storageExportChat(chat, true, false); assert.equal(contact.avatarAutonomy, undefined);
     c.storageValidateModules({ characters: [backup], environmentSettings: c.db.environmentSettings });
 });
@@ -535,6 +539,37 @@ test('routine avatar checks throttle repeated new images while explicit requests
     f.chat.history.push({ id: 'request', role: 'user', content: '请换头像' });
     assert.equal(await f.c.checkCharacterAvatar(f.chat), false);
     assert.equal(decisions, 2);
+});
+
+test('avatar recognition cache expires, rejects untimestamped entries, and prunes entries for removed candidates', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.every = 100;
+    f.chat.avatarAutonomy.cache = {
+        'message:u:0': { hash: 'stale', vision: 'newapi||vision', description: '旧结果 without timestamp' },
+        'message:removed:0': { hash: 'a'.repeat(64), vision: 'newapi||vision', description: '已移除候选', cachedAt: Date.now() }
+    };
+    let descriptions = 0;
+    f.c.recognizeStickerImage = async () => { descriptions++; return '新识图结果'; };
+    f.c.fetchAiResponse = async () => '{"action":"keep"}';
+    await f.c.checkCharacterAvatar(f.chat, true);
+    assert.equal(descriptions, 1);
+    assert.deepEqual(Object.keys(f.chat.avatarAutonomy.cache), ['message:u:0']);
+    assert.equal(f.chat.avatarAutonomy.cache['message:u:0'].description, '新识图结果');
+    assert.equal(Number.isFinite(f.chat.avatarAutonomy.cache['message:u:0'].cachedAt), true);
+});
+
+test('avatar recognition cache normalization enforces age and entry bounds', () => {
+    const { c, chat } = fixture();
+    const now = Date.now();
+    chat.avatarAutonomy = { cache: Object.fromEntries(Array.from({ length: 30 }, (_, index) =>
+        ['image-' + index, { hash: 'a'.repeat(64), vision: 'model', description: 'description',
+            cachedAt: now - index * 1000 }]).concat([['expired', { hash: 'b'.repeat(64), vision: 'model', description: 'expired',
+                cachedAt: now - 31 * 24 * 60 * 60 * 1000 }]])) };
+    const cache = c.characterAvatarSettings(chat).cache;
+    assert.equal(Object.keys(cache).length, 24);
+    assert.equal(Object.hasOwn(cache, 'expired'), false);
+    assert.equal(Object.hasOwn(cache, 'image-0'), true);
+    assert.equal(Object.hasOwn(cache, 'image-23'), true);
+    assert.equal(Object.hasOwn(cache, 'image-24'), false);
 });
 
 test('in-flight avatar decisions coalesce a newer request and discard the stale result', async () => {

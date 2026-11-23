@@ -465,6 +465,11 @@ function storageExportChat(chat, contacts, chats, options = {}) {
                 ...(contacts && chat.statusPanel ? { statusPanel: storageClone(chat.statusPanel) } : {}) };
         });
     }
+    const omitAvatarRecognitionCache = data => {
+        if (data?.avatarAutonomy && typeof data.avatarAutonomy === 'object') delete data.avatarAutonomy.cache;
+    };
+    omitAvatarRecognitionCache(result);
+    (result.archives || []).forEach(archive => omitAvatarRecognitionCache(archive.data));
     return result;
 }
 
@@ -564,6 +569,7 @@ function storageValidateModules(modules) {
                 Object.entries(a.cache).forEach(([id, entry]) => {
                     object(entry, prefix + '.cache.' + id);
                     for (const key of ['hash', 'vision', 'description']) optional(entry[key], prefix + '.cache.' + id + '.' + key, 'string');
+                    optional(entry.cachedAt, prefix + '.cache.' + id + '.cachedAt', 'number');
                 });
             }
         }
