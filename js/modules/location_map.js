@@ -30,6 +30,14 @@
         return item;
     }
 
+    function avatarSource(value) { return typeof root.safeDisplayImageUrl === 'function' ? root.safeDisplayImageUrl(value) : ''; }
+    function avatarToken(label, source, className) {
+        const safeSource = avatarSource(source);
+        const token = element(safeSource ? 'img' : 'b', safeSource ? undefined : label, className);
+        if (safeSource) { token.src = safeSource; token.alt = ''; }
+        return token;
+    }
+
     function loadLeaflet() {
         if (root.L) return Promise.resolve(root.L);
         if (leafletPromise) return leafletPromise;
@@ -60,8 +68,12 @@
         const userLocation = root.getEnvironmentSettings?.().userLocation || null;
         const profile = profileOf(target);
         const characterLocation = target ? profile.charLocation || null : null;
-        const distance = distanceKm(userLocation, characterLocation);
+        const userAvatar = avatarSource(target?.myAvatar);
+        const characterAvatar = avatarSource(target?.avatar);
+        const currentShareKey = root.environmentLocationShareKey?.(userLocation) || '';
+        const shareActive = !!currentShareKey && profile.mapShareEnabled === true && profile.mapShareUntil > Date.now() && profile.mapShareLocationKey === currentShareKey;
         const valid = () => !target || (root.db.characters.includes(target) && (target.activeArchiveId || '') === archiveId);
+        const placesWithCoordinates = [userLocation, characterLocation].filter(place => place && Number.isFinite(place.latitude) && Number.isFinite(place.longitude));
 
         const names = element('div', undefined, 'location-map-people');
         const user = element('div', undefined, 'location-map-person'); user.append(element('span', '我', 'location-map-dot location-map-dot-user'), element('strong', userLocation?.name || '尚未设置我的城市'));
@@ -74,23 +86,46 @@
 
         const map = element('div', undefined, 'location-map-canvas'); map.setAttribute('role', 'region'); map.setAttribute('aria-label', '我与角色的位置地图');
         const mapStatus = element('p', '打开地图会向 OpenStreetMap 请求当前地图区域的底图；不会开启实时定位。', 'location-map-status');
-        const loadButton = element('button', '加载地图', 'location-map-load'); loadButton.type = 'button'; loadButton.disabled = !userLocation && !characterLocation;
-        const mapFrame = element('section', undefined, 'location-map-frame'); mapFrame.append(mapStatus, loadButton, map); body.append(mapFrame);
+        const loadButton = element('button', '加载地图', 'location-map-load'); loadButton.type = 'button'; loadButton.disabled = !placesWithCoordinates.length;
+        const expandButton = element('button', '放大地图', 'location-map-expand'); expandButton.type = 'button'; expandButton.hidden = true;
+        expandButton.setAttribute('aria-expanded', 'false');
+        const expandedHeader = element('div', undefined, 'location-map-expanded-header');
+        const backButton = element('button', '×', 'location-map-expanded-back'); backButton.type = 'button'; backButton.setAttribute('aria-label', '返回位置地图');
+        const expandedPeople = element('div', undefined, 'location-map-expanded-people');
+        const expandedUser = element('span', undefined, 'location-map-expanded-person'); expandedUser.append(avatarToken('我', userAvatar, 'location-map-expanded-avatar'), element('span', userLocation?.name || '未设置城市'));
+        expandedPeople.append(expandedUser);
+        if (target) {
+            const expandedCharacter = element('span', undefined, 'location-map-expanded-person'); expandedCharacter.append(avatarToken('Ta', characterAvatar, 'location-map-expanded-avatar'), element('span', characterLocation?.name || '未设置城市'));
+            expandedPeople.append(expandedCharacter);
+        }
+        const expandedShareState = element('small', shareActive ? '位置共享 · 当前角色' : '仅本机查看', 'location-map-expanded-share');
+        expandedHeader.append(backButton, expandedPeople, expandedShareState);
+        const mapFrame = element('section', undefined, 'location-map-frame'); mapFrame.append(mapStatus, loadButton, expandButton, expandedHeader, map); body.append(mapFrame);
 
-        const summary = element('section', undefined, 'location-map-distance');
-        summary.append(element('span', '两地直线距离', 'location-map-caption'), element('strong', distance === null ? '需要双方都设置城市' : formatDistance(distance), 'location-map-km'));
-        if (userLocation && characterLocation) summary.append(element('span', '按已保存的城市位置估算；角色地点是手动设置，不是实时 GPS。', 'location-map-note'));
-        body.append(summary);
+        const overlay = dialog.panel.closest('.message-forward-overlay');
+        const originalHeader = dialog.panel.querySelector('.message-forward-header');
+        const setExpanded = expanded => {
+            dialog.panel.classList.toggle('location-map-expanded', expanded);
+            overlay?.classList.toggle('location-map-expanded-overlay', expanded);
+            expandButton.setAttribute('aria-expanded', String(expanded));
+            if (expanded) originalHeader?.style.setProperty('display', 'none', 'important');
+            else originalHeader?.style.removeProperty('display');
+            if (expanded) requestAnimationFrame(() => leafletMap?.invalidateSize({ pan: false }));
+        };
+        backButton.onclick = () => setExpanded(false);
+        expandButton.onclick = () => setExpanded(true);
+        map.addEventListener('click', event => {
+            if (leafletMap && !dialog.panel.classList.contains('location-map-expanded') &&
+                !event.target.closest?.('.leaflet-control, .location-map-load, .location-map-expand')) setExpanded(true);
+        }, true);
 
         const sharing = element('details', undefined, 'location-map-sharing');
-        const shareActive = profile.mapShareEnabled === true && profile.mapShareUntil > Date.now();
         const sharingSummary = element('summary', shareActive ? '位置共享 · 已开启' : '位置共享设置'); sharing.append(sharingSummary);
         const sharingContent = element('div', undefined, 'location-map-sharing-content');
         sharingContent.append(element('p', '地图仅在本机显示。聊天引用需单独开启；只引用城市与约公里距离，不发送坐标。', 'location-map-note'));
         if (!target) {
             sharingContent.append(element('p', '从日历选择一个角色后，可为该角色和当前存档设置分享期限。', 'location-map-note'));
         } else {
-            const currentShareKey = root.environmentLocationShareKey?.(userLocation) || '';
             const share = element('input'); share.type = 'checkbox'; share.checked = profile.mapShareEnabled === true && profile.mapShareUntil > Date.now() && profile.mapShareLocationKey === currentShareKey;
             share.disabled = !userLocation;
             const expiry = element('select'); expiry.setAttribute('aria-label', '共享有效期');
@@ -134,7 +169,7 @@
             try {
                 const L = await loadLeaflet();
                 if (!valid() || !map.isConnected) return;
-                const places = [[userLocation, '#557cae'], [characterLocation, '#86aee0']].filter(([place]) => place);
+                const places = [[userLocation, '我', 'location-map-marker-user'], [characterLocation, 'Ta', 'location-map-marker-character']].filter(([place]) => place);
                 const points = places.map(([place]) => [place.latitude, place.longitude]);
                 leafletMap = L.map(map, { zoomControl: true, scrollWheelZoom: false, tap: true, attributionControl: true });
                 const tiles = L.gridLayer({ attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>', maxZoom: 19 });
@@ -146,13 +181,22 @@
                     return tile;
                 };
                 tiles.addTo(leafletMap);
-                places.forEach(([, color], index) => L.circleMarker(points[index], { radius: 9, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1 }).addTo(leafletMap));
-                tiles.on('tileerror', () => { mapStatus.textContent = '底图暂不可用；仍可查看上方地点和公里距离。'; });
+                places.forEach(([, label, markerClass], index) => {
+                    const source = label === '我' ? userAvatar : characterAvatar;
+                    const escapedSource = typeof root.escapeDisplayHtml === 'function' ? root.escapeDisplayHtml(source) : source.replace(/[&<>"']/g, character => ({
+                        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                    })[character]);
+                    const markerContent = source ? `<img src="${escapedSource}" alt="">` : `<span>${label}</span>`;
+                    L.marker(points[index], {
+                        icon: L.divIcon({ className: `location-map-marker ${markerClass}`, html: markerContent, iconSize: [48, 48], iconAnchor: [24, 24] })
+                    }).addTo(leafletMap);
+                });
+                tiles.on('tileerror', () => { mapStatus.textContent = '底图暂不可用；上方仍可查看双方城市。'; });
                 if (points.length > 1) leafletMap.fitBounds(points, { padding: [36, 36], maxZoom: 5 });
                 else leafletMap.setView(points[0], 5);
                 mapStatus.textContent = '城市位置 · 非实时 GPS'; mapStatus.classList.add('location-map-status-loaded');
-                loadButton.hidden = true;
-            } catch (error) { mapStatus.textContent = error.message || '地图暂不可用；地点和公里距离仍可查看。'; loadButton.disabled = false; }
+                loadButton.hidden = true; expandButton.hidden = false;
+            } catch (error) { mapStatus.textContent = error.message || '地图暂不可用；仍可查看双方城市。'; loadButton.disabled = false; }
         };
         return dialog;
     }

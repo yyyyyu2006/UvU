@@ -16,7 +16,7 @@ function environmentContext() {
 const shanghai = { name: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai', latitude: 31.23, longitude: 121.47 };
 const tokyo = { name: '东京', countryCode: 'JP', timezone: 'Asia/Tokyo', latitude: 35.68, longitude: 139.69 };
 
-test('map distance is estimated and shown in coarse whole-kilometer units', () => {
+test('map distance for optional shared context is estimated in coarse whole-kilometer units', () => {
     const c = vm.createContext({});
     vm.runInContext(source('location_map.js'), c);
     const map = c.UvULocationMap;
