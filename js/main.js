@@ -42,6 +42,14 @@ const init = async () => {
             if (target) {
                 e.preventDefault();
                 switchScreen(target);
+                if (target === 'uvu-game-hub-screen') {
+                    const gameId = backBtn.closest('.screen')?.id;
+                    const hub = document.getElementById(target);
+                    const card = [...hub.querySelectorAll('[data-game-target]')].find(button => button.dataset.gameTarget === gameId);
+                    (card || hub.querySelector('h1')).focus({ preventScroll: true });
+                } else if (backBtn.closest('#uvu-game-hub-screen')) {
+                    document.querySelector('#home-screen .app-icon[data-target="uvu-game-hub-screen"]')?.focus({ preventScroll: true });
+                }
             }
         }
 
@@ -53,6 +61,15 @@ const init = async () => {
 
     // 导航栏跳转
     document.body.addEventListener('click', e => {
+        const gameButton = e.target.closest('#uvu-game-hub-screen button[data-game-target]');
+        if (gameButton) {
+            const gameId = gameButton.dataset.gameTarget;
+            const game = document.getElementById(gameId);
+            if (!game?.classList.contains('screen')) return;
+            switchScreen(gameId);
+            game.querySelector('header h1')?.focus({ preventScroll: true });
+            return;
+        }
         const navLink = e.target.closest('.app-icon[data-target]');
         if (navLink) {
             e.preventDefault();
@@ -61,7 +78,11 @@ const init = async () => {
                 showToast('该应用正在开发中，敬请期待！');
                 return;
             }
+            if (target === 'uvu-game-hub-screen' && isHomeEditMode) return;
             switchScreen(target);
+            if (target === 'uvu-game-hub-screen') {
+                document.getElementById('uvu-game-hub-title')?.focus({ preventScroll: true });
+            }
         }
     });
 
@@ -250,7 +271,7 @@ function setupGlobalRescueGesture() {
     const CLICK_TIMEOUT = 400; // 400ms 间隔
 
     document.addEventListener('click', (e) => {
-        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, #uvu-pet-feature, #uvu-pet-settings-entry, #scene-mode-modal, #scene-mode-bar, #uvu-minesweeper-screen, :is(#uvu-story-bridge-screen,#storage-analysis-screen,#send-pv-modal) :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
+        if (e.target.closest?.('.feature-dialog, .relationship-dialog, .message-forward-overlay, .uvu-sheet-v2, #global-rescue-panel, #uvu-pet-feature, #uvu-pet-settings-entry, #scene-mode-modal, #scene-mode-bar, #uvu-minesweeper-screen, #uvu-game-hub-screen, .app-icon[data-target="uvu-game-hub-screen"], :is(#uvu-story-bridge-screen,#storage-analysis-screen,#send-pv-modal) :is(button,input,select,textarea,summary,a,label,[role="button"])')) {
             // Dialog and derived app controls are ordinary interactions, not background rescue taps.
             globalRescueClickCount = 0;
             globalRescueLastClickTime = 0;

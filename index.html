@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="css/layout.css?v=20261103-vector-viewport">
     <link rel="stylesheet" href="css/modules/home_drag.css?v=20261107-drag">
     <link rel="stylesheet" href="css/modules/home_default_layout.css?v=20261119-home-v1">
+    <link rel="stylesheet" href="css/modules/game_hub.css?v=20261124-game-hub">
     <link rel="stylesheet" href="css/modules/minesweeper.css?v=20261123-minesweeper-v2">
 
     <!-- CSS Split: Core Features -->
@@ -83,10 +84,32 @@
 </svg>
 <div class="phone-screen">
     <div id="home-screen" class="screen active"></div>
+    <section id="uvu-game-hub-screen" class="screen" aria-labelledby="uvu-game-hub-title">
+        <header class="game-hub-header">
+            <button class="game-hub-back back-btn" type="button" data-target="home-screen" aria-label="返回桌面">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <h1 id="uvu-game-hub-title" tabindex="-1">游戏大厅</h1>
+        </header>
+        <div class="game-hub-content">
+            <ul class="game-hub-list" role="list" aria-label="小游戏">
+                <li>
+                    <button class="game-hub-card" type="button" data-game-target="uvu-minesweeper-screen" aria-labelledby="game-hub-minesweeper-title" aria-describedby="game-hub-minesweeper-description">
+                        <img src="assets/icons/minesweeper.svg" alt="" width="48" height="48">
+                        <span>
+                            <strong id="game-hub-minesweeper-title">扫雷</strong>
+                            <span id="game-hub-minesweeper-description" class="game-hub-description">经典益智 · 三档难度</span>
+                        </span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                </li>
+            </ul>
+        </div>
+    </section>
     <section id="uvu-minesweeper-screen" class="screen" aria-label="扫雷">
         <header class="ms-header">
-            <button class="ms-icon-btn back-btn" type="button" data-target="home-screen" aria-label="返回桌面"><span data-ms-icon="chevron-left"></span></button>
-            <h1>扫雷</h1>
+            <button class="ms-icon-btn back-btn" type="button" data-target="uvu-game-hub-screen" aria-label="返回游戏大厅"><span data-ms-icon="chevron-left"></span></button>
+            <h1 tabindex="-1">扫雷</h1>
             <button class="ms-icon-btn" type="button" data-ms-help aria-label="扫雷玩法说明"><span data-ms-icon="circle-help"></span></button>
         </header>
         <main class="ms-content">
@@ -3039,10 +3062,10 @@ node setup-server-plugin.js</code></pre>
 
 <!-- [1. 基础层] -->
 <script src="js/utils.js?v=20261121-status-startup"></script>    <!-- 工具函数：图片压缩、Toast提示、随机数等 -->
-<script src="js/db.js?v=20261123-minesweeper-v1"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
+<script src="js/db.js?v=20261124-game-hub"></script>       <!-- 数据层：Dexie数据库配置、全局变量定义、数据存取 -->
 
 <!-- [2. 核心交互层] -->
-<script src="js/ui.js?v=20261123-minesweeper-v1"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
+<script src="js/ui.js?v=20261124-game-hub"></script>       <!-- UI交互：界面切换、主屏幕逻辑、右键菜单 -->
 <script src="js/modules/home_image_retry.js?v=20261103-images"></script>
 <!-- Chat Modules -->
 <script src="js/modules/chat_list.js?v=20261118-settings-retry"></script>
@@ -3294,6 +3317,6 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_extensions_ui.js?v=20261122-panel-layout"></script>
 <script src="js/modules/music_together_ui.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/desktop_pet.js?v=20261119-pet-shapes"></script>
-<script src="js/main.js?v=20261123-minesweeper-v1"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261124-game-hub"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>

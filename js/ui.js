@@ -511,7 +511,7 @@ function setupHomeScreen() {
         'app-reader': `<div class="grid-item-1x1" data-id="app-reader"><a href="#" class="app-icon" data-target="reader-bookshelf-screen"><img src="${getIcon('reader-bookshelf-screen')}" alt="阅读器" class="icon-img"><span class="app-name">${defaultIcons['reader-bookshelf-screen'].name}</span></a></div>`,
         'app-placeholder': `<div class="grid-item-1x1" data-id="app-placeholder"><a href="#" class="app-icon" data-target="uvu-story-bridge-screen"><img src="${getIcon('placeholder-app')}" alt="酒馆" class="icon-img"><span class="app-name">${defaultIcons['placeholder-app'].name}</span></a></div>`,
         'app-uvu-music': `<div class="grid-item-1x1" data-id="app-uvu-music"><a href="#" class="app-icon" data-target="uvu-music-screen"><img src="${getIcon('uvu-music-screen')}" alt="音乐" class="icon-img"><span class="app-name">${defaultIcons['uvu-music-screen'].name}</span></a></div>`,
-        'app-minesweeper': `<div class="grid-item-1x1" data-id="app-minesweeper"><a href="#" class="app-icon" data-target="uvu-minesweeper-screen"><img src="${getIcon('uvu-minesweeper-screen')}" alt="扫雷" class="icon-img"><span class="app-name">扫雷</span></a></div>`
+        'app-minesweeper': `<div class="grid-item-1x1" data-id="app-minesweeper"><a href="#" class="app-icon" data-target="uvu-game-hub-screen"><img src="${getIcon('uvu-minesweeper-screen')}" alt="" class="icon-img"><span class="app-name">游戏大厅</span></a></div>`
     };
 
     // 收集需要执行的 JS 代码
@@ -844,6 +844,7 @@ function setupHomeScreen() {
             e.preventDefault();
             if (isHomeEditMode) return; // 编辑模式下禁止点击
             const target = icon.getAttribute('data-target');
+            if (target === 'uvu-game-hub-screen') return; // The delegated click handles focus for the hub.
             if (target === 'world-book-screen') renderWorldBookList();
             else if (target === 'customize-screen') renderCustomizeForm();
             else if (target === 'tutorial-screen') renderTutorialContent();

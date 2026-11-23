@@ -1,0 +1,103 @@
+#uvu-game-hub-screen {
+    --game-hub-ink: #263744;
+    --game-hub-blue: #d4e5ef;
+    color: var(--game-hub-ink);
+    background: #fff;
+    min-block-size: 0;
+    text-align: start;
+}
+#uvu-game-hub-screen .game-hub-header {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    flex: none;
+    padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+    border-bottom: 1px solid #e4ebef;
+}
+#uvu-game-hub-screen h1 {
+    grid-column: 2;
+    margin: 0;
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 650;
+    text-align: center;
+}
+#uvu-game-hub-screen button {
+    appearance: none;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+#uvu-game-hub-screen :focus-visible {
+    outline: 2px solid #315c7b;
+    outline-offset: -2px;
+}
+#uvu-game-hub-screen .game-hub-back {
+    position: static;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+}
+#uvu-game-hub-screen svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+}
+#uvu-game-hub-screen .game-hub-content {
+    flex: 1;
+    min-block-size: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+#uvu-game-hub-screen .game-hub-list {
+    display: grid;
+    gap: 8px;
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 16px max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    list-style: none;
+}
+#uvu-game-hub-screen .game-hub-card {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) 20px;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 16px;
+    border: 1px solid #e4ebef;
+    border-radius: 8px;
+    background: #f7fbfd;
+    text-align: start;
+}
+#uvu-game-hub-screen .game-hub-card:hover {
+    border-color: var(--game-hub-blue);
+    background: #f0f7fb;
+}
+#uvu-game-hub-screen .game-hub-card > img {
+    display: block;
+    width: 48px;
+    height: 48px;
+}
+#uvu-game-hub-screen .game-hub-card strong {
+    display: block;
+    font-size: 16px;
+    line-height: 1.4;
+}
+#uvu-game-hub-screen .game-hub-description {
+    display: block;
+    margin-block-start: 4px;
+    color: #526370;
+    font-size: 14px;
+    line-height: 1.6;
+}
+#uvu-game-hub-screen .game-hub-card svg { color: #3c586b; }
+@media (prefers-reduced-motion: reduce) {
+    #uvu-game-hub-screen { animation: none; }
+}

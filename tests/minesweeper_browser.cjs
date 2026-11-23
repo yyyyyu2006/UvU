@@ -43,14 +43,28 @@ const server = http.createServer((req, res) => {
         page.on('pageerror', error => errors.push(error.message));
         await page.goto(base, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.querySelector('[data-id="app-minesweeper"]') && document.getElementById('uvu-minesweeper-screen'));
-        await page.locator('[data-id="app-minesweeper"] [data-target="uvu-minesweeper-screen"]').click();
+        const homeEntry = page.locator('[data-id="app-minesweeper"] .app-icon');
+        const hub = page.locator('#uvu-game-hub-screen');
+        const gameCard = hub.getByRole('button', { name: '扫雷', exact: true });
+        assert.equal(await homeEntry.innerText(), '游戏大厅');
+        assert.equal(await homeEntry.locator('img').getAttribute('src'), 'assets/icons/game-hub.svg');
+        await homeEntry.locator('img').evaluate(node => node.decode());
+        await homeEntry.click();
+        await hub.waitFor({ state: 'visible' });
+        assert.equal(await hub.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'uvu-game-hub-title');
+        assert.equal(await hub.getByRole('listitem').count(), 1);
+        await gameCard.locator('img').evaluate(node => node.decode());
+        await page.screenshot({ path: path.join(output, 'game-hub-390.png'), animations: 'disabled' });
+        await page.keyboard.press('Tab');
+        assert.equal(await gameCard.evaluate(node => document.activeElement === node), true);
+        await page.keyboard.press('Enter');
         const screen = page.locator('#uvu-minesweeper-screen');
         await screen.waitFor({ state: 'visible' });
         assert.equal(await screen.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
         assert.equal(await page.locator('.ms-cell').count(), 81);
         assert.equal(await screen.locator('.ms-mines').textContent(), '10');
-        assert.equal(await page.locator('[data-id="app-minesweeper"] img').getAttribute('src'), 'assets/icons/minesweeper.svg');
-        assert.ok(await page.locator('[data-id="app-minesweeper"] img').evaluate(node => node.complete && node.naturalWidth > 0), 'Lucide-based local app icon loads');
+        assert.equal(await page.evaluate(() => document.activeElement.textContent), '扫雷');
 
         await screen.locator('[data-ms-flag]').click();
         await screen.locator('[data-ms-cell="0"]').click();
@@ -65,6 +79,16 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('#global-rescue-panel').count(), 0, 'normal fast game taps do not trigger the global CSS rescue');
         await page.waitForTimeout(1100);
         assert.notEqual(await screen.locator('.ms-time').textContent(), '00:00', 'timer advances after starting');
+        const revealedKind = await screen.locator('[data-ms-cell="0"]').getAttribute('data-kind');
+        await screen.getByRole('button', { name: '返回游戏大厅' }).click();
+        assert.equal(await gameCard.evaluate(node => node === document.activeElement), true, 'return focuses the game card');
+        await hub.getByRole('button', { name: '返回桌面' }).click();
+        assert.equal(await homeEntry.evaluate(node => node === document.activeElement), true, 'return focuses the desktop entry');
+        await page.keyboard.press('Enter');
+        await gameCard.click();
+        assert.equal(await screen.locator('[data-ms-cell="0"]').getAttribute('data-kind'), revealedKind, 'leaving and reopening a game keeps its board');
+        assert.notEqual(await screen.locator('.ms-time').textContent(), '00:00');
+        assert.equal(await page.locator('#global-rescue-panel').count(), 0, 'navigation does not trigger the global CSS rescue');
 
         await screen.locator('[data-ms-reset]').click();
         assert.equal(await screen.locator('.ms-time').textContent(), '00:00');
@@ -75,6 +99,9 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.locator('.ms-cell').count(), 480);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'wide board does not widen the page');
         assert.equal(await screen.locator('.ms-board-viewport').evaluate(node => node.scrollWidth > node.clientWidth), true, 'only the expert board scrolls horizontally');
+        await screen.getByRole('button', { name: '返回游戏大厅' }).click();
+        assert.equal(await hub.evaluate(node => node.scrollWidth > node.clientWidth), false, 'the hub fits a 320px viewport');
+        await gameCard.click();
         await screen.locator('[data-ms-level="beginner"]').click();
         await screen.locator('[data-ms-cell="0"]').focus();
         await screen.locator('[data-ms-cell="0"]').press('ArrowRight');
@@ -103,7 +130,7 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.evaluate(() => db.homeLayoutPages[1].at(-1)), 'app-minesweeper', 'old untouched default home places the new app on page two');
         assert.deepEqual(errors, []);
         await page.screenshot({ path: path.join(output, 'minesweeper-320.png') });
-        console.log('Minesweeper browser checks passed: full app entry, white UI, custom icon, flag, first-safe reveal, timer, all three board sizes, narrow overflow, keyboard grid navigation, native help dialog, and old-home migration.');
+        console.log('Game hub and Minesweeper browser checks passed: round-trip navigation, keyboard focus, white UI, narrow viewport, custom icon, board retention, flag, first-safe reveal, timer, all board sizes, grid navigation, help, and layout migration.');
     } finally {
         await browser.close();
         server.close();
