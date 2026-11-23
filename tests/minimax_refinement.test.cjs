@@ -16,6 +16,10 @@ test('model controls omit unsupported emotion and constrain registered capabilit
     assert.equal(s.capabilities('speech-2.6-turbo').emotions.includes('whisper'), true);
     assert.equal(s.requestOptions({ model: 'custom-proxy', emotion: 'happy' }).voice_setting.emotion, undefined);
     assert.equal(s.requestOptions({ model: 'speech-2.6-hd', emotion: 'whisper' }).voice_setting.emotion, 'whisper');
+    assert.equal(s.options({ volume: 0 }).volume, 0.01, 'MiniMax requires a positive synthesis volume');
+    assert.equal(s.requestOptions({ model: 'speech-2.8-hd', speech: { normalization: 'quality', subtitles: true, subtitleType: 'word', latexRead: true } }).text_normalization_mode, 'quality');
+    assert.equal(s.requestOptions({ model: 'speech-2.8-hd', speech: { stream: true, normalization: 'quality', subtitles: true, subtitleType: 'word_streaming' } }).text_normalization_mode, undefined);
+    assert.equal(s.requestOptions({ model: 'speech-2.8-hd', speech: { stream: true, subtitles: true, subtitleType: 'word_streaming' } }).subtitle_type, 'word_streaming');
 });
 test('bounded reader rejects oversized declared and actual body without parsing unbounded JSON', async () => {
     const s = fixture();
@@ -25,6 +29,23 @@ test('bounded reader rejects oversized declared and actual body without parsing 
     assert.equal(parsed, false); assert.equal(cancelled, true);
     const text = JSON.stringify({ content: 'x'.repeat(2048) });
     await assert.rejects(s.readResponse(new Response(text), null, null, 1000), /过大/);
+});
+test('subtitle files are fetched without credentials only from the configured or official MiniMax HTTPS host', async () => {
+    const requests = [];
+    const s = fixture({ Response, fetch: async (url, init) => {
+        requests.push({ url: String(url), init });
+        return new Response(JSON.stringify([{ text: '你好', time_begin: 0, time_end: 420 }]), {
+            headers: { 'content-type': 'application/json' }
+        });
+    } });
+    const subtitles = await s.readSubtitles({ data: { subtitle_file: 'https://files.minimaxi.com/job/abc.json' } }, 'https://api.minimaxi.com/v1/t2a_v2', new AbortController().signal);
+    assert.deepEqual(Array.from(subtitles, item => ({ ...item })), [{ text: '你好', begin: 0, end: 420 }]);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].init.credentials, 'omit');
+    assert.equal(requests[0].init.redirect, 'error');
+    const denied = await s.readSubtitles({ data: { subtitle_file: 'https://example.org/subtitles.json' } }, 'https://api.minimaxi.com/v1/t2a_v2');
+    assert.deepEqual(Array.from(denied), []);
+    assert.equal(requests.length, 1, 'untrusted subtitle URL is not fetched');
 });
 test('SSE split lines and final aggregate never duplicate synthesized audio', async () => {
     const s = fixture(); const chunks = [];
@@ -68,7 +89,22 @@ test('completed SSE audio ignores trailing transport markers split at arbitrary 
         assert.equal(cancelled, true);
     }
 });
-test('role overrides retain API defaults while dictionaries affect only synthesis parameters', () => {
+test('streaming subtitles keep only the latest cumulative words for each text segment', async () => {
+    const s = fixture();
+    const events = [
+        { data: { audio: 'fffb', status: 1, subtitle: [{ text_begin: 0, timestamped_words: [{ word: '你', time_begin: 0, time_end: 120 }] }] } },
+        { data: { audio: '9064', status: 1, subtitle: [
+            { text_begin: 0, timestamped_words: [{ word: '你', time_begin: 0, time_end: 120 }, { word: '好', time_begin: 120, time_end: 240 }] },
+            { text_begin: 2, timestamped_words: [{ word: '呀', time_begin: 240, time_end: 360 }] }
+        ] } },
+        { data: { audio: '', status: 2 } }
+    ].map(event => 'data: ' + JSON.stringify(event) + '\n\n').join('');
+    const result = await s.readResponse(new Response(events, { headers: { 'content-type': 'text/event-stream' } }));
+    assert.deepEqual(Array.from(s.usage(result).subtitles, item => ({ ...item })), [
+        { text: '你', begin: 0, end: 120 }, { text: '好', begin: 120, end: 240 }, { text: '呀', begin: 240, end: 360 }
+    ]);
+});
+test('role overrides retain API defaults while role pronunciation supplements and overrides default readings', () => {
     const s = fixture(); const saved = { apiKey: 'secret', voiceId: 'default', director: { enabled: true }, speech: { stream: false },
         profiles: { a: { voiceId: 'alice', directorMode: 'off', dictionary: ['晴/(qing2)'] } } };
     const before = JSON.stringify(saved), role = { id: 'a', minimaxTtsVoiceId: 'legacy-alice' };
@@ -77,6 +113,11 @@ test('role overrides retain API defaults while dictionaries affect only synthesi
     assert.equal(actual.apiKey, 'secret'); assert.equal(s.requestOptions(actual).pronunciation_dict.tone[0], '晴/(qing2)');
     assert.equal(JSON.stringify(saved), before);
     assert.throws(() => s.dictionary(['恶意/<script>']), /发音/);
+    const inherited = s.resolveSettings({ pronunciation: ['默认词/(moren4)', '重名/(jiu4)'], profiles: { b: { dictionary: [], voiceId: 'b' } } }, { id: 'b' });
+    assert.deepEqual(Array.from(inherited.pronunciation), ['默认词/(moren4)', '重名/(jiu4)']);
+    const overridden = s.resolveSettings({ pronunciation: ['重名/(jiu4)'], profiles: { c: { dictionary: ['角色词/(juese2)', '重名/(xin1)'] } } }, { id: 'c' });
+    assert.deepEqual(Array.from(overridden.pronunciation), ['重名/(xin1)', '角色词/(juese2)']);
+    assert.equal(overridden.pronunciation.find(row => row.startsWith('重名/')), '重名/(xin1)');
 });
 test('long-line segmentation preserves all original text and limits paid request fanout', () => {
     const s = fixture(); const text = '第一段。\n第二段！\n第三段。';
@@ -130,6 +171,32 @@ test('actual streamed synthesis returns one complete MP3 and preserves final bil
     assert.equal(body.stream, true); assert.equal(blob.size, 417); assert.equal(chunks.length, 1);
     assert.equal(f.tts.getAudioDetails(blob).usageCharacters, 8);
 });
+test('official optional speech controls are sent only when enabled and long text can opt into streaming', async () => {
+    const bodies = [];
+    const f = ttsFixture(async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify({ data: { audio: mp3Hex, status: 2 } })); });
+    const settings = { apiKey: 'key', voiceId: 'voice', model: 'speech-2.8-hd', speech: { autoStream: true, normalization: 'quality', subtitles: true, subtitleType: 'word_streaming', latexRead: true } };
+    await f.tts.synthesize('中'.repeat(3001), settings);
+    assert.equal(bodies[0].stream, true);
+    assert.equal(bodies[0].text_normalization_mode, undefined, 'quality normalization is omitted when streaming');
+    assert.equal(bodies[0].subtitle_enable, true); assert.equal(bodies[0].subtitle_type, 'word_streaming');
+    assert.equal(bodies[0].latex_read, true); assert.equal(bodies[0].language_boost, 'Chinese');
+    await assert.rejects(f.tts.synthesize('中'.repeat(10000), settings), /少于 10000/);
+    assert.equal(bodies.length, 1, 'invalid request is rejected before contacting MiniMax');
+});
+test('non-stream synthesis reads bounded provider subtitle files and retains their timeline with local audio details', async () => {
+    const requests = [];
+    const f = ttsFixture(async (url, init) => {
+        requests.push({ url: String(url), init });
+        if (init.method === 'POST') return new Response(JSON.stringify({ data: { audio: mp3Hex, status: 2,
+            subtitle_file: 'https://api.minimaxi.com/v1/subtitles/record.json' } }));
+        return new Response(JSON.stringify([{ text: '测试', time_begin: 0, time_end: 400 }]));
+    });
+    const blob = await f.tts.synthesize('测试', { apiKey: 'key', voiceId: 'voice', endpoint: 'https://api.minimaxi.com/v1/t2a_v2',
+        model: 'speech-2.8-hd', speech: { subtitles: true } });
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].init.body.includes('subtitle_enable'), true);
+    assert.deepEqual(Array.from(f.tts.getAudioDetails(blob).subtitles, item => ({ ...item })), [{ text: '测试', begin: 0, end: 400 }]);
+});
 test('oversized direct hex adapter is rejected before conversion and error includes response stage', async () => {
     const f = ttsFixture(async () => ({ ok: true, status: 200, json: async () => ({ data: { audio: 'ab'.repeat(13 * 1048576), status: 2 } }) }));
     await assert.rejects(f.tts.synthesize('test'), /过大/);
@@ -168,6 +235,24 @@ test('playback uses saved role profile and plain override without touching main 
     assert.equal(calls[0].voice_setting.voice_id, 'role-voice'); assert.equal(calls[0].pronunciation_dict.tone[0], '晴/(qing2)');
     assert.equal(f.classes.has('voice-playing'), true); assert.equal(role.history.length, 1); assert.equal(m.content, '你好。');
     f.sounds[0].dispatchEvent(new Event('ended'));
+});
+
+test('settings preview stays enabled and the same button cancels an in-flight paid request', async () => {
+    let resolveFetch;
+    const f = playerFixture(() => new Promise(resolve => { resolveFetch = resolve; }));
+    f.bubble.id = 'minimax-tts-preview'; f.bubble.textContent = '试听'; f.bubble.disabled = false;
+    f.bubble.setAttribute = (name, value) => { f.bubble[name] = value; };
+    f.bubble.removeAttribute = name => { delete f.bubble[name]; };
+    const settings = { apiKey: 'key', voiceId: 'voice', model: 'speech-2.8-hd' };
+    const task = f.tts.play(f.bubble, '试听文本', settings);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.bubble.disabled, false);
+    assert.equal(f.bubble.textContent, '取消试听');
+    await f.tts.play(f.bubble, '试听文本', settings);
+    assert.equal(f.bubble.textContent, '试听');
+    resolveFetch(audioReply()); await task;
+    assert.equal(f.sounds[0].paused, true);
+    assert.equal(f.urls.size, 0);
 });
 
 test('archive changes during ordinary synthesis prevent late audio playback even with director off', async () => {

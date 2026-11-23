@@ -105,7 +105,17 @@
         expandedHeader.append(backButton, expandedSummary);
         const recenterButton = element('button', '◎', 'location-map-recenter'); recenterButton.type = 'button';
         recenterButton.setAttribute('aria-label', '重新定位到双方城市'); recenterButton.hidden = true;
-        const mapFrame = element('section', undefined, 'location-map-frame'); mapFrame.append(mapStatus, loadButton, expandButton, expandedHeader, recenterButton, map); body.append(mapFrame);
+        const distancePanel = element('section', undefined, 'location-map-distance-card'); distancePanel.setAttribute('aria-label', '我与角色的直线距离');
+        distancePanel.append(element('span', undefined, 'location-map-distance-handle'), element('p', '我与角色相距', 'location-map-distance-label'));
+        const distanceValue = element('strong', target && userLocation && characterLocation
+            ? formatDistance(distanceKm(userLocation, characterLocation)) : '距离暂不可用', 'location-map-distance-value');
+        distancePanel.append(distanceValue, element('p', '直线距离估算', 'location-map-distance-caption'));
+        const places = element('div', undefined, 'location-map-distance-places');
+        const userPlace = element('span', undefined, 'location-map-distance-place'); userPlace.append(avatarToken('我', userAvatar, 'location-map-distance-avatar'), element('span', userLocation?.name || '未设置我的城市'));
+        places.append(userPlace);
+        if (target) { const characterPlace = element('span', undefined, 'location-map-distance-place'); characterPlace.append(avatarToken('Ta', characterAvatar, 'location-map-distance-avatar'), element('span', characterLocation?.name || '未设置角色城市')); places.append(characterPlace); }
+        distancePanel.append(places);
+        const mapFrame = element('section', undefined, 'location-map-frame'); mapFrame.append(mapStatus, loadButton, expandButton, expandedHeader, recenterButton, distancePanel, map); body.append(mapFrame);
 
         const overlay = dialog.panel.closest('.message-forward-overlay');
         const originalHeader = dialog.panel.querySelector('.message-forward-header');

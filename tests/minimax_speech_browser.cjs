@@ -40,7 +40,7 @@ const output = path.join(root, 'outputs/speech-refinement'); fs.mkdirSync(output
             await advanced.getByRole('button', { name: '读取音色', exact: true }).click();
             await advanced.getByLabel('搜索', { exact: true }).fill('自然');
             assert.equal(await advanced.locator('.minimax-voice-row').count(), 1);
-            await advanced.getByRole('button', { name: '自然女声', exact: true }).click();
+            await advanced.getByRole('button', { name: '系统 · 自然女声', exact: true }).click();
             await page.getByRole('button', { name: '保存', exact: true }).click();
             const saved = await page.evaluate(() => ({ count: window.saved, settings: db.minimaxTtsSettings }));
             assert.equal(saved.count, 1); assert.equal(saved.settings.profiles['role-a'].voiceId, 'voice-a');

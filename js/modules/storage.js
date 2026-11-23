@@ -957,8 +957,12 @@ function storageValidateModules(modules) {
         stringList(settings.pronunciation, 'minimaxTtsSettings.pronunciation', 100, 160, true);
         if (settings.speech !== undefined) {
             const value = settings.speech, prefix = 'minimaxTtsSettings.speech.'; object(value, 'minimaxTtsSettings.speech');
-            for (const key of ['stream', 'segmented', 'persistentCache']) optional(value[key], prefix + key, 'boolean');
+            for (const key of ['stream', 'autoStream', 'segmented', 'persistentCache', 'latexRead', 'subtitles']) optional(value[key], prefix + key, 'boolean');
             optional(value.language, prefix + 'language', 'string');
+            optional(value.normalization, prefix + 'normalization', 'string');
+            optional(value.subtitleType, prefix + 'subtitleType', 'string');
+            if (value.normalization !== undefined && !['', 'basic', 'quality'].includes(value.normalization)) fail(prefix + 'normalization', '有效语音规范化模式');
+            if (value.subtitleType !== undefined && !['sentence', 'word', 'word_streaming'].includes(value.subtitleType)) fail(prefix + 'subtitleType', '有效字幕时间轴类型');
             for (const [key, min, max] of [['cacheMiB', 8, 128], ['cacheDays', 1, 30], ['segmentChars', 300, 2500], ['volume', 0, 10]]) {
                 optional(value[key], prefix + key, 'number');
                 if (value[key] !== undefined && (value[key] < min || value[key] > max)) fail(prefix + key, `${min}–${max} 范围内数字`);

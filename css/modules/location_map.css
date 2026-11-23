@@ -208,6 +208,35 @@
 .uvu-location-map.location-map-expanded .location-map-status { top: auto; right: auto; bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; width: auto; max-width: calc(100% - 32px); margin: 0; }
 .uvu-location-map.location-map-expanded .location-map-expand { display: none; }
 .uvu-location-map.location-map-expanded .leaflet-top.leaflet-left { top: calc(148px + env(safe-area-inset-top)); left: 12px; }
+.uvu-location-map.location-map-expanded .location-map-distance-card {
+    position: absolute;
+    z-index: 1000;
+    right: max(24px, env(safe-area-inset-right));
+    bottom: calc(20px + env(safe-area-inset-bottom));
+    left: max(24px, env(safe-area-inset-left));
+    display: grid;
+    gap: 8px;
+    padding: 16px 18px 18px;
+    border: 1px solid #ffffffd9;
+    border-radius: 30px;
+    background: #fffffff5;
+    color: #263a50;
+    box-shadow: 0 8px 32px #172b4626;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+.uvu-location-map .location-map-distance-card { display: none; }
+.uvu-location-map.location-map-expanded .location-map-distance-card { display: grid; }
+.uvu-location-map .location-map-distance-handle { width: 56px; height: 5px; justify-self: center; border-radius: 999px; background: #d7e1e7; }
+.uvu-location-map .location-map-distance-label { margin: 4px 0 0; color: #687e8f; font-size: 14px; }
+.uvu-location-map .location-map-distance-value { color: #263a50; font-size: clamp(26px, 7vw, 40px); line-height: 1.15; font-weight: 700; letter-spacing: -.03em; }
+.uvu-location-map .location-map-distance-caption { margin: -7px 0 2px; color: #71899a; font-size: 13px; }
+.uvu-location-map .location-map-distance-places { display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid #e7eef2; }
+.uvu-location-map .location-map-distance-place { display: flex; align-items: center; gap: 8px; min-width: 0; color: #536c7d; font-size: 13px; }
+.uvu-location-map .location-map-distance-place > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uvu-location-map .location-map-distance-avatar { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: #f7e3ed; color: #895c73; font-size: 11px; object-fit: cover; }
+.uvu-location-map .location-map-distance-place:nth-child(2) .location-map-distance-avatar { background: #dceafa; color: #486b98; }
+.uvu-location-map.location-map-expanded .location-map-recenter { bottom: calc(245px + env(safe-area-inset-bottom)); }
 .uvu-location-map.location-map-expanded .location-map-expanded-header {
     position: absolute;
     z-index: 1000;
@@ -248,4 +277,7 @@
     .uvu-location-map.location-map-expanded .location-map-expanded-header { min-height: calc(136px + env(safe-area-inset-top)); padding-left: 56px; padding-right: 56px; }
     .uvu-location-map .location-map-expanded-avatar { width: 46px; height: 46px; }
     .uvu-location-map .location-map-expanded-share { font-size: 14px; }
+    .uvu-location-map.location-map-expanded .location-map-distance-card { right: max(16px, env(safe-area-inset-right)); left: max(16px, env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); padding: 14px 16px 16px; border-radius: 28px; }
+    .uvu-location-map .location-map-distance-value { font-size: clamp(26px, 7.5vw, 34px); }
+    .uvu-location-map.location-map-expanded .location-map-recenter { bottom: calc(245px + env(safe-area-inset-bottom)); }
 }

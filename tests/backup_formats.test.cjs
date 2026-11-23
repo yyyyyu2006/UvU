@@ -162,10 +162,14 @@ test('derived memory and speech settings reject malformed nested backup values',
         { characters: [{ id: 'c', autoMemorySettings: { vectorExternalIndex: 'yes' } }] },
         { vectorMemoryApiSettings: { rewriteKey: {} } },
         { minimaxTtsSettings: { speech: { cacheMiB: -1 } } },
+        { minimaxTtsSettings: { speech: { normalization: 'unsupported' } } },
+        { minimaxTtsSettings: { speech: { subtitleType: 'unsupported' } } },
         { minimaxTtsSettings: { profiles: { c: { directorMode: 'unknown' } } } },
         { minimaxTtsSettings: { pronunciation: [{}] } }
     ]) assert.throws(() => f.c.storageValidateModules(value));
     assert.doesNotThrow(() => f.c.storageValidateModules({ characters: [{ id: 'c' }], minimaxTtsSettings: { voiceId: 'old' } }));
+    assert.doesNotThrow(() => f.c.storageValidateModules({ minimaxTtsSettings: { speech: { autoStream: true, latexRead: true,
+        subtitles: true, normalization: 'quality', subtitleType: 'word_streaming' } } }));
 });
 
 test('EE export remains gzip JSON; unsupported compression falls back to JSON', async () => {

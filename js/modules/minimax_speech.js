@@ -8,10 +8,12 @@
     const check = signal => { if (signal?.aborted) throw abort(); };
     const bounded = (n, fallback, min, max) => Number.isFinite(Number(n)) && n !== '' && n != null ? Math.min(max, Math.max(min, Number(n))) : fallback;
     function options(value = {}) {
-        return { stream: value.stream === true, segmented: value.segmented === true, persistentCache: value.persistentCache === true,
+        return { stream: value.stream === true, autoStream: value.autoStream === true, segmented: value.segmented === true, persistentCache: value.persistentCache === true,
             cacheMiB: bounded(value.cacheMiB, 32, 8, 128), cacheDays: bounded(value.cacheDays, 7, 1, 30),
             segmentChars: Math.round(bounded(value.segmentChars, 1200, 300, 2500)),
-            volume: bounded(value.volume, 1, 0, 10), language: typeof value.language === 'string' ? value.language.slice(0, 80) : 'auto' };
+            volume: bounded(value.volume, 1, 0.01, 10), language: typeof value.language === 'string' ? value.language.slice(0, 80) : 'auto',
+            normalization: ['basic', 'quality'].includes(value.normalization) ? value.normalization : '', latexRead: value.latexRead === true,
+            subtitles: value.subtitles === true, subtitleType: ['sentence', 'word', 'word_streaming'].includes(value.subtitleType) ? value.subtitleType : 'sentence' };
     }
     function capabilities(model = '') {
         const known = /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(model);
@@ -24,6 +26,11 @@
         }
         return [...new Set(entries)];
     }
+    function mergeDictionaries(base = [], override = []) {
+        const entries = new Map();
+        for (const row of [...dictionary(base), ...dictionary(override)]) entries.set(row.slice(0, row.indexOf('/')), row);
+        return [...entries.values()];
+    }
     function resolveSettings(saved, role) {
         const profile = role && saved.profiles && Object.hasOwn(saved.profiles, role.id) ? saved.profiles[role.id] : {};
         const director = { ...(saved.director || {}) };
@@ -31,13 +38,20 @@
         const style = styles[profile.style];
         if (style) director.prompt = [director.prompt || '', style].filter(Boolean).join('\n').slice(0, 4000);
         return { ...saved, voiceId: String(role?.minimaxTtsVoiceId || profile.voiceId || saved.voiceId || '').trim(),
-            director, speech: options(saved.speech), pronunciation: dictionary(profile.dictionary || saved.pronunciation || []) };
+            director, speech: options(saved.speech), pronunciation: mergeDictionaries(saved.pronunciation || [], profile.dictionary || []) };
     }
     function requestOptions(settings) {
         const speech = options(settings.speech), caps = capabilities(settings.model), emotion = caps.emotions.includes(settings.emotion) ? settings.emotion : '';
         const tone = dictionary(settings.pronunciation || []);
+        const language = speech.latexRead ? 'Chinese' : speech.language;
+        const qualitySupported = /^speech-(?:2\.8|2\.6)-(?:hd|turbo)$/.test(settings.model || '');
+        const normalization = speech.normalization === 'quality' && qualitySupported && !speech.stream ? 'quality' : speech.normalization === 'basic' ? 'basic' : '';
+        const subtitles = speech.subtitles;
         return { voice_setting: { vol: speech.volume, ...(emotion ? { emotion } : {}) },
-            ...(speech.language && speech.language !== 'auto' ? { language_boost: speech.language } : {}),
+            ...(language && language !== 'auto' ? { language_boost: language } : {}),
+            ...(normalization ? { text_normalization_mode: normalization } : {}),
+            ...(speech.latexRead ? { latex_read: true } : {}),
+            ...(subtitles ? { subtitle_enable: true, subtitle_type: speech.stream && speech.subtitleType === 'word_streaming' ? 'word_streaming' : ['sentence', 'word'].includes(speech.subtitleType) ? speech.subtitleType : 'sentence' } : {}),
             ...(tone.length ? { pronunciation_dict: { tone } } : {}) };
     }
     function endpoint(value) {
@@ -68,10 +82,23 @@
         const sse = /^text\/event-stream(?:;|$)/i.test(response.headers?.get('content-type') || '');
         if (!response.body?.getReader) return wait(response.json(), signal); // Compatibility with existing adapters.
         const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
-        let bytes = 0, text = '', final = null, pieces = [], hexBytes = 0;
+        let bytes = 0, text = '', final = null, pieces = [], hexBytes = 0, activeSubtitleSegment = '0';
+        const subtitlesBySegment = new Map();
+        const collectSubtitles = value => {
+            if (!Array.isArray(value.data?.subtitle)) return;
+            const groups = new Map();
+            for (const item of value.data.subtitle.slice(0, 500)) {
+                if (item?.text_begin != null) activeSubtitleSegment = String(item.text_begin).slice(0, 40);
+                const key = activeSubtitleSegment;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(item);
+            }
+            for (const [key, rows] of groups) subtitlesBySegment.set(key, rows);
+        };
         const packet = value => {
             if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('语音流响应格式无效');
             if (value.base_resp?.status_code) throw new Error('语音服务错误：' + String(value.base_resp.status_msg || value.base_resp.status_code).slice(0, 240));
+            collectSubtitles(value);
             const audio = value.data?.audio;
             if (audio) validHex(audio);
             const status = Number(value.data?.status);
@@ -112,14 +139,49 @@
             if (!sse) return JSON.parse(text);
             events(true);
             if (!final?.data?.audio) throw new Error('语音流未返回完成音频');
+            if (subtitlesBySegment.size) final.data.subtitle = [...subtitlesBySegment.values()].flat().slice(0, 500);
             return final;
         } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     }
     function usage(result = {}) {
         const info = result.extra_info || {};
         const safe = key => Number.isFinite(info[key]) && info[key] >= 0 ? info[key] : null;
+        const subtitles = normalizeSubtitles(result.data?.subtitle);
         return { usageCharacters: safe('usage_characters'), audioMs: safe('audio_length'),
-            traceId: /^[\w-]{1,100}$/.test(result.trace_id || '') ? result.trace_id : '', format: String(info.audio_format || 'mp3').slice(0, 12) };
+            traceId: /^[\w-]{1,100}$/.test(result.trace_id || '') ? result.trace_id : '', format: String(info.audio_format || 'mp3').slice(0, 12), subtitles };
+    }
+    function normalizeSubtitles(value) {
+        if (!Array.isArray(value)) return [];
+        const result = [];
+        for (const item of value.slice(0, 500)) {
+            const words = Array.isArray(item?.timestamped_words) ? item.timestamped_words : null;
+            const rows = words?.length ? words : [item];
+            for (const row of rows) {
+                const text = typeof (row?.text ?? row?.word) === 'string' ? String(row.text ?? row.word).slice(0, 500) : '';
+                if (!text) continue;
+                const begin = row.time_begin ?? row.begin_time ?? row.start_time;
+                const end = row.time_end ?? row.end_time;
+                result.push({ text, begin: Number.isFinite(begin) ? begin : null, end: Number.isFinite(end) ? end : null });
+                if (result.length >= 500) return result;
+            }
+        }
+        return result;
+    }
+    async function readSubtitles(result, apiEndpoint, signal) {
+        const direct = normalizeSubtitles(result.data?.subtitle);
+        if (direct.length || typeof result.data?.subtitle_file !== 'string') return direct;
+        try {
+            const endpointUrl = endpoint(apiEndpoint), fileUrl = new URL(result.data.subtitle_file);
+            const host = fileUrl.hostname.toLowerCase();
+            const isProviderHost = /(?:^|\.)minimaxi\.(?:com|chat)$/.test(host) || /(?:^|\.)minimax\.io$/.test(host);
+            if (fileUrl.protocol !== 'https:' || fileUrl.username || fileUrl.password || fileUrl.hash ||
+                (fileUrl.origin !== endpointUrl.origin && !isProviderHost)) return [];
+            const response = await fetch(fileUrl.href, { method: 'GET', credentials: 'omit', redirect: 'error', signal,
+                headers: { Accept: 'application/json' } });
+            if (!response.ok) return [];
+            const payload = await readResponse(response, signal, null, 1024 * 1024);
+            return normalizeSubtitles(Array.isArray(payload) ? payload : payload.subtitle || payload.data?.subtitle);
+        } catch (_) { if (signal?.aborted) throw abort(); return []; }
     }
     function segments(text, maxChars = 1200) {
         const source = String(text), result = []; let start = 0;
@@ -268,7 +330,7 @@
             return voices;
         } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); }
     }
-    window.MiniMaxSpeech = { options, capabilities, dictionary, resolveSettings, requestOptions, endpoint, region, readResponse,
+    window.MiniMaxSpeech = { options, capabilities, dictionary, resolveSettings, requestOptions, endpoint, region, readResponse, readSubtitles,
         usage, segments, createCache, persistent, streamPlayer, listVoices, setupSettings, refreshRoles, fromForm, inspect, openDirectorPreview };
 
     let formState = null;
@@ -322,7 +384,8 @@
             const items = voices.filter(v => (!favoritesOnly.checked || favorites.has(v.id)) && (v.name + ' ' + v.id).toLowerCase().includes(q));
             for (const v of items.slice(0, 80)) {
                 const row = node('div'); row.className = 'minimax-voice-row';
-                const use = button(v.name, () => { if (selected) voice.value = v.id; else document.getElementById('minimax-tts-voice').value = v.id; status.textContent = '已选择，保存后生效'; });
+                const typeLabel = { system_voice: '系统', voice_cloning: '复刻', voice_generation: '设计' }[v.type] || '';
+                const use = button((typeLabel ? typeLabel + ' · ' : '') + v.name, () => { if (selected) voice.value = v.id; else document.getElementById('minimax-tts-voice').value = v.id; status.textContent = '已选择，保存后生效'; });
                 use.title = v.id; const favorite = button(favorites.has(v.id) ? '★' : '☆', () => { favorites.has(v.id) ? favorites.delete(v.id) : favorites.add(v.id); render(); }); favorite.setAttribute('aria-label', '收藏 ' + v.name);
                 const preview = button('试听', async () => {
                     const cfg = { ...db.minimaxTtsSettings, ...readConnection(), voiceId: v.id, director: { enabled: false } };
@@ -334,7 +397,7 @@
         };
         const refresh = button('读取音色', async () => {
             controller?.abort(); controller = new AbortController(); refresh.disabled = true; status.textContent = '正在读取…';
-            try { voices = await listVoices(readConnection(), controller.signal); render(); status.textContent = '已读取 ' + voices.length + ' 个音色'; }
+            try { const connection = readConnection(); voices = await listVoices(connection, controller.signal); render(); status.textContent = '已读取 ' + voices.length + ' 个音色 · ' + (typeof speech?.region === 'function' ? speech.region(connection.endpoint) : '当前接口') + ' · ' + new Date().toLocaleTimeString(); }
             catch (error) { status.textContent = error.message; } finally { refresh.disabled = false; }
         }); catalog.append(refresh, list, status); search.oninput = favoritesOnly.onchange = render; render();
         const compare = details(advanced, '对比试听');
@@ -344,27 +407,34 @@
             const compareVoice = field(row, label + ' 音色 ID'); compareVoice.maxLength = 200;
             compareVoice.placeholder = '留空使用当前音色';
             const speed = field(row, label + ' 语速', 'number', label === 'A' ? 1 : 1.15); speed.min = .5; speed.max = 2; speed.step = .05;
+            const emotion = select(row, label + ' 情绪', [['自动', ''], ['开心', 'happy'], ['悲伤', 'sad'], ['生气', 'angry'], ['害怕', 'fearful'], ['厌恶', 'disgusted'], ['惊讶', 'surprised'], ['平静', 'calm']], '');
             const preview = button('试听 ' + label, () => {
                 if (!sample.value.trim() || !speed.value || !speed.checkValidity()) { showToast('请填写试听台词和 0.5 到 2 的语速'); return; }
                 return MiniMaxTTS.play(preview, sample.value.trim(), { ...db.minimaxTtsSettings, ...readConnection(),
                     model: document.getElementById('minimax-tts-model')?.value || db.minimaxTtsSettings?.model,
                     voiceId: compareVoice.value.trim() || document.getElementById('minimax-tts-voice')?.value.trim(),
-                    director: { enabled: false } }, { manual: { speed: speed.value } });
+                    director: { enabled: false } }, { manual: { emotion: emotion.value, speed: speed.value } });
             });
             row.append(preview);
         }
         const playback = details(advanced, '播放与缓存'), config = options(saved.speech);
         const stream = field(playback, '流式语音', 'checkbox'); stream.checked = config.stream;
+        const autoStream = field(playback, '超过 3000 字自动流式', 'checkbox'); autoStream.checked = config.autoStream;
         const segmented = field(playback, '长语音分段', 'checkbox'); segmented.checked = config.segmented;
         const segmentChars = field(playback, '每段字数', 'number', config.segmentChars); segmentChars.min = 300; segmentChars.max = 2500;
         const persistentCache = field(playback, '在此设备保存音频', 'checkbox'); persistentCache.checked = config.persistentCache;
         const cacheMiB = field(playback, '缓存上限 MiB', 'number', config.cacheMiB); cacheMiB.min = 8; cacheMiB.max = 128;
         const cacheDays = field(playback, '保留天数', 'number', config.cacheDays); cacheDays.min = 1; cacheDays.max = 30;
-        const volume = field(playback, '音量', 'number', config.volume); volume.min = 0; volume.max = 10; volume.step = .1;
+        const volume = field(playback, '音量', 'number', config.volume); volume.min = .01; volume.max = 10; volume.step = .1;
         const language = field(playback, '语言增强', 'text', config.language); language.placeholder = 'auto / Chinese / Chinese,Yue';
+        const advancedAudio = details(advanced, '朗读与字幕');
+        const normalization = select(advancedAudio, '数字文本规范化', [['关闭', ''], ['基础', 'basic'], ['质量优先（非流式）', 'quality']], config.normalization);
+        const latexRead = field(advancedAudio, '朗读 LaTeX 公式（中文）', 'checkbox'); latexRead.checked = config.latexRead;
+        const subtitles = field(advancedAudio, '生成句子/词语时间轴', 'checkbox'); subtitles.checked = config.subtitles;
+        const subtitleType = select(advancedAudio, '时间轴粒度', [['按句', 'sentence'], ['按词', 'word'], ['流式累计按词', 'word_streaming']], config.subtitleType);
         const clear = button('清理本机音频', async () => { MiniMaxTTS.clearCache(); status.textContent = await persistent.clear() ? '本机音频已清理' : '本机缓存不可用'; }); playback.append(clear);
         const dictionaryField = field(details(advanced, '默认读音词典'), '一行一个词语/读法', 'textarea', (saved.pronunciation || []).join('\n'));
-        const help = details(advanced, '使用说明'); help.append(node('p', '音色优先级：聊天设置、角色配置、默认音色。导演只控制声音，不修改台词。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。点击“导演预览”，可选择试听台词或当前已加载的聊天语音，先分析情绪、语速、停顿和导演用量；分析只调用导演API，不合成声音。试听使用当前表单，聊天使用已保存的角色配置和消息之前的剧情。可取消，或点“普通语音”跳过导演。分析成功后播放会复用相同来源与设置的临时导演方案；刷新或方案被淘汰后需重新分析。合成后的“语音详情 → 分段参数”显示实际参数及用量。接口未提供的用量不估作实际费用。'));
+        const help = details(advanced, '使用说明'); help.append(node('p', '角色词典会补充并覆盖默认词典里的同名词。单次请求须少于 10000 字符；可在 3000 字以上自动开启流式。音量范围为 0.01–10。质量文本规范化会增加延迟，且仅对支持的非流式模型生效；LaTeX 朗读目前限定中文。字幕时间轴保存在本机语音详情中。分段最多 8 段，可能增加请求；缓存仅在此设备保存音频，备份不包含音频文件。流式播放取决于浏览器支持，不支持时等待完整 MP3。国内与国际接口密钥应与账户区域一致。语音导演只控制声音，不修改聊天台词。接口未返回的用量不估作实际费用。'));
         const settingsGroup = node('div'); settingsGroup.className = 'minimax-speech-group';
         const sections = [...advanced.children].filter(el => el.tagName === 'DETAILS');
         if (sections.length) { sections[0].before(settingsGroup); settingsGroup.append(...sections); }
@@ -375,9 +445,10 @@
             roleSelect.replaceChildren(new Option('默认设置', ''), ...roles.map(c => new Option(c.realName || c.remarkName || c.name || c.id, c.id)));
             if (roles.some(c => c.id === value)) roleSelect.value = value;
             else if (selected) { selected = ''; roleSelect.value = ''; profile.hidden = true; }
-        }, read: () => ({ ...options({ stream: stream.checked, segmented: segmented.checked,
+        }, read: () => ({ ...options({ stream: stream.checked, autoStream: autoStream.checked, segmented: segmented.checked,
             persistentCache: persistentCache.checked, cacheMiB: cacheMiB.value, cacheDays: cacheDays.value, segmentChars: segmentChars.value,
-            volume: volume.value, language: language.value }), favoriteVoices: [...favorites].slice(0, 200) }) };
+            volume: volume.value, language: language.value, normalization: normalization.value, latexRead: latexRead.checked,
+            subtitles: subtitles.checked, subtitleType: subtitleType.value }), favoriteVoices: [...favorites].slice(0, 200) }) };
         roleSelect.addEventListener('focus', refreshRoles);
     }
     function openDirectorPreview(initialBubble) {
@@ -387,7 +458,7 @@
         d.panel.classList.add('derived-settings');
         const node = (tag, text) => { const el = document.createElement(tag); if (text) el.textContent = text; return el; };
         const body = node('div'), footer = node('footer'), status = node('p'), result = node('div'), source = node('select'), text = node('textarea');body.className = 'derived-body';
-        source.setAttribute('aria-label', '预览语音来源');text.setAttribute('aria-label', '预览台词');text.rows = 4;text.maxLength = 10000;status.setAttribute('aria-live', 'polite');
+        source.setAttribute('aria-label', '预览语音来源');text.setAttribute('aria-label', '预览台词');text.rows = 4;text.maxLength = 9999;status.setAttribute('aria-live', 'polite');
         const bubbles = [...document.querySelectorAll('#message-area .voice-bubble[data-voice-text]')].slice(-8);
         if (initialBubble && !bubbles.includes(initialBubble)) bubbles.push(initialBubble);
         source.add(new Option('试听台词', 'sample'));bubbles.forEach((b, i) => source.add(new Option('聊天语音 · ' + b.dataset.voiceText.slice(0, 32), String(i))));
@@ -457,6 +528,15 @@
                 for (const pause of segment.pauses || []) { const p=document.createElement('p');p.textContent='“'+pause.after+'”后停顿 '+pause.seconds+' 秒';row.append(p); }
                 segments.append(row);
             }); detail.append(segments);
+        }
+        if (diagnostic.subtitleSegments?.length) {
+            const timeline = document.createElement('details'), heading = document.createElement('summary'); heading.textContent = '字幕时间轴'; timeline.append(heading);
+            diagnostic.subtitleSegments.forEach(item => {
+                const row = document.createElement('p');
+                const seconds = value => value == null ? '' : (value / 1000).toFixed(1) + 's';
+                row.textContent = (item.segment > 1 ? '第 ' + item.segment + ' 段 · ' : '') + seconds(item.begin) + (item.end == null ? '' : '–' + seconds(item.end)) + ' · ' + item.text;
+                timeline.append(row);
+            }); detail.append(timeline);
         }
         const actions = document.createElement('div'); actions.className = 'minimax-tts-actions';
         for (const [text, callback] of [['继续合成', onResume], ['普通语音', onPlain], ['重试导演', onRetry]]) { if (!callback) continue; const button = document.createElement('button'); button.type = 'button'; button.textContent = text; button.onclick = callback; actions.append(button); }

@@ -86,7 +86,7 @@ const MiniMaxTTS = (() => {
         panel.querySelector('span').textContent = '导演 ' + d.directorMs + 'ms，合成 ' + d.synthesisMs + 'ms；' +
             (d.cacheHit ? '复用缓存' : '本次调用合成 API') + '；情绪 ' + (d.emotion || 'auto') + '，语速 ' + d.speed + '，停顿 ' + d.pauseCount + ' 处' +
             (d.warning ? '；' + d.warning : '') + (d.currentUsageCharacters != null ? '；本次合成计费 ' + d.currentUsageCharacters + ' 字符' : '；接口未返回计费用量') +
-            (d.region ? '；' + d.region : '') + '；缓存 ' + info.entries + ' 条 / ' + (info.bytes / 1048576).toFixed(1) + 'MiB。' + (d.persistent ? '已启用本机音频缓存。' : '刷新后需重新合成。');
+            (d.region ? '；' + d.region : '') + '；缓存 ' + info.entries + ' 条 / ' + (info.bytes / 1048576).toFixed(1) + 'MiB。' + (d.persistent ? '已启用本机音频缓存，最长保留 ' + d.cacheDays + ' 天。' : '刷新后需重新合成。');
     }
 
     function getSettings() {
@@ -141,16 +141,17 @@ const MiniMaxTTS = (() => {
         const voiceId = String(settings.voiceId || '').trim();
         if (!apiKey || !voiceId) throw new Error('请先在 API 设置中填写 MiniMax 密钥和音色 ID');
         if (!/^https:\/\//i.test(endpoint)) throw new Error('MiniMax API 地址必须使用 HTTPS');
-        if (!text || text.length > 10000) throw new Error('语音文本不能为空，且不能超过 10000 个字符');
+        if (!text || text.length >= 10000) throw new Error('语音文本不能为空，且必须少于 10000 个字符');
 
         const requestUrl = speech ? speech.endpoint(endpoint) : new URL(endpoint);
         const groupId = String(settings.groupId || '').trim();
         if (groupId) requestUrl.searchParams.set('GroupId', groupId);
         const legacyEmotion = /^speech-(?:2\.8|2\.6|02|01)-(?:hd|turbo)$/.test(model) &&
             ['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'].includes(settings.emotion) ? settings.emotion : '';
-        const extra = speech ? speech.requestOptions({ ...settings, model }) : { voice_setting: { vol: 1, ...(legacyEmotion ? { emotion: legacyEmotion } : {}) } };
+        const speechOptions = speech?.options(settings.speech);
+        const stream = Boolean(speech && (speechOptions.stream || (speechOptions.autoStream && text.length > 3000)) && speech.capabilities(model).stream);
+        const extra = speech ? speech.requestOptions({ ...settings, model, speech: { ...speechOptions, stream } }) : { voice_setting: { vol: 1, ...(legacyEmotion ? { emotion: legacyEmotion } : {}) } };
         const emotion = extra.voice_setting.emotion || '';
-        const stream = Boolean(speech && speech.options(settings.speech).stream && speech.capabilities(model).stream);
         const cacheKey = JSON.stringify([requestUrl.href, apiKey, model, voiceId, settings.speed || 1, settings.pitch || 0, text,
             extra, stream, settings.speechCacheKey || '']);
         return { apiKey, requestUrl, model, voiceId, emotion, cacheKey, extra, stream };
@@ -202,6 +203,9 @@ const MiniMaxTTS = (() => {
                     },
                     ...(extra.language_boost ? { language_boost: extra.language_boost } : {}),
                     ...(extra.pronunciation_dict ? { pronunciation_dict: extra.pronunciation_dict } : {}),
+                    ...(extra.text_normalization_mode ? { text_normalization_mode: extra.text_normalization_mode } : {}),
+                    ...(extra.latex_read ? { latex_read: true } : {}),
+                    ...(extra.subtitle_enable ? { subtitle_enable: true, subtitle_type: extra.subtitle_type } : {}),
                     audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 }
                 })
             }));
@@ -224,8 +228,10 @@ const MiniMaxTTS = (() => {
             if (format !== 'mp3') throw new Error('MiniMax 返回的音频格式不是 MP3，请检查语音接口');
             const blob = decodeHexAudio(result.data?.audio);
             const traceId = String(result.trace_id || '');
+            const speechUsage = speech ? speech.usage(result) : {};
+            if (speech && !speechUsage.subtitles?.length) speechUsage.subtitles = await speech.readSubtitles(result, requestUrl.href, controller?.signal || signal);
             const detail = { cacheKey, format, traceId: /^[\w-]{1,100}$/.test(traceId) ? traceId : '',
-                ...(speech ? speech.usage(result) : {}), cacheHit: false };
+                ...speechUsage, cacheHit: false };
             audioDetails.set(blob, detail);
             cacheAudio(cacheKey, blob);
             if (speech) {
@@ -238,7 +244,11 @@ const MiniMaxTTS = (() => {
             for (const secret of [apiKey, String(settings.groupId || '')].filter(value => value.length >= 4)) error.message = error.message.split(secret).join('[已隐藏]');
             if (error.name !== 'AbortError' && error.name !== 'TimeoutError') {
                 const label = { request: '请求', response: '响应', decode: '音频解码' }[error.stage];
-                error.message = 'MiniMax ' + label + '阶段失败：' + error.message + (speech ? '（' + speech.region(requestUrl.href) + '）' : '');
+                const detail = error.message || '';
+                const hint = /鉴权|authentication|unauthorized|invalid api key|密钥无效/i.test(detail) ? '请检查密钥、账户区域与接口地址。'
+                    : /额度|quota|rate limit|请求过多/i.test(detail) ? '请检查账户额度或稍后重试。'
+                    : /timeout|超时|network|网络|fetch/i.test(detail) ? '请检查网络连接后手动重试。' : '';
+                error.message = 'MiniMax ' + label + '阶段失败：' + detail + (hint ? '；' + hint : '') + (speech ? '（' + speech.region(requestUrl.href) + '）' : '');
             }
             throw error;
         } finally {
@@ -257,7 +267,15 @@ const MiniMaxTTS = (() => {
             bubble.removeAttribute('aria-busy');
         }
         if (bubble.dataset) bubble.dataset.speechPhase = session.phase;
-        if (bubble.id === 'minimax-tts-preview') bubble.disabled = loading;
+        if (bubble.id === 'minimax-tts-preview') {
+            const phase = session.phase;
+            bubble.setAttribute('aria-pressed', String(['loading', 'starting', 'playing'].includes(phase)));
+            if (bubble.dataset) {
+                if (!bubble.dataset.speechIdleLabel) bubble.dataset.speechIdleLabel = bubble.textContent || '试听';
+                bubble.textContent = phase === 'loading' ? '取消试听' : phase === 'starting' || phase === 'playing' ? '暂停试听'
+                    : phase === 'paused' || phase === 'blocked' ? '继续试听' : bubble.dataset.speechIdleLabel;
+            }
+        }
     }
 
     function failPlayback(session, error, code = session.audio.error?.code || 0) {
@@ -298,12 +316,14 @@ const MiniMaxTTS = (() => {
             if (activeSession !== session || session.phase !== 'starting') return;
             session.phase = 'playing';
             session.bubble.classList.add('voice-playing');
+            setLoading(session, false);
         } catch (error) {
             if (activeSession !== session) return;
             if (error?.name === 'NotAllowedError') {
                 session.phase = 'blocked';
                 releaseMusic(session);
                 session.bubble.classList.remove('voice-playing');
+                setLoading(session, false);
                 showToast('音频已准备好，浏览器需要手动播放，请再次点击试听或语音气泡');
             } else if (error?.name === 'AbortError') {
                 stop(session);
@@ -333,7 +353,7 @@ const MiniMaxTTS = (() => {
         const cancelled = () => Object.assign(new Error('预览已取消，或语音来源、设置已变化'), { name: 'AbortError' });
         if (signal?.aborted) throw cancelled();
         if (typeof VoiceDirector === 'undefined') throw new Error('语音导演尚未加载');
-        if (typeof text !== 'string' || !text.trim() || text.length > 10000) throw new Error('预览台词需在1至10000字符内');
+        if (typeof text !== 'string' || !text.trim() || text.length >= 10000) throw new Error('预览台词需少于10000字符');
         const read = () => { const saved = settings || getSettings(), role = !settings ? VoiceDirector.roleFor(bubble) : null; return speech ? speech.resolveSettings(saved, role) : saved; };
         const ttsSettings = read(), snapshot = JSON.stringify(ttsSettings), director = VoiceDirector.settings(ttsSettings.director);
         if (!director.enabled) throw new Error('请先开启语音导演；聊天使用已保存设置');
@@ -385,7 +405,7 @@ const MiniMaxTTS = (() => {
         if (!override.retry && previous?.bubble === bubble && previous.cacheKey === cacheKey) {
             if (previous.phase === 'loading' || previous.phase === 'starting') return stop(previous);
             if (previous.phase === 'playing') {
-                previous.audio.pause(); previous.phase = 'paused'; releaseMusic(previous); bubble.dataset.speechPhase = 'paused'; bubble.classList.remove('voice-playing'); return;
+                previous.audio.pause(); previous.phase = 'paused'; releaseMusic(previous); bubble.dataset.speechPhase = 'paused'; bubble.classList.remove('voice-playing'); setLoading(previous, false); return;
             }
             // A prepared source must play synchronously within the retry's user gesture.
             return startPlayback(previous);
@@ -423,7 +443,7 @@ const MiniMaxTTS = (() => {
             const blobs = [], details = [];
             session.diagnostic = { directorMs: 0, synthesisMs: 0, emotion: ttsSettings.emotion || '', speed: Number(ttsSettings.speed) || 1,
                 pauseCount: 0, warning: '', cacheHit: true, segments: lines.length, segmentDetails: [], directorUsage: [],
-                region: speech ? speech.region(ttsSettings.endpoint) : '', persistent: playback?.persistentCache === true };
+                region: speech ? speech.region(ttsSettings.endpoint) : '', persistent: playback?.persistentCache === true, cacheDays: playback?.cacheDays || 7 };
             for (const line of lines) {
                 if (activeSession !== session || identity && !VoiceDirector.isCurrent(identity)) return stop(session);
                 const prior = previousParts[completed.length];
@@ -487,6 +507,7 @@ const MiniMaxTTS = (() => {
                 currentUsageCharacters: details.every(d => d.cacheHit || d.usageCharacters != null)
                     ? details.reduce((n, d) => n + (d.cacheHit ? 0 : d.usageCharacters), 0) : null });
             if (blobs.length > 1) audioDetails.set(session.blob, { format: 'mp3', usageCharacters: sum('usageCharacters'), audioMs: sum('audioMs'), cacheKeys: details.map(d => d.cacheKey).filter(Boolean) });
+            session.diagnostic.subtitleSegments = details.flatMap((detail, segmentIndex) => (detail.subtitles || []).map(item => ({ ...item, segment: segmentIndex + 1 }))).slice(0, 500);
             lastDiagnostic = { ...session.diagnostic };
             if (activeSession !== session) return;
             if (identity && !VoiceDirector.isCurrent(identity)) return stop(session);
