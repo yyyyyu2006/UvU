@@ -181,7 +181,7 @@ function openEnvironmentSettings(forChat = false, selectedChat = null) {
         }
         const before = db.environmentSettings; db.environmentSettings = next;
         try {
-        if (saveProfile && chat) await saveDerivedChatFields(chat, { environmentProfile: { remoteEnabled: fields.remoteEnabled.checked, timeAiEnabled: fields.timeAiEnabled.checked, weatherAiEnabled: fields.weatherAiEnabled.checked, aiEnabled: fields.timeAiEnabled.checked || fields.weatherAiEnabled.checked, charLocation: places.char } });
+        if (saveProfile && chat) await saveDerivedChatFields(chat, { environmentProfile: { ...(chat.environmentProfile || {}), remoteEnabled: fields.remoteEnabled.checked, timeAiEnabled: fields.timeAiEnabled.checked, weatherAiEnabled: fields.weatherAiEnabled.checked, aiEnabled: fields.timeAiEnabled.checked || fields.weatherAiEnabled.checked, charLocation: places.char } });
         else await saveData();
         } catch (error) { if (db.environmentSettings === next) { if (before === undefined) delete db.environmentSettings; else db.environmentSettings = before; } throw error; }
         document.dispatchEvent(new CustomEvent('uvu-environment-settings-changed'));

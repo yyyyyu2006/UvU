@@ -13,6 +13,7 @@
 .uvu-calendar .calendar-topbar button{padding:6px 10px;min-width:32px}
 .uvu-calendar .calendar-topbar .calendar-icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;padding:7px!important}
 .uvu-calendar .calendar-icon-button svg{display:block;width:16px;height:16px}
+.uvu-calendar .calendar-icon-button[aria-label="位置地图"]{width:44px;height:44px;min-width:44px}
 .uvu-calendar .calendar-clock{font-size:12px!important;color:#818188!important;white-space:normal!important;background:none!important;padding:0!important;border:0!important;box-shadow:none!important;margin:0!important}
 .uvu-calendar .calendar-weather{font-size:13px;margin:-10px 0 0;color:#5d6d7f;min-height:0}
 .uvu-calendar .calendar-weather:empty{display:none}

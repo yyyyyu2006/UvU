@@ -260,9 +260,9 @@ function calendarDayWatcher(readDay, changed) {
         const headerTitle = d.panel.querySelector('.message-forward-header strong'); const home = button('日历', () => { d.dismiss(); switchScreen('home-screen'); }, 'calendar-home'); headerTitle.replaceChildren(home);
         const body = node('div', undefined, 'calendar-body'), top = node('div', undefined, 'calendar-topbar'); d.panel.append(body); body.append(top);
         const side = node('select'); side.setAttribute('aria-label', '日历所属位置'); side.append(new Option('我的日历', 'user')); db.characters.forEach(c => side.append(new Option((c.remarkName || c.realName || c.name || '未命名角色') + ' 的日历', 'character:' + c.id)));
-        const settings = iconButton('map-pin', '设置', () => { if (valid()) openEnvironmentSettings(false, chat); }), prefs = iconButton('settings-2', '日历设置', () => preferences(key, () => settings.click()));
+        const map = iconButton('map-pin', '位置地图', () => { if (valid()) window.UvULocationMap?.open(chat); }), settings = iconButton('map-pin', '设置', () => { if (valid()) openEnvironmentSettings(false, chat); }), prefs = iconButton('settings-2', '日历设置', () => preferences(key, () => settings.click()));
         const refresh = iconButton('refresh-cw', '刷新', () => { const loc = place(); if (loc) { const cache = environmentCacheKey('weather', loc, getEnvironmentSettings()); environmentCache.delete(cache); try { const saved = JSON.parse(localStorage.getItem('uvu-environment-cache') || '{}'); delete saved[cache]; localStorage.setItem('uvu-environment-cache', JSON.stringify(saved)); } catch (_) {} } loadWeather(); });
-        top.append(side, prefs, settings, refresh);
+        top.append(side, map, prefs, settings, refresh);
         let chat = null, key = 'user', archiveId, mode = ['schedule', 'mood', 'period'].includes(view.mode) ? view.mode : 'schedule', selected = C().today(), span = C().range(selected), month = selected.slice(0, 7), rangeMode = false, rangeAnchor = null, holidayData = null;
         if (typeof view.month === 'string') { try { C().date(view.month + '-01'); month = view.month; } catch (_) {} }
         if (typeof view.date === 'string') { try { selected = C().date(view.date); span = C().range(selected); } catch (_) {} }
