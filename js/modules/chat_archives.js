@@ -154,6 +154,7 @@ function resetArchiveDerivedRuntime(data) {
         settings.currentImageId = '';
         settings.currentAvatarFingerprint = '';
         settings.cache = {};
+        delete settings.pendingSuggestion;
     }
     if (data.friendRelationship?.autonomy) {
         const autonomy = data.friendRelationship.autonomy;

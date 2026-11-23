@@ -9,7 +9,7 @@ function fixture() {
     const storage = new Map(), requests = [];
     const chat = { id: 'char', activeArchiveId: 'a', avatar: 'https://test.invalid/old.png', persona: '角色人设', history: [], archives: [{ id: 'a', data: {} }] };
     const c = vm.createContext({ db: { characters: [chat], groups: [] }, AbortController, DOMException, URL, Intl, Date, TextEncoder, TextDecoder,
-        crypto: require('node:crypto').webcrypto, structuredClone, setTimeout, clearTimeout, console: { log() {}, warn() {}, error() {} },
+        crypto: require('node:crypto').webcrypto, structuredClone, setTimeout, clearTimeout, setInterval, clearInterval, console: { log() {}, warn() {}, error() {} },
         localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
         navigator: {}, window: {}, currentChatId: 'char', currentChatType: 'private',
         saveData: async () => {}, resolveAuxiliaryApiConfig: () => ({ provider: 'newapi', url: 'https://test.invalid', model: 'vision', key: 'fake' }),
@@ -161,12 +161,72 @@ test('avatar candidates only include real delivered images from the current char
         { id: 1, archiveId: 'a', messageId: 'gen', image: 'Yw==', timestamp: 3 },
         { id: 2, archiveId: 'b', messageId: 'gen', image: 'ZA==', timestamp: 4 }
     ].filter(predicate).slice(0,count) }) }) }) }; } }) } };
+    chat.avatarAutonomy = { candidateSources: { user: true, generated: true } };
     assert.deepEqual(plain(await c.collectAvatarCandidates(chat)).map(item => item.id), ['message:image:0', 'photo:1']);
 });
 function enableAvatar(f) {
-    f.chat.avatarAutonomy = { enabled: true, every: 1 };
+    f.chat.avatarAutonomy = { enabled: true, every: 1, allowImageAnalysis: true, sharePersona: true, shareRecentChat: true,
+        candidateSources: { user: true, character: true, generated: true }, changePolicy: 'automatic' };
     f.chat.history.push({ id: 'u', role: 'user', timestamp: 1, content: 'data:image/png;base64,YQ==', parts: [{ type: 'image', data: 'data:image/png;base64,YQ==' }] });
 }
+test('avatar feature requires explicit image-analysis consent before calling recognition or decision APIs', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.allowImageAnalysis = false;
+    let recognition = 0, decision = 0;
+    f.c.recognizeStickerImage = async () => { recognition++; return 'image'; };
+    f.c.fetchAiResponse = async () => { decision++; return '{"action":"keep"}'; };
+    assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
+    assert.equal(recognition, 0); assert.equal(decision, 0); assert.equal(f.requests.length, 0);
+});
+test('avatar candidate sources are independently opt-in', async () => {
+    const f = fixture(); enableAvatar(f);
+    f.chat.avatarAutonomy.candidateSources = { user: true };
+    f.chat.history.push({ id: 'char-image', role: 'assistant', timestamp: 2, parts: [{ type: 'image', data: 'data:image/png;base64,Yg==' }] });
+    f.c.dexieDB = { characterPhotos: { where: () => ({ equals: () => ({ reverse: () => ({ filter: predicate => ({ limit: n => ({ toArray: async () => [
+        { id: 1, archiveId: 'a', messageId: 'u', image: 'Yw==', timestamp: 3 }
+    ].filter(predicate).slice(0, n) }) }) }) }) }) } };
+    let candidates = await f.c.collectAvatarCandidates(f.chat);
+    assert.deepEqual(plain(candidates).map(item => item.id), ['message:u:0']);
+    f.chat.avatarAutonomy.candidateSources = { character: true };
+    candidates = await f.c.collectAvatarCandidates(f.chat);
+    assert.deepEqual(plain(candidates).map(item => item.id), ['message:char-image:0']);
+    f.chat.avatarAutonomy.candidateSources = { generated: true };
+    candidates = await f.c.collectAvatarCandidates(f.chat);
+    assert.deepEqual(plain(candidates).map(item => item.id), ['photo:1']);
+});
+test('avatar decision request omits persona and chat text without their separate permissions', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.sharePersona = false; f.chat.avatarAutonomy.shareRecentChat = false;
+    f.chat.history.push({ id: 'ask', role: 'user', content: '请把这张照片换成你的头像' });
+    let payload;
+    f.c.recognizeStickerImage = async () => '照片描述';
+    f.c.fetchAiResponse = async (_, body) => { payload = JSON.parse(body.messages[1].content); return '{"action":"keep"}'; };
+    await f.c.checkCharacterAvatar(f.chat, true);
+    assert.equal(Object.hasOwn(payload, 'persona'), false); assert.equal(Object.hasOwn(payload, 'recentChat'), false);
+    assert.equal(payload.explicitRequest.intent, 'direct'); assert.equal(Object.hasOwn(payload.explicitRequest, 'text'), false);
+    assert.equal(JSON.stringify(payload).includes('请把这张照片'), false); assert.equal(JSON.stringify(payload).includes('角色人设'), false);
+});
+test('confirm policy stores an avatar suggestion and applies it only after a fresh user action', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.changePolicy = 'confirm';
+    f.c.recognizeStickerImage = async () => '用户发送的照片';
+    f.c.fetchAiResponse = async () => '{"action":"set_avatar","imageId":"message:u:0","reason":"这张照片适合作为头像"}';
+    f.c.fetch = async () => ({ ok: true, blob: async () => new Blob(['image'], { type: 'image/png' }) });
+    f.c.compressImage = async () => 'data:image/png;base64,Yg=='; f.c.refreshCharacterAvatar = () => {};
+    assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
+    assert.equal(f.chat.avatar, 'https://test.invalid/old.png');
+    assert.equal(f.chat.avatarAutonomy.pendingSuggestion.candidateId, 'message:u:0');
+    assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat), true);
+    assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
+    assert.equal(f.chat.avatarPrevious, 'https://test.invalid/old.png');
+    assert.equal(f.chat.avatarAutonomy.pendingSuggestion, null);
+});
+test('confirm policy drops a suggestion when the user has changed the current avatar', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.changePolicy = 'confirm';
+    f.c.recognizeStickerImage = async () => '用户发送的照片';
+    f.c.fetchAiResponse = async () => '{"action":"set_avatar","imageId":"message:u:0"}';
+    await f.c.checkCharacterAvatar(f.chat, true);
+    f.chat.avatar = 'data:image/png;base64,Yw==';
+    assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat), false);
+    assert.equal(f.chat.avatar, 'data:image/png;base64,Yw==');
+});
 test('avatar action uses validated image ID, compresses a Blob and can preserve the previous avatar', async () => {
     const f = fixture(); enableAvatar(f); let descriptions = 0, decisions = 0;
     f.c.recognizeStickerImage = async () => { descriptions++; return '猫'; };
@@ -331,7 +391,7 @@ test('explicit avatar requests bypass interval 100 once, with the exact selectio
     await f.c.checkCharacterAvatar(f.chat);
     assert.equal(decisions, 1); assert.equal(JSON.stringify(f.chat.history), original);
     assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
-    assert.ok(f.chat.avatarAutonomy.lastRequestKey.includes('ask'));
+    assert.equal(f.chat.avatarAutonomy.lastRequestKey, await f.c.avatarImageFingerprint(f.c.characterAvatarRequest(f.chat.history).key));
     f.chat.history.push({ id: 'pick', role: 'user', content: '[用户的消息：你用男生]' });
     f.c.fetchAiResponse = async (_, body) => {
         decisions++;
@@ -408,7 +468,8 @@ test('in-flight avatar decisions coalesce a newer request and discard the stale 
     const first = f.c.checkCharacterAvatar(f.chat); await started;
     f.chat.history.push({ id: 'pick', role: 'user', content: '你用男生' });
     await f.c.checkCharacterAvatar(f.chat); release(); await first;
-    assert.equal(decisions, 2); assert.ok(f.chat.avatarAutonomy.lastRequestKey.includes('pick'));
+    assert.equal(decisions, 2);
+    assert.equal(f.chat.avatarAutonomy.lastRequestKey, await f.c.avatarImageFingerprint(f.c.characterAvatarRequest(f.chat.history).key));
 });
 
 test('queued avatar work never replays across an archive switch', async () => {
@@ -427,10 +488,10 @@ test('failed explicit avatar calls cool down but a new selection request can ret
     f.chat.history.push({ id: 'ask', role: 'user', content: '换这对情头吧' });
     let calls = 0;
     f.c.fetchAiResponse = async () => { calls++; throw Error('API unavailable'); };
-    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /unavailable/);
+    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /头像辅助请求失败/);
     await f.c.checkCharacterAvatar(f.chat); assert.equal(calls, 1);
     f.chat.history.push({ id: 'pick', role: 'user', content: '你用男生' });
-    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /unavailable/);
+    await assert.rejects(f.c.checkCharacterAvatar(f.chat), /头像辅助请求失败/);
     assert.equal(calls, 2); assert.equal(f.chat.avatarAutonomy.lastRequestKey, undefined);
 });
 
@@ -443,5 +504,5 @@ test('explicit requests remain unconsumed if avatar persistence rolls back', asy
     assert.equal(JSON.stringify(f.chat.avatarAutonomy), before);
 });
 
-test('avatar archive filtering precedes limit and excludes unowned legacy photos',async()=>{const {c,chat}=fixture();chat.history=[{id:'gen',role:'assistant'}];const rows=[...Array.from({length:21},(_,i)=>({id:i+10,archiveId:'b',messageId:'gen',image:'ZA=='})),{id:1,archiveId:'a',messageId:'gen',image:'Yw=='}, {id:2,messageId:'gen',image:'Yg=='}];let stage=rows;c.dexieDB={characterPhotos:{where:()=>({equals:()=>({reverse:()=>({filter:predicate=>{stage=stage.filter(predicate);return {limit:n=>({toArray:async()=>stage.slice(0,n)})};}})})})}};assert.deepEqual(plain(await c.collectAvatarCandidates(chat)).map(x=>x.id),['photo:1']);});
+test('avatar archive filtering precedes limit and excludes unowned legacy photos',async()=>{const {c,chat}=fixture();chat.avatarAutonomy={candidateSources:{generated:true}};chat.history=[{id:'gen',role:'assistant'}];const rows=[...Array.from({length:21},(_,i)=>({id:i+10,archiveId:'b',messageId:'gen',image:'ZA=='})),{id:1,archiveId:'a',messageId:'gen',image:'Yw=='}, {id:2,messageId:'gen',image:'Yg=='}];let stage=rows;c.dexieDB={characterPhotos:{where:()=>({equals:()=>({reverse:()=>({filter:predicate=>{stage=stage.filter(predicate);return {limit:n=>({toArray:async()=>stage.slice(0,n)})};}})})})}};assert.deepEqual(plain(await c.collectAvatarCandidates(chat)).map(x=>x.id),['photo:1']);});
 test('environment context discards in-place city timezone or enable edits while weather waits',async()=>{for(const edit of [f=>f.c.db.environmentSettings.userLocation.name='Changed',f=>f.chat.environmentProfile.aiEnabled=false,f=>f.chat.environmentProfile.charLocation.timezone='UTC']){const f=fixture();f.c.db.environmentSettings={enabled:true,userLocation:{...shanghai}};f.chat.environmentProfile={aiEnabled:true,remoteEnabled:true,charLocation:{...ny}};const pending=[];f.c.getEnvironmentWeather=()=>new Promise(resolve=>pending.push(resolve));f.c.getEnvironmentHolidays=async()=>({days:[]});const task=f.c.getEnvironmentContext(f.chat);edit(f);pending.forEach(resolve=>resolve({text:'fixture'}));assert.equal(await task,'');}});

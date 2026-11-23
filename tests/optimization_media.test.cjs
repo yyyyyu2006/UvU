@@ -98,7 +98,7 @@ test('director skips catastrophic patterns and reports the skipped cleanup to th
     assert.equal(requests, 0, 'unsafe cleanup falls back without sending unclean status context to the director');
 });
 test('avatar exclusions and an explicit candidate choice constrain independent action candidates', async () => {
-    const chat = { id: 'c', history: [1,2,3].map(n => ({id:String(n),role:'user',parts:[{type:'image',data:'https://example.test/'+n+'.png'}]})), avatarAutonomy: {excludedCandidateIds:['message:1:0'],preferredCandidateId:'message:3:0'} };
+    const chat = { id: 'c', history: [1,2,3].map(n => ({id:String(n),role:'user',parts:[{type:'image',data:'https://example.test/'+n+'.png'}]})), avatarAutonomy: {candidateSources:{user:true},excludedCandidateIds:['message:1:0'],preferredCandidateId:'message:3:0'} };
     const c=vm.createContext({db:{characters:[chat]},URL});vm.runInContext(source('character_avatar'),c);
     assert.deepEqual(JSON.parse(JSON.stringify((await c.collectAvatarCandidates(chat)).map(x=>x.id))),['message:3:0']);
     assert.equal((await c.collectAvatarCandidates(chat,{includeExcluded:true})).length,3);

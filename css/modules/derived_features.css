@@ -19,6 +19,11 @@
 .derived-settings button, .derived-entry-group .derived-compact { flex: 0 0 auto; width: auto; min-height: 28px; margin: 0; padding: 5px 9px; font-size: 12px; line-height: 1.3; border: 1px solid #dfe3e9; border-radius: 7px; color: #334155; background: #f5f7fa; cursor: pointer; }
 .derived-settings button:disabled { opacity: .5; cursor: wait; }
 .derived-settings .derived-help { margin: 0; font-size: 11px; line-height: 1.6; color: #737b88; overflow-wrap: anywhere; }
+.avatar-autonomy-body fieldset { min-width: 0; margin: 0; padding: 8px 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr)); gap: 8px; border: 1px solid #edf0f4; border-radius: 7px; }
+.avatar-autonomy-body fieldset legend { padding: 0 4px; color: #737b88; }
+.avatar-autonomy-body fieldset label { flex-direction: row; align-items: flex-start; gap: 7px; line-height: 1.5; }
+.avatar-autonomy-body .avatar-suggestion:not([hidden]) { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.avatar-autonomy-body .avatar-suggestion img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex: none; }
 .derived-settings .derived-status { margin: 0; font-size: 12px; line-height: 1.6; color: #315a87; white-space: pre-line; overflow-wrap: anywhere; }
 .derived-settings footer, .derived-settings .derived-toolbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .derived-settings footer { padding-top: 5px; }

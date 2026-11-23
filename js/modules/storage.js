@@ -542,6 +542,17 @@ function storageValidateModules(modules) {
             const a = item.avatarAutonomy, prefix = path + '.avatarAutonomy';
             optional(a.enabled, prefix + '.enabled', 'boolean'); optional(a.every, prefix + '.every', 'number');
             optional(a.initiative, prefix + '.initiative', 'string'); optional(a.cooldownHours, prefix + '.cooldownHours', 'number');
+            for (const key of ['allowImageAnalysis', 'sharePersona', 'shareRecentChat']) optional(a[key], prefix + '.' + key, 'boolean');
+            if (a.candidateSources !== undefined) {
+                object(a.candidateSources, prefix + '.candidateSources');
+                for (const key of ['user', 'character', 'generated']) optional(a.candidateSources[key], prefix + '.candidateSources.' + key, 'boolean');
+            }
+            if (a.changePolicy !== undefined && !['suggest', 'confirm', 'automatic'].includes(a.changePolicy)) fail(prefix + '.changePolicy', '有效的头像处理方式');
+            if (a.pendingSuggestion !== undefined && a.pendingSuggestion !== null) {
+                object(a.pendingSuggestion, prefix + '.pendingSuggestion');
+                for (const key of ['candidateId', 'candidateFingerprint', 'archiveId', 'avatarFingerprint', 'historyFingerprint', 'reason']) optional(a.pendingSuggestion[key], prefix + '.pendingSuggestion.' + key, 'string');
+                optional(a.pendingSuggestion.createdAt, prefix + '.pendingSuggestion.createdAt', 'number');
+            }
             optional(a.lastChangedAt, prefix + '.lastChangedAt', 'number');
             if (a.initiative !== undefined && !['conservative', 'balanced', 'active'].includes(a.initiative)) fail(prefix + '.initiative', '有效的自主判断档位');
             optional(a.condition, prefix + '.condition', 'string');
