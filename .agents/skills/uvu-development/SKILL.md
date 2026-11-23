@@ -20,7 +20,7 @@ description: Develop, debug, review, and verify UvU derivative features while pr
 - 保留现有框架、事件入口、数据结构与迁移兼容。局部修复不顺手迁移框架、全局重排 UI 或重写共享流程。
 - 已确认草稿是实施依据；音乐 Apple Music 风格、导出 PNG 的 ID card 风格、发送后的文件卡和一起听邀请卡均属保护项，除非本次明确要求修改。
 - 原版已有问题默认记录；只有用户已授权的具体修复范围才修改。既有清单的修复授权继续有效，不能以这条规则撤回。消息执行脚本等明确暂缓项保持暂缓，不因审查自动全局净化内容。
-- 修复和功能改动先到 test；用户确认测试结果后才合并 main。普通“推送”只更新 test，最新“不要推送”等指令优先。
+- 修复和功能改动默认自检后直接推送 main；普通“推送”默认指 main。仅当用户要求先看测试版时，才先推 test，并等用户确认后再发布 main；用户明确说暂不推送时不发布。每次发布前核对远端分支与差异，绝不强推或覆盖他人工作。
 
 ## 按任务加载
 
@@ -29,7 +29,7 @@ description: Develop, debug, review, and verify UvU derivative features while pr
 | 网页布局、样式、前端交互 | [UI 规范](references/ui-guidelines.md)、[插件与资料](references/tooling.md) | 先查 Modern Web Guidance；草稿和真实页面分别验收 |
 | 提示词、记忆、世界书、桥接、异步保存 | [兼容边界](references/compatibility.md) | 固定角色／存档／请求身份，核对开关关闭的原版路径 |
 | 逐行检查、全仓问题清单、安全审查 | [审查要求](references/audit.md)、[插件与资料](references/tooling.md) | 区分功能检查与安全扫描，记录实际覆盖和未审部分 |
-| 测试、提交、Pages 或 Render | [验证与交付](references/verification.md) | 按变更验证，核对 test 线上版本；main 等用户确认 |
+| 测试、提交、Pages 或 Render | [验证与交付](references/verification.md) | 按变更验证；默认核对 main 线上版本，只有本次指定 test 时核对测试站 |
 
 只加载本次需要的参考，不为小改动启动所有插件或全仓扫描。Modern Web Guidance 的“按需查知识库”和“扫描已有代码”是两条独立流程，按 [插件与资料](references/tooling.md) 中的条件选择；不一次性加载全部知识库。
 
