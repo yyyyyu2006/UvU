@@ -1,6 +1,6 @@
 ---
 name: uvu-development
-description: Develop, debug, review, and verify UvU derivative features while preserving the 1900 baseline and approved UI. Route web work through Modern Web Guidance, engineering work through Agent Skills, and requested security audits through Codex Security. Use for UvU code, UI, audits, tests, and test-branch delivery.
+description: Develop, debug, review, and verify UvU derivative features while preserving the 1900 baseline and approved UI. Route web work through Modern Web Guidance, engineering work through Agent Skills, and requested security audits through Codex Security. Use for UvU code, UI, audits, tests, and main-default release (or test when explicitly requested).
 ---
 
 # UvU 开发与审查规范
