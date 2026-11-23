@@ -47,7 +47,7 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
 
         await page.evaluate(() => {
             window.L = {
-                map: () => ({ fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }),
+                map: node => { node.classList.add('leaflet-container'); return { fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }; },
                 gridLayer: () => ({ on() { return this; }, addTo() { return this; } }),
                 divIcon: options => options,
                 marker: (_point, options) => ({ addTo() { (window.mapMarkerHtml ||= []).push(options.icon.html); return this; } })
@@ -108,7 +108,7 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
             await narrow.page.evaluate(() => {
                 db.environmentSettings = { enabled: false, userLocation: { name: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai', latitude: 31.23, longitude: 121.47 } };
                 window.L = {
-                    map: () => ({ fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }),
+                    map: node => { node.classList.add('leaflet-container'); return { fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }; },
                     gridLayer: () => ({ on() { return this; }, addTo() { return this; } }),
                     divIcon: options => options,
                     marker: () => ({ addTo() { return this; } })
