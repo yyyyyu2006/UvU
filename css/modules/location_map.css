@@ -207,30 +207,32 @@
 .uvu-location-map.location-map-expanded .location-map-canvas:active { cursor: grabbing; }
 .uvu-location-map.location-map-expanded .location-map-status { top: auto; right: auto; bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; width: auto; max-width: calc(100% - 32px); margin: 0; }
 .uvu-location-map.location-map-expanded .location-map-expand { display: none; }
-.uvu-location-map.location-map-expanded .leaflet-top.leaflet-left { top: calc(108px + env(safe-area-inset-top)); left: 12px; }
+.uvu-location-map.location-map-expanded .leaflet-top.leaflet-left { top: calc(148px + env(safe-area-inset-top)); left: 12px; }
 .uvu-location-map.location-map-expanded .location-map-expanded-header {
     position: absolute;
     z-index: 1000;
     top: 0;
     left: 0;
     right: 0;
-    min-height: calc(104px + env(safe-area-inset-top));
-    padding: calc(12px + env(safe-area-inset-top)) 16px 14px;
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    min-height: calc(140px + env(safe-area-inset-top));
+    padding: calc(14px + env(safe-area-inset-top)) 60px 16px;
+    display: flex;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
     color: #fff;
-    background: #26313bc9;
+    background: linear-gradient(180deg, #343a3be8 0%, #343a3bc9 72%, #343a3b00 100%);
     box-sizing: border-box;
 }
-.uvu-location-map .location-map-expanded-back { width: 44px; height: 44px; border: 0; border-radius: 50%; background: #ffffff20; color: #fff; font: inherit; font-size: 30px; line-height: 1; cursor: pointer; }
+.uvu-location-map .location-map-expanded-back { position: absolute; top: calc(14px + env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); width: 44px; height: 44px; border: 0; border-radius: 50%; background: #ffffff20; color: #fff; font: inherit; font-size: 30px; line-height: 1; cursor: pointer; }
+.uvu-location-map .location-map-expanded-summary { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
 .uvu-location-map .location-map-expanded-people { display: flex; justify-content: center; align-items: center; gap: 14px; min-width: 0; }
-.uvu-location-map .location-map-expanded-person { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
-.uvu-location-map .location-map-expanded-avatar { display: grid; place-items: center; flex: none; width: 42px; height: 42px; box-sizing: border-box; border: 2px solid #ffffffc7; border-radius: 50%; background: #dceafa; color: #486b98; font-size: 13px; object-fit: cover; }
+.uvu-location-map .location-map-expanded-person { display: flex; align-items: center; min-width: 0; }
+.uvu-location-map .location-map-expanded-person > span:last-child { display: none; }
+.uvu-location-map .location-map-expanded-avatar { display: grid; place-items: center; flex: none; width: 50px; height: 50px; box-sizing: border-box; border: 2px solid #ffffffd9; border-radius: 50%; background: #dceafa; color: #486b98; font-size: 13px; object-fit: cover; }
 .uvu-location-map .location-map-expanded-person:nth-child(2) .location-map-expanded-avatar { background: #e9e4fa; color: #7765a2; }
-.uvu-location-map .location-map-expanded-person > span { overflow: hidden; max-width: 28vw; text-overflow: ellipsis; white-space: nowrap; }
-.uvu-location-map .location-map-expanded-share { max-width: 108px; color: #f5f7fa; font-size: 12px; text-align: right; }
+.uvu-location-map .location-map-expanded-share { color: #fff; font-size: 15px; font-weight: 500; text-align: center; }
+.uvu-location-map .location-map-recenter { position: absolute; z-index: 1000; left: max(16px, env(safe-area-inset-left)); bottom: calc(24px + env(safe-area-inset-bottom)); display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border: 0; border-radius: 16px; background: #fff; color: #263a50; font: inherit; font-size: 30px; line-height: 1; box-shadow: 0 3px 16px #172b4630; cursor: pointer; }
+.uvu-location-map .location-map-recenter[hidden] { display: none !important; }
 .uvu-location-map .location-map-marker { padding: 0; border: 0; background: transparent; }
 .location-map-marker > span { display: grid; place-items: center; width: 48px; height: 48px; box-sizing: border-box; border: 3px solid #fff; border-radius: 50%; background: #628fc4; color: #fff; font-size: 13px; font-weight: 700; box-shadow: 0 2px 12px #172b4650; }
 .location-map-marker-character > span { background: #8b79b8; }
@@ -242,7 +244,7 @@
     .uvu-location-map .location-map-canvas { height: 42dvh; min-height: 280px; }
     .uvu-location-map .location-map-person { padding: 8px; }
     .uvu-location-map .location-map-person strong { font-size: 12px; }
-    .uvu-location-map.location-map-expanded .location-map-expanded-header { grid-template-columns: 44px minmax(0, 1fr); padding-right: 12px; }
-    .uvu-location-map .location-map-expanded-share { grid-column: 2; grid-row: 2; justify-self: center; max-width: none; }
-    .uvu-location-map .location-map-expanded-header { row-gap: 2px; }
+    .uvu-location-map.location-map-expanded .location-map-expanded-header { min-height: calc(136px + env(safe-area-inset-top)); padding-left: 56px; padding-right: 56px; }
+    .uvu-location-map .location-map-expanded-avatar { width: 46px; height: 46px; }
+    .uvu-location-map .location-map-expanded-share { font-size: 14px; }
 }

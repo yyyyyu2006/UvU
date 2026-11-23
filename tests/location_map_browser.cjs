@@ -47,7 +47,7 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
 
         await page.evaluate(() => {
             window.L = {
-                map: node => { node.classList.add('leaflet-container'); return { fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }; },
+                map: node => { node.classList.add('leaflet-container'); return { fitBounds() { window.mapFitBoundsCalls = (window.mapFitBoundsCalls || 0) + 1; }, setView() {}, invalidateSize() {}, remove() {} }; },
                 gridLayer: () => ({ on() { return this; }, addTo() { return this; } }),
                 divIcon: options => options,
                 marker: (_point, options) => ({ addTo() { (window.mapMarkerHtml ||= []).push(options.icon.html); return this; } })
@@ -68,8 +68,13 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
         assert.equal(markerAttributes, null, 'avatar URLs are escaped before Leaflet marker HTML is built');
         await chatPanel.locator('.location-map-canvas').click({ position: { x: 120, y: 100 } });
         assert.equal(await chatPanel.locator('.uvu-location-map').evaluate(node => node.classList.contains('location-map-expanded')), true, 'clicking the loaded map enters the full-screen draft layout');
+        await page.waitForFunction(() => window.mapFitBoundsCalls >= 2);
         assert.equal(await chatPanel.locator('.location-map-expanded-header').isVisible(), true);
-        assert.match(await chatPanel.locator('.location-map-expanded-header').textContent(), /上海|东京/);
+        assert.equal(await chatPanel.locator('.location-map-expanded-share').textContent(), '双方城市位置');
+        assert.equal(await chatPanel.locator('.location-map-expanded-avatar').count(), 2, 'expanded view centers both avatars above the map');
+        assert.equal(await chatPanel.getByRole('button', { name: '重新定位到双方城市' }).isVisible(), true);
+        await chatPanel.getByRole('button', { name: '重新定位到双方城市' }).click();
+        await page.waitForFunction(() => window.mapFitBoundsCalls >= 3);
         assert.equal(await chatPanel.locator('.location-map-distance, .location-map-km').count(), 0);
         const viewport = page.viewportSize();
         const expandedBox = await chatPanel.locator('.location-map-canvas').boundingBox();
@@ -108,7 +113,7 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
             await narrow.page.evaluate(() => {
                 db.environmentSettings = { enabled: false, userLocation: { name: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai', latitude: 31.23, longitude: 121.47 } };
                 window.L = {
-                    map: node => { node.classList.add('leaflet-container'); return { fitBounds() {}, setView() {}, invalidateSize() {}, remove() {} }; },
+                    map: node => { node.classList.add('leaflet-container'); return { fitBounds() { window.mapFitBoundsCalls = (window.mapFitBoundsCalls || 0) + 1; }, setView() {}, invalidateSize() {}, remove() {} }; },
                     gridLayer: () => ({ on() { return this; }, addTo() { return this; } }),
                     divIcon: options => options,
                     marker: () => ({ addTo() { return this; } })
