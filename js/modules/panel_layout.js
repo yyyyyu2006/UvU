@@ -1378,8 +1378,8 @@
         root.classList.add('mono-page'); root.closest('.message-forward-overlay')?.classList.add('mono-page-overlay');
         header.classList.add('mono-page-nav'); title?.classList.add('mono-page-title');
         if (back) { back.classList.add('mono-nav-back'); back.setAttribute('aria-label', '关闭日历'); navIcon(back, 'chevron-left'); header.prepend(back); }
-        const prefs = q(body, '.calendar-topbar button[aria-label="日历设置"]'); if (prefs) { prefs.classList.add('mono-nav-help'); header.append(prefs); }
         const footer = make('footer', 'draft-calendar-footer'),primary=make('div','draft-calendar-primary'),dates = make('button', '', '日历'); dates.type = 'button'; dates.setAttribute('role', 'tab'); dates.dataset.mode = 'calendar';footer.append(primary);
+        const prefs = q(body, '.calendar-topbar button[aria-label="日历设置"]');
         let calendarView='calendar';
         const schedule=q(tabs,'[data-mode=schedule]'),moodTab=q(tabs,'[data-mode=mood]'),periodTab=q(tabs,'[data-mode=period]'),recordTab=make('button','','记录'),recordModes=make('nav','panel-segment draft-calendar-record-modes');recordTab.type='button';recordTab.setAttribute('role','tab');recordTab.onclick=()=>{if(moodTab.getAttribute('aria-selected')!=='true'&&periodTab.getAttribute('aria-selected')!=='true')moodTab.click();syncCalendar();};
         tabs.append(recordTab);recordModes.append(moodTab,periodTab);body.prepend(recordModes);recordModes.addEventListener('click',()=>syncCalendar());

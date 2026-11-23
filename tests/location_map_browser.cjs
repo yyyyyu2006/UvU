@@ -10,6 +10,21 @@ const { fullApp, stableUI } = require('./helpers/full_app_browser.cjs');
         page.on('request', request => { if (/tile\.openstreetmap\.org|unpkg\.com\/leaflet/.test(request.url())) tileRequests.push(request.url()); });
         await page.route('https://unpkg.com/leaflet/**', route => route.abort());
         await page.evaluate(() => {
+            const openMap = window.UvULocationMap.open;
+            window.UvULocationMap.open = chat => { window.mapEntryClicked = true; openMap(chat); };
+            openEnvironmentCalendar();
+        });
+        await stableUI(page, '#environment-calendar');
+        const calendar = page.locator('#environment-calendar');
+        const mapEntry = calendar.getByRole('button', { name: '位置地图' });
+        assert.equal(await mapEntry.isVisible(), true, 'map entry remains visible in the calendar header');
+        await mapEntry.click();
+        assert.equal(await page.evaluate(() => window.mapEntryClicked), true, 'calendar header map entry opens the map');
+        await stableUI(page, '#shared-location-map');
+        await page.evaluate(() => document.getElementById('shared-location-map').dismissForward());
+        await page.evaluate(() => document.getElementById('environment-calendar').dismissForward());
+
+        await page.evaluate(() => {
             db.environmentSettings = { enabled: false, userLocation: { name: '上海', countryCode: 'CN', timezone: 'Asia/Shanghai', latitude: 31.23, longitude: 121.47 } };
             window.saveDerivedChatFields = async (target, changes) => Object.assign(target, changes);
             window.UvULocationMap.open(null);
