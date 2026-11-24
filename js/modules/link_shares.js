@@ -56,7 +56,7 @@ function makeSharedLink(value) {
     // metadata has its own provenance so it cannot relabel pasted text.
     const readableSource = readableText ? 'user' : '';
     const metadataSource = value.metadataSource === 'tiktok-oembed' ? 'tiktok-oembed' : '';
-    const status = readableText ? 'user-provided' : (title || description || author ? 'metadata-only' : 'link-only');
+    const status = readableText ? 'user-provided' : (title || description || author || thumbnailUrl ? 'metadata-only' : 'link-only');
     return { version: 1, url, platform: sharedLinkPlatform(url), title, description, author, thumbnailUrl, readableText, readableSource, metadataSource, status };
 }
 
@@ -129,10 +129,16 @@ async function fetchTikTokShareMetadata(url, { signal, fetchImpl = fetch } = {})
         const raw = await response.text();
         if (raw.length > 1024 * 1024) throw new Error('平台返回的预览数据过大');
         const data = JSON.parse(raw);
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('平台返回的预览格式无效');
         if (data.provider_name && !/tiktok/i.test(data.provider_name)) throw new Error('预览来源不匹配');
         const thumbnailUrl = typeof data.thumbnail_url === 'string' && /^https:\/\//i.test(data.thumbnail_url) && isTikTokThumbnailUrl(data.thumbnail_url) ? data.thumbnail_url : '';
-        return makeSharedLink({ url: safeUrl, title: data.title || '', author: data.author_name || '',
-            description: '', thumbnailUrl, metadataSource: 'tiktok-oembed' });
+        const title = typeof data.title === 'string' ? data.title : '';
+        const author = typeof data.author_name === 'string' ? data.author_name : '';
+        const description = typeof data.description === 'string' ? data.description : '';
+        const hasReadablePreview = Boolean(title || author || description || thumbnailUrl);
+        return { ...makeSharedLink({ url: safeUrl, title, author, description, thumbnailUrl,
+            metadataSource: hasReadablePreview ? 'tiktok-oembed' : '' }),
+            previewStatus: hasReadablePreview ? 'readable-metadata' : data.html ? 'player-only' : 'empty' };
     } catch (error) {
         if (signal?.aborted || error.name === 'AbortError') throw Object.assign(new Error('读取已取消'), { name: 'AbortError' });
         if (error instanceof TypeError) throw new Error('浏览器无法读取平台预览，可能是跨域或平台限制；可手动粘贴标题、简介或字幕');

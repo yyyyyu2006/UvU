@@ -76,8 +76,14 @@ function openSharedLinkDialog(message = null, chat = null) {
             metadataSource = result.metadataSource;
             thumbnailValue = result.thumbnailUrl || '';
             updateThumbnail(thumbnailValue);
-            sourceStatus.textContent = result.status === 'metadata-only' ? '仅有平台预览' : '已读取';
-            status.textContent = '已取得标题、作者等嵌入预览信息；视频正文、字幕和画面尚未读取。';
+            sourceStatus.textContent = result.metadataSource ? '仅有平台预览' : '平台未提供可读资料';
+            if (result.previewStatus === 'player-only') {
+                status.textContent = '平台只返回播放器嵌入信息，没有可读标题、作者或正文；视频画面和字幕尚未读取，请手动补充内容。';
+            } else if (result.previewStatus === 'readable-metadata') {
+                status.textContent = '已读取平台公开的标题等预览信息；视频正文、字幕和画面尚未读取。';
+            } else {
+                status.textContent = '平台没有返回可读的预览信息；视频画面和字幕尚未读取，请手动补充内容。';
+            }
         } catch (error) { if (error.name !== 'AbortError') status.textContent = error.message; }
         finally { setBusy(false); }
     };

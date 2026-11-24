@@ -90,6 +90,22 @@ test('TikTok preview uses a fixed credential-free endpoint and validates its ret
     assert.equal(pasted.readableSource, 'user', 'external preview provenance cannot relabel pasted body text');
 });
 
+test('TikTok oEmbed player-only responses are not recorded or described as readable metadata', async () => {
+    const c = fixture();
+    const metadata = await c.fetchTikTokShareMetadata('https://www.tiktok.com/@person/video/6718335390845095173', {
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({
+            version: '1.0', type: 'video', provider_name: 'TikTok', embed_product_id: '6718335390845095173',
+            html: '<iframe src="https://www.tiktok.com/player/v1/6718335390845095173"></iframe>'
+        }) })
+    });
+    assert.equal(metadata.title, '');
+    assert.equal(metadata.author, '');
+    assert.equal(metadata.metadataSource, '', 'player markup alone is not readable preview metadata');
+    assert.equal(metadata.status, 'link-only');
+    assert.equal(metadata.previewStatus, 'player-only');
+    assert.equal(Object.hasOwn(metadata, 'html'), false, 'provider iframe markup must not enter saved card data');
+});
+
 test('backup validation accepts old chats and valid link cards but rejects malformed links in live or archived history', () => {
     const c = backupFixture();
     const link = c.makeSharedLink({ url: 'https://example.com/story', title: '标题', readableText: '正文' });

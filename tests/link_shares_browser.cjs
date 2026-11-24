@@ -61,6 +61,23 @@ const { fullApp, stableUI, root } = require('./helpers/full_app_browser.cjs');
         assert.equal(await page.locator('.message-wrapper[data-id="plain-link"] .shared-link-card').count(), 0);
         assert.match(await page.locator('.message-wrapper[data-id="plain-link"]').textContent(), /https:\/\/example\.org/);
 
+        await page.evaluate(() => {
+            window.__linkTestOriginalFetch = window.fetch;
+            window.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({
+                version: '1.0', type: 'video', provider_name: 'TikTok', embed_product_id: '6718335390845095173',
+                html: '<iframe src="https://www.tiktok.com/player/v1/6718335390845095173"></iframe>'
+            }) });
+            openSharedLinkDialog();
+        });
+        await dialog.waitFor({ state: 'visible' });
+        await dialog.getByLabel('分享网址').fill('https://www.tiktok.com/@person/video/6718335390845095173');
+        await dialog.getByRole('button', { name: '读取 TikTok 预览' }).click();
+        await page.getByText(/只返回播放器嵌入信息/).waitFor();
+        assert.equal(await dialog.getByLabel('标题').inputValue(), '');
+        assert.equal(await dialog.getByLabel('作者').inputValue(), '');
+        await page.evaluate(() => { window.fetch = window.__linkTestOriginalFetch; delete window.__linkTestOriginalFetch; });
+        await dialog.locator('.shared-link-actions').getByRole('button', { name: '取消' }).click();
+
         await page.evaluate(() => { db.characters[0].globalCss = undefined; });
         for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }]) {
             await page.setViewportSize(viewport);
