@@ -251,6 +251,9 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         if (!requestIsCurrent()) return;
         const documentPlan = chatType === 'private' && typeof prepareDocumentContext === 'function' ? prepareDocumentContext(historySlice) : { history: historySlice, instructions: '', sources: [] };
         historySlice = documentPlan.history;
+        if (chatType === 'private' && typeof prepareSharedLinkContext === 'function') {
+            historySlice = prepareSharedLinkContext(historySlice).history;
+        }
         const musicPlan = !sceneToken && chatType === 'private' && typeof window !== 'undefined' && window.UvUMusicChat ? window.UvUMusicChat.requestPlan(historySlice, chat) : null;
         // Optional observer only: capture the sources while vector deduplication is still scoped to this build.
         let requestDiagnostic = null;

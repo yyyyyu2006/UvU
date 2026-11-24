@@ -691,6 +691,10 @@ function storageValidateModules(modules) {
             if (typeof validateSharedDocument !== 'function') throw new Error('文件消息模块未加载，请刷新后导入');
             validateSharedDocument(item.document);
         }
+        if (item.type === 'link-share') {
+            if (typeof validateSharedLink !== 'function') throw new Error('链接分享模块未加载，请刷新后导入');
+            validateSharedLink(item.linkShare);
+        }
         if (item.type === 'calendar') {
             if (!window.UvUCalendarChat) throw new Error('日历卡片模块未加载，请刷新后导入');
             window.UvUCalendarChat.validate(item.calendar);

@@ -1,0 +1,34 @@
+.shared-link-dialog.message-forward-dialog{box-sizing:border-box;width:min(456px,calc(100vw - 32px));max-height:min(88dvh,760px);padding:0;display:flex;flex-direction:column;overflow:hidden;border:1px solid #e8eaed;border-radius:24px;background:#f7f8fa;box-shadow:0 8px 32px #151b2412}
+.shared-link-dialog .message-forward-header{flex:0 0 auto;padding:22px 24px 14px;background:transparent}
+.shared-link-dialog .message-forward-header strong{font-size:18px;letter-spacing:-.3px}
+.shared-link-dialog .message-forward-close{font-size:12px;background:#fff;border:1px solid #e8eaed;padding:6px 12px;min-height:36px}
+.shared-link-body{display:flex;flex-direction:column;gap:12px;min-height:0;padding:0 24px 18px;overflow-y:auto;overscroll-behavior:contain}
+.shared-link-field{display:flex;flex-direction:column;gap:6px;color:#4b535b;font-size:12px;line-height:1.5}
+.shared-link-field input,.shared-link-field textarea{box-sizing:border-box;width:100%;min-width:0;border:1px solid #e2e6e9;border-radius:10px;background:#fff;color:#272b30;padding:10px 12px;font:inherit;font-size:14px;line-height:1.6}
+.shared-link-field textarea{resize:vertical;min-height:76px;max-height:30dvh}
+.shared-link-field:last-of-type textarea{min-height:128px}
+.shared-link-note{margin:0;color:#737c85;font-size:12px;line-height:1.55}
+.shared-link-metadata-row{display:flex;align-items:center;gap:10px;min-height:34px;color:#737c85;font-size:12px}
+.shared-link-metadata-row button{min-height:36px;border:1px solid #dce5eb;border-radius:999px;background:#edf5fa;color:#45677f;padding:7px 13px;font:inherit;cursor:pointer}
+.shared-link-metadata-row button[hidden]{display:none}
+.shared-link-thumbnail{display:block;width:100%;max-height:180px;object-fit:cover;border-radius:12px}
+.shared-link-thumbnail[hidden]{display:none}
+.shared-link-status{min-height:20px;margin:0;color:#486d88;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.shared-link-actions{display:flex;justify-content:flex-end;gap:8px;flex:0 0 auto;padding:14px 24px;background:#fff;border-top:1px solid #eff0f2}
+.shared-link-actions button{min-height:38px;border:1px solid #e1e5e8;border-radius:999px;background:#f6f8fa;color:#3a4249;padding:8px 16px;font:inherit;font-size:13px;cursor:pointer}
+.shared-link-actions button[data-action=send]{border-color:#cfe2ef;background:#dcecf6;color:#294b63}
+.shared-link-actions button:disabled,.shared-link-metadata-row button:disabled{opacity:.55;cursor:default}
+.shared-link-dialog :is(button,input,textarea):focus-visible,.shared-link-card :is(a,button):focus-visible{outline:2px solid #88b2d4;outline-offset:3px}
+.shared-link-action{appearance:none;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.message-wrapper .shared-link-card{box-sizing:border-box;width:260px;max-width:calc(100vw - 112px);padding:10px;background:#fff;border:1px solid #e8eaee;border-radius:16px;color:#343b43;box-shadow:0 2px 8px #00000008;overflow:hidden}
+.shared-link-card-image{display:block;width:100%;max-height:150px;aspect-ratio:16/9;object-fit:cover;border-radius:10px;margin-bottom:9px}
+.shared-link-card-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 2px 8px;color:#737c85;font-size:11px}
+.shared-link-card-header .shared-link-badge{flex:0 0 auto;padding:3px 7px;border-radius:999px;background:#f0f3f5;color:#68727b;font-size:10px;white-space:nowrap}
+.shared-link-card h3{margin:0 2px 5px;font-size:14px;font-weight:600;line-height:1.5;overflow-wrap:anywhere}
+.shared-link-card h3 a{color:inherit;text-decoration:none}
+.shared-link-card h3 a:hover{text-decoration:underline}
+.shared-link-card>p{margin:0 2px 8px;color:#68727b;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+.shared-link-card>p[hidden]{display:none}
+.shared-link-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:8px;border-top:1px solid #f0f1f3;color:#858d95;font-size:10px;line-height:1.4}
+.shared-link-card-footer button{flex:0 0 auto;border:0;border-radius:999px;background:#eff5f9;color:#45677f;padding:6px 10px;font:inherit;font-size:11px;cursor:pointer}
+@media(max-width:380px){.shared-link-body{padding-right:16px;padding-left:16px}.shared-link-dialog .message-forward-header{padding-right:16px;padding-left:16px}.shared-link-actions{padding-right:16px;padding-left:16px}.message-wrapper .shared-link-card{max-width:calc(100vw - 88px)}}

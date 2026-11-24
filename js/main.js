@@ -140,6 +140,7 @@ const init = async () => {
     setupPhotoVideoSystem();
     setupImageRecognition();
     if (typeof setupSharedDocuments === 'function') setupSharedDocuments();
+    if (typeof setupSharedLinks === 'function') setupSharedLinks();
     setupWalletSystem();
     setupGiftSystem();
     setupTimeSkipSystem();
