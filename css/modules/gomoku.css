@@ -3,8 +3,6 @@
     --gm-muted: #61717c;
     --gm-blue: #d4e5ef;
     --gm-line: #d6c7a7;
-    display: flex;
-    flex-direction: column;
     min-block-size: 0;
     color: var(--gm-ink);
     background: #fff;

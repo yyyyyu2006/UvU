@@ -13,6 +13,15 @@ let receivedRequest;
 let responseText = '{"row":7,"col":8,"say":"这一步不错。"}';
 let delayApi = false;
 
+async function assertGameNavigation(page, activeId) {
+    const ids = ['home-screen', 'uvu-game-hub-screen', 'uvu-minesweeper-screen', 'uvu-gomoku-screen'];
+    const rendered = await page.evaluate(screenIds => screenIds.filter(id => {
+        const screen = document.getElementById(id);
+        return getComputedStyle(screen).display !== 'none' && screen.getClientRects().length > 0;
+    }), ids);
+    assert.deepEqual(rendered, [activeId], 'only the current screen may occupy space');
+}
+
 const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname);
     const file = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
@@ -51,14 +60,17 @@ const server = http.createServer((req, res) => {
         page.on('pageerror', error => errors.push(error.message));
         await page.goto(base, { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.querySelector('[data-id="app-minesweeper"]') && document.getElementById('uvu-gomoku-screen'));
+        await assertGameNavigation(page, 'home-screen');
         await page.locator('[data-id="app-minesweeper"] .app-icon').click();
         const hub = page.locator('#uvu-game-hub-screen');
         await hub.waitFor({ state: 'visible' });
+        await assertGameNavigation(page, 'uvu-game-hub-screen');
         assert.equal(await hub.getByRole('listitem').count(), 2);
         assert.equal(await hub.getByRole('button', { name: /五子棋/ }).count(), 1);
         await hub.getByRole('button', { name: /五子棋/ }).click();
         const screen = page.locator('#uvu-gomoku-screen');
         await screen.waitFor({ state: 'visible' });
+        await assertGameNavigation(page, 'uvu-gomoku-screen');
         assert.equal(await screen.locator('[data-gm-cell]').count(), 225);
         assert.equal(await screen.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
 
@@ -90,6 +102,8 @@ const server = http.createServer((req, res) => {
         });
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => document.querySelector('[data-id="app-minesweeper"]') && document.getElementById('uvu-gomoku-screen'));
+        await assertGameNavigation(page, 'home-screen');
+        await page.evaluate(() => applyGlobalCss('#home-screen { background-color: #e5f1f7 !important; }'));
         await page.locator('[data-id="app-minesweeper"] .app-icon').click();
         await page.locator('#uvu-game-hub-screen').getByRole('button', { name: /五子棋/ }).click();
         assert.match(await page.locator('#uvu-gomoku-screen [data-gm-start]').textContent(), /继续/);
@@ -141,9 +155,19 @@ const server = http.createServer((req, res) => {
         assert.equal(await screen.locator('.gm-help').evaluate(node => node.open), true);
         await page.keyboard.press('Escape');
         assert.equal(await screen.locator('.gm-help').evaluate(node => node.open), false);
-        assert.deepEqual(errors, []);
         await page.screenshot({ path: path.join(output, 'gomoku-320.png'), animations: 'disabled' });
-        console.log('Gomoku browser checks passed: hub route, 15x15 board, local AI, undo/restart, isolated character API, chat-history isolation, cancellation guard, narrow viewport and help dialog.');
+        await screen.getByRole('button', { name: '返回游戏大厅' }).click();
+        await assertGameNavigation(page, 'uvu-game-hub-screen');
+        await hub.getByRole('button', { name: /扫雷/ }).click();
+        await assertGameNavigation(page, 'uvu-minesweeper-screen');
+        await page.locator('#uvu-minesweeper-screen .back-btn').click();
+        await assertGameNavigation(page, 'uvu-game-hub-screen');
+        await hub.locator('.back-btn').click();
+        await assertGameNavigation(page, 'home-screen');
+        assert.equal(await page.locator('#home-screen').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(229, 241, 247)', 'the custom desktop style survives game navigation');
+        assert.deepEqual(errors, []);
+        await page.screenshot({ path: path.join(output, 'home-after-games-320.png'), animations: 'disabled' });
+        console.log('Gomoku browser checks passed: exclusive screen visibility on startup, reload and back, custom desktop style, board and isolated character API.');
     } finally {
         await browser.close();
         server.close();
