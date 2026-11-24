@@ -860,6 +860,7 @@ function storageValidateModules(modules) {
             const value = item.stickerDescriptionSettings, prefix = path + '.stickerDescriptionSettings';
             object(value, prefix);
             for (const key of ['enabled', 'relevantOnly']) optional(value[key], prefix + '.' + key, 'boolean');
+            for (const key of ['semanticPick', 'semanticRead']) optional(value[key], prefix + '.' + key, 'boolean');
             for (const [key, low, high] of [['maxItems', 1, 100], ['maxChars', 200, 30000]]) {
                 if (value[key] !== undefined && (!Number.isInteger(value[key]) || value[key] < low || value[key] > high)) fail(prefix + '.' + key, `整数 ${low}–${high}`);
             }
@@ -884,6 +885,10 @@ function storageValidateModules(modules) {
     object(modules, '备份内容');
     for (const key of ['characters', 'groups', 'worldBooks', 'myStickers', 'customFonts']) {
         list(modules[key], key, (item, path) => {
+            if (key === 'myStickers') {
+                if (item.semanticProfile !== undefined && (typeof isValidStickerSemanticRecord !== 'function' || !isValidStickerSemanticRecord(item.semanticProfile))) fail(path + '.semanticProfile', '有效的表情语义档案');
+                if (item.semanticFailure !== undefined && (typeof isValidStickerSemanticRecord !== 'function' || !isValidStickerSemanticRecord(item.semanticFailure, true))) fail(path + '.semanticFailure', '有效的识图失败记录');
+            }
             if (key === 'characters' || key === 'groups') {
                 runtime(item, path);
                 if (key === 'characters' && item.avatarChangeHistory !== undefined) {

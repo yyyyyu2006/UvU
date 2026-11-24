@@ -8,7 +8,12 @@ async function setupStickerSystem() {
     const menuMultiSelectBtn = document.getElementById('menu-multi-select-btn');
     const menuBatchImportBtn = document.getElementById('menu-batch-import-btn');
     const menuAddNewBtn = document.getElementById('menu-add-new-btn');
+    const menuSemanticLibraryBtn = document.getElementById('menu-sticker-semantic-library');
     const menuCancelBtn = document.getElementById('menu-cancel-btn');
+    menuSemanticLibraryBtn?.addEventListener('click', () => {
+        stickerMenuActionSheet.classList.remove('visible');
+        openStickerSemanticLibrary();
+    });
 
     const deleteSelectedStickersBtn = document.getElementById('delete-selected-stickers-btn');
     const moveStickerGroupBtn = document.getElementById('move-sticker-group-btn');

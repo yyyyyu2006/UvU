@@ -1,0 +1,57 @@
+
+#sticker-semantic-library {
+    box-sizing: border-box;
+    width: min(560px, calc(100% - 32px));
+    max-height: min(720px, calc(100dvh - 32px));
+    margin: auto;
+    padding: 0;
+    border: 1px solid #e1e7ec;
+    border-radius: 24px;
+    background: #fff;
+    color: #28343d;
+    font-size: 14px;
+    line-height: 1.6;
+    overflow: hidden;
+}
+#sticker-semantic-library[open] { display: flex; flex-direction: column; }
+#sticker-semantic-library::backdrop { background: rgb(23 34 43 / 32%); }
+#sticker-semantic-library [hidden] { display: none !important; }
+#sticker-semantic-library > header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 8px 16px; border-bottom: 1px solid #e8edf1; flex-shrink: 0;
+}
+#sticker-semantic-library h2 { margin: 0; font-size: 20px; line-height: 1.2; }
+#sticker-semantic-library .sticker-semantic-body {
+    min-height: 0; overflow: auto; overscroll-behavior: contain;
+    display: grid; align-content: start; gap: 16px; padding: 16px;
+}
+#sticker-semantic-library .sticker-semantic-card {
+    min-width: 0; display: grid; gap: 8px; padding: 16px;
+    border-radius: 16px; background: #f7f9fb;
+}
+#sticker-semantic-library .sticker-semantic-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#sticker-semantic-library button {
+    min-height: 40px; padding: 0 12px; border: 1px solid #d4e5ef;
+    border-radius: 8px; background: #fff; color: inherit; font: inherit;
+}
+#sticker-semantic-library [data-close] { min-width: 44px; min-height: 44px; font-size: 20px; }
+#sticker-semantic-library :is([data-run],button[type=submit]) { background: #d4e5ef; }
+#sticker-semantic-library button:disabled { color: #63717c; opacity: .7; }
+#sticker-semantic-library p { margin: 0; overflow-wrap: anywhere; }
+#sticker-semantic-library :is([data-provider],[data-record],details) { font-size: 12px; }
+#sticker-semantic-library progress { width: 100%; accent-color: #50738c; }
+#sticker-semantic-library .sticker-semantic-filters,
+#sticker-semantic-library [data-fields] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#sticker-semantic-library label { display: grid; gap: 4px; min-width: 0; }
+#sticker-semantic-library :is(input,textarea,select) {
+    box-sizing: border-box; width: 100%; min-height: 40px; padding: 8px;
+    border: 1px solid #dbe3ea; border-radius: 8px; background: #fff; color: inherit; font: inherit;
+}
+#sticker-semantic-library textarea { resize: vertical; }
+#sticker-semantic-library :focus-visible { outline: 2px solid #50738c; outline-offset: 2px; }
+#sticker-semantic-library form { display: grid; gap: 8px; justify-items: start; }
+#sticker-semantic-library [data-fields] { width: 100%; }
+#sticker-semantic-library img { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; }
+@media (max-width: 360px) {
+    #sticker-semantic-library [data-fields] { grid-template-columns: minmax(0, 1fr); }
+}

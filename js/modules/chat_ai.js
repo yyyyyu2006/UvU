@@ -289,6 +289,10 @@ async function getAiReply(chatId, chatType, isBackground = false, generationGuid
         }
 
         if (!sceneToken && typeof getStickerDescriptionContext === 'function') { const stickerContext = getStickerDescriptionContext(chat); systemPrompt += stickerContext; if (requestDiagnostic) requestDiagnostic.blocks.sticker = stickerContext; }
+        if (!sceneToken && typeof getStickerSemanticContext === 'function') {
+            try { const stickerKnowledge = await awaitChatPreparation(getStickerSemanticContext(chat), generationController?.signal); systemPrompt += stickerKnowledge; if (requestDiagnostic && stickerKnowledge) requestDiagnostic.blocks.stickerKnowledge = stickerKnowledge; }
+            catch (error) { if (generationController?.signal.aborted || error.name === 'AbortError') throw error; console.warn('Optional sticker knowledge unavailable; continuing ordinary reply'); }
+        }
         if (environmentContext) systemPrompt += environmentContext;
         if (mcpContext) systemPrompt += mcpContext;
         if (!sceneToken && documentPlan.instructions) systemPrompt += documentPlan.instructions;
