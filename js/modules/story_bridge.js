@@ -937,34 +937,65 @@
                 for (const journal of (archive.data?.memoryJournals || []).filter(item => item.source === 'sillytavern' && (item.bridgeReview?.channel || 'st') === channelId())) entries.push({ chat, journal, archived: archive.id });
             }
         }
-        const pending = Object.values(settings().pendingScenes).filter(item => item?.characterKey);
+        const pending = Object.entries(settings().pendingScenes).filter(([, item]) => item?.characterKey).map(([key, scene]) => ({key, scene}));
         const draftKey = (chat, journal, archived) => JSON.stringify([String(chat.id), String(archived || chat.activeArchiveId || 'default'), channelId(), String(journal.id)]);
         const liveDrafts = new Set(entries.map(({chat, journal, archived}) => draftKey(chat, journal, archived)));
         for (const key of reviewDrafts.keys()) if (!liveDrafts.has(key)) reviewDrafts.delete(key);
         const signature = JSON.stringify([
             current?.id, current?.activeArchiveId,
             entries.map(({ chat, journal, archived }) => [chat.id, chat.activeArchiveId, archived, journal.id, journal.isFavorited, journal.bridgeReview?.status, journal.bridgeReview?.items?.length, journal.content]),
-            pending.map(scene => [scene.characterKey, scene.title, scene.partCount, Object.keys(scene.parts || {}).length])
+            pending.map(({key, scene}) => [key, scene.characterKey, scene.archiveId, scene.title, scene.partCount, scene.parts || {}])
         ]);
         if (!force && signature === reviewSignature) return;
         if (!force && host.contains(document.activeElement)) return;
         reviewSignature = signature; host.replaceChildren();
         const gate = document.getElementById('uvu-bridge-inject-scenes'); if (gate && current) gate.checked = settings().injectionByCharacter[String(current.id)] !== false;
-        const count = document.getElementById('uvu-bridge-review-count'); if (count) count.textContent = `${entries.length + pending.length} 项`;
-        if (!entries.length && !pending.length) { host.textContent = '还没有收到酒馆线下剧情。结束并导出后点击“收取酒馆记忆”。'; return; }
-        const filters=document.createElement('div');filters.className='uvu-bridge-review-toolbar';
-        const search=document.createElement('input');search.type='search';search.placeholder='搜索角色、标题或正文';search.value=reviewView.search;search.setAttribute('aria-label','搜索酒馆审核');
-        const pendingLabel=document.createElement('label'),pendingCheck=document.createElement('input');pendingCheck.type='checkbox';pendingCheck.checked=reviewView.pendingOnly;pendingLabel.append(pendingCheck,'仅待审核');
-        const applySearch=document.createElement('button');applySearch.type='button';applySearch.textContent='筛选';applySearch.className='btn btn-secondary';
-        const filter=()=>{reviewView.search=search.value.trim();reviewView.pendingOnly=pendingCheck.checked;reviewView.page=0;renderReview(true);};applySearch.addEventListener('click',filter);pendingCheck.addEventListener('change',filter);
+        const inboxItems = [
+            ...entries.map(entry => ({kind:'journal', ...entry})),
+            ...pending.map(({key, scene}) => ({kind:'pending', key, scene, chat:(db.characters || []).find(item => String(item.id) === String(scene.characterKey))}))
+        ];
+        const count = document.getElementById('uvu-bridge-review-count'); if (count) count.textContent = `${inboxItems.length} 项`;
+        if (!inboxItems.length) { host.textContent = '还没有收到酒馆线下剧情。结束并导出后点击“收取酒馆记忆”。'; return; }
+        const filters=document.createElement('search');filters.className='uvu-bridge-review-toolbar';filters.setAttribute('aria-label','筛选酒馆收件内容');
+        const search=document.createElement('input');search.type='search';search.name='q';search.placeholder='搜索角色、标题或正文';search.value=reviewView.search;search.setAttribute('aria-label','搜索酒馆审核');search.autocorrect='off';search.autocapitalize='none';search.spellcheck=false;
+        const pendingLabel=document.createElement('label'),pendingCheck=document.createElement('input');pendingCheck.type='checkbox';pendingCheck.checked=reviewView.pendingOnly;pendingCheck.setAttribute('aria-label','仅待处理');pendingLabel.append(pendingCheck,'仅待处理');
+        const applySearch=document.createElement('button');applySearch.type='button';applySearch.textContent='筛选';applySearch.className='btn btn-secondary';applySearch.id='uvu-bridge-review-apply';
+        const filter=()=>{reviewView.search=search.value.trim();reviewView.pendingOnly=pendingCheck.checked;reviewView.page=0;renderReview(true);};applySearch.addEventListener('click',()=>{filter();document.getElementById('uvu-bridge-review-apply')?.focus({preventScroll:true});});pendingCheck.addEventListener('change',()=>{filter();document.querySelector('#uvu-bridge-review-list input[aria-label="仅待处理"]')?.focus({preventScroll:true});});search.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229){event.preventDefault();filter();document.querySelector('#uvu-bridge-review-list input[aria-label="搜索酒馆审核"]')?.focus({preventScroll:true});}});
         filters.append(search,pendingLabel,applySearch);host.append(filters);
-        const matching=entries.filter(({chat,journal})=>(!reviewView.pendingOnly || journal.bridgeReview?.status!=='approved') && (!reviewView.search || [chat.realName,chat.name,journal.title,journal.bridgeReview?.sourceText || journal.content].join(' ').toLowerCase().includes(reviewView.search.toLowerCase())));
+        const query=reviewView.search.toLocaleLowerCase();
+        const matching=inboxItems.filter(item=>{
+            const isPending=item.kind==='pending' || item.journal.bridgeReview?.status!=='approved';
+            if(reviewView.pendingOnly && !isPending)return false;
+            const archiveId=item.kind==='pending'?item.scene.archiveId:item.journal.bridgeReview?.archiveId || item.archived || item.chat.activeArchiveId;
+            const archiveName=item.chat?.archives?.find(archive=>String(archive.id)===String(archiveId))?.name || archiveId || '默认存档';
+            const body=item.kind==='pending'?Object.values(item.scene.parts || {}).join(' '):(item.journal.bridgeReview?.sourceText || item.journal.content);
+            return !query || [item.chat?.realName,item.chat?.name,item.chat?.id,archiveName,item.kind==='pending'?item.scene.title:item.journal.title,body].join(' ').toLocaleLowerCase().includes(query);
+        });
         reviewView.page=Math.max(0,Math.min(reviewView.page,Math.ceil(matching.length/10)-1));
         const pageBar=document.createElement('div');pageBar.className='uvu-bridge-review-toolbar';
         const previous=document.createElement('button'),next=document.createElement('button'),pageCount=document.createElement('span');
         previous.type=next.type='button';previous.className=next.className='btn btn-secondary';previous.textContent='上一页';next.textContent='下一页';previous.disabled=reviewView.page===0;next.disabled=(reviewView.page+1)*10>=matching.length;
-        previous.addEventListener('click',()=>{reviewView.page--;renderReview(true);});next.addEventListener('click',()=>{reviewView.page++;renderReview(true);});pageCount.textContent='场次 '+(reviewView.page+1)+' / '+Math.max(1,Math.ceil(matching.length/10))+' · 符合 '+matching.length+' 项';pageBar.append(previous,pageCount,next);host.append(pageBar);
-        for (const { chat, journal, archived } of matching.slice(reviewView.page*10,(reviewView.page+1)*10)) {
+        pageCount.setAttribute('role','status');pageCount.setAttribute('aria-live','polite');pageCount.setAttribute('aria-atomic','true');
+        previous.addEventListener('click',()=>{reviewView.page--;renderReview(true);});next.addEventListener('click',()=>{reviewView.page++;renderReview(true);});pageCount.textContent='第 '+(reviewView.page+1)+' 页 / '+Math.max(1,Math.ceil(matching.length/10))+' 页 · 符合 '+matching.length+' 项';pageBar.append(previous,pageCount,next);host.append(pageBar);
+        const visibleItems=matching.slice(reviewView.page*10,(reviewView.page+1)*10);
+        if(!matching.length){const empty=document.createElement('p');empty.textContent='没有符合当前搜索和筛选条件的收件内容。';host.append(empty);}
+        for (const item of visibleItems) {
+            const {chat, journal, archived, scene} = item;
+            if(item.kind==='pending'){
+                const detail=document.createElement('details'),title=document.createElement('summary'),note=document.createElement('p');
+                const archiveId=scene.archiveId || chat?.activeArchiveId || 'default',archiveName=chat?.archives?.find(entry=>String(entry.id)===String(archiveId))?.name || (archiveId==='default'?'默认存档':archiveId);
+                const received=Array.from({length:Math.max(0,Number(scene.partCount)||0)},(_,index)=>index+1).filter(part=>Object.hasOwn(scene.parts || {},part)).length,complete=scene.partCount>0 && received===scene.partCount;
+                const state=complete?'完整待收取':`分段未齐（${received}/${scene.partCount}）`;
+                title.textContent=`${chat?.realName || chat?.name || scene.characterKey} · ${archiveName} · ${scene.title || '酒馆线下剧情'} · ${state}`;
+                note.textContent=!complete?'剧情分段还没收齐，暂不能加入日记；请在酒馆完成导出后再点“恢复收取”。':!chat?'剧情已完整接收，但对应角色已不存在；请保留此项并核对角色或恢复备份。':String(archiveId)!==String(chat.activeArchiveId || 'default')?'剧情已完整接收，但目标存档不是当前打开的存档；切换到对应存档后再收取。':'剧情已完整接收，尚未加入当前角色日记；点下方按钮后仍须逐条审核。';
+                detail.append(title,note);
+                if(complete && chat){
+                    const open=document.createElement('button');open.type='button';open.className='btn btn-secondary';open.textContent='打开目标存档并收取';
+                    open.addEventListener('click',async()=>{open.disabled=true;try{if(scene.archiveId && String(scene.archiveId)!==String(chat.activeArchiveId || 'default') && !chat.archives?.some(entry=>String(entry.id)===String(scene.archiveId)))throw new Error('目标存档不存在，请保留草稿并核对备份。');openChatRoom(chat.id,'private');if(scene.archiveId && String(scene.archiveId)!==String(chat.activeArchiveId || 'default'))await switchChatArchive(scene.archiveId);await syncIncoming(chat.id);switchScreen('uvu-story-bridge-screen');renderReview(true);}catch(error){status(error.message,true);}finally{open.disabled=false;}});
+                    detail.append(open);
+                }
+                host.append(detail);continue;
+            }
             const detail = document.createElement('details'), title = document.createElement('summary');
             const archiveName = chat.archives?.find(item => item.id === journal.bridgeReview?.archiveId)?.name || journal.bridgeReview?.archiveId || '默认存档';
             title.textContent = `${chat.realName || chat.name || chat.id} · ${archiveName} · ${journal.title} · ` + memoryState(chat, journal);
@@ -1107,27 +1138,6 @@
             detail.append(toolbar, list, more, summaryOptions, preview, save);
             };
             detail.addEventListener('toggle',()=>{draft.expanded=detail.open;if(detail.open)buildReview();});host.append(detail);if(detail.open)buildReview();
-        }
-        for (const scene of pending) {
-            const chat = db.characters.find(item => String(item.id) === String(scene.characterKey));
-            const detail = document.createElement('details'), title = document.createElement('summary'), note = document.createElement('p');
-            const complete = scene.partCount > 0 && Array.from({ length: scene.partCount }, (_, index) => index + 1).every(part => Object.hasOwn(scene.parts || {}, part));
-            title.textContent = `${chat?.realName || chat?.name || scene.characterKey} · ${scene.title || '酒馆线下剧情'} · 待收取${complete ? '' : `（${Object.keys(scene.parts || {}).length}/${scene.partCount} 段）`}`;
-            note.textContent = complete ? '剧情已完整接收，但目标存档与当前打开的存档不同；切换到对应角色和存档后点击“收取酒馆记忆”。' : '剧情尚未完整接收，暂不能加入日记；请回酒馆完成导出后再重试。';
-            detail.append(title, note); host.append(detail);
-            if (complete && chat) {
-                const open = document.createElement('button'); open.type = 'button'; open.className = 'btn btn-secondary'; open.textContent = '打开目标存档并收取';
-                open.addEventListener('click', async () => {
-                    open.disabled = true;
-                    try {
-                        if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default') && !chat.archives?.some(item => item.id === scene.archiveId)) throw new Error('目标存档不存在，请保留草稿并核对备份。');
-                        openChatRoom(chat.id, 'private');
-                        if (scene.archiveId && scene.archiveId !== String(chat.activeArchiveId || 'default')) await switchChatArchive(scene.archiveId);
-                        await syncIncoming(chat.id); switchScreen('uvu-story-bridge-screen'); renderReview(true);
-                    } catch (error) { status(error.message, true); } finally { open.disabled = false; }
-                });
-                detail.append(open);
-            }
         }
     }
 

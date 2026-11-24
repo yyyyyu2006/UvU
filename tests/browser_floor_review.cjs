@@ -53,7 +53,7 @@ const root = path.join(__dirname, '..');
         assert.equal(result.allowed, true); assert.equal(result.journal.category, '酒馆线下剧情');
         assert.match(result.journal.content, /审核后修改的完整一层/); assert.doesNotMatch(result.journal.content, /User 的回答/);
         await page.evaluate(() => {db = structuredClone(saved); UvUStoryBridge.renderReview(true);});
-        await page.getByLabel('仅待审核',{exact:true}).uncheck();
+        await page.getByLabel('仅待处理',{exact:true}).uncheck();
         await page.locator('#uvu-bridge-review-list > details > summary').click();
         await page.locator('.uvu-bridge-review-floor summary').first().click();
         assert.equal(await page.locator('.uvu-bridge-review-floor textarea').first().inputValue(), '审核后修改的完整一层。');
