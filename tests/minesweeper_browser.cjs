@@ -53,7 +53,7 @@ const server = http.createServer((req, res) => {
         await hub.waitFor({ state: 'visible' });
         assert.equal(await hub.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
         assert.equal(await page.evaluate(() => document.activeElement.id), 'uvu-game-hub-title');
-        assert.equal(await hub.getByRole('listitem').count(), 1);
+        assert.equal(await hub.getByRole('listitem').count(), 2, 'the game hall now lists Minesweeper and Gomoku');
         await gameCard.locator('img').evaluate(node => node.decode());
         await page.screenshot({ path: path.join(output, 'game-hub-390.png'), animations: 'disabled' });
         await page.keyboard.press('Tab');

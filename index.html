@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="css/modules/home_drag.css?v=20261107-drag">
     <link rel="stylesheet" href="css/modules/home_default_layout.css?v=20261119-home-v1">
     <link rel="stylesheet" href="css/modules/game_hub.css?v=20261124-game-hub">
+    <link rel="stylesheet" href="css/modules/gomoku.css?v=20261124-gomoku-v1">
     <link rel="stylesheet" href="css/modules/minesweeper.css?v=20261123-minesweeper-v2">
 
     <!-- CSS Split: Core Features -->
@@ -103,6 +104,16 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                     </button>
                 </li>
+                <li>
+                    <button class="game-hub-card" type="button" data-game-target="uvu-gomoku-screen" aria-labelledby="game-hub-gomoku-title" aria-describedby="game-hub-gomoku-description">
+                        <img src="assets/icons/gomoku.svg" alt="" width="48" height="48">
+                        <span>
+                            <strong id="game-hub-gomoku-title">五子棋</strong>
+                            <span id="game-hub-gomoku-description" class="game-hub-description">和角色或本地 AI 对弈</span>
+                        </span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                </li>
             </ul>
         </div>
     </section>
@@ -141,6 +152,59 @@
                 <li>点“插旗模式”后，可标记或取消未翻开的格子；电脑也可右键插旗。</li>
                 <li>翻开所有安全格即可通关。第一次翻格不会踩雷。</li>
                 <li>初级 9×9／10 雷，中级 16×16／40 雷，高级 16×30／99 雷。</li>
+            </ul>
+        </dialog>
+    </section>
+    <section id="uvu-gomoku-screen" class="screen" aria-labelledby="uvu-gomoku-title">
+        <header class="gm-header">
+            <button class="gm-icon-btn back-btn" type="button" data-target="uvu-game-hub-screen" aria-label="返回游戏大厅">‹</button>
+            <h1 id="uvu-gomoku-title" tabindex="-1">五子棋</h1>
+            <button class="gm-icon-btn" type="button" data-gm-help aria-label="五子棋玩法说明">?</button>
+        </header>
+        <main class="gm-main">
+            <section class="gm-setup" aria-label="对局设置">
+                <fieldset class="gm-mode-choice">
+                    <legend>对手</legend>
+                    <label><input type="radio" name="gm-mode" value="local" checked> 本地 AI</label>
+                    <label><input type="radio" name="gm-mode" value="character"> 和角色下棋</label>
+                </fieldset>
+                <label class="gm-field gm-character-field">选择角色
+                    <select data-gm-character><option value="">请选择角色</option></select>
+                </label>
+                <div class="gm-settings-row">
+                    <label class="gm-field">你执
+                        <select data-gm-color><option value="black">黑棋（先手）</option><option value="white">白棋（后手）</option></select>
+                    </label>
+                    <label class="gm-field">难度
+                        <select data-gm-difficulty><option value="beginner">简单</option><option value="normal" selected>普通</option><option value="expert">困难</option></select>
+                    </label>
+                </div>
+                <p class="gm-api-note" data-gm-api-note hidden>角色模式会调用当前 API，可能产生费用；只发送角色设定与棋盘，不发送聊天记录。</p>
+                <button class="gm-primary" type="button" data-gm-start>开始对局</button>
+                <button class="gm-primary" type="button" data-gm-fresh hidden>按当前设置开新局</button>
+            </section>
+            <section class="gm-game" data-gm-game hidden aria-label="五子棋对局">
+                <div class="gm-scoreline"><span data-gm-opponent>本地 AI</span><span data-gm-turn>黑棋先行</span><span data-gm-count>0 手</span></div>
+                <div class="gm-board-wrap"><div class="gm-board" data-gm-board role="grid" aria-label="五子棋棋盘" aria-rowcount="15" aria-colcount="15"></div></div>
+                <p class="gm-game-message" data-gm-message role="status" aria-live="polite">选择棋盘交叉点落子</p>
+                <p class="gm-character-line" data-gm-line hidden></p>
+                <div class="gm-actions">
+                    <button type="button" data-gm-undo>悔棋</button>
+                    <button type="button" data-gm-change>换对手</button>
+                    <button type="button" data-gm-retry hidden>让角色重试</button>
+                    <button type="button" data-gm-cancel hidden>停止思考</button>
+                    <button type="button" data-gm-reset>重新开始</button>
+                </div>
+                <ol class="gm-move-log" data-gm-log aria-label="本局落子记录"></ol>
+            </section>
+        </main>
+        <dialog class="gm-help" aria-labelledby="gm-help-title">
+            <header><h2 id="gm-help-title">玩法说明</h2><button class="gm-icon-btn" type="button" data-gm-help-close aria-label="关闭说明">×</button></header>
+            <ul>
+                <li>15×15 棋盘，黑棋先行；双方轮流在空点落子。</li>
+                <li>休闲规则：横、竖或斜向连成五子或更多即获胜，不设禁手。</li>
+                <li>角色模式会把角色设定和棋盘发送到当前角色所用的 API；聊天记录和记忆不会发送。</li>
+                <li>角色返回的坐标会由本地校验；遇到接口错误可重试，或重新开始并改用本地 AI。</li>
             </ul>
         </dialog>
     </section>
@@ -3261,6 +3325,9 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/home_default_layout.js?v=20261123-minesweeper-v1"></script>
 <script src="js/modules/minesweeper_logic.js?v=20261123-minesweeper-v1"></script>
 <script src="js/modules/minesweeper_ui.js?v=20261123-minesweeper-v1"></script>
+<script src="js/modules/gomoku_logic.js?v=20261124-gomoku-v1"></script>
+<script src="js/modules/gomoku_character.js?v=20261124-gomoku-v1"></script>
+<script src="js/modules/gomoku_ui.js?v=20261124-gomoku-v1"></script>
 <script src="js/modules/tutorial.js?v=20261114-cloud-restore-latest"></script>  <!-- 教程、更新日志、GitHub备份 -->
 <script src="js/modules/more_menu.js?v=20261104-derived-features"></script> <!-- 更多菜单与状态栏管理 -->
 <script src="js/modules/search.js?v=20261115-search-widget-recovery"></script> <!-- 聊天记录搜索模块 -->
@@ -3321,6 +3388,6 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/music_extensions_ui.js?v=20261122-panel-layout"></script>
 <script src="js/modules/music_together_ui.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/desktop_pet.js?v=20261119-pet-shapes"></script>
-<script src="js/main.js?v=20261124-game-hub"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
+<script src="js/main.js?v=20261124-gomoku-v1"></script>     <!-- 主入口：初始化(init)、全局事件监听 -->
 </body>
 </html>
