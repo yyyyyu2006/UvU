@@ -33,7 +33,7 @@ test('link-share records bound metadata and text with separate source provenance
     assert.equal(item.platform, 'douyin');
     assert.equal(item.readableText, '字幕示例');
     assert.equal(item.readableSource, 'user');
-    assert.equal(item.metadataSource, 'tiktok-oembed');
+    assert.equal(item.metadataSource, '', 'TikTok metadata cannot be attributed to a Douyin link');
     assert.throws(() => c.makeSharedLink({ url: 'https://example.com', readableText: 'x'.repeat(20001) }), /20000/);
     assert.throws(() => c.makeSharedLink({ url: 'https://example.com', thumbnailUrl: 'javascript:alert(1)' }), /缩略图/);
     assert.throws(() => c.makeSharedLink({ url: 'https://example.com', thumbnailUrl: 'https://tracking.example.net/pixel.jpg' }), /官方 HTTPS/);
@@ -56,6 +56,15 @@ test('link context is attached only to eligible messages inside the supplied his
         [{ source: 'TikTok 官方 oEmbed 公开预览元数据；用户补充正文／字幕', complete: true }]);
     assert.equal(plan.history[0], ordinary);
     assert.equal(message.content, `[我分享了链接：${link.url}]`);
+    const privateUrl = c.sharedLinkMessage(c.makeSharedLink({
+        url: 'https://example.com/story?id=public&access_token=secret123&apiKey=hidden&share=ok',
+        readableText: '内容'
+    }));
+    const privatePlan = c.prepareSharedLinkContext([privateUrl]);
+    assert.match(privatePlan.history[0].content, /id=public/);
+    assert.match(privatePlan.history[0].content, /share=ok/);
+    assert.doesNotMatch(privatePlan.history[0].content, /secret123|hidden/);
+    assert.doesNotMatch(privatePlan.sources[0].url, /secret123|hidden/);
     assert.equal(c.prepareSharedLinkContext([ordinary]).history[0], ordinary);
     const excluded = { ...message, isContextDisabled: true };
     assert.equal(c.prepareSharedLinkContext([excluded]).history[0], excluded);

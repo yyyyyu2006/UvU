@@ -78,6 +78,29 @@ const { fullApp, stableUI, root } = require('./helpers/full_app_browser.cjs');
         await page.evaluate(() => { window.fetch = window.__linkTestOriginalFetch; delete window.__linkTestOriginalFetch; });
         await dialog.locator('.shared-link-actions').getByRole('button', { name: '取消' }).click();
 
+        await page.evaluate(() => {
+            window.__linkTestOriginalFetch = window.fetch;
+            window.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({
+                version: '1.0', type: 'video', provider_name: 'TikTok', title: 'TikTok preview',
+                author_name: 'TikTok author', description: 'TikTok description',
+                thumbnail_url: 'https://p16-sign-va.tiktokcdn.com/preview.jpg'
+            }) });
+            openSharedLinkDialog();
+        });
+        await dialog.waitFor({ state: 'visible' });
+        await dialog.getByLabel('分享网址').fill('https://www.tiktok.com/@person/video/123');
+        await dialog.getByRole('button', { name: '读取 TikTok 预览' }).click();
+        await page.getByText(/已读取平台公开的标题/).waitFor();
+        await dialog.getByLabel('分享网址').fill('https://www.douyin.com/video/456');
+        assert.equal(await dialog.getByLabel('标题').inputValue(), '', 'changing the URL clears old provider title');
+        assert.equal(await dialog.getByLabel('作者').inputValue(), '', 'changing the URL clears old provider author');
+        assert.equal(await dialog.getByLabel('简介').inputValue(), '', 'changing the URL clears old provider description');
+        assert.equal(await dialog.locator('.shared-link-thumbnail').isVisible(), false, 'changing the URL clears old provider image');
+        assert.equal(await dialog.locator('.shared-link-metadata-row span').last().textContent(), '尚未读取');
+        assert.match(await dialog.locator('.shared-link-status').textContent(), /旧链接的预览资料已清除/);
+        await page.evaluate(() => { window.fetch = window.__linkTestOriginalFetch; delete window.__linkTestOriginalFetch; });
+        await dialog.locator('.shared-link-actions').getByRole('button', { name: '取消' }).click();
+
         await page.evaluate(() => { db.characters[0].globalCss = undefined; });
         for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }]) {
             await page.setViewportSize(viewport);

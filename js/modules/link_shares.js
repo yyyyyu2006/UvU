@@ -39,8 +39,18 @@ function isTikTokThumbnailUrl(url) {
     } catch (_) { return false; }
 }
 
+function sharedLinkContextUrl(value) {
+    const url = new URL(value);
+    const sensitiveParameter = /^(?:access[_-]?token|refresh[_-]?token|token|auth(?:orization)?|api[_-]?key|key|secret|signature|sig|session(?:[_-]?id)?|credential|password|jwt|code)$/i;
+    for (const key of Array.from(url.searchParams.keys())) {
+        if (sensitiveParameter.test(key.replace(/[A-Z]/g, letter => '_' + letter).replace(/^_/, ''))) url.searchParams.delete(key);
+    }
+    return url.href;
+}
+
 function makeSharedLink(value) {
     const url = normalizeSharedLinkUrl(value.url);
+    const platform = sharedLinkPlatform(url);
     const title = String(value.title || '').trim().slice(0, SHARED_LINK_TITLE_LIMIT);
     const description = String(value.description || '').trim().slice(0, SHARED_LINK_DESCRIPTION_LIMIT);
     const author = String(value.author || '').trim().slice(0, SHARED_LINK_AUTHOR_LIMIT);
@@ -55,9 +65,9 @@ function makeSharedLink(value) {
     // The only supported readable body is pasted by the user. Platform preview
     // metadata has its own provenance so it cannot relabel pasted text.
     const readableSource = readableText ? 'user' : '';
-    const metadataSource = value.metadataSource === 'tiktok-oembed' ? 'tiktok-oembed' : '';
+    const metadataSource = platform === 'tiktok' && value.metadataSource === 'tiktok-oembed' ? 'tiktok-oembed' : '';
     const status = readableText ? 'user-provided' : (title || description || author || thumbnailUrl ? 'metadata-only' : 'link-only');
-    return { version: 1, url, platform: sharedLinkPlatform(url), title, description, author, thumbnailUrl, readableText, readableSource, metadataSource, status };
+    return { version: 1, url, platform, title, description, author, thumbnailUrl, readableText, readableSource, metadataSource, status };
 }
 
 function validateSharedLink(value) {
@@ -77,14 +87,14 @@ function prepareSharedLinkContext(history) {
     if (!Array.isArray(history) || !history.some(message => message?.type === 'link-share' && message.linkShare))
         return { history, sources: [] };
     let budget = SHARED_LINK_CONTEXT_BUDGET;
-    const contexts = new Map(), sources = [];
+    const contexts = new Map(), safeUrls = new Map(), sources = [];
     const candidates = history.filter(message => message?.type === 'link-share' && message.role === 'user' &&
         message.linkShare && !message.isWithdrawn && !message.isContextDisabled && !message.relationshipDelivery).slice(-SHARED_LINK_HISTORY_LIMIT);
     for (const message of candidates.slice().reverse()) {
         if (budget <= 0) break;
         let link;
         try { link = makeSharedLink(message.linkShare); } catch (_) { continue; }
-        const fields = [`网址：${link.url}`, `平台：${link.platform}`];
+        const fields = [`网址：${sharedLinkContextUrl(link.url)}`, `平台：${link.platform}`];
         if (link.title) fields.push(`标题：${link.title}`);
         if (link.author) fields.push(`作者：${link.author}`);
         if (link.description) fields.push(`平台简介：${link.description}`);
@@ -103,13 +113,18 @@ function prepareSharedLinkContext(history) {
         if (!bounded) continue;
         budget -= bounded.length;
         contexts.set(message.id, bounded);
-        sources.push({ id: message.id, url: link.url, source: sourceLabels.join('；'), complete });
+        const contextUrl = sharedLinkContextUrl(link.url);
+        safeUrls.set(message.id, contextUrl);
+        sources.push({ id: message.id, url: contextUrl, source: sourceLabels.join('；'), complete });
     }
     if (!contexts.size) return { history, sources: [] };
     return { history: history.map(message => {
         const context = contexts.get(message.id);
         if (!context) return message;
-        const content = `${message.content || ''}\n${context}`;
+        const contextUrl = safeUrls.get(message.id);
+        const originalUrl = normalizeSharedLinkUrl(message.linkShare.url);
+        const safeOriginalContent = String(message.content || '').split(originalUrl).join(contextUrl);
+        const content = `${safeOriginalContent}\n${context}`;
         return { ...message, content, parts: [{ type: 'text', text: content }] };
     }), sources };
 }

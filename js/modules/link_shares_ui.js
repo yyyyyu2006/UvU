@@ -62,6 +62,7 @@ function openSharedLinkDialog(message = null, chat = null) {
     };
     if (meta?.thumbnailUrl) updateThumbnail(meta.thumbnailUrl);
     let thumbnailValue = meta?.thumbnailUrl || '';
+    let metadataSourceUrl = meta?.metadataSource ? normalizeSharedLinkUrl(meta.url) : '';
     const createDraft = () => makeSharedLink({ url: url.value, title: title.value, author: author.value, description: description.value,
         readableText: readableText.value, metadataSource, thumbnailUrl: thumbnailValue });
     const setBusy = value => { busy = value; dialog.setBusy(value); analyze.disabled = value; send.disabled = value; url.disabled = value; };
@@ -74,6 +75,7 @@ function openSharedLinkDialog(message = null, chat = null) {
             if (!title.value.trim()) title.value = result.title;
             if (!author.value.trim()) author.value = result.author;
             metadataSource = result.metadataSource;
+            metadataSourceUrl = result.metadataSource ? normalizeSharedLinkUrl(result.url) : '';
             thumbnailValue = result.thumbnailUrl || '';
             updateThumbnail(thumbnailValue);
             sourceStatus.textContent = result.metadataSource ? '仅有平台预览' : '平台未提供可读资料';
@@ -89,7 +91,22 @@ function openSharedLinkDialog(message = null, chat = null) {
     };
     url.addEventListener('input', () => {
         let platform = '';
-        try { platform = sharedLinkPlatform(normalizeSharedLinkUrl(url.value)); } catch (_) { /* Wait until the URL is complete. */ }
+        let normalizedUrl = '';
+        try {
+            normalizedUrl = normalizeSharedLinkUrl(url.value);
+            platform = sharedLinkPlatform(normalizedUrl);
+        } catch (_) { /* Wait until the URL is complete. */ }
+        if (metadataSourceUrl && normalizedUrl !== metadataSourceUrl) {
+            metadataSourceUrl = '';
+            metadataSource = '';
+            thumbnailValue = '';
+            title.value = '';
+            author.value = '';
+            description.value = '';
+            updateThumbnail('');
+            sourceStatus.textContent = '尚未读取';
+            status.textContent = '网址已更改，旧链接的预览资料已清除。';
+        }
         analyze.hidden = platform !== 'tiktok';
     });
     url.dispatchEvent(new Event('input'));
