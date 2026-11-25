@@ -43,8 +43,8 @@ test('a retrieval deadline failure still permits the ordinary provider reply', a
 test('MCP automatic planner excludes withdrawn, rejected, hidden and status records', async () => {
     const { fixture, enabled, planner } = harness('mcp_services.test.cjs', 'fixture,enabled,planner');
     const f = fixture(); await enabled(f);
-    const next = f.api.settings(); next.policies[0].auto = true; next.planner.recentMessages = 20; await f.api.save(next); planner(f);
-    f.chat.history = [{role:'user',content:'今天的天气'},
+    const next = f.api.settings(); next.policies[0].auto = true; next.planner.source = 'primary'; next.planner.recentMessages = 20; await f.api.save(next); planner(f);
+    f.chat.history = [{role:'user',content:'帮我联网查一下今天的天气'},
         {role:'user',content:'WITHDRAWN',isWithdrawn:true}, {role:'user',content:'REJECTED',relationshipDelivery:{blocked:true}},
         {role:'assistant',content:'HIDDEN',isHidden:true}, {role:'assistant',content:'STATUS_SECRET',isStatusUpdate:true}];
     const before = JSON.stringify(f.chat.history);

@@ -41,7 +41,7 @@
             return { type: value.type, chatId: value.chatId, enabled: value.enabled === true, auto: value.auto === true, grants };
         });
         const p = raw.planner && typeof raw.planner === 'object' && !Array.isArray(raw.planner) ? raw.planner : {};
-        const planner = { source: ['primary', 'secondary', 'independent'].includes(p.source) ? p.source : 'primary',
+        const planner = { source: ['primary', 'secondary', 'independent'].includes(p.source) ? p.source : 'secondary',
             provider: p.provider === 'gemini' ? 'gemini' : 'newapi', url: p.url ? transport().endpoint(p.url).replace(/\/$/, '') : '', model: text(p.model, 160),
             maxCalls: count(p.maxCalls, 1, 1, 3), recentMessages: count(p.recentMessages, 2, 1, 4), maxContextChars: count(p.maxContextChars, 6000, 1000, 12000),
             timeoutMs: count(p.timeoutMs, 30000, 1000, 60000), concurrency: count(p.concurrency, 1, 1, 3), maxTools: count(p.maxTools, 30, 1, 30) };

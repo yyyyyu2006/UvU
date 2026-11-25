@@ -15,6 +15,7 @@ function fixture() {
     return { c, api:c.window.MCPServices, chat, local, session, calls };
 }
 const config = () => ({ enabled:true, services:[{ id:'s', name:'天气', url:'https://tools.test/mcp', enabled:true, auth:'bearer', tools:{} }], policies:[] });
+test('MCP planner defaults to secondary while preserving an explicit route',()=>{const f=fixture();assert.equal(f.api.settings().planner.source,'secondary');assert.equal(f.api.normalize({planner:{source:'primary'}}).planner.source,'primary');});
 test('MCP last discovery survives permission saves and reload without retaining executable tools', async()=>{
     const f=fixture();await f.api.save(config());f.api.vault.set(f.api.service('s'),'token');await f.api.discover('s');
     const at=f.api.health('s').checkedAt;await f.api.save(f.api.settings());
@@ -202,9 +203,9 @@ test('MCP chat path is silent by default, manual-only needs no planner, automati
     assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');
 });
 test('OAuth same-grant token rotation preserves the current authorized automatic read',async()=>{
-    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].auth='oauth';next.services[0].oauth={clientId:'public'};next.policies[0].auto=true;await f.api.save(next);f.api.vault.set(f.api.service('s'),'old');
+    const f=fixture();await enabled(f);const next=f.api.settings();next.services[0].auth='oauth';next.services[0].oauth={clientId:'public'};next.policies[0].auto=true;next.planner={source:'primary'};await f.api.save(next);f.api.vault.set(f.api.service('s'),'old');
     let rotated=false;f.c.window.MCPOAuth={access:async svc=>{if(!rotated){rotated=true;f.api.vault.renew(svc,'rotated');}return 'rotated';}};
-    planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});assert.match(await f.c.prepareMcpChatContext(f.chat,'private'),/晴天/);assert.equal(f.calls.length,1);
+    f.chat.history[0].content='请联网查询天气';planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});const dbg=await f.c.prepareMcpChatContext(f.chat,'private');assert.match(dbg,/晴天/);assert.equal(f.calls.length,1);
 });
 
 test('discovery started before OAuth rotation cannot overwrite the renewed connection', async () => {
@@ -224,20 +225,20 @@ test('discovery started before OAuth rotation cannot overwrite the renewed conne
     await f.api.call('s','weather',{city:'上海'});assert.equal(used,'new');
 });
 test('MCP planner is independent, bounded, grant-checked and records separate provider usage', async () => {
-    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;await f.api.save(next);
-    f.chat.persona='SECRET PERSONA';f.chat.history.unshift({role:'system',content:'SECRET SYSTEM'}, {role:'assistant',isThinking:true,content:'PRIVATE THOUGHTS'});
+    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={source:'primary'};await f.api.save(next);
+    f.chat.history[0].content='帮我联网查询天气';f.chat.persona='SECRET PERSONA';f.chat.history.unshift({role:'system',content:'SECRET SYSTEM'}, {role:'assistant',isThinking:true,content:'PRIVATE THOUGHTS'});
     planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});assert.match(await f.c.prepareMcpChatContext(f.chat,'private'),/晴天/);
     const sent=JSON.stringify(f.plannerRequests[0].body);assert.ok(!sent.includes('SECRET'));assert.ok(!sent.includes('PRIVATE THOUGHTS'));
     assert.equal(f.calls.length,1);assert.equal(f.api.logs().find(x=>x.kind==='planner').usage.totalTokens,120);assert.equal(f.chat.lastTokenUsage,undefined);
 });
 test('MCP planner cannot invoke unauthorized/write tools or apply after user/archive/config changes', async () => {
-    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;await f.api.save(next);
+    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={source:'primary'};await f.api.save(next);
     planner(f,{calls:[{serviceId:'s',toolName:'delete',arguments:{}}]});assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');assert.equal(f.calls.length,0);
     planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});const oldFetch=f.c.fetch;f.c.fetch=async(...args)=>{const r=await oldFetch(...args);f.chat.activeArchiveId='two';return r;};
     assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');assert.equal(f.calls.length,0);
 });
 test('MCP planner failure falls back; cancellation never continues tool calls', async () => {
-    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;await f.api.save(next);planner(f);
+    const f=fixture();await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={source:'primary'};await f.api.save(next);planner(f);
     f.c.fetch=async()=>{throw Error('network');};assert.equal(await f.c.prepareMcpChatContext(f.chat,'private'),'');assert.equal(f.calls.length,0);
     const ac=new AbortController();ac.abort();await assert.rejects(f.c.prepareMcpChatContext(f.chat,'private',ac.signal),/取消|abort/i);
 });
@@ -297,8 +298,8 @@ test('MCP canonical argument cache reuses key order but isolates chat and archiv
 });
 
 test('MCP automatic tool failure preserves successful result from same plan', async () => {
-    const f=fixture(); await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={maxCalls:2};await f.api.save(next);
-    planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'坏城市'}},{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});
+    const f=fixture(); await enabled(f);const next=f.api.settings();next.policies[0].auto=true;next.planner={source:'primary',maxCalls:2};await f.api.save(next);
+    f.chat.history[0].content='请联网查询天气';planner(f,{calls:[{serviceId:'s',toolName:'weather',arguments:{city:'坏城市'}},{serviceId:'s',toolName:'weather',arguments:{city:'上海'}}]});
     const original=f.c.window.MCPTransport.create;
     f.c.window.MCPTransport.create=(...a)=>({...original(...a),call:async(name,args)=>{if(args.city==='坏城市')throw Error('offline');return {content:[{type:'text',text:'上海晴天'}]};}});
     f.api.clearRuntime(); assert.match(await f.c.prepareMcpChatContext(f.chat),/上海晴天/);

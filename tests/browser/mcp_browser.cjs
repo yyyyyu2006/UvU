@@ -105,6 +105,7 @@ const server = http.createServer(async (req, res) => {
         const nested=panel.locator('.mcp-tool').filter({has:page.locator('strong',{hasText:/^t2$/})});await nested.locator('.draft-tool-details').evaluate(el=>el.open=true);await nested.getByRole('button',{name:'参数 / 调用',exact:true}).click();await caller.getByLabel('location.latitude *',{exact:true}).fill('200');assert.match(await caller.locator('[role=status]').textContent(),/location.latitude.*90/);await caller.getByLabel('location.latitude *',{exact:true}).fill('31');await caller.getByLabel('tags（可选）',{exact:true}).fill('["a"]');assert.deepEqual(JSON.parse(await caller.getByLabel('最终 JSON 参数（可直接编辑；以此处为准）').inputValue()),{location:{latitude:31},tags:['a']});await caller.getByRole('button',{name:'关闭',exact:true}).click();
         await route('连接与调用设置');
         const downloadEvent=page.waitForEvent('download');await panel.getByRole('button',{name:'导出配置',exact:true}).click();const dl=await downloadEvent;const exported=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));assert.equal(exported.enabled,false);assert.ok(!JSON.stringify(exported).includes('fixture-only'));assert.equal(exported.policies.length,0);
+        await page.evaluate(async()=>{const next=MCPServices.settings();next.planner.source='primary';await MCPServices.save(next);});
         await route('角色可用服务');
         await panel.getByRole('checkbox',{name:'允许独立 API 自动判断（会增加模型调用）',exact:true}).check();await panel.getByRole('button',{name:'保存角色授权',exact:true}).click();
         const context=await page.evaluate(async origin=>{db.apiSettings={provider:'newapi',url:origin,model:'fixture'};db.characters[0].persona='SECRET PERSONA';return prepareMcpChatContext(db.characters[0],'private');},origin);assert.match(context,/temperature/);assert.equal(await page.evaluate(()=>MCPServices.logs().find(x=>x.kind==='planner').usage.totalTokens),143);
@@ -117,7 +118,7 @@ const server = http.createServer(async (req, res) => {
         await page.locator('#mcp-confirm').getByRole('button',{name:'确认执行',exact:true}).click();
         await new Promise((resolve,reject)=>{const started=Date.now();const check=()=>writes===1?resolve():Date.now()-started>5000?reject(Error('write was not dispatched')):setTimeout(check,20);check();});
         await caller.getByRole('button',{name:'停止请求',exact:true}).click();
-        await caller.getByText('已停止等待；工具可能已执行，写入操作请先核实结果',{exact:true}).waitFor();
+        await caller.getByText(/远端执行结果未确认/).waitFor();
         assert.equal(await page.evaluate(()=>MCPServices.logs().find(x=>x.toolName==='write_note')?.executionState),'unknown');
         assert.equal(writes,1,'cancelled writes are never automatically repeated');
         holdWrites=false;
