@@ -1615,6 +1615,30 @@ function renderAutoMemoryStatus() {
         (stats.exclusions.length ? `\n排除原因：${Object.entries(stats.exclusions.reduce((counts, item) => { counts[item.reason] = (counts[item.reason] || 0) + 1; return counts; }, {})).map(([reason, count]) => `${reason} ${count} 条`).join('；')}` : '') +
         (plan.batchWarning ? `\n${plan.batchWarning}` : '') + (status ? `\n${status.text}` : '');
     element.classList.toggle('memory-error', Boolean(status?.error));
+    const counters = [['auto-memory-stat-total', stats.total], ['auto-memory-stat-covered', stats.covered], ['auto-memory-stat-uncovered', stats.uncovered.length]];
+    for (const [id, value] of counters) { const target = document.getElementById(id); if (target) target.textContent = String(value); }
+    const enabledInput = document.getElementById('auto-memory-enabled');
+    const vectorInput = document.getElementById('auto-memory-vector-enabled');
+    if (enabledInput) enabledInput.checked = settings.enabled;
+    if (vectorInput) vectorInput.checked = settings.vectorSearchEnabled;
+    const enabledLabel = document.getElementById('auto-memory-enabled-state');
+    const vectorLabel = document.getElementById('auto-memory-vector-state');
+    if (enabledLabel) enabledLabel.textContent = settings.enabled ? '已开启' : '已关闭';
+    if (vectorLabel) vectorLabel.textContent = settings.vectorSearchEnabled ? '已开启' : '已关闭';
+    const accountName = chat.remarkName || chat.realName || chat.name || '当前角色';
+    const archive = chat.archives?.find(item => item.id === chat.activeArchiveId);
+    const archiveName = chat.activeArchiveId ? (archive?.name || archive?.title || '当前存档') : '默认存档';
+    for (const id of ['auto-memory-account-name', 'auto-memory-vector-account-name']) { const target = document.getElementById(id); if (target) target.textContent = accountName; }
+    for (const id of ['auto-memory-archive-name', 'auto-memory-vector-archive-name']) { const target = document.getElementById(id); if (target) target.textContent = archiveName; }
+    const apiLabels = { follow: '沿用 API 路由', primary: '主 API', secondary: '副 API', memory: '独立总结 API' };
+    const apiValue = document.getElementById('auto-memory-api-value');
+    if (apiValue) apiValue.textContent = apiLabels[settings.apiSource] || apiLabels.follow;
+    const thresholdValue = document.getElementById('auto-memory-threshold-value');
+    if (thresholdValue) thresholdValue.textContent = `${settings.threshold} 楼触发`;
+    const mergeValue = document.getElementById('auto-memory-merge-value');
+    if (mergeValue) mergeValue.textContent = settings.mergeEnabled ? `${settings.mergeThreshold} 篇合并` : '已关闭';
+    const requirementsValue = document.getElementById('auto-memory-requirements-value');
+    if (requirementsValue) requirementsValue.textContent = settings.requirements ? '已填写' : '未设置';
     const busy = autoMemoryJobs.has(autoMemoryKey(chat, currentChatType));
     const run = document.getElementById('auto-memory-run');
     if (run) run.disabled = busy;
@@ -1644,11 +1668,35 @@ function setupAutoMemory() {
         if (!input) return [name, ''];
         return [name, input.type === 'number' ? Number(input.value) : name.endsWith('Prefix') ? input.value : input.value.trim()];
     }));
+    const summaryTab = document.getElementById('auto-memory-summary-tab');
+    const vectorTab = document.getElementById('auto-memory-vector-tab');
+    const summaryView = document.getElementById('auto-memory-summary-view');
+    const vectorView = document.getElementById('auto-memory-vector-view');
+    const selectAutoMemoryTab = (tab, focus = false) => {
+        for (const [current, view] of [[summaryTab, summaryView], [vectorTab, vectorView]]) {
+            const selected = current === tab;
+            current.setAttribute('aria-selected', String(selected));
+            current.tabIndex = selected ? 0 : -1;
+            view.hidden = !selected;
+        }
+        document.getElementById('auto-memory-heading').textContent = tab === vectorTab ? '向量记忆' : '自动总结';
+        modal.classList.toggle('uvu-am-vector-mode', tab === vectorTab);
+        document.getElementById('auto-memory-run').hidden = tab === vectorTab;
+        document.getElementById('auto-memory-form-scroll').scrollTop = 0;
+        if (focus) tab.focus();
+    };
+    summaryTab.addEventListener('click', () => selectAutoMemoryTab(summaryTab, true));
+    vectorTab.addEventListener('click', () => selectAutoMemoryTab(vectorTab, true));
+    for (const tab of [summaryTab, vectorTab]) tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === 'Home' || event.key === 'ArrowLeft' && tab === vectorTab ? summaryTab : vectorTab;
+        selectAutoMemoryTab(next, true);
+    });
     const openSettings = vectorOnly => {
         const chat = getCurrentAutoMemoryChat();
         if (!chat) return;
-        modal.classList.toggle('vector-settings-mode', vectorOnly);
-        document.getElementById('auto-memory-heading').textContent = vectorOnly ? '向量记忆设置' : '自动总结设置';
+        selectAutoMemoryTab(vectorOnly ? vectorTab : summaryTab);
         editing = { chat, type: currentChatType, archiveId: chat.activeArchiveId };
         const settings = getAutoMemorySettings(chat);
         for (const name of fields) {
@@ -1675,18 +1723,49 @@ function setupAutoMemory() {
         document.getElementById('auto-memory-range-parts').value = '5';
         updateRangePreview();
         document.getElementById('memory-api-panel').open = settings.apiSource === 'memory';
-        document.getElementById('vector-api-panel').open = vectorOnly || settings.vectorSearchEnabled;
+        document.getElementById('vector-api-panel').open = false;
+        document.getElementById('auto-memory-range-details').open = false;
+        document.getElementById('auto-memory-range-toggle').setAttribute('aria-expanded', 'false');
+        for (const detail of document.querySelectorAll('#auto-memory-form .uvu-am-detail')) detail.open = false;
         renderAutoMemoryStatus();
         modal.classList.add('visible');
     };
     button.addEventListener('click', () => openSettings(false));
     vectorButton.addEventListener('click', () => openSettings(true));
     document.getElementById('auto-memory-close').addEventListener('click', () => {
-        modal.classList.remove('visible', 'vector-settings-mode');
-        document.getElementById('auto-memory-heading').textContent = '自动记忆 / 大总结';
+        modal.classList.remove('visible');
+        selectAutoMemoryTab(summaryTab);
     });
+    const rangeDetails = document.getElementById('auto-memory-range-details');
+    const rangeToggle = document.getElementById('auto-memory-range-toggle');
+    rangeToggle.addEventListener('click', () => {
+        rangeDetails.open = !rangeDetails.open;
+        rangeToggle.setAttribute('aria-expanded', String(rangeDetails.open));
+        if (rangeDetails.open) rangeDetails.scrollIntoView({ block: 'nearest' });
+    });
+    document.getElementById('auto-memory-refresh').addEventListener('click', renderAutoMemoryStatus);
+    const badgeFields = [
+        ['enabled', 'auto-memory-enabled-state', input => input.checked ? '已开启' : '已关闭'],
+        ['vectorSearchEnabled', 'auto-memory-vector-state', input => input.checked ? '已开启' : '已关闭'],
+        ['threshold', 'auto-memory-threshold-value', input => `${input.value || 0} 楼触发`],
+        ['mergeEnabled', 'auto-memory-merge-value', input => input.checked ? `${form.elements.namedItem('mergeThreshold').value || 6} 篇合并` : '已关闭'],
+        ['mergeThreshold', 'auto-memory-merge-value', input => form.elements.namedItem('mergeEnabled').checked ? `${input.value || 6} 篇合并` : '已关闭'],
+        ['requirements', 'auto-memory-requirements-value', input => input.value.trim() ? '已填写' : '未设置'],
+        ['apiSource', 'auto-memory-api-value', input => ({ follow: '沿用 API 路由', primary: '主 API', secondary: '副 API', memory: '独立总结 API' }[input.value] || '沿用 API 路由')]
+    ];
+    for (const [name, id, textFor] of badgeFields) {
+        const input = form.elements.namedItem(name);
+        if (input) input.addEventListener(input.type === 'checkbox' ? 'change' : 'input', () => {
+            const badge = document.getElementById(id);
+            if (badge) badge.textContent = textFor(input);
+        });
+    }
     form.elements.namedItem('apiSource').addEventListener('change', event => {
-        if (event.target.value === 'memory') document.getElementById('memory-api-panel').open = true;
+        if (event.target.value === 'memory') {
+            const panel = document.getElementById('memory-api-panel');
+            panel.closest('.uvu-am-detail').open = true;
+            panel.open = true;
+        }
     });
     const fetchApiModels = async (prefix, listId, targetId, event) => {
         const button = event.currentTarget;
@@ -1740,7 +1819,7 @@ function setupAutoMemory() {
             showToast('当前存档已改变，请重新打开自动记忆设置。'); return false;
         }
         if (!form.reportValidity()) return false;
-        const vectorOnly = modal.classList.contains('vector-settings-mode');
+        const vectorOnly = vectorTab.getAttribute('aria-selected') === 'true';
         const raw = { ...getAutoMemorySettings(editing.chat) };
         for (const name of vectorOnly ? vectorSettingKeys : summarySettingKeys) {
             const input = form.elements.namedItem(name);
@@ -1813,13 +1892,6 @@ function setupAutoMemory() {
                 plan.batches.map((batch, index) => `\n第 ${index + 1} 份：第 ${positions.get(batch[0].id)}–${positions.get(batch.at(-1).id)} 层（${batch.length} 条）`).join('');
         } catch (error) { output.textContent = error.message; details.querySelector('pre').textContent = ''; }
     }
-    const rangeParts = document.getElementById('auto-memory-range-parts');
-    if (rangeParts && !document.getElementById('auto-memory-range-events')) {
-        const label = document.createElement('label'), field = document.createElement('input');
-        label.textContent = '事件起始楼层（可选；开启完整问答分批后生效）';
-        field.id = 'auto-memory-range-events'; field.type = 'text'; field.maxLength = 1000; field.placeholder = '例如 21, 45';
-        label.append(field); rangeParts.closest('label').after(label);
-    }
     for (const id of ['auto-memory-range-start', 'auto-memory-range-end', 'auto-memory-range-parts', 'auto-memory-range-events']) {
         document.getElementById(id).addEventListener('input', updateRangePreview);
     }
@@ -1837,12 +1909,11 @@ function setupAutoMemory() {
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        const vectorOnly = modal.classList.contains('vector-settings-mode');
+        const vectorOnly = vectorTab.getAttribute('aria-selected') === 'true';
         if (await saveSettings()) {
             modal.classList.remove('visible');
             showToast(vectorOnly ? '向量记忆设置已保存' : '自动总结设置已保存');
-            modal.classList.remove('vector-settings-mode');
-            document.getElementById('auto-memory-heading').textContent = '自动记忆 / 大总结';
+            selectAutoMemoryTab(summaryTab);
             if (!vectorOnly) scheduleAutoMemory(editing.chat.id, editing.type);
         }
     });

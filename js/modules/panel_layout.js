@@ -502,6 +502,8 @@
     }
     function decorate(root) {
         if (!root.isConnected) return;
+        // The automatic-memory panel owns its approved layout and interaction model.
+        if (root.id === 'auto-memory-modal' && q(root, '.uvu-am-dialog')) return;
         // Comments keep their existing presentation; only the settings dialog is redesigned.
         if (root.matches('.ms-dialog') && !root.matches('[data-sheet-settings]')) {
             if (!['动态互动', '添加人物', '编辑人物', '人物草稿'].includes(q(root, '.ms-dialog-head strong')?.textContent)) return;

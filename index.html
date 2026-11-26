@@ -3220,94 +3220,107 @@ node setup-server-plugin.js</code></pre>
 <script src="js/modules/moments_social_icons.js?v=20261108-social"></script>
 <script src="js/modules/moments_social_ui.js?v=20261116-social-secondary-recipients"></script>
 <div id="auto-memory-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-memory-heading">
-    <div class="modal-window auto-memory-dialog">
-        <div class="auto-memory-heading"><h2 id="auto-memory-heading">自动记忆 / 大总结</h2><button type="button" id="auto-memory-close" aria-label="关闭">✕</button></div>
-        <p class="auto-memory-help">仅当前存档。自动总结只整理保存，收藏与向量检索分别决定是否读取。</p>
-        <p id="auto-memory-status" role="status" aria-live="polite"></p>
-        <form id="auto-memory-form">
-        <p id="auto-memory-migration-notice" class="auto-memory-help" hidden role="status"></p>
-            <label class="auto-memory-check"><input name="enabled" type="checkbox"> 开启自动整理（会调用 API）</label>
-            <details class="auto-memory-guide"><summary>总结读取说明</summary><p class="auto-memory-help">自动总结默认不收藏，不改变聊天原文的显示和历史条数。审核通过、来源有效的总结可手动收藏，按原收藏位置供角色读取；向量检索另行开启。旧版自动替代设置仅保留用于备份和回退，新版本不再执行。</p></details>
-            <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">下方独立记忆 API</option></select></label>
-            <details id="memory-api-panel"><summary>独立总结 API 配置（全局共用）</summary>
-                <p class="auto-memory-help">仅当上方总结 API 选择“下方独立记忆 API”时使用，不会改变聊天主 API。</p>
-                <label>接口类型<select id="memory-api-provider"><option value="newapi">OpenAI 兼容</option><option value="gemini">Gemini</option></select></label>
-                <label>接口地址<input id="memory-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
-                <label>API 密钥<input id="memory-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
-                <label>模型名称<input id="memory-api-model" type="text" list="memory-api-models" autocomplete="off" placeholder="输入模型名或拉取后选择"><datalist id="memory-api-models"></datalist></label>
-                <button type="button" class="btn btn-secondary" id="memory-api-fetch-models">拉取模型列表</button>
-            </details>
-            <fieldset><legend>楼层总结</legend><div class="auto-memory-grid">
-                <label>保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required></label>
-                <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
-                <label>每次最多总结条数<input name="batchSize" type="number" min="1" max="500" required></label>
-                <label class="auto-memory-check"><input name="summarySmartBatchEnabled" type="checkbox"> 按完整问答与输入预算分批</label>
-                <label>每批输入 Token 估算上限<input name="summaryInputMaxTokens" type="number" min="500" max="64000" required></label>
-                <label class="auto-memory-check"><input name="useTargetLength" type="checkbox"> 为小总结和大总结追加目标字数约束</label>
-                <label>总结目标字数<input name="targetLength" type="number" min="50" max="20000" required></label>
-            </div><p class="auto-memory-help">一条有效用户或角色消息算一楼；思考、撤回和手动禁用消息不计。先保留最近楼层，剩余未总结旧楼层达到阈值才触发；按时间从旧到新整理。</p></fieldset>
-            <fieldset><legend>大总结</legend>
-                <label class="auto-memory-check"><input name="mergeEnabled" type="checkbox"> 自动进一步压缩已有记忆</label>
-                <div class="auto-memory-grid">
-                    <label>同层总结达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
-                    <label>每次最多合并几篇（不低于阈值）<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
-                    <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
-                </div><details class="auto-memory-guide"><summary>合并规则</summary><p class="auto-memory-help">默认直接使用原日记与大总结提示词。只有勾选目标字数或填写自定义要求时才会追加规则。严格按同一层级计数：设为 6，则 6 篇小总结才生成大总结；已被合并的摘要不重复计数。</p></details>
-            </fieldset>
-            <fieldset class="vector-memory-fieldset"><legend>向量记忆检索</legend>
-                <label class="auto-memory-check"><input name="vectorSearchEnabled" type="checkbox"> 启用嵌入检索相关记忆（会调用独立向量 API）</label>
-                <label class="auto-memory-check"><input name="vectorRerankEnabled" type="checkbox"> 使用重排模型对候选结果进行二次排序（额外调用）</label>
-                <details id="vector-api-panel"><summary>独立向量 API、嵌入与重排模型</summary>
-                    <details class="auto-memory-guide"><summary>向量接口说明</summary><p class="auto-memory-help">这组配置只负责向量记忆，不使用聊天或总结 API。嵌入模型建立检索索引；重排模型对初筛结果再次排序。首次打开会沿用旧版记忆 API 配置作为默认值。</p></details>
-                    <label>接口类型<select id="vector-api-provider"><option value="newapi">OpenAI 兼容</option><option value="gemini">Gemini</option></select></label>
-                    <label>接口地址<input id="vector-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
-                    <label>API 密钥<input id="vector-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
-                    <label>嵌入模型名称<input id="vector-api-embedding-model" type="text" list="vector-api-models" autocomplete="off" placeholder="例如 text-embedding-3-small"></label>
-                    <label>嵌入批量条数<input id="vector-api-batch-size" type="number" min="1" max="16" value="4"></label>
-                    <label>查询前缀（可选）<input id="vector-api-query-prefix" type="text" placeholder="例如 query: "></label>
-                    <label>文档前缀（可选）<input id="vector-api-document-prefix" type="text" placeholder="例如 passage: "></label>
-                    <label>Gemini 嵌入任务（需模型支持）<select id="vector-api-task-mode"><option value="default">模型默认</option><option value="retrieval">区分查询与文档检索</option></select></label>
-                    <label>接口超时（秒）<input id="vector-api-timeout" type="number" min="1" max="120" value="30"></label>
-                    <label>重排接口类型<select id="vector-api-rerank-mode"><option value="native">专用 Rerank 接口</option><option value="chat">聊天模型排序（兼容旧配置）</option></select></label>
-                    <label>重排模型名称<input id="vector-api-rerank-model" type="text" list="vector-api-models" autocomplete="off" placeholder="例如 bge-reranker-v2-m3"></label>
-                    <label>重排接口地址（留空沿用嵌入接口）<input id="vector-api-rerank-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
-                    <label>重排密钥（留空沿用嵌入密钥）<input id="vector-api-rerank-key" type="password" autocomplete="new-password"></label>
-                    <datalist id="vector-api-models"></datalist>
-                    <button type="button" class="btn btn-secondary" id="vector-api-fetch-models">拉取向量模型列表</button>
-                    <button type="button" class="btn btn-secondary" id="vector-api-test">测试向量接口</button>
-                    <output id="vector-api-status" aria-live="polite"></output>
+    <div class="modal-window auto-memory-dialog uvu-am-dialog">
+        <header class="uvu-am-header">
+            <div class="uvu-am-topbar">
+                <button type="button" id="auto-memory-close" class="uvu-am-icon" aria-label="返回"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+                <details class="uvu-am-help"><summary aria-label="自动总结与向量记忆使用说明"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.6 2.6 0 1 1 4.5 1.8c-1.1 1-2 1.2-2 2.7m0 3h.01"/></svg></summary>
+                    <div class="uvu-am-help-card"><strong>记忆设置说明</strong><p>自动总结只整理保存，不改变聊天原文和历史条数；总结不会自动收藏。通过审核且来源有效的总结可手动收藏，向量检索单独控制读取。</p><p>“总结一批”会保留最近楼层；指定楼层整理可包含最近楼层。页面关闭后自动整理不会运行。</p><p id="auto-memory-migration-notice" role="status" hidden></p></div>
                 </details>
-                <div class="auto-memory-grid">
-                    <label>最多注入几篇<input name="vectorTopK" type="number" min="1" max="10" required></label>
-                    <label>相似度下限<input name="vectorThreshold" type="number" min="0" max="1" step="0.01" required></label>
-                </div>
-                <details class="auto-memory-guide"><summary>检索规则</summary><p class="auto-memory-help">仅在开启后，按当前话题生成嵌入并检索相关记忆；向量缓存在本地聊天数据中。先按余弦相似度筛选，阈值可过滤弱相关内容；二次重排会额外调用独立向量 API。</p></details>
-            </fieldset>
-            <label>补充总结要求<textarea name="requirements" rows="3" placeholder="例如：保留承诺、关系变化、时间地点与未完成事项。"></textarea></label>
-            <details><summary>自定义总结提示词（留空沿用原有提示词）</summary>
-                <label>楼层总结提示词<textarea name="summaryPrompt" rows="6" placeholder="留空沿用现有日记风格、角色设定和世界书；填写后以这里的规则为准。聊天资料自动附加。"></textarea></label>
-                <label>大总结提示词<textarea name="mergePrompt" rows="6" placeholder="留空沿用现有“合并精简”提示词；填写后以这里的规则为准。已有记忆自动附加。"></textarea></label>
-            </details>
-            <details class="auto-memory-guide"><summary>运行说明</summary><p class="auto-memory-help">在发送消息、请求回复及回复结束时检查条件。每次检查最多一次楼层总结和一次大总结；失败保留原文并冷却一分钟。页面关闭后不会运行。目标字数通过提示词约束，最终输出取决于模型。</p></details>
-            <div class="auto-memory-actions"><button type="button" class="btn btn-secondary" id="auto-memory-run">保存并立即整理一批</button><button type="submit" class="btn btn-primary">保存设置</button></div>
-            <p class="auto-memory-help">“立即整理”仅忽略楼层触发阈值，仍保留最近楼层；大总结始终遵守篇数阈值。默认关闭自动整理。</p>
-        </form>
-        <fieldset class="auto-memory-range"><legend>指定楼层批量总结</legend>
-            <details class="auto-memory-guide"><summary>范围总结说明</summary><p class="auto-memory-help">例如 1–700 层分成 7 份：一次启动，依次生成 7 篇小总结。自动跳过已总结楼层，中途失败可再次启动续接。明确指定范围时会包含最近楼层，不受“保留最近楼层”限制。楼层编号与原有手动日记一致，按完整聊天记录从 1 开始。</p></details>
-            <div class="auto-memory-grid">
-                <label>起始楼层<input id="auto-memory-range-start" type="number" min="1" value="1"></label>
-                <label>结束楼层<input id="auto-memory-range-end" type="number" min="1"></label>
-                <label>分成几份小总结<input id="auto-memory-range-parts" type="number" min="1" max="100" value="5"></label>
             </div>
-            <p id="auto-memory-range-preview" class="auto-memory-help" aria-live="polite"></p>
-            <div class="auto-memory-actions"><button type="button" class="btn btn-secondary" id="auto-memory-range-run">保存并总结指定范围</button><button type="button" class="btn btn-secondary" id="auto-memory-stop" disabled>停止整理</button></div>
-        </fieldset>
+            <h1 id="auto-memory-heading">自动总结</h1>
+            <div class="uvu-am-tabs" role="tablist" aria-label="记忆设置分类">
+                <button type="button" id="auto-memory-summary-tab" role="tab" aria-selected="true" aria-controls="auto-memory-summary-view">自动总结</button>
+                <button type="button" id="auto-memory-vector-tab" role="tab" aria-selected="false" aria-controls="auto-memory-vector-view" tabindex="-1">向量记忆</button>
+            </div>
+        </header>
+        <form id="auto-memory-form" aria-labelledby="auto-memory-heading">
+            <div class="uvu-am-scroll" id="auto-memory-form-scroll">
+                <section id="auto-memory-summary-view" class="uvu-am-view" role="tabpanel" aria-labelledby="auto-memory-summary-tab">
+                    <div class="uvu-am-account"><span class="uvu-am-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20c.5-3.8 2.9-5.8 7-5.8s6.5 2 7 5.8"/></svg></span><strong id="auto-memory-account-name">当前角色</strong><span id="auto-memory-archive-name" class="uvu-am-archive">默认存档</span></div>
+                    <section class="uvu-am-coverage" aria-labelledby="auto-memory-coverage-heading">
+                        <svg class="uvu-am-coverage-shape" viewBox="0 0 342 136" preserveAspectRatio="none" aria-hidden="true"><path d="M24 0h196q21 0 21 21v5q0 24 25 24h52q24 0 24 24v38q0 24-24 24H24Q0 136 0 112V24Q0 0 24 0Z"/></svg>
+                        <div class="uvu-am-coverage-heading"><h2 id="auto-memory-coverage-heading">覆盖进度</h2><div class="uvu-am-coverage-actions"><button type="button" id="auto-memory-refresh" class="uvu-am-icon" aria-label="刷新覆盖统计"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5m11 0a8 8 0 0 0-14-4L4 7m0 5a8 8 0 0 0 14 4l2-2"/></svg></button><button type="button" id="auto-memory-range-toggle" class="uvu-am-icon" aria-label="指定楼层范围总结" aria-expanded="false" aria-controls="auto-memory-range-details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></button></div></div>
+                        <dl class="uvu-am-stats"><div><dt>有效楼层</dt><dd id="auto-memory-stat-total">0</dd></div><div><dt>已总结</dt><dd id="auto-memory-stat-covered">0</dd></div><div><dt>未总结</dt><dd id="auto-memory-stat-uncovered">0</dd></div></dl>
+                    </section>
+                    <details class="uvu-am-state-details"><summary>整理状态与来源</summary><p id="auto-memory-status" role="status" aria-live="polite"></p></details>
+                    <div class="uvu-am-switch-row"><label for="auto-memory-enabled">自动总结</label><span id="auto-memory-enabled-state" class="uvu-am-state-label">已关闭</span><input id="auto-memory-enabled" name="enabled" type="checkbox" role="switch" aria-label="自动总结" class="uvu-am-switch"></div>
+                    <div class="uvu-am-numbers">
+                        <label class="uvu-am-number-card">每批最多楼层<input name="batchSize" type="number" min="1" max="500" required inputmode="numeric"></label>
+                        <label class="uvu-am-number-card">保留最近楼层<input name="keepRecent" type="number" min="0" max="10000" required inputmode="numeric"></label>
+                    </div>
+                    <div class="uvu-am-settings">
+                        <details class="uvu-am-detail"><summary><span>总结 API</span><span id="auto-memory-api-value" class="uvu-am-detail-value">沿用 API 路由</span></summary><div class="uvu-am-detail-body">
+                            <label>总结使用的 API<select name="apiSource"><option value="follow">沿用 API 应用的“日记 / 记忆总结”路由</option><option value="primary">主 API</option><option value="secondary">API 应用中的副 API</option><option value="memory">独立总结 API</option></select></label>
+                            <details id="memory-api-panel"><summary>独立总结 API 配置</summary><p class="auto-memory-help">仅影响总结请求，与聊天主 API 分开。</p>
+                                <label>接口类型<select id="memory-api-provider"><option value="newapi">OpenAI 兼容</option><option value="gemini">Gemini</option></select></label>
+                                <label>接口地址<input id="memory-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
+                                <label>API 密钥<input id="memory-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
+                                <label>模型名称<input id="memory-api-model" type="text" list="memory-api-models" autocomplete="off" placeholder="输入模型名或拉取后选择"><datalist id="memory-api-models"></datalist></label>
+                                <button type="button" class="btn btn-secondary" id="memory-api-fetch-models">拉取模型列表</button>
+                            </details>
+                        </div></details>
+                        <details class="uvu-am-detail"><summary><span>楼层总结</span><span id="auto-memory-threshold-value" class="uvu-am-detail-value">30 楼触发</span></summary><div class="uvu-am-detail-body">
+                            <label>旧楼层触发阈值<input name="threshold" type="number" min="1" max="10000" required></label>
+                            <label class="auto-memory-check"><input name="summarySmartBatchEnabled" type="checkbox">按完整问答与输入预算分批</label>
+                            <label>每批输入 Token 估算上限<input name="summaryInputMaxTokens" type="number" min="500" max="64000" required></label>
+                            <label class="auto-memory-check"><input name="useTargetLength" type="checkbox">为总结追加目标字数</label>
+                            <label>总结目标字数<input name="targetLength" type="number" min="50" max="20000" required></label>
+                        </div></details>
+                        <details class="uvu-am-detail"><summary><span>合并与压缩</span><span id="auto-memory-merge-value" class="uvu-am-detail-value">6 篇合并</span></summary><div class="uvu-am-detail-body">
+                            <label class="auto-memory-check"><input name="mergeEnabled" type="checkbox">自动合并同一层级的总结</label>
+                            <label>同层总结达到几篇<input name="mergeThreshold" type="number" min="2" max="100" required></label>
+                            <label>每次最多合并几篇<input name="mergeBatchSize" type="number" min="2" max="100" required></label>
+                            <label>大总结目标字数<input name="mergeTargetLength" type="number" min="50" max="30000" required></label>
+                        </div></details>
+                        <details class="uvu-am-detail"><summary><span>补充要求与提示词</span><span id="auto-memory-requirements-value" class="uvu-am-detail-value">未设置</span></summary><div class="uvu-am-detail-body">
+                            <label>补充总结要求<textarea name="requirements" rows="3" placeholder="例如：保留承诺、关系变化与未完成事项。"></textarea></label>
+                            <details><summary>自定义提示词（留空沿用默认）</summary>
+                                <label>楼层总结提示词<textarea name="summaryPrompt" rows="6" placeholder="留空沿用现有日记风格、角色设定和世界书。"></textarea></label>
+                                <label>大总结提示词<textarea name="mergePrompt" rows="6" placeholder="留空沿用现有合并精简提示词。"></textarea></label>
+                            </details>
+                        </div></details>
+                    </div>
+                    <details id="auto-memory-range-details" class="uvu-am-range-details"><summary>指定楼层批量总结</summary><fieldset class="auto-memory-range"><legend>楼层范围</legend>
+                        <div class="auto-memory-grid"><label>起始楼层<input id="auto-memory-range-start" type="number" min="1" value="1"></label><label>结束楼层<input id="auto-memory-range-end" type="number" min="1"></label><label>分成几份小总结<input id="auto-memory-range-parts" type="number" min="1" max="100" value="5"></label><label>事件起始楼层（可选）<input id="auto-memory-range-events" type="text" maxlength="1000" placeholder="例如 21, 45"></label></div>
+                        <p id="auto-memory-range-preview" class="auto-memory-help" aria-live="polite"></p>
+                        <div class="auto-memory-actions"><button type="button" class="btn btn-secondary" id="auto-memory-range-run">保存并总结指定范围</button><button type="button" class="btn btn-secondary" id="auto-memory-stop" disabled>停止整理</button></div>
+                    </fieldset></details>
+                </section>
+                <section id="auto-memory-vector-view" class="uvu-am-view" role="tabpanel" aria-labelledby="auto-memory-vector-tab" hidden>
+                    <div class="uvu-am-account"><span class="uvu-am-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M5 20c.5-3.8 2.9-5.8 7-5.8s6.5 2 7 5.8"/></svg></span><strong id="auto-memory-vector-account-name">当前角色</strong><span id="auto-memory-vector-archive-name" class="uvu-am-archive">默认存档</span></div>
+                    <div class="uvu-am-switch-row"><label for="auto-memory-vector-enabled">向量检索</label><span id="auto-memory-vector-state" class="uvu-am-state-label">已关闭</span><input id="auto-memory-vector-enabled" name="vectorSearchEnabled" type="checkbox" role="switch" aria-label="向量记忆检索" class="uvu-am-switch"></div>
+                    <div class="uvu-am-numbers"><label class="uvu-am-number-card">最多注入几篇<input name="vectorTopK" type="number" min="1" max="10" required></label><label class="uvu-am-number-card">相似度下限<input name="vectorThreshold" type="number" min="0" max="1" step="0.01" required></label></div>
+                    <div class="uvu-am-settings"><details class="uvu-am-detail"><summary><span>向量 API</span><span class="uvu-am-detail-value">嵌入与重排</span></summary><div class="uvu-am-detail-body">
+                        <label class="auto-memory-check"><input name="vectorRerankEnabled" type="checkbox">使用重排模型二次排序</label>
+                        <details id="vector-api-panel"><summary>独立向量 API 配置</summary><details class="auto-memory-guide"><summary>接口说明</summary><p class="auto-memory-help">向量接口独立于聊天和总结 API；嵌入模型负责索引，重排模型用于二次排序。</p></details>
+                            <label>接口类型<select id="vector-api-provider"><option value="newapi">OpenAI 兼容</option><option value="gemini">Gemini</option></select></label>
+                            <label>接口地址<input id="vector-api-url" type="text" autocomplete="off" placeholder="https://example.com/v1"></label>
+                            <label>API 密钥<input id="vector-api-key" type="password" autocomplete="new-password" placeholder="仅保存在本机应用数据"></label>
+                            <label>嵌入模型名称<input id="vector-api-embedding-model" type="text" list="vector-api-models" autocomplete="off" placeholder="例如 text-embedding-3-small"></label>
+                            <label>嵌入批量条数<input id="vector-api-batch-size" type="number" min="1" max="16" value="4"></label>
+                            <label>查询前缀（可选）<input id="vector-api-query-prefix" type="text" placeholder="例如 query: "></label>
+                            <label>文档前缀（可选）<input id="vector-api-document-prefix" type="text" placeholder="例如 passage: "></label>
+                            <label>Gemini 嵌入任务<select id="vector-api-task-mode"><option value="default">模型默认</option><option value="retrieval">区分查询与文档检索</option></select></label>
+                            <label>接口超时（秒）<input id="vector-api-timeout" type="number" min="1" max="120" value="30"></label>
+                            <label>重排接口类型<select id="vector-api-rerank-mode"><option value="native">专用 Rerank 接口</option><option value="chat">聊天模型排序（兼容旧配置）</option></select></label>
+                            <label>重排模型名称<input id="vector-api-rerank-model" type="text" list="vector-api-models" placeholder="例如 bge-reranker-v2-m3"></label>
+                            <label>重排接口地址<input id="vector-api-rerank-url" type="text" autocomplete="off" placeholder="留空沿用嵌入接口"></label>
+                            <label>重排密钥<input id="vector-api-rerank-key" type="password" autocomplete="new-password" placeholder="留空沿用嵌入密钥"></label>
+                            <datalist id="vector-api-models"></datalist>
+                            <button type="button" class="btn btn-secondary" id="vector-api-fetch-models">拉取向量模型列表</button><button type="button" class="btn btn-secondary" id="vector-api-test">测试向量接口</button><output id="vector-api-status" aria-live="polite"></output>
+                        </details>
+                    </div></details></div>
+                </section>
+            </div>
+            <div class="uvu-am-footer"><button type="submit" class="btn btn-secondary">保存</button><button type="button" class="btn btn-primary" id="auto-memory-run">总结一批</button></div>
+        </form>
     </div>
 </div>
 <script src="js/modules/journal.js?v=20261122-summary-reading"></script>   <!-- 回忆日记生成 -->
 <script src="js/modules/vector_index_store.js?v=20261122-memory-maintenance"></script>
 <script src="js/modules/vector_memory_tools.js?v=20261122-fact-review"></script>
-<script src="js/modules/auto_memory.js?v=20261122-fact-review"></script>
+<script src="js/modules/auto_memory.js?v=20261126-layout-v3"></script>
 <script src="js/modules/vector_memory_maintenance.js?v=20261122-memory-maintenance"></script>
 <script src="js/modules/character_memos.js?v=20261122-fact-review"></script>
 <script src="js/modules/character_memos_tools_ui.js?v=20261112-memory20-v1"></script>
@@ -3372,6 +3385,7 @@ node setup-server-plugin.js</code></pre>
 <link rel="stylesheet" href="css/modules/monochrome_panels.css?v=20261115-soft-input-focus">
 <link rel="stylesheet" href="css/modules/panel_sheets.css?v=20261122-worldbook-1900">
 <link rel="stylesheet" href="css/modules/lenso_panels.css?v=20261122-existing-layout">
+<link rel="stylesheet" href="css/modules/auto_memory_panel.css?v=20261126-layout-v3">
 <script src="js/vendor/qrcode/qrcode.js?v=1.4.4"></script>
 <script src="js/modules/music_public.js?v=20261122-music-complete-v1"></script>
 <script src="js/modules/music_metadata.js?v=20261122-music-complete-v1"></script>

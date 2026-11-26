@@ -1,0 +1,125 @@
+/* 自动总结与向量记忆：限定在本二改面板内，颜色沿用已确认的全局浅蓝。 */
+#auto-memory-modal .uvu-am-dialog {
+    --uvu-am-blue: #d4e5ef;
+    --uvu-am-blue-ink: #334f65;
+    --uvu-am-switch: #c9eaf8;
+    --uvu-am-line: #e2ebf0;
+    --uvu-am-muted: #657581;
+    position: relative;
+    display: none;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: min(100%, 440px);
+    max-width: 440px;
+    height: min(820px, calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+    max-height: none;
+    min-height: min(560px, calc(100dvh - 24px));
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 30px;
+    color: #202a31;
+    background: #fff;
+    box-shadow: 0 16px 52px #263b4c26;
+    overscroll-behavior: contain;
+}
+#auto-memory-modal.visible .uvu-am-dialog { display: grid; }
+#auto-memory-modal .uvu-am-header { z-index: 3; display: grid; gap: 12px; padding: max(10px,env(safe-area-inset-top)) 24px 0; background: #fff; }
+#auto-memory-modal .uvu-am-topbar { display:flex; align-items:center; justify-content:space-between; min-height:44px; }
+#auto-memory-modal .uvu-am-icon { display:grid; place-items:center; width:44px; height:44px; flex:0 0 44px; padding:0; border:0; border-radius:50%; color:var(--uvu-am-blue-ink); background:#fff; box-shadow:0 2px 10px #293d4d10; cursor:pointer; }
+#auto-memory-modal .uvu-am-icon svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+#auto-memory-modal .uvu-am-header h1 { margin:0; font-size:32px; line-height:1.2; letter-spacing:-.03em; font-weight:740; }
+#auto-memory-modal .uvu-am-tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; height:48px; padding:4px; border-radius:26px; background:#e8eff3; }
+#auto-memory-modal .uvu-am-tabs button { min-width:0; min-height:40px; padding:0 8px; border:0; border-radius:24px; color:var(--uvu-am-muted); background:transparent; font-size:14px; cursor:pointer; }
+#auto-memory-modal .uvu-am-tabs button[aria-selected=true] { color:#202a31; background:#fff; box-shadow:0 2px 8px #293d4d14; font-weight:700; }
+#auto-memory-modal .uvu-am-help { position:relative; }
+#auto-memory-modal .uvu-am-help > summary { display:grid; place-items:center; width:44px; height:44px; list-style:none; border-radius:50%; background:#fff; box-shadow:0 2px 10px #293d4d10; cursor:pointer; }
+#auto-memory-modal .uvu-am-help > summary::-webkit-details-marker { display:none; }
+#auto-memory-modal .uvu-am-help > summary svg { width:21px;height:21px;fill:none;stroke:#33434d;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
+#auto-memory-modal .uvu-am-help-card { position:absolute; top:50px; right:0; z-index:6; width:min(300px,calc(100vw - 64px)); padding:14px 16px; border:1px solid var(--uvu-am-line); border-radius:18px; background:#fff; box-shadow:0 8px 28px #21374622; font-size:13px; line-height:1.6; }
+#auto-memory-modal .uvu-am-help-card p { margin:7px 0 0; color:var(--uvu-am-muted); }
+#auto-memory-modal .uvu-am-help-card #auto-memory-migration-notice:not([hidden]) { padding:8px 10px; border-radius:12px; color:var(--uvu-am-blue-ink); background:#f1f7fa; }
+#auto-memory-form { display:grid; grid-template-rows:minmax(0,1fr) auto; min-height:0; margin:0; }
+#auto-memory-modal .uvu-am-scroll { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:14px 24px 12px; scrollbar-width:thin; }
+#auto-memory-modal .uvu-am-view { display:grid; align-content:start; gap:16px; min-width:0; }
+#auto-memory-modal .uvu-am-view[hidden] { display:none !important; }
+#auto-memory-modal .uvu-am-account { display:flex; align-items:center; gap:10px; min-width:0; min-height:40px; padding-inline:4px; }
+#auto-memory-modal .uvu-am-avatar { display:grid; place-items:center; width:36px;height:36px; flex:0 0 36px; border:1px solid #dbe8ef; border-radius:50%; color:#526f83; background:#eaf3f8; }
+#auto-memory-modal .uvu-am-avatar svg { width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round; }
+#auto-memory-modal .uvu-am-account strong { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:620; }
+#auto-memory-modal .uvu-am-archive { margin-left:auto;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 10px;border:1px solid var(--uvu-am-line);border-radius:18px;color:var(--uvu-am-muted);font-size:12px;background:#fff; }
+#auto-memory-modal .uvu-am-coverage { position:relative; isolation:isolate; min-height:136px; padding:16px 16px 13px; color:var(--uvu-am-blue-ink); }
+#auto-memory-modal .uvu-am-coverage-shape { position:absolute; inset:0; z-index:-1;width:100%;height:100%;filter:drop-shadow(0 6px 12px #42698618); }
+#auto-memory-modal .uvu-am-coverage-shape path { fill:var(--uvu-am-blue); }
+#auto-memory-modal .uvu-am-coverage-heading { display:flex;align-items:center;justify-content:space-between;min-height:38px;padding-right:88px; }
+#auto-memory-modal .uvu-am-coverage-heading h2 { margin:0;font-size:14px;font-weight:650;line-height:1.4; }
+#auto-memory-modal .uvu-am-coverage-actions { position:absolute;top:0;right:0;display:flex;gap:4px; }
+#auto-memory-modal .uvu-am-coverage-actions .uvu-am-icon { width:44px;height:44px; }
+#auto-memory-modal .uvu-am-stats { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:6px 0 0; }
+#auto-memory-modal .uvu-am-stats div { display:flex;flex-direction:column;gap:3px;min-width:0; }
+#auto-memory-modal .uvu-am-stats dt { font-size:12px;line-height:1.5; }
+#auto-memory-modal .uvu-am-stats dd { order:-1;margin:0;color:#294a63;font-size:32px;line-height:1.2;font-weight:700;font-variant-numeric:tabular-nums; }
+#auto-memory-modal .uvu-am-stats div:first-child dd { color:#202a31; }
+#auto-memory-modal .uvu-am-state-details { margin-top:-10px; }
+#auto-memory-modal .uvu-am-state-details > summary { min-height:24px;color:var(--uvu-am-muted);font-size:12px;cursor:pointer; }
+#auto-memory-modal #auto-memory-status { margin:6px 0 0;padding:10px 12px;border-radius:13px;background:#f5f8fa;color:#53636e;font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere; }
+#auto-memory-modal #auto-memory-status:empty { display:none; }
+#auto-memory-modal #auto-memory-status.memory-error { color:#9b332d; }
+#auto-memory-modal .uvu-am-switch-row { display:flex;align-items:center;gap:8px;min-height:52px;padding:4px 14px;border:1px solid var(--uvu-am-line);border-radius:26px;background:#fff;box-shadow:0 3px 12px #304f6608;font-size:16px;font-weight:620; }
+#auto-memory-modal .uvu-am-switch-row label { margin:0;cursor:pointer; }
+#auto-memory-modal .uvu-am-state-label { margin-left:auto;color:var(--uvu-am-muted);font-size:12px;font-weight:400; }
+#auto-memory-modal .uvu-am-switch { position:relative;appearance:none;width:46px!important;height:28px!important;min-width:46px;min-height:28px!important;flex:0 0 46px;margin:0!important;border:0!important;border-radius:20px!important;background:#e5ebef!important;cursor:pointer; }
+#auto-memory-modal .uvu-am-switch::after { content:"";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #253d5624;transition:transform .16s; }
+#auto-memory-modal .uvu-am-switch:checked { background:var(--uvu-am-switch)!important; }
+#auto-memory-modal .uvu-am-switch:checked::after { transform:translateX(18px); }
+#auto-memory-modal .uvu-am-numbers { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+#auto-memory-modal .uvu-am-number-card { display:grid;align-content:start;gap:6px;min-width:0;margin:0;padding:12px;border:1px solid var(--uvu-am-line);border-radius:24px;background:#fff;box-shadow:0 4px 14px #415d7208;color:var(--uvu-am-muted);font-size:14px; }
+#auto-memory-modal .uvu-am-number-card input { box-sizing:border-box;width:100%;min-width:0;min-height:42px;padding:6px 12px;border:1px solid var(--uvu-am-line);border-radius:14px;background:#f4f7f9;color:#202a31;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums; }
+#auto-memory-modal .uvu-am-settings { overflow:hidden;border:1px solid var(--uvu-am-line);border-radius:24px;background:#fff;box-shadow:0 4px 14px #415d7208; }
+#auto-memory-modal .uvu-am-detail + .uvu-am-detail { border-top:1px solid var(--uvu-am-line); }
+#auto-memory-modal .uvu-am-detail > summary { display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 14px;list-style:none;font-size:14px;cursor:pointer; }
+#auto-memory-modal .uvu-am-detail > summary::-webkit-details-marker { display:none; }
+#auto-memory-modal .uvu-am-detail > summary::after { content:"";width:8px;height:8px;margin-left:auto;border-top:1.5px solid #71838f;border-right:1.5px solid #71838f;transform:rotate(45deg); }
+#auto-memory-modal .uvu-am-detail[open] > summary::after { transform:rotate(135deg); }
+#auto-memory-modal .uvu-am-detail-value { margin-left:auto;color:var(--uvu-am-muted);font-size:12px; }
+#auto-memory-modal .uvu-am-detail-body { display:grid;gap:10px;padding:8px 14px 14px; }
+#auto-memory-modal .uvu-am-detail-body > label:not(.auto-memory-check),#auto-memory-modal .uvu-am-detail-body label:not(.auto-memory-check) { display:grid;gap:5px;min-width:0;margin:0;color:#42515b;font-size:13px; }
+#auto-memory-modal .uvu-am-detail-body input:not([type=checkbox]),#auto-memory-modal .uvu-am-detail-body select,#auto-memory-modal .uvu-am-detail-body textarea { box-sizing:border-box;width:100%;min-width:0;min-height:42px;padding:8px 10px;border:1px solid var(--uvu-am-line);border-radius:12px;background:#f6f8f9;color:#26343c;font-size:16px; }
+#auto-memory-modal .uvu-am-detail-body textarea { resize:vertical; }
+#auto-memory-modal .uvu-am-detail-body .auto-memory-check { display:flex;align-items:center;gap:8px;margin:0;font-size:13px; }
+#auto-memory-modal .uvu-am-detail-body input[type=checkbox] { width:18px;height:18px;min-width:18px;min-height:18px;margin:0;accent-color:#527b96; }
+#auto-memory-modal .uvu-am-detail-body details > summary { min-height:40px;padding:8px 0;color:#536570;font-size:13px;cursor:pointer; }
+#auto-memory-modal .uvu-am-detail-body .auto-memory-help { margin:4px 0;color:var(--uvu-am-muted);font-size:12px;line-height:1.6; }
+#auto-memory-modal .uvu-am-range-details { border:1px solid var(--uvu-am-line);border-radius:20px;background:#fff; }
+#auto-memory-modal .uvu-am-range-details > summary { min-height:44px;padding:10px 14px;list-style-position:inside;font-size:14px;font-weight:600;cursor:pointer; }
+#auto-memory-modal .uvu-am-range-details .auto-memory-range { margin:0;padding:8px 14px 14px;border:0;border-top:1px solid var(--uvu-am-line);border-radius:0; }
+#auto-memory-modal .auto-memory-range .auto-memory-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px; }
+#auto-memory-modal .auto-memory-range label { min-width:0;margin:6px 0;font-size:13px; }
+#auto-memory-modal .auto-memory-range input { box-sizing:border-box;width:100%;min-width:0;min-height:42px;padding:8px;border:1px solid var(--uvu-am-line);border-radius:12px;background:#f6f8f9;font-size:16px; }
+#auto-memory-modal #auto-memory-range-preview { max-height:170px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5; }
+#auto-memory-modal .auto-memory-actions { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px; }
+#auto-memory-modal .auto-memory-actions .btn { min-height:44px; }
+#auto-memory-modal .uvu-am-footer { display:grid;grid-template-columns:4fr 5fr;gap:10px;padding:10px 24px max(12px,env(safe-area-inset-bottom));background:#fff;box-shadow:0 -6px 18px #ffffffed; }
+#auto-memory-modal.uvu-am-vector-mode .uvu-am-footer { grid-template-columns:1fr; }
+#auto-memory-modal #auto-memory-run[hidden] { display:none!important; }
+#auto-memory-modal .uvu-am-footer .btn { min-width:0;min-height:46px;height:auto;margin:0;padding:8px 12px;border:0;border-radius:26px;font-size:14px; }
+#auto-memory-modal .uvu-am-footer .btn-secondary { color:#293943;background:#e8eff3; }
+#auto-memory-modal .uvu-am-footer .btn-primary { color:var(--uvu-am-blue-ink);background:var(--uvu-am-blue);font-weight:700; }
+#auto-memory-modal .uvu-am-footer .btn:disabled,#auto-memory-modal .auto-memory-actions .btn:disabled { opacity:.55; }
+@media(max-width:380px) {
+ #auto-memory-modal .uvu-am-dialog { height:calc(100dvh - 12px);min-height:0;border-radius:24px; }
+ #auto-memory-modal .uvu-am-header { padding-inline:18px; }
+ #auto-memory-modal .uvu-am-header h1 { font-size:30px; }
+ #auto-memory-modal .uvu-am-scroll { padding-inline:18px; }
+ #auto-memory-modal .uvu-am-footer { padding-inline:18px; }
+ #auto-memory-modal .uvu-am-coverage { padding-inline:13px; }
+ #auto-memory-modal .uvu-am-numbers { gap:8px; }
+ #auto-memory-modal .uvu-am-number-card { padding:10px; }
+}
+@media(max-height:640px) {
+ #auto-memory-modal .uvu-am-dialog { height:calc(100dvh - 8px);min-height:0; }
+ #auto-memory-modal .uvu-am-header { gap:7px;padding-top:4px; }
+ #auto-memory-modal .uvu-am-topbar,#auto-memory-modal .uvu-am-icon,#auto-memory-modal .uvu-am-help>summary { min-height:40px;height:40px; }
+ #auto-memory-modal .uvu-am-tabs { height:42px; }
+ #auto-memory-modal .uvu-am-tabs button { min-height:34px; }
+}
+@media(prefers-reduced-motion:reduce) { #auto-memory-modal .uvu-am-switch::after { transition:none; } }

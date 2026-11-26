@@ -22,7 +22,10 @@ const { fullApp, root, stableUI } = require('./helpers/full_app_browser.cjs');
         await stableUI(page, '#auto-memory-modal');
         assert.equal(await page.locator('[name="useMemory"],[name="hideSummarized"],#auto-memory-show-original').count(), 0);
         assert.match(await page.locator('#auto-memory-migration-notice').textContent(), /不再替代或折叠/);
+        assert.equal(await page.locator('#auto-memory-migration-notice').isVisible(), false);
+        await page.locator('.uvu-am-help > summary').click();
         assert.equal(await page.locator('#auto-memory-migration-notice').isVisible(), true);
+        await page.locator('.uvu-am-help > summary').click();
         const out = path.join(root, 'outputs/memory-review-20261122'); fs.mkdirSync(out, { recursive: true });
         for (const width of [320, 390, 768]) {
             await page.setViewportSize({ width, height: 844 });
