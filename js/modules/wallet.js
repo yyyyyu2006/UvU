@@ -119,11 +119,26 @@
             item.append(icon,main,value);target.append(item);
         });
     }
-    function cardNode(card,index,total,large=false){
-        const article=document.createElement('article');article.className='wallet-metal-card';article.tabIndex=0;article.setAttribute('role','button');
-        article.setAttribute('aria-label',card.name+'，虚拟银行卡末四位 '+card.tail+'，按回车翻面');
-        article.dataset.layer=String(Math.max(0,index-selectedCard));article.classList.toggle('is-active',index===selectedCard);
-        article.classList.toggle('is-raised',index===selectedCard);article.classList.toggle('is-flipped',flipped.has(card.id));
+    function syncCardFace(article,card,active) {
+        const isBack=active&&flipped.has(card.id);
+        article.classList.toggle('is-flipped',isBack);
+        article.setAttribute('aria-pressed',String(isBack));
+        article.querySelector('.wallet-metal-front').setAttribute('aria-hidden',String(isBack));
+        article.querySelector('.wallet-metal-back').setAttribute('aria-hidden',String(!isBack));
+    }
+    function flipCard(article,card,direction=1) {
+        if(flipped.has(card.id)) flipped.delete(card.id);
+        else {
+            article.style.setProperty('--wallet-flip-turn',direction<0?'-180deg':'180deg');
+            flipped.add(card.id);
+        }
+        syncCardFace(article,card,true);
+    }
+    function cardNode(card,index,layer) {
+        const article=document.createElement('article');article.className='wallet-metal-card';article.setAttribute('role','button');
+        article.tabIndex=0;
+        article.setAttribute('aria-label',card.name+'，虚拟银行卡末四位 '+card.tail+(layer===0?'，翻面':'，选中此卡'));
+        article.dataset.layer=String(layer);article.classList.toggle('is-active',layer===0);
         const front=document.createElement('div');front.className='wallet-metal-face wallet-metal-front';
         const name=document.createElement('div');name.className='wallet-card-name';name.textContent=card.name;
         const tail=document.createElement('div');tail.className='wallet-card-tail';tail.textContent='••••  ••••  ••••  '+card.tail;
@@ -139,17 +154,75 @@
         const expiry=document.createElement('div');expiry.className='wallet-card-back-expiry';expiry.textContent='VALID  **/**';
         const cvc=document.createElement('div');cvc.className='wallet-card-back-cvc';cvc.textContent='CVV  •••';
         back.append(stripe,backLabel,balance,sign,number,expiry,cvc);article.append(front,back);
-        const flip=()=>{flipped.has(card.id)?flipped.delete(card.id):flipped.add(card.id);renderCards();};
-        article.addEventListener('click',flip);article.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();flip();}});
-        article.addEventListener('pointerdown',()=>{selectedCard=index;article.classList.add('is-raised');});
-        article.addEventListener('pointerup',()=>article.classList.remove('is-raised'));
+        syncCardFace(article,card,layer===0);
+        const activate=()=>{
+            if(article.classList.contains('is-active')) return flipCard(article,card);
+            const target=article.parentElement;
+            selectedCard=index;
+            deck(target,currentState());
+            target.querySelector('.is-active')?.focus({preventScroll:true});
+        };
+        article.addEventListener('click',activate);
+        article.addEventListener('keydown',event=>{
+            if(event.key==='Enter'||event.key===' '){event.preventDefault();if(!event.repeat)activate();}
+        });
         return article;
     }
-    function deck(target,state,large=false){
+    function deck(target,state,direction=0) {
+        const restoreFocus=target.contains(document.activeElement);
         target.replaceChildren();
-        if(!state.cards.length){const empty=document.createElement('p');empty.className='wallet-muted';empty.textContent='还没有虚拟银行卡';target.append(empty);return;}
-        selectedCard=Math.min(selectedCard,state.cards.length-1);
-        state.cards.slice(selectedCard,selectedCard+3).forEach((card,offset)=>target.append(cardNode(card,selectedCard+offset,state.cards.length,large)));
+        const count=state.cards.length;
+        target.toggleAttribute('data-stacked',count>1);
+        if(!count){selectedCard=0;const empty=document.createElement('p');empty.className='wallet-muted';empty.textContent='还没有虚拟银行卡';target.append(empty);return;}
+        selectedCard=Math.min(selectedCard,count-1);
+        for(let layer=0;layer<Math.min(count,3);layer++){
+            const index=(selectedCard+layer)%count;
+            const article=cardNode(state.cards[index],index,layer);
+            if(!layer&&direction)article.dataset.slide=direction>0?'next':'previous';
+            target.append(article);
+        }
+        if(restoreFocus)target.firstElementChild.focus({preventScroll:true});
+    }
+    function setupHomeDeck(target) {
+        let gesture=null, suppressClick=false;
+        const turn=direction=>{
+            const state=currentState(),active=target.querySelector('.is-active');
+            if(!state.cards.length||!active)return;
+            if(state.cards.length===1)return flipCard(active,state.cards[0],direction);
+            selectedCard=(selectedCard+direction+state.cards.length)%state.cards.length;
+            deck(target,state,direction);
+        };
+        target.addEventListener('pointerdown',event=>{
+            if(!event.isPrimary||event.button!==0)return;
+            suppressClick=false;
+            const card=event.target.closest('.wallet-metal-card');
+            if(card)gesture={id:event.pointerId,x:event.clientX,y:event.clientY,card};
+        });
+        target.addEventListener('pointermove',event=>{
+            if(gesture?.id!==event.pointerId)return;
+            const x=Math.abs(event.clientX-gesture.x),y=Math.abs(event.clientY-gesture.y);
+            if(x>10&&x>y*1.25&&!gesture.card.hasPointerCapture(event.pointerId)){
+                gesture.card.setPointerCapture(event.pointerId);
+            }
+        });
+        target.addEventListener('pointerup',event=>{
+            if(gesture?.id!==event.pointerId)return;
+            const x=event.clientX-gesture.x,y=event.clientY-gesture.y;
+            gesture=null;
+            suppressClick=Math.max(Math.abs(x),Math.abs(y))>10;
+            if(Math.abs(x)>36&&Math.abs(x)>Math.abs(y)*1.25)turn(x<0?1:-1);
+        });
+        const cancel=event=>{if(gesture?.id===event.pointerId)gesture=null;};
+        target.addEventListener('pointercancel',cancel);
+        target.addEventListener('lostpointercapture',cancel);
+        target.addEventListener('click',event=>{
+            if(suppressClick&&event.detail>0){suppressClick=false;event.stopPropagation();}
+        },true);
+        target.addEventListener('keydown',event=>{
+            if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+            event.preventDefault();
+            if(!event.repeat)turn(event.key==='ArrowRight'?1:-1);
+        });
     }
     function renderHome(){
         try{const state=currentState();byId('wallet-balance').textContent='¥ '+money(state.balance);
@@ -157,7 +230,7 @@
         }catch(error){showToast(error.message);}
     }
     function renderCards(){
-        try{const state=currentState();deck(byId('wallet-card-deck'),state,true);const list=byId('wallet-card-list');list.replaceChildren();
+        try{const state=currentState();deck(byId('wallet-card-deck'),state);const list=byId('wallet-card-list');list.replaceChildren();
             state.cards.forEach(card=>{const row=document.createElement('div');row.className='wallet-list-item';const icon=document.createElement('span');icon.className='wallet-card-mini';icon.textContent='UvU';const meta=document.createElement('div');meta.className='wallet-list-meta';const name=document.createElement('div');name.className='wallet-list-title';name.textContent=card.name;const tail=document.createElement('div');tail.className='wallet-list-sub';tail.textContent='UvU 虚拟卡  ···· '+card.tail+' · ¥ '+money(card.balance);meta.append(name,tail);const controls=document.createElement('div');controls.className='wallet-card-controls';for(const [label,kind] of [['存入','withdraw'],['转回','recharge']]){const button=document.createElement('button');button.type='button';button.textContent=label;button.addEventListener('click',()=>cardOperation(kind,card.id));controls.append(button);}row.append(icon,meta,controls);list.append(row);});
         }catch(error){showToast(error.message);}
     }
@@ -343,7 +416,7 @@
                 if(ok){setSheet(backdrop,false);byId('send-red-packet-form').reset();if(isChatTargetVisible(target))renderChatList();}
             });
         },true);
-        const homeDeck=byId('wallet-home-deck');homeDeck.addEventListener('pointerdown',event=>{homeDeck.dataset.startX=String(event.clientX);});homeDeck.addEventListener('pointerup',event=>{const start=Number(homeDeck.dataset.startX);const count=currentState().cards.length;if(count>1&&Number.isFinite(start)&&Math.abs(event.clientX-start)>36){selectedCard=(selectedCard+(event.clientX<start?1:count-1))%count;renderHome();}delete homeDeck.dataset.startX;});
+        setupHomeDeck(byId('wallet-home-deck'));
         if(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')store.reconcile().catch(error=>console.warn('Wallet pending settlement:',error));
     }
     globalThis.setupWalletSystem=setup;

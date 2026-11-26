@@ -74,5 +74,3 @@ test('PBKDF2 PIN records are salted, verified and never store the entered PIN', 
     assert.equal(await ledger.verifyPin('123456',record), true);
     assert.equal(await ledger.verifyPin('000000',record), false);
 });
-
-\n
