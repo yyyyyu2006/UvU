@@ -17,7 +17,7 @@ const STORAGE_IMPORT_SETTING_KEYS = [
     'statusBarPresets', 'globalSendSound', 'globalReceiveSound', 'multiMsgSoundEnabled', 'soundPresets', 'galleryPresets',
     'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint', 'workshopSettings', 'workshopLlmPresets',
     'workshopPromptPresets', 'homeLayoutOrder', 'homeLayoutPages', 'widgetTemplates', 'addedWidgets',
-    'backupReminderSettings', 'stUnlocked'
+    'backupReminderSettings', 'stUnlocked', 'uvuWallet'
 ];
 const STORAGE_IMPORT_CATEGORY_KEYS = {
     personas: ['myPersonaPresets', 'homeSignature', 'activePersonaId'],
@@ -948,6 +948,7 @@ function storageValidateModules(modules) {
     for (const key of ['apiSettings', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'minimaxTtsSettings', 'cotSettings', 'customIcons', 'insWidgetSettings', 'homeWidgetSettings', 'themeSettings', 'backupReminderSettings', 'workshopSettings']) {
         if (modules[key] !== undefined) object(modules[key], key);
     }
+    if (modules.uvuWallet !== undefined && !globalThis.UvUWalletLedger?.validate(modules.uvuWallet)) fail('uvuWallet', '有效的钱包记录');
     if (modules.vectorMemoryApiSettings) for (const key of ['rewriteUrl', 'rewriteKey', 'rewriteModel']) optional(modules.vectorMemoryApiSettings[key], 'vectorMemoryApiSettings.' + key, 'string');
     if (modules.minimaxTtsSettings !== undefined) {
         const settings = modules.minimaxTtsSettings;

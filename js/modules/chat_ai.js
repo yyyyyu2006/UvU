@@ -842,6 +842,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         rebaseReplyMutation();
         const saved = await saveChatMutation(mutation, '回复保存失败，已恢复未保存内容，请检查存储空间后重试');
         if (saved) {
+            try { if(globalThis.UvUWalletStorage?.state?.().pending?.length)await globalThis.UvUWalletStorage.reconcile(); }
+            catch(error) { console.warn('钱包待处理账务同步失败:', error?.name || 'Error'); }
             mutation = beginChatMutation(chat, targetChatType, [], ['moments', 'momentsSignature']);
             ownedMessages.clear(); removedMessages.clear();
         }

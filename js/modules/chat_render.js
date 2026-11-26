@@ -616,6 +616,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                         }
                     
                         if (!await saveChatMutation(mutation, '红包领取未保存，请重试')) return;
+                        if(message.walletPaymentId)await globalThis.UvUWalletStorage?.reconcile?.();
                     
                         // 领取成功后显示详情
                         if (isChatTargetVisible(packetTarget) && typeof showRedPacketDetails === 'function') {
@@ -626,6 +627,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
                         const mutation = beginChatMutation(chat, packetTarget.type, [message]);
                         message.isRevealed = true;
                         if (!await saveChatMutation(mutation, '红包状态未保存，请重试')) return;
+                        if(message.walletPaymentId)await globalThis.UvUWalletStorage?.reconcile?.();
                         if (isChatTargetVisible(packetTarget) && typeof showRedPacketDetails === 'function') {
                             showRedPacketDetails(message, chat);
                         }

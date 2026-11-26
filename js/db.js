@@ -167,7 +167,7 @@ const globalSettingKeys = [
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
     'workshopSettings', 'workshopLlmPresets', 'workshopPromptPresets', 'homeLayoutOrder',
     'homeLayoutPages', 'widgetTemplates', 'addedWidgets', 'backupReminderSettings',
-    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'calendarData', 'minimaxTtsSettings', 'uvuStoryBridgeSettings', 'mcpSettings', 'musicSettings', 'musicLibrary'
+    'stUnlocked', 'memoryApiSettings', 'vectorMemoryApiSettings', 'environmentSettings', 'calendarData', 'minimaxTtsSettings', 'uvuStoryBridgeSettings', 'mcpSettings', 'musicSettings', 'musicLibrary', 'uvuWallet'
 ];
 
 
@@ -845,7 +845,8 @@ const loadData = async () => {
             homeLayoutOrder: ['widget-top', 'widget-ins', 'app-chat', 'app-api', 'app-wallpaper', 'app-worldbook', 'app-customize', 'app-tutorial', 'app-reader', 'widget-heart', 'app-placeholder', 'app-minesweeper'],
             homeLayoutPages: null,
             backupReminderSettings: { enabled: true, interval: 3, lastReminderTime: 0 },
-            stUnlocked: false
+            stUnlocked: false,
+            uvuWallet: { version: 1, balance: 0, cards: [], family: [], rows: [], pending: [], pin: null }
         };
         db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
     });
