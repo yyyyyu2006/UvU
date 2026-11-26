@@ -33,8 +33,8 @@
     <section id="wallet-cards-screen" class="screen wallet-screen" aria-labelledby="wallet-cards-title">
       <header class="app-header wallet-header"><button class="back-btn" data-wallet-back aria-label="返回钱包">‹</button><h1 id="wallet-cards-title" class="title">银行卡</h1><span></span></header>
       <main class="wallet-content wallet-sub-content">
-        <div id="wallet-card-deck" class="wallet-deck wallet-large-deck" aria-label="点击银行卡可翻面"></div>
-        <div class="wallet-card-hint">点击卡片切换正反面</div>
+        <div id="wallet-card-deck" class="wallet-deck wallet-large-deck" aria-label="银行卡卡组，可左右滑动切换"></div>
+        <div class="wallet-card-hint">点按翻面 · 左右滑动切卡</div>
         <div id="wallet-card-list" class="wallet-list"></div>
         <button id="wallet-add-card" class="wallet-outline-button">＋ 添加虚拟卡</button>
       </main>

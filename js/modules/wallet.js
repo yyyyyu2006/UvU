@@ -183,7 +183,7 @@
         }
         if(restoreFocus)target.firstElementChild.focus({preventScroll:true});
     }
-    function setupHomeDeck(target) {
+    function setupCardDeck(target) {
         let gesture=null, suppressClick=false;
         const turn=direction=>{
             const state=currentState(),active=target.querySelector('.is-active');
@@ -196,13 +196,13 @@
             if(!event.isPrimary||event.button!==0)return;
             suppressClick=false;
             const card=event.target.closest('.wallet-metal-card');
-            if(card)gesture={id:event.pointerId,x:event.clientX,y:event.clientY,card};
+            if(card)gesture={id:event.pointerId,x:event.clientX,y:event.clientY};
         });
         target.addEventListener('pointermove',event=>{
             if(gesture?.id!==event.pointerId)return;
             const x=Math.abs(event.clientX-gesture.x),y=Math.abs(event.clientY-gesture.y);
-            if(x>10&&x>y*1.25&&!gesture.card.hasPointerCapture(event.pointerId)){
-                gesture.card.setPointerCapture(event.pointerId);
+            if(x>10&&x>y*1.25&&!target.hasPointerCapture(event.pointerId)){
+                target.setPointerCapture(event.pointerId);
             }
         });
         target.addEventListener('pointerup',event=>{
@@ -212,7 +212,7 @@
             suppressClick=Math.max(Math.abs(x),Math.abs(y))>10;
             if(Math.abs(x)>36&&Math.abs(x)>Math.abs(y)*1.25)turn(x<0?1:-1);
         });
-        const cancel=event=>{if(gesture?.id===event.pointerId)gesture=null;};
+        const cancel=event=>{if(gesture?.id===event.pointerId&&(event.type==='pointercancel'||event.target===target))gesture=null;};
         target.addEventListener('pointercancel',cancel);
         target.addEventListener('lostpointercapture',cancel);
         target.addEventListener('click',event=>{
@@ -418,7 +418,8 @@
                 if(ok){setSheet(backdrop,false);byId('send-red-packet-form').reset();if(isChatTargetVisible(target))renderChatList();}
             });
         },true);
-        setupHomeDeck(byId('wallet-home-deck'));
+        setupCardDeck(byId('wallet-home-deck'));
+        setupCardDeck(byId('wallet-card-deck'));
         if(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')store.reconcile().catch(error=>console.warn('Wallet pending settlement:',error));
     }
     globalThis.setupWalletSystem=setup;

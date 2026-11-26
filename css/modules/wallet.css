@@ -34,13 +34,12 @@
 .wallet-section-heading h2 { margin:0; font-size:18px; line-height:1.4; font-weight:600; }
 .wallet-deck {
     position:relative; display:grid; margin:10px 0 18px; padding:2px 4px 12px;
-    perspective:900px;
+    perspective:900px; touch-action:pan-y pinch-zoom;
 }
 .wallet-deck[data-stacked] { padding-bottom:31px; }
-#wallet-home-deck { touch-action:pan-y pinch-zoom; }
 .wallet-large-deck { margin:20px 0 3px; }
 .wallet-metal-card {
-    position:relative; grid-area:1/1; align-self:start; width:100%; aspect-ratio:2.2;
+    position:relative; grid-area:1/1; align-self:start; width:100%; aspect-ratio:4 / 3;
     border:1px solid #a9adae; border-radius:18px; box-sizing:border-box;
     transform:rotateY(0deg); transform-style:preserve-3d;
     transition:transform .36s cubic-bezier(.2,.75,.25,1);
