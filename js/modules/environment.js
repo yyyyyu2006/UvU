@@ -311,7 +311,8 @@ async function getEnvironmentWeather(location, settings = getEnvironmentSettings
             precipitationProbability: Number(hourly.precipitation_probability?.[index]), weatherCode: Number(hourly.weather_code?.[index]) }))
             .filter(item => Number.isFinite(item.time) && item.time >= (Number.isFinite(epoch) ? epoch * 1000 : Date.now()) && item.time <= (Number.isFinite(epoch) ? epoch * 1000 : Date.now()) + 12 * 3600000);
         const validTemperatures = forecast.map(item => item.temperature).filter(Number.isFinite), probabilities = forecast.map(item => item.precipitationProbability).filter(Number.isFinite);
-        return { temperature, feelsLike: Number.isFinite(current.apparent_temperature) ? current.apparent_temperature : null,
+        const apparentTemperature = current.apparent_temperature ?? current.apparentTemperature ?? current.feels_like ?? current.feelsLike;
+        return { temperature, feelsLike: typeof apparentTemperature === 'number' && Number.isFinite(apparentTemperature) ? apparentTemperature : null,
             humidity: Number.isFinite(current.relative_humidity_2m) ? current.relative_humidity_2m : null,
             windSpeed: Number.isFinite(current.wind_speed_10m) ? current.wind_speed_10m : null,
             precipitation: Number.isFinite(current.precipitation) ? current.precipitation : null,

@@ -40,7 +40,7 @@ test('a retrieval deadline failure still permits the ordinary provider reply', a
     assert.ok(f.chats[0].history.some(message => message.role === 'assistant' && message.content.includes('reply')));
 });
 
-test('MCP automatic planner excludes withdrawn, rejected, hidden and status records', async () => {
+test('MCP does not fall back to an older eligible user request when the newest user record is ineligible', async () => {
     const { fixture, enabled, planner } = harness('mcp_services.test.cjs', 'fixture,enabled,planner');
     const f = fixture(); await enabled(f);
     const next = f.api.settings(); next.policies[0].auto = true; next.planner.source = 'primary'; next.planner.recentMessages = 20; await f.api.save(next); planner(f);
@@ -49,9 +49,7 @@ test('MCP automatic planner excludes withdrawn, rejected, hidden and status reco
         {role:'assistant',content:'HIDDEN',isHidden:true}, {role:'assistant',content:'STATUS_SECRET',isStatusUpdate:true}];
     const before = JSON.stringify(f.chat.history);
     await f.c.prepareMcpChatContext(f.chat, 'private');
-    const sent = JSON.stringify(f.plannerRequests[0].body);
-    assert.match(sent, /今天的天气/);
-    assert.doesNotMatch(sent, /WITHDRAWN|REJECTED|HIDDEN|STATUS_SECRET/);
+    assert.equal(f.plannerRequests.length,0,'a withdrawn newest message must not cause an older URL/tool request to run');
     assert.equal(JSON.stringify(f.chat.history), before);
 });
 

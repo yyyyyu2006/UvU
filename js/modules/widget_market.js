@@ -535,13 +535,9 @@ function renderWidgetGallery(container, templates, isTemplateLibrary = false) {
     // 2. 渲染尺寸导航
     const nav = document.createElement('div');
     nav.className = 'widget-size-nav';
-    const sizes = [
-        { id: 'all', name: '全部' },
-        { id: '1x1', name: '1x1' },
-        { id: '2x2', name: '2x2' },
-        { id: '4x2', name: '4x2' },
-        { id: '4x4', name: '4x4' }
-    ];
+    const knownSizes = ['1x1', '2x2', '4x2', '4x4'];
+    const availableSizes = [...new Set([...knownSizes, ...templates.map(template => template.size).filter(size => /^[1-6]x[1-4]$/.test(size || ''))])];
+    const sizes = [{ id: 'all', name: '全部' }, ...availableSizes.map(id => ({ id, name: id }))];
     
     sizes.forEach(size => {
         const item = document.createElement('div');
@@ -574,7 +570,7 @@ function renderWidgetGallery(container, templates, isTemplateLibrary = false) {
 
     // 4. 按尺寸分组渲染 (仅在 "全部" 模式下显示分组标题)
     if (currentWidgetSizeFilter === 'all') {
-        const sizeGroups = ['1x1', '2x2', '4x2', '4x4'];
+        const sizeGroups = availableSizes;
         sizeGroups.forEach((size, index) => {
             const groupTemplates = filteredTemplates.filter(t => t.size === size);
             if (groupTemplates.length > 0) {

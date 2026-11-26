@@ -144,7 +144,8 @@ function setupChatSettings() {
     document.getElementById('setting-chat-bg-upload').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
-            const char = db.characters.find(c => c.id === currentChatId);
+            const target = captureChatSendTarget();
+            const char = target?.type === 'private' ? target.chat : null;
             if (char) {
                 try {
                     const compressedUrl = await compressImage(file, {
@@ -152,9 +153,12 @@ function setupChatSettings() {
                         maxWidth: 1080,
                         maxHeight: 1920
                     });
+                    if (!isChatSendTargetValid(target)) return;
                     char.chatBg = compressedUrl;
-                    chatRoomScreen.style.backgroundImage = `url(${compressedUrl})`;
                     await saveData();
+                    if (!isChatSendTargetValid(target)) return;
+                    const screen = document.getElementById('chat-room-screen');
+                    if (screen && isChatTargetVisible(target)) screen.style.backgroundImage = `url(${compressedUrl})`;
                     showToast('聊天背景已更换');
                 } catch (error) {
                     showToast('背景压缩失败，请重试');

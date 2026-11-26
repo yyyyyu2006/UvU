@@ -583,10 +583,13 @@ function openApiManageModal() {
     const modal = document.getElementById('api-presets-modal');
     const list = document.getElementById('api-presets-list');
     if (!modal || !list) return;
-    list.innerHTML = '';
+    list.replaceChildren();
     const presets = _getApiPresets();
     if (!presets.length) {
-        list.innerHTML = '<p style="color:#888;margin:6px 0;">暂无预设</p>';
+        const empty = document.createElement('p');
+        empty.style.cssText = 'color:#888;margin:6px 0;';
+        empty.textContent = '暂无预设';
+        list.appendChild(empty);
     }
     presets.forEach((p, idx) => {
         const row = document.createElement('div');
@@ -599,7 +602,13 @@ function openApiManageModal() {
         const left = document.createElement('div');
         left.style.flex = '1';
         left.style.minWidth = '0';
-        left.innerHTML = '<div style="font-weight:600;">'+p.name+'</div><div style="font-size:12px;color:#666;margin-top:4px;">' + (p.data && p.data.provider ? ('提供者：'+p.data.provider) : '') + '</div>';
+        const name = document.createElement('div');
+        name.style.fontWeight = '600';
+        name.textContent = String(p.name ?? '');
+        const provider = document.createElement('div');
+        provider.style.cssText = 'font-size:12px;color:#666;margin-top:4px;';
+        provider.textContent = p.data?.provider ? '提供者：' + String(p.data.provider) : '';
+        left.append(name, provider);
 
         const btns = document.createElement('div');
         btns.style.display = 'flex';

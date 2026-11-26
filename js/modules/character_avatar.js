@@ -337,7 +337,8 @@ async function runCharacterAvatarCheck(chat, force = false) {
         const explanation = reason || (selected ? '选自' + selected.source + '，候选 ' + selected.id : '独立判断未选择合适的新头像');
         const pendingSuggestion = selected && !isCurrent(selected) && changePolicy !== 'automatic' ? {
             candidateId: selected.id, candidateFingerprint: cache[selected.id]?.hash || '', archiveId,
-            avatarFingerprint, historyFingerprint: await avatarImageFingerprint(signature), reason: explanation, createdAt: Date.now()
+            avatarFingerprint, personaFingerprint: await avatarImageFingerprint(String(persona || '')),
+            historyFingerprint: await avatarImageFingerprint(signature), reason: explanation, createdAt: Date.now()
         } : null;
         if (!valid() || controller.signal.aborted) return false;
         const changedAt = Date.now();
@@ -369,7 +370,8 @@ async function getCharacterAvatarSuggestion(chat) {
     const archiveId = chat.activeArchiveId, history = chat.history, avatar = chat.avatar, persona = chat.persona;
     const settingsSource = chat.avatarAutonomy, settingsSignature = JSON.stringify(settings);
     const historySignature = JSON.stringify(avatarHistoryText(history));
-    if (suggestion.historyFingerprint !== await avatarImageFingerprint(historySignature) ||
+    if (suggestion.personaFingerprint !== await avatarImageFingerprint(String(persona || '')) ||
+        suggestion.historyFingerprint !== await avatarImageFingerprint(historySignature) ||
         suggestion.avatarFingerprint !== await avatarImageFingerprint(avatar || '')) return false;
     const candidates = await collectAvatarCandidates(chat), candidate = candidates.find(item => item.id === suggestion.candidateId);
     const view = typeof currentChatId === 'undefined' ? null : [currentChatId, currentChatType];

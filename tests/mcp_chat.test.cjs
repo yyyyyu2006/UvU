@@ -62,11 +62,13 @@ test('ambiguous URL readers are sent to the secondary planner with only fetch ca
 });
 
 test('unsafe URL destinations and sensitive query values never reach an automatic fetch tool', async () => {
-    const cases = ['http://127.0.0.1/admin', 'http://192.168.1.4/private', 'https://user:pass@example.com/private', 'https://example.com/?token=secret&item=1'];
+    const cases = ['http://127.0.0.1/admin', 'http://192.168.1.4/private', 'https://user:pass@example.com/private', 'https://example.com/?token=secret&item=1',
+        'https://example.com/file?X-Amz-Signature=aws-secret&X-Amz-Credential=aws-user&X-Amz-Security-Token=aws-session'];
     for (const value of cases) {
         const f = fixture(value, [fetchTool()]);
         await f.run();
         if (value.includes('token=secret')) assert.equal(f.calls[0]?.args.url.includes('token=secret'), false);
+        else if (value.includes('X-Amz')) assert.doesNotMatch(f.calls[0]?.args.url || '', /aws-secret|aws-user|aws-session/);
         else assert.equal(f.calls.length, 0);
     }
 });

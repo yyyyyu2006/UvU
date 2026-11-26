@@ -14,7 +14,7 @@ async function cacheFixture(fail){
  const nodes=Object.fromEntries(['open-clean-cache-btn','clean-image-cache-modal','clean-image-cache-form','cancel-clean-btn','confirm-clean-btn','clean-cache-loading'].map(id=>[id,element()]));
  nodes['clean-image-cache-form'].querySelectorAll=()=>['chat','gallery','generated'].map(value=>({checked:true,value,addEventListener(){}}));
  const ordinary='保留中文正文'.repeat(240), image='data:image/png;base64,AAAA';
- const char={id:'c',activeArchiveId:'a',history:[{id:'text',content:ordinary},{id:'pic',content:image}],gallery:[{url:image},{url:image},{url:'https://example.invalid/a'}],archives:[{id:'a',data:{history:[]}}]};
+ const char={id:'c',activeArchiveId:'a',history:[{id:'text',content:ordinary},{id:'pic',content:image}],gallery:[{url:image},{url:image},{url:'https://example.invalid/a'}],archives:[{id:'a',data:{history:[],gallery:[{url:image},{url:'https://example.invalid/archive'}]}}]};
  const Dexie=require('dexie'),{indexedDB,IDBKeyRange}=require('fake-indexeddb');
  const dbx=new Dexie('cache-audit-'+Date.now()+'-'+Math.random(),{indexedDB,IDBKeyRange});
  dbx.version(1).stores({workshopHistory:'&id',characterPhotos:'&id',reader_comments:'&id'});
@@ -22,17 +22,42 @@ async function cacheFixture(fail){
  const c=context({document:{getElementById:id=>nodes[id]||null,addEventListener(){}},db:{characters:[char],groups:[],myStickers:[]},dexieDB:dbx,Blob,URL,
   runDataPersistence:fn=>fn(),showToast(){},saveData:async()=>{
    char.archives[0].data.history=structuredClone(char.history);
-   if(fail){char.gallery.push({url:'https://example.invalid/later'});char.history[0].content=ordinary+'新编辑';throw Error('quota')}
+   if(fail){char.gallery.push({url:'https://example.invalid/later'});char.archives[0].data.gallery.push({url:'https://example.invalid/concurrent'});char.history[0].content=ordinary+'新编辑';throw Error('quota')}
   }});
  load(c,'js/modules/storage.js');c.window.setupCleanImageCache();
  try {await nodes['clean-image-cache-form'].onsubmit({preventDefault(){}});return{char,ordinary,image,counts:await Promise.all([dbx.workshopHistory.count(),dbx.characterPhotos.count(),dbx.reader_comments.count()])};}
  finally{dbx.close();await dbx.delete();}
 }
-test('image cleanup preserves long text and commits generated deletion together',async()=>{
- const h=await cacheFixture(false);assert.equal(h.char.history[0].content,h.ordinary);assert.equal(h.char.history[1].content,'[图片已清理]');assert.deepEqual(h.counts,[0,0,0]);assert.equal(h.char.gallery.length,1);
+test('image cleanup preserves long text and clears current and archived character galleries together',async()=>{
+ const h=await cacheFixture(false);assert.equal(h.char.history[0].content,h.ordinary);assert.equal(h.char.history[1].content,'[图片已清理]');assert.deepEqual(h.counts,[0,0,0]);assert.equal(h.char.gallery.length,1);assert.deepEqual(h.char.archives[0].data.gallery,[{url:'https://example.invalid/archive'}]);
 });
 test('failed image cleanup restores pictures, nameless gallery and archive clones while retaining later edits',async()=>{
- const h=await cacheFixture(true);assert.equal(h.char.history[0].content,h.ordinary+'新编辑');assert.equal(h.char.history[1].content,h.image);assert.equal(h.char.archives[0].data.history[1].content,h.image);assert.equal(h.char.gallery.filter(x=>x.url===h.image).length,2);assert.equal(h.char.gallery.at(-1).url,'https://example.invalid/later');assert.deepEqual(h.counts,[1,1,1]);
+ const h=await cacheFixture(true);assert.equal(h.char.history[0].content,h.ordinary+'新编辑');assert.equal(h.char.history[1].content,h.image);assert.equal(h.char.archives[0].data.history[1].content,h.image);assert.equal(h.char.gallery.filter(x=>x.url===h.image).length,2);assert.equal(h.char.gallery.at(-1).url,'https://example.invalid/later');assert.equal(h.char.archives[0].data.gallery.filter(x=>x.url===h.image).length,1);assert.equal(h.char.archives[0].data.gallery.at(-1).url,'https://example.invalid/concurrent');assert.deepEqual(h.counts,[1,1,1]);
+});
+test('battery reminder applies the shared context filter to its bounded recent history',()=>{
+ const received=[];const history=Array.from({length:35},(_,i)=>({id:i,content:String(i),isContextDisabled:i===34,relationshipDelivery:i===33}));
+ const c=context({filterHistoryForAI:(chat,items)=>{received.push(...items);return items.filter(item=>!item.isContextDisabled);}});
+ load(c,'js/modules/battery_interaction.js');const selected=c.batteryReminderHistory({history});
+ assert.equal(received.length,29);assert.equal(selected.length,28);assert.equal(selected.some(item=>item.id===34),false);assert.equal(selected.some(item=>item.id===33),false);assert.equal(selected[0].id,5);
+ const fallback=context();load(fallback,'js/modules/battery_interaction.js');assert.deepEqual(fallback.batteryReminderHistory({history:[{id:'hidden',isContextDisabled:true},{id:'withdrawn',isWithdrawn:true},{id:'visible'}]}).map(item=>item.id),['visible']);
+});
+test('sticker group save failure rolls back only this move and leaves concurrent edits intact',async()=>{
+ const gate=deferred(),a={id:'a',group:'old'},b={id:'b'};const notices=[];
+ const c=context({db:{myStickers:[a,b]},saveData:()=>gate.promise,showToast:message=>notices.push(message)});load(c,'js/modules/sticker.js');
+ const pending=c.moveStickersToGroup(['a','b'],'new');b.group='concurrent';gate.reject(Error('quota'));
+ assert.equal(await pending,false);assert.equal(a.group,'old');assert.equal(Object.hasOwn(b,'group'),true);assert.equal(b.group,'concurrent');assert.match(notices[0],/保存失败/);
+ c.saveData=async()=>{};assert.equal(await c.moveStickersToGroup(['a','b'],'new'),true);assert.equal(a.group,'new');assert.equal(b.group,'new');
+});
+test('message wrapper lookup compares IDs as data, including selector metacharacters',()=>{
+ const wrappers=[{dataset:{id:'msg-"[x]'},classList:{add(){},remove(){}}},{dataset:{id:'ordinary'},classList:{add(){},remove(){}}}];
+ const root={querySelectorAll:selector=>{assert.equal(selector,'.message-wrapper[data-id]');return wrappers;}};const c=context();load(c,'js/modules/chat_ops.js');
+ const found=c.findChatMessageWrappersById(root,'msg-"[x]');assert.equal(found.length,1);assert.equal(found[0],wrappers[0]);
+});
+test('starting the call timer twice replaces the old interval',()=>{
+ const intervals=new Map();let next=0;const cleared=[];const node={textContent:''};
+ const c=context({document:{getElementById:()=>node,addEventListener(){}},setInterval:(fn,ms)=>{intervals.set(++next,{fn,ms});return next;},clearInterval:id=>{cleared.push(id);intervals.delete(id);}});
+ load(c,'js/modules/video_call.js');const module=vm.runInContext('VideoCallModule',c);module.startTimer();const first=module.state.timerInterval;module.startTimer();
+ assert.deepEqual(cleared,[first]);assert.equal(intervals.size,1);assert.notEqual(module.state.timerInterval,first);
 });
 test('workshop locks before save and releases after save failure without generating',async()=>{
  const gate=deferred(),handlers={},btn={innerHTML:'生成',addEventListener:(name,fn)=>handlers[name]=fn};let requests=0;

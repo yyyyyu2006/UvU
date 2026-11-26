@@ -852,6 +852,11 @@ function enterMultiSelectMode(initialMessageId, mode = 'delete') {
     updateMessageSelectionUI();
 }
 
+function findChatMessageWrappersById(root, id) {
+    if (!root?.querySelectorAll) return [];
+    return [...root.querySelectorAll('.message-wrapper[data-id]')].filter(element => element.dataset.id === String(id));
+}
+
 function exitMultiSelectMode() {
     removeContextMenu();
     isInMultiSelectMode = false;
@@ -864,7 +869,7 @@ function exitMultiSelectMode() {
     
     chatRoomScreen.classList.remove('multi-select-active');
     selectedMessageIds.forEach(id => {
-        messageArea.querySelectorAll(`.message-wrapper[data-id="${id}"]`).forEach(el => {
+        findChatMessageWrappersById(messageArea, id).forEach(el => {
             el.classList.remove('multi-select-selected');
             el.removeAttribute('aria-selected');
         });
@@ -880,15 +885,16 @@ function exitMultiSelectMode() {
 function toggleMessageSelection(messageId) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!isCurrentMessageSelection(chat)) return;
-    const el = messageArea.querySelector(`.message-wrapper[data-id="${messageId}"]`);
+    const wrappers = findChatMessageWrappersById(messageArea, messageId);
+    const el = wrappers[0];
     if (!el) return;
     if (selectedMessageIds.has(messageId)) {
         selectedMessageIds.delete(messageId);
-        el.classList.remove('multi-select-selected');
+        wrappers.forEach(wrapper => wrapper.classList.remove('multi-select-selected'));
         if (messageSelectionScope.anchorId === messageId) messageSelectionScope.anchorId = [...selectedMessageIds].at(-1) || null;
     } else {
         selectedMessageIds.add(messageId);
-        el.classList.add('multi-select-selected');
+        wrappers.forEach(wrapper => wrapper.classList.add('multi-select-selected'));
         messageSelectionScope.anchorId = messageId;
         messageSelectionScope.direction = 'down';
     }
@@ -1103,7 +1109,7 @@ async function generateCapture() {
     // 我们可以手动构建或者克隆现有的 DOM 并移除 .multi-select-selected 类
     
     sortedMessages.forEach(msg => {
-        const originalRows = messageArea.querySelectorAll(`.message-wrapper[data-id="${msg.id}"]`);
+        const originalRows = findChatMessageWrappersById(messageArea, msg.id);
         originalRows.forEach(originalEl => {
             const clone = originalEl.cloneNode(true);
             clone.classList.remove('multi-select-selected');
@@ -1410,8 +1416,7 @@ function setupDeleteHistoryChunk() {
                 showToast(`已屏蔽 ${changedCount} 条消息`);
                 // Update DOM in-place
                 modifiedIds.forEach(id => {
-                    const el = document.querySelector(`.message-wrapper[data-id="${id}"]`);
-                    if (el) el.classList.add('context-disabled');
+                    findChatMessageWrappersById(messageArea, id).forEach(el => el.classList.add('context-disabled'));
                 });
                 updateHiddenRangesInfo(range.chat);
                 generateRangePreview(range.chat, range.startIndex, range.endIndex);
@@ -1447,8 +1452,7 @@ function setupDeleteHistoryChunk() {
                 showToast(`已恢复 ${changedCount} 条消息`);
                 // Update DOM in-place
                 modifiedIds.forEach(id => {
-                    const el = document.querySelector(`.message-wrapper[data-id="${id}"]`);
-                    if (el) el.classList.remove('context-disabled');
+                    findChatMessageWrappersById(messageArea, id).forEach(el => el.classList.remove('context-disabled'));
                 });
                 updateHiddenRangesInfo(range.chat);
                 generateRangePreview(range.chat, range.startIndex, range.endIndex);

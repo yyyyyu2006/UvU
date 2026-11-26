@@ -313,7 +313,7 @@ async function runCharacterMemos(chat, force = false, retryInputs = null) {
     if (characterMemoJobs.has(key)) return { skipped: true, busy: true };
     if (!force && Date.now() - (characterMemoFailures.get(key)?.at || 0) < 300000) return { skipped:true };
     const state = characterMemoState(chat), eligible = (chat.history || []).filter(m=>characterMemoMessageAllowed(chat,m)).slice(-60);
-    if(!force && state.task && state.task.status!=='completed')return {skipped:true,unfinished:true};
+    if(!force && state.task?.status==='running')return {skipped:true,unfinished:true};
     const processed = state.processed[owner.persona] || {};
     const unprocessed = eligible.filter(m => processed[m.id] !== characterMemoFingerprint(m));
     const sources = retryInputs?retryInputs.slice(0,30).map(s=>{
@@ -326,8 +326,16 @@ async function runCharacterMemos(chat, force = false, retryInputs = null) {
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
         const taskState=characterMemoState(chat);taskState.task={id:characterMemoId(),owner:owner.persona,status:'running',startedAt:Date.now(),inputs:sources.map(m=>({id:m.id,fingerprint:characterMemoFingerprint(m)}))};
+        const taskId=taskState.task.id;
         await saveCharacterMemoState(owner,taskState);
-        if(controller.signal.aborted||!characterMemoCurrent(owner)||!characterMemoSettings(chat).enabled||sources.some((m,i)=>!chat.history.includes(m)||!characterMemoMessageAllowed(chat,m)||characterMemoFingerprint(m)!==fingerprints[i]))return {skipped:true};
+        const discardStaleTask = async () => {
+            if (!characterMemoCurrent(owner) || chat.characterMemos?.task?.id !== taskId) return;
+            const stale = characterMemoState(chat);
+            stale.task = { ...stale.task, status: 'completed', discarded: true, completedAt: Date.now() };
+            stale.lastError = '来源或设置已变化，旧结果已丢弃';
+            await saveCharacterMemoState(owner, stale);
+        };
+        if(controller.signal.aborted||!characterMemoCurrent(owner)||!characterMemoSettings(chat).enabled||sources.some((m,i)=>!chat.history.includes(m)||!characterMemoMessageAllowed(chat,m)||characterMemoFingerprint(m)!==fingerprints[i])){await discardStaleTask();return {skipped:true};}
         const config = resolveAutoMemoryApi(settings);
         const records = sources.map(m => ({ id: m.id, speaker: m.role === 'user' ? 'user' : 'char', text: m.content.slice(0,4000), hasQuote: Boolean(m.quote) }));
         const prompt = [
@@ -338,7 +346,7 @@ async function runCharacterMemos(chat, force = false, retryInputs = null) {
         const aborted=new Promise((_,reject)=>{controller.signal.addEventListener('abort',()=>reject(Object.assign(new Error('整理已取消'),{name:'AbortError'})),{once:true});});aborted.catch(()=>{});
         const raw = await Promise.race([fetchAiResponse(config, request.requestBody, request.headers, request.endpoint, false, { signal: controller.signal }),aborted]);
         if (controller.signal.aborted || !characterMemoCurrent(owner) || !characterMemoSettings(chat).enabled || !force && (!characterMemoSettings(chat).automatic || characterMemoSettings(chat).mode === 'manual') ||
-            sources.some((m,i)=>!chat.history.includes(m) || !characterMemoMessageAllowed(chat,m) || characterMemoFingerprint(m)!==fingerprints[i])) return { skipped:true };
+            sources.some((m,i)=>!chat.history.includes(m) || !characterMemoMessageAllowed(chat,m) || characterMemoFingerprint(m)!==fingerprints[i])) { await discardStaleTask(); return { skipped:true }; }
         const text = String(raw).trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
         if (text.length > 32000) throw new Error('备忘录响应过大，未保存');
         const parsed = JSON.parse(text);

@@ -35,7 +35,8 @@ function openStickerSemanticLibrary() {
     find('[data-fields]').append(confidence);
     let running = null, current = null, renderedProfile = null, dirty = false, saving = false;
     let choices = [];
-    const state = sticker => getStickerSemanticProfile(sticker)?.status || (getStickerSemanticFailure(sticker) ? 'failed' : 'pending');
+    const state = sticker => getStickerSemanticProfile(sticker)?.status ||
+        (getStickerSemanticFailure(sticker)?.issue && getStickerSemanticFailure(sticker).issue !== '已暂停' ? 'failed' : 'pending');
     const stateNames = { review: '待核对', confirmed: '已确认', failed: '失败', pending: '未识图' };
     const config = () => resolveAuxiliaryApiConfig('imageRecognition');
     function load(sticker, profile = getStickerSemanticProfile(sticker)) {

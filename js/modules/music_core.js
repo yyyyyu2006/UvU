@@ -545,7 +545,7 @@
     }
     function saveCheckpoint() {
         if (!state.track || state.position < 1) return;
-        try { if(checkpointEnabled()) sessionStorage.setItem(checkpointKey, JSON.stringify({ provider: state.track.provider, id: state.track.id, position: state.position })); if(playbackPrefs().persistentCheckpoint) localStorage.setItem(persistentKey,JSON.stringify({track:state.track,position:state.position,queue:state.queue,mode:state.mode,at:Date.now()})); lastCheckpoint = Date.now(); } catch (_) {}
+        try { if(checkpointEnabled()) sessionStorage.setItem(checkpointKey, JSON.stringify({ provider: state.track.provider, serverId: state.track.serverId || '', id: state.track.id, position: state.position })); if(playbackPrefs().persistentCheckpoint) localStorage.setItem(persistentKey,JSON.stringify({track:state.track,position:state.position,queue:state.queue,mode:state.mode,at:Date.now()})); lastCheckpoint = Date.now(); } catch (_) {}
     }
     function checkpoint() {
         try {
@@ -553,7 +553,10 @@
             const saved = JSON.parse(sessionStorage.getItem(checkpointKey));
             if (!saved || !Number.isFinite(saved.position) || saved.position < 1) return null;
             const stored = library();
-            const track = [...stored.queue, ...stored.recent, ...stored.favorites].find(t => t.provider === saved.provider && t.id === saved.id && (t.provider !== 'local' || t.localId));
+            const matches = [...stored.queue, ...stored.recent, ...stored.favorites].filter(t => t.provider === saved.provider && t.id === saved.id &&
+                (t.provider !== 'local' || t.localId) && (!saved.serverId || (t.serverId || '') === saved.serverId));
+            const unique = new Map(matches.map(track => [key(track), track]));
+            const track = unique.size === 1 ? unique.values().next().value : null;
             return track ? { track, position: number(saved.position) } : null;
         } catch (_) { return null; }
     }

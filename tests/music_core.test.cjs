@@ -763,7 +763,7 @@ test('resume across a reload stores only track identity and requires a new play 
     await h.music.player.play(song);
     h.sounds[0].currentTime=80;h.sounds[0].emit('timeupdate');
     const item=[...h.session.entries()].find(([key])=>key.startsWith('uvu.music.position.'));
-    assert.deepEqual(JSON.parse(item[1]),{provider:song.provider,id:'resume',position:80});
+    assert.deepEqual(JSON.parse(item[1]),{provider:song.provider,serverId:'',id:'resume',position:80});
     const reloaded=harness(plain(initial));reloaded.session.set(...item);
     assert.equal(reloaded.music.player.checkpoint().position,80);
     assert.equal(reloaded.calls.length,0);
@@ -773,4 +773,14 @@ test('resume across a reload stores only track identity and requires a new play 
     assert.equal(reloaded.music.player.setCheckpoint(false),true);
     assert.equal(reloaded.music.player.checkpoint(),null);
     h.music.player.stop();reloaded.music.player.stop();
+});
+
+test('legacy checkpoint with an ambiguous Navidrome song ID is skipped, while a server-scoped checkpoint resolves',()=>{
+    const a=track('same',{provider:'navidrome',serverId:'home'}),b=track('same',{provider:'navidrome',serverId:'studio'});
+    const h=harness({musicLibrary:{queue:[a,b]}});h.music.player.setCheckpoint(true);
+    const key=[...h.session.keys()].find(value=>value.startsWith('uvu.music.position.'));assert.ok(key);
+    h.session.set(key,JSON.stringify({provider:'navidrome',id:'same',position:42}));
+    assert.equal(h.music.player.checkpoint(),null,'old checkpoints without serverId cannot guess between accounts');
+    h.session.set(key,JSON.stringify({provider:'navidrome',serverId:'studio',id:'same',position:42}));
+    assert.equal(h.music.player.checkpoint().track.serverId,'studio');
 });

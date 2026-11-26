@@ -117,7 +117,7 @@ const BatteryInteraction = {
             }
 
             // 准备最近 30 条消息
-            const recentHistory = chat.history.slice(-30).filter(msg => !msg.relationshipDelivery).map(msg => {
+            const recentHistory = batteryReminderHistory(chat).map(msg => {
                 let content = msg.content;
                 // 简化的内容清理
                 content = content.replace(/\[.*?的消息：([\s\S]+?)\]/, '$1');
@@ -279,6 +279,13 @@ ${recentHistory}
         }, 10000);
     }
 };
+
+function batteryReminderHistory(chat) {
+    const recent = (chat?.history || []).slice(-30).filter(message => !message.relationshipDelivery);
+    return typeof filterHistoryForAI === 'function'
+        ? filterHistoryForAI(chat, recent)
+        : recent.filter(message => !message.isContextDisabled && !message.isWithdrawn);
+}
 
 // 导出到全局对象
 window.BatteryInteraction = BatteryInteraction;

@@ -377,31 +377,33 @@ function renderArchiveManager() {
     if (!chat || !list) return;
     syncChatActiveArchive(chat, false);
 
-    list.innerHTML = chat.archives
+    const cards = chat.archives
         .slice()
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(archive => {
             const active = archive.id === chat.activeArchiveId;
             const messageCount = archive.data?.history?.length || 0;
             const journalCount = archive.data?.memoryJournals?.length || 0;
-            const origin = archive.origin ? `<div class="archive-origin">来自：${escapeHtml(archive.origin.archiveName || '其他存档')}</div>` : '';
-            return `
-                <article class="chat-archive-card ${active ? 'active' : ''}" data-archive-id="${archive.id}">
-                    <div class="archive-card-main">
-                        <div class="archive-name-row">
-                            <strong>${escapeHtml(archive.name)}</strong>
-                            ${active ? '<span class="archive-active-tag">当前</span>' : ''}
-                        </div>
-                        <div class="archive-meta">${messageCount} 条消息 · ${journalCount} 篇日记 · ${formatArchiveTime(archive.updatedAt)}</div>
-                        ${origin}
-                    </div>
-                    <div class="archive-actions">
-                        ${active ? '' : '<button type="button" data-action="switch">进入</button>'}
-                        <button type="button" data-action="rename">改名</button>
-                        <button type="button" data-action="delete" class="danger">删除</button>
-                    </div>
-                </article>`;
-        }).join('');
+            const card = document.createElement('article');
+            card.className = 'chat-archive-card' + (active ? ' active' : '');
+            card.dataset.archiveId = String(archive.id);
+            const main = document.createElement('div'); main.className = 'archive-card-main';
+            const nameRow = document.createElement('div'); nameRow.className = 'archive-name-row';
+            const name = document.createElement('strong'); name.textContent = String(archive.name || '未命名存档');
+            nameRow.appendChild(name);
+            if (active) { const tag = document.createElement('span'); tag.className = 'archive-active-tag'; tag.textContent = '当前'; nameRow.appendChild(tag); }
+            const meta = document.createElement('div'); meta.className = 'archive-meta';
+            meta.textContent = `${messageCount} 条消息 · ${journalCount} 篇日记 · ${formatArchiveTime(archive.updatedAt)}`;
+            main.append(nameRow, meta);
+            if (archive.origin) { const origin = document.createElement('div'); origin.className = 'archive-origin'; origin.textContent = '来自：' + String(archive.origin.archiveName || '其他存档'); main.appendChild(origin); }
+            const actions = document.createElement('div'); actions.className = 'archive-actions';
+            const addAction = (action, label, danger = false) => { const button = document.createElement('button'); button.type = 'button'; button.dataset.action = action; button.textContent = label; if (danger) button.className = 'danger'; actions.appendChild(button); };
+            if (!active) addAction('switch', '进入');
+            addAction('rename', '改名'); addAction('delete', '删除', true);
+            card.append(main, actions);
+            return card;
+        });
+    list.replaceChildren(...cards);
 }
 
 function openArchiveManager() {

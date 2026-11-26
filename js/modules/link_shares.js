@@ -41,9 +41,9 @@ function isTikTokThumbnailUrl(url) {
 
 function sharedLinkContextUrl(value) {
     const url = new URL(value);
-    const sensitiveParameter = /^(?:access[_-]?token|refresh[_-]?token|token|auth(?:orization)?|api[_-]?key|key|secret|signature|sig|session(?:[_-]?id)?|credential|password|jwt|code)$/i;
+    const sensitiveParameter = /^(?:accesstoken|refreshtoken|token|authorization|auth|apikey|key|secret|signature|sig|session|sessionid|credential|password|jwt|code|xamzsignature|xamzcredential|xamzsecuritytoken|xgoogcredential|xgoogsignature|xgoogalgorithm|xgoogdate|xgoogexpires|xgoogsignedheaders|awsaccesskeyid|googleapikey)$/i;
     for (const key of Array.from(url.searchParams.keys())) {
-        if (sensitiveParameter.test(key.replace(/[A-Z]/g, letter => '_' + letter).replace(/^_/, ''))) url.searchParams.delete(key);
+        if (sensitiveParameter.test(key.toLowerCase().replace(/[^a-z0-9]/g, ''))) url.searchParams.delete(key);
     }
     return url.href;
 }

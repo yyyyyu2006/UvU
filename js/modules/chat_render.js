@@ -1136,6 +1136,11 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     return wrapper;
 }
 
+function findRenderedMessageWrapper(root, id) {
+    if (!root?.querySelectorAll) return null;
+    return [...root.querySelectorAll('.message-wrapper[data-id]')].find(element => element.dataset.id === String(id)) || null;
+}
+
 // 全局函数：处理代付响应
 window.sendPayResponse = async function(msgId, action) {
     const chat = db.characters.find(c => c.id === currentChatId);
@@ -1151,7 +1156,7 @@ window.sendPayResponse = async function(msgId, action) {
     msg.payStatus = action === 'pay' ? 'paid' : 'rejected';
     
     // 2. 刷新界面（为了让原消息的小票立刻变成"已支付/已拒绝"状态）
-    const wrapper = document.querySelector(`.message-wrapper[data-id="${msgId}"]`);
+    const wrapper = findRenderedMessageWrapper(document, msgId);
     if (wrapper) {
          renderMessages(false, false);
     }
@@ -1308,7 +1313,7 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 const actualIndex = character.history.length - 1 - lastPendingGiftIndex;
                 const giftMsg = character.history[actualIndex];
                 giftMsg.giftStatus = 'received';
-                const giftCardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${giftMsg.id}"] .gift-card`);
+                const giftCardOnScreen = findRenderedMessageWrapper(messageArea, giftMsg.id)?.querySelector('.gift-card');
                 if (giftCardOnScreen) {
                     giftCardOnScreen.classList.add('received');
                 }
@@ -1323,7 +1328,7 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 const actualIndex = character.history.length - 1 - lastPendingPayIndex;
                 const payMsg = character.history[actualIndex];
                 payMsg.payStatus = 'paid';
-                const receiptBubble = messageArea.querySelector(`.message-wrapper[data-id="${payMsg.id}"] .receipt-bubble`);
+                const receiptBubble = findRenderedMessageWrapper(messageArea, payMsg.id)?.querySelector('.receipt-bubble');
                 if (receiptBubble) {
                     // 更新底部状态文字
                     const statusSpan = receiptBubble.querySelector('.pay-status-text');
@@ -1342,7 +1347,7 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 const actualIndex = character.history.length - 1 - lastPendingPayIndex;
                 const payMsg = character.history[actualIndex];
                 payMsg.payStatus = 'rejected';
-                const receiptBubble = messageArea.querySelector(`.message-wrapper[data-id="${payMsg.id}"] .receipt-bubble`);
+                const receiptBubble = findRenderedMessageWrapper(messageArea, payMsg.id)?.querySelector('.receipt-bubble');
                 if (receiptBubble) {
                     // 更新底部状态文字
                     const statusSpan = receiptBubble.querySelector('.pay-status-text');
@@ -1387,7 +1392,7 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 const actualIndex = character.history.length - 1 - lastPendingTransferIndex;
                 const transferMsg = character.history[actualIndex];
                 transferMsg.transferStatus = statusToSet;
-                const transferCardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${transferMsg.id}"] .transfer-card`);
+                const transferCardOnScreen = findRenderedMessageWrapper(messageArea, transferMsg.id)?.querySelector('.transfer-card');
                 if (transferCardOnScreen) {
                     transferCardOnScreen.classList.remove('received', 'returned');
                     transferCardOnScreen.classList.add(statusToSet);

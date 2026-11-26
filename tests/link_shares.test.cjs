@@ -65,6 +65,14 @@ test('link context is attached only to eligible messages inside the supplied his
     assert.match(privatePlan.history[0].content, /share=ok/);
     assert.doesNotMatch(privatePlan.history[0].content, /secret123|hidden/);
     assert.doesNotMatch(privatePlan.sources[0].url, /secret123|hidden/);
+    const signed = c.sharedLinkMessage(c.makeSharedLink({
+        url: 'https://example.com/story?X-Amz-Signature=aws-signature&X-Amz-Credential=aws-credential&X-Goog-Signature=google-signature&public=ok',
+        readableText: '公开内容'
+    }));
+    const signedPlan = c.prepareSharedLinkContext([signed]);
+    assert.match(signedPlan.history[0].content, /public=ok/);
+    assert.doesNotMatch(signedPlan.history[0].content, /aws-signature|aws-credential|google-signature/);
+    assert.doesNotMatch(signedPlan.sources[0].url, /aws-signature|aws-credential|google-signature/);
     assert.equal(c.prepareSharedLinkContext([ordinary]).history[0], ordinary);
     const excluded = { ...message, isContextDisabled: true };
     assert.equal(c.prepareSharedLinkContext([excluded]).history[0], excluded);

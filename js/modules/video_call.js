@@ -505,6 +505,7 @@ const VideoCallModule = {
     },
 
     startCall: async function(type, isIncoming = false, chatObject = null) {
+        if (this.state.isCallActive) { showToast('当前已有通话正在进行'); return; }
         const relationshipChat = chatObject || (currentChatType === 'private' ? db.characters.find(c => c.id === currentChatId) : null);
         if (relationshipChat && db.characters.includes(relationshipChat) && typeof relationshipCanChat === 'function' && !relationshipCanChat(relationshipChat)) {
             this.hideCallTypeModal();
@@ -731,6 +732,8 @@ const VideoCallModule = {
     },
 
     startTimer: function() {
+        if (this.state.timerInterval) clearInterval(this.state.timerInterval);
+        this.state.timerInterval = null;
         const timerEl = document.getElementById('vc-call-timer');
         const floatTimerEl = document.getElementById('vc-float-timer');
         
@@ -1192,8 +1195,6 @@ const VideoCallModule = {
         }
 
         if (!chat) return;
-        this.state.currentChat = chat;
-
         const modal = document.getElementById('vc-history-modal');
         const listContainer = document.getElementById('vc-history-list');
         listContainer.innerHTML = '';

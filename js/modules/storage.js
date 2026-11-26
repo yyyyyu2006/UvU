@@ -1613,11 +1613,12 @@ function setupCleanImageCache() {
         storageChatHistories().forEach(processHistory);
 
         (db.characters || []).forEach(char => {
-            if (char.gallery) {
-                char.gallery.forEach(item => {
-                    if (isBase64Image(item.url)) cacheSizes.gallery += getStringSize(item.url);
+            const galleries = [char.gallery, ...(Array.isArray(char.archives) ? char.archives.map(archive => archive?.data?.gallery) : [])];
+            galleries.forEach(gallery => {
+                if (Array.isArray(gallery)) gallery.forEach(item => {
+                    if (isBase64Image(item?.url)) cacheSizes.gallery += getStringSize(item.url);
                 });
-            }
+            });
         });
 
         (db.myStickers || []).forEach(sticker => {
@@ -1733,13 +1734,16 @@ function setupCleanImageCache() {
 
             if (selectedCategories.includes('gallery')) {
                 (db.characters || []).forEach(char => {
-                    if (char.gallery) {
-                        const originalLength = char.gallery.length;
-                        const before = char.gallery;
-                        char.gallery = before.filter(item => !isBase64Image(item.url));
-                        galleryChanges.push({ char, before, after: char.gallery });
-                        if (originalLength !== char.gallery.length) dataChanged = true;
-                    }
+                    const galleries = [{ owner: char, key: 'gallery' }, ...(Array.isArray(char.archives) ? char.archives.map(archive => ({ owner: archive?.data, key: 'gallery' })) : [])];
+                    galleries.forEach(({ owner, key }) => {
+                        const before = owner?.[key];
+                        if (!Array.isArray(before)) return;
+                        const after = before.filter(item => !isBase64Image(item?.url));
+                        if (after.length === before.length) return;
+                        owner[key] = after;
+                        galleryChanges.push({ owner, key, before, after });
+                        dataChanged = true;
+                    });
                 });
             }
 
@@ -1791,8 +1795,8 @@ function setupCleanImageCache() {
                     if (key in before) copy[key] = before[key]; else delete copy[key];
                 }
             });
-            galleryChanges.forEach(({ char, before, after }) => {
-                if (char.gallery !== after) return;
+            galleryChanges.forEach(({ owner, key, before, after }) => {
+                if (owner[key] !== after) return;
                 before.forEach((item, index) => {
                     if (!after.some(current => current === item || (item.id != null && current.id === item.id))) after.splice(Math.min(index, after.length), 0, item);
                 });

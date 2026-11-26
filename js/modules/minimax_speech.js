@@ -397,7 +397,7 @@
         };
         const refresh = button('读取音色', async () => {
             controller?.abort(); controller = new AbortController(); refresh.disabled = true; status.textContent = '正在读取…';
-            try { const connection = readConnection(); voices = await listVoices(connection, controller.signal); render(); status.textContent = '已读取 ' + voices.length + ' 个音色 · ' + (typeof speech?.region === 'function' ? speech.region(connection.endpoint) : '当前接口') + ' · ' + new Date().toLocaleTimeString(); }
+            try { const connection = readConnection(); voices = await listVoices(connection, controller.signal); render(); status.textContent = '已读取 ' + voices.length + ' 个音色 · ' + (typeof window.MiniMaxSpeech?.region === 'function' ? window.MiniMaxSpeech.region(connection.endpoint) : '当前接口') + ' · ' + new Date().toLocaleTimeString(); }
             catch (error) { status.textContent = error.message; } finally { refresh.disabled = false; }
         }); catalog.append(refresh, list, status); search.oninput = favoritesOnly.onchange = render; render();
         const compare = details(advanced, '对比试听');

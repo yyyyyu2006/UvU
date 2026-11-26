@@ -985,6 +985,9 @@ function renderShopContent() {
                 </div>
             </div>
         `;
+        card.querySelector('.shop-item-name').textContent = String(item.name ?? '');
+        card.querySelector('.shop-item-desc').textContent = String(item.desc ?? '');
+        card.querySelector('.shop-item-price').textContent = String(item.price ?? '');
         
         card.querySelector('.shop-item-buy-btn').addEventListener('click', event => {
             event.stopPropagation();

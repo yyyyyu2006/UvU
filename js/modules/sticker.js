@@ -1,5 +1,24 @@
 // --- 表情包管理 (js/modules/sticker.js) ---
 
+async function moveStickersToGroup(ids, newGroup) {
+    const selected = new Set(ids);
+    const changes = (db.myStickers || []).filter(sticker => selected.has(sticker.id)).map(sticker => ({
+        sticker, before: sticker.group, hadGroup: Object.hasOwn(sticker, 'group'), applied: newGroup
+    }));
+    changes.forEach(({ sticker, applied }) => { sticker.group = applied; });
+    try {
+        await saveData();
+        return true;
+    } catch (_) {
+        changes.forEach(({ sticker, before, hadGroup, applied }) => {
+            if (!db.myStickers.includes(sticker) || sticker.group !== applied) return;
+            if (hadGroup) sticker.group = before; else delete sticker.group;
+        });
+        showToast('保存失败，分组已恢复，请重试');
+        return false;
+    }
+}
+
 async function setupStickerSystem() {
     const stickerMenuBtn = document.getElementById('sticker-menu-btn');
     const stickerMenuActionSheet = document.getElementById('sticker-menu-actionsheet');
@@ -169,13 +188,7 @@ async function setupStickerSystem() {
     confirmMoveStickerBtn.addEventListener('click', async () => {
         const newGroup = moveTargetGroupInput.value.trim();
         
-        db.myStickers.forEach(s => {
-            if (selectedStickerIds.has(s.id)) {
-                s.group = newGroup;
-            }
-        });
-        
-        await saveData();
+        if (!await moveStickersToGroup(selectedStickerIds, newGroup)) return;
         showToast('分组已更新');
         moveStickerModal.classList.remove('visible');
         exitStickerManageMode();

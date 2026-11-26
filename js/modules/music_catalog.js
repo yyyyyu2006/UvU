@@ -1,7 +1,7 @@
 /* Read-only views over the existing portable library; never writes user data. */
 (function (root) {
     'use strict';
-    const key = track => track.provider + ':' + track.id;
+    const key = track => track.provider + ':' + (track.serverId ? track.serverId + ':' : '') + track.id;
     function unique(tracks) {
         const seen = new Set();
         return tracks.filter(track => { const id = key(track); if (seen.has(id)) return false; seen.add(id); return true; });

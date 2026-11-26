@@ -619,13 +619,13 @@
     margin-bottom: 8px;
 }
 
-.cart-item-price {
+#peek-cart-screen .cart-item-price {
     font-size: 16px;
     font-weight: bold;
     color: #e53935;
 }
 
-.cart-footer {
+#peek-cart-screen .cart-footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -636,19 +636,19 @@
     flex-shrink: 0;
 }
 
-.cart-total-price {
+#peek-cart-screen .cart-total-price {
     font-size: 18px;
     font-weight: bold;
     color: #e53935;
 }
 
-.cart-total-price .label {
+#peek-cart-screen .cart-total-price .label {
     font-size: 14px;
     font-weight: normal;
     color: #333;
 }
 
-.checkout-btn {
+#peek-cart-screen .checkout-btn {
     background-color: #e53935;
     color: white;
     border: none;

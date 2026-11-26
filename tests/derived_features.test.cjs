@@ -112,6 +112,15 @@ test('weather uses feels-like values and returns bounded UTC hourly forecast sum
     assert.equal(result.next12Hours.temperatureMin, 9); assert.equal(result.next12Hours.precipitationProbabilityMax, 70);
     assert.match(requests[0].url, /timezone=UTC&timeformat=unixtime/);
 });
+test('weather accepts supported alternate feels-like field names without losing zero',async()=>{
+    // Use an isolated cache for each provider field so a prior location result
+    // cannot mask whether the next response shape is parsed correctly.
+    for(const [field,value] of [['apparentTemperature',0],['feels_like',-2],['feelsLike',3]]){
+        const {c}=fixture();
+        c.fetch=async()=>({ok:true,json:async()=>({current:{time:Math.floor(Date.now()/1000),temperature_2m:5,[field]:value,weather_code:0}})});
+        assert.equal((await c.getEnvironmentWeather(shanghai,c.getEnvironmentSettings())).feelsLike,value,field);
+    }
+});
 test('unsupported holidays report unavailable instead of an empty supported calendar', async () => {
     const { c } = fixture(); c.fetch = async () => ({ ok: true, json: async () => [{ countryCode: 'US' }] });
     await assert.rejects(c.getEnvironmentHolidays({ ...shanghai, countryCode: 'ZZ' }, 2026), /不覆盖/);
@@ -274,6 +283,14 @@ test('confirm policy drops a suggestion when the user has changed the current av
     f.chat.avatar = 'data:image/png;base64,Yw==';
     assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat), false);
     assert.equal(f.chat.avatar, 'data:image/png;base64,Yw==');
+});
+test('confirm policy drops a pending avatar suggestion when the character persona changes',async()=>{
+    const f=fixture();enableAvatar(f);f.chat.avatarAutonomy.changePolicy='confirm';
+    f.c.recognizeStickerImage=async()=>'用户发送的照片';f.c.fetchAiResponse=async()=>'{"action":"set_avatar","imageId":"message:u:0"}';
+    await f.c.checkCharacterAvatar(f.chat,true);assert.ok(f.chat.avatarAutonomy.pendingSuggestion);
+    f.chat.persona='新的人设';
+    assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat),false);
+    assert.equal(f.chat.avatar,'https://test.invalid/old.png');
 });
 test('avatar action uses validated image ID, compresses a Blob and can preserve the previous avatar', async () => {
     const f = fixture(); enableAvatar(f); let descriptions = 0, decisions = 0;

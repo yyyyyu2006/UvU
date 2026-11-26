@@ -10,6 +10,10 @@ function readerIllustrationSource(content) {
     const raw = String(content || '').slice('[ILLUSTRATION]'.length);
     if (raw.length > 20 * 1024 * 1024) return null;
     if (/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(raw)) return raw;
+    try {
+        const url = new URL(raw);
+        if (url.protocol === 'https:' && !url.username && !url.password) return url.href;
+    } catch (_) {}
     return /^[A-Za-z0-9+/]+={0,2}$/.test(raw) ? 'data:image/png;base64,' + raw : null;
 }
 function parseReaderIllustrations(text, count) {
