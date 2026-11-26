@@ -340,7 +340,9 @@
         const match=message.content.match(/的转账[：:]\s*(\d{1,9}(?:\.\d{1,2})?)元；备注：/);
         const amount=match?ledger.cents(match[1]):0;
         if(!amount)return showToast('这笔转账金额无效，无法记入钱包');
-        const state=currentState(),pin=await getPin();if(!pin)return;
+        // Incoming acceptance credits the local wallet; returning only changes transfer status.
+        // Neither action spends the user's balance, so do not request or create a payment PIN.
+        const state=currentState();
         const chat=target.chat, contextText=actionName==='received'?'['+chat.myName+'接收'+chat.realName+'的转账]':'['+chat.myName+'退回'+chat.realName+'的转账]';
         const context={id:'msg_'+ledger.id(),role:'user',content:contextText,parts:[{type:'text',text:contextText}],timestamp:Date.now()};
         const source=message.content,op=actionName==='received'?{kind:'receive',amount,id:'incoming:'+message.id,title:'收到 '+(chat.remarkName||chat.realName)+' 的转账'}:null;
