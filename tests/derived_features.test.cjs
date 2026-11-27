@@ -207,6 +207,16 @@ test('AI local-time and weather sharing have independent opt-ins; time-only mode
     const legacy = c.getChatEnvironmentProfile({ environmentProfile: { aiEnabled: true } });
     assert.equal(legacy.timeAiEnabled, true); assert.equal(legacy.weatherAiEnabled, true);
 });
+test('avatar user-change permissions default off and crop rectangles are bounded', () => {
+    const { c, chat } = fixture();
+    const settings = c.characterAvatarSettings(chat);
+    assert.equal(settings.allowUserAvatarChange, false);
+    assert.equal(settings.allowCropUserAvatarForCharacter, false);
+    assert.deepEqual(plain(c.normalizeAvatarCropRect({ x: 0.1, y: 0.2, width: 0.4, height: 0.4 })), { x: 0.1, y: 0.2, width: 0.4, height: 0.4 });
+    for (const rect of [null, { x: -0.1, y: 0, width: 0.5, height: 0.5 }, { x: 0.8, y: 0.8, width: 0.3, height: 0.3 }, { x: 0, y: 0, width: 0, height: 0.5 }]) {
+        assert.equal(c.normalizeAvatarCropRect(rect), null);
+    }
+});
 test('avatar candidates only include real delivered images from the current character archive', async () => {
     const { c, chat } = fixture();
     chat.history = [{ id: 'text', role: 'user', content: '[照片：小猫]' },
@@ -259,6 +269,35 @@ test('avatar decision request omits persona and chat text without their separate
     assert.equal(Object.hasOwn(payload, 'persona'), false); assert.equal(Object.hasOwn(payload, 'recentChat'), false);
     assert.equal(payload.explicitRequest.intent, 'direct'); assert.equal(Object.hasOwn(payload.explicitRequest, 'text'), false);
     assert.equal(JSON.stringify(payload).includes('请把这张照片'), false); assert.equal(JSON.stringify(payload).includes('角色人设'), false);
+});
+test('char crop suggestion uses bounded vision coordinates and applies only after confirmation', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.allowCropUserAvatarForCharacter = true; f.chat.avatarAutonomy.changePolicy = 'automatic';
+    f.c.recognizeStickerImage = async (_src, _signal, purpose) => purpose === 'avatar_crop' ? '{"cropRect":{"x":0.2,"y":0.1,"width":0.5,"height":0.5}}' : '照片主体';
+    f.c.fetchAiResponse = async () => '{"action":"crop_avatar","imageId":"message:u:0","reason":"这张头像能裁出清晰主体"}';
+    let cropped = null;
+    f.c.cropAvatarBlob = async (blob, rect) => { cropped = rect; return blob; }; f.c.refreshCharacterAvatar = () => {};
+    f.c.fetch = async () => ({ ok: true, blob: async () => new Blob(['avatar'], { type: 'image/png' }) });
+    f.c.compressImage = async () => 'data:image/png;base64,Yg==';
+    assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
+    assert.deepEqual(plain(f.chat.avatarAutonomy.pendingSuggestion.cropRect), { x: 0.2, y: 0.1, width: 0.5, height: 0.5 });
+    assert.equal(f.chat.avatar, 'https://test.invalid/old.png');
+    assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat), true);
+    assert.deepEqual(plain(cropped), { x: 0.2, y: 0.1, width: 0.5, height: 0.5 });
+    assert.equal(f.chat.avatar, 'data:image/png;base64,Yg==');
+});
+test('char may only suggest a user avatar when separately enabled and never applies automatically', async () => {
+    const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.allowUserAvatarChange = true; f.chat.avatarAutonomy.changePolicy = 'automatic';
+    f.chat.myAvatar = 'https://test.invalid/user-old.png';
+    f.c.recognizeStickerImage = async () => '用户头像候选';
+    f.c.fetchAiResponse = async () => '{"action":"suggest_user_avatar","imageId":"message:u:0","reason":"更适合做用户头像"}';
+    f.c.fetch = async () => ({ ok: true, blob: async () => new Blob(['avatar'], { type: 'image/png' }) });
+    f.c.compressImage = async () => 'data:image/png;base64,Yg==';
+    assert.equal(await f.c.checkCharacterAvatar(f.chat, true), false);
+    assert.equal(f.chat.myAvatar, 'https://test.invalid/user-old.png');
+    assert.equal(f.chat.avatarAutonomy.pendingSuggestion.target, 'user');
+    assert.equal(await f.c.applyCharacterAvatarSuggestion(f.chat), true);
+    assert.equal(f.chat.myAvatar, 'data:image/png;base64,Yg==');
+    assert.equal(f.chat.avatar, 'https://test.invalid/old.png');
 });
 test('confirm policy stores an avatar suggestion and applies it only after a fresh user action', async () => {
     const f = fixture(); enableAvatar(f); f.chat.avatarAutonomy.changePolicy = 'confirm';

@@ -52,8 +52,8 @@ try{
   const box=await item.boundingBox();if(box)assert.ok(box.height<=56,'environment disclosures compact');
  }
  await page.screenshot({path:path.join(out,'environment.png')});await page.locator('#environment-settings .sheet-close').tap();
- await page.evaluate(()=>{const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=';db.characters[0].history.push({id:'avatar-image',role:'user',content:'照片',parts:[{type:'image',data:png}]});openCharacterAvatarSettings();});
- const choices=page.locator('.avatar-candidate-actions');await choices.waitFor();
+ await page.evaluate(()=>{const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=';db.characters[0].avatarAutonomy={candidateSources:{user:true}};db.characters[0].history.push({id:'avatar-image',role:'user',content:'照片',parts:[{type:'image',data:png}]});openCharacterAvatarSettings();});
+ await page.locator('details.avatar-candidate-preview:not([hidden])').evaluate(el=>{el.open=true;}); const choices=page.locator('.avatar-candidate-actions');await choices.waitFor();
  for(const width of [320,390]){
   await page.setViewportSize({width,height:844});
   assert.equal(await choices.locator('label').evaluateAll(labels=>labels.every(label=>{const input=label.querySelector('input').getBoundingClientRect(),rect=label.getBoundingClientRect();return Math.abs((input.y+input.height/2)-(rect.y+rect.height/2))<3;})),true,'avatar choices align checkbox and label');
