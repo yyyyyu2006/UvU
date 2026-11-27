@@ -33,7 +33,7 @@
 .wallet-section-heading { display:flex; align-items:center; justify-content:space-between; margin:8px 0 12px; }
 .wallet-section-heading h2 { margin:0; font-size:18px; line-height:1.4; font-weight:600; }
 .wallet-deck {
-    position:relative; display:grid; margin:10px 0 18px; padding:2px 4px 12px;
+    position:relative; display:grid; margin:10px 0 18px; padding:2px calc(4px + 4%) 12px;
     perspective:900px; touch-action:pan-y pinch-zoom;
 }
 .wallet-deck[data-stacked] { padding-bottom:31px; }

@@ -10,9 +10,9 @@
     grid-template-rows: auto minmax(0, 1fr);
     width: min(100%, 440px);
     max-width: 440px;
-    height: min(820px, calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
-    max-height: none;
-    min-height: min(560px, calc(100dvh - 24px));
+    height: min(704px, calc(100dvh - 140px));
+    max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    min-height: 0;
     padding: 0;
     overflow: hidden;
     border: 0;
@@ -53,7 +53,7 @@
 #auto-memory-modal .uvu-am-coverage-heading { display:flex;align-items:center;justify-content:space-between;min-height:38px;padding-right:88px; }
 #auto-memory-modal .uvu-am-coverage-heading h2 { margin:0;font-size:14px;font-weight:650;line-height:1.4; }
 #auto-memory-modal .uvu-am-coverage-actions { position:absolute;top:0;right:0;display:flex;gap:4px; }
-#auto-memory-modal .uvu-am-coverage-actions .uvu-am-icon { width:44px;height:44px; }
+#auto-memory-modal .uvu-am-coverage-actions .uvu-am-icon { width:41px;height:41px;flex-basis:41px; }
 #auto-memory-modal .uvu-am-stats { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:6px 0 0; }
 #auto-memory-modal .uvu-am-stats div { display:flex;flex-direction:column;gap:3px;min-width:0; }
 #auto-memory-modal .uvu-am-stats dt { font-size:12px;line-height:1.5; }
@@ -90,7 +90,7 @@
 #auto-memory-modal .uvu-am-detail-body details > summary { min-height:40px;padding:8px 0;color:#536570;font-size:13px;cursor:pointer; }
 #auto-memory-modal .uvu-am-detail-body .auto-memory-help { margin:4px 0;color:var(--uvu-am-muted);font-size:12px;line-height:1.6; }
 #auto-memory-modal .uvu-am-range-details { border:1px solid var(--uvu-am-line);border-radius:20px;background:#fff; }
-#auto-memory-modal .uvu-am-range-details > summary { min-height:44px;padding:10px 14px;list-style-position:inside;font-size:14px;font-weight:600;cursor:pointer; }
+#auto-memory-modal .uvu-am-range-details > summary { min-height:44px;padding:10px 14px;list-style-position:inside;color:var(--uvu-am-muted);font-size:14px;font-weight:600;cursor:pointer; }
 #auto-memory-modal .uvu-am-range-details .auto-memory-range { margin:0;padding:8px 14px 14px;border:0;border-top:1px solid var(--uvu-am-line);border-radius:0; }
 #auto-memory-modal .auto-memory-range .auto-memory-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px; }
 #auto-memory-modal .auto-memory-range label { min-width:0;margin:6px 0;font-size:13px; }
@@ -106,7 +106,7 @@
 #auto-memory-modal .uvu-am-footer .btn-primary { color:var(--uvu-am-blue-ink);background:var(--uvu-am-blue);font-weight:700; }
 #auto-memory-modal .uvu-am-footer .btn:disabled,#auto-memory-modal .auto-memory-actions .btn:disabled { opacity:.55; }
 @media(max-width:380px) {
- #auto-memory-modal .uvu-am-dialog { height:calc(100dvh - 12px);min-height:0;border-radius:24px; }
+ #auto-memory-modal .uvu-am-dialog { border-radius:24px; }
  #auto-memory-modal .uvu-am-header { padding-inline:18px; }
  #auto-memory-modal .uvu-am-header h1 { font-size:30px; }
  #auto-memory-modal .uvu-am-scroll { padding-inline:18px; }
@@ -116,10 +116,12 @@
  #auto-memory-modal .uvu-am-number-card { padding:10px; }
 }
 @media(max-height:640px) {
- #auto-memory-modal .uvu-am-dialog { height:calc(100dvh - 8px);min-height:0; }
  #auto-memory-modal .uvu-am-header { gap:7px;padding-top:4px; }
  #auto-memory-modal .uvu-am-topbar,#auto-memory-modal .uvu-am-icon,#auto-memory-modal .uvu-am-help>summary { min-height:40px;height:40px; }
  #auto-memory-modal .uvu-am-tabs { height:42px; }
  #auto-memory-modal .uvu-am-tabs button { min-height:34px; }
+}
+@media(max-height:600px) {
+ #auto-memory-modal .uvu-am-dialog { height:calc(100dvh - 32px); }
 }
 @media(prefers-reduced-motion:reduce) { #auto-memory-modal .uvu-am-switch::after { transition:none; } }
