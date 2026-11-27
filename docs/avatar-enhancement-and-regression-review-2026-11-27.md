@@ -38,4 +38,5 @@
 - 完整 Node：设置 `UVU_1900_ROOT=C:\Users\15271130817\Desktop\1900版uwu` 和普通开发允许缺失基线跳过标记后，1,897/1,897 通过。首次未设置基线路径的运行失败是环境配置缺失，设置后复跑成功。
 - 严格 1900：`npm run test:1900` 82/82 通过。
 - `node --check` 涉及 JavaScript 文件通过；保留仓库原有 CRLF 行尾规则后，`git -c core.whitespace=cr-at-eol diff --check` 通过。
-- 本轮续验：头像相关逻辑 58/58 通过，完整 Node 套件 1,897/1,897 通过，严格 1900 对照 82/82 通过；头像关联的 `optimization_media_avatar_browser.cjs` 与 `reported_ui_regressions_browser.cjs` 均通过。最新全浏览器整套为 107/134；剩余 27 项失败尚未逐项追到产品行为。\n- 未验证：付费/真实视觉 API 的裁剪坐标准确性、手机实测、第三方美化套用、其余浏览器失败归因、全仓逐行审查。源码测试不等于真实聊天端验收。
+- 本轮续验：头像相关逻辑 58/58 通过，完整 Node 套件 1,897/1,897 通过，严格 1900 对照 82/82 通过；头像关联的 `optimization_media_avatar_browser.cjs` 与 `reported_ui_regressions_browser.cjs` 均通过。最新全浏览器整套为 107/134；剩余 27 项失败尚未逐项追到产品行为。
+- 未验证：付费/真实视觉 API 的裁剪坐标准确性、手机实测、第三方美化套用、其余浏览器失败归因、全仓逐行审查。源码测试不等于真实聊天端验收。
