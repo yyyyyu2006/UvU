@@ -53,3 +53,17 @@
 - 1900 对照：本次重新执行 `UVU_1900_ROOT=C:\Users\15271130817\Desktop\1900版uwu npm run test:1900`，82/82 通过；这只覆盖该套严格对照用例，不表示全仓代码审阅完成。之前完整浏览器套件 107/134（27 失败）来自既有输出，未在本次重跑。
 - 覆盖边界：启动核对了聊天请求与提示词模块入口、文件哈希和基线是否存在，但没有完成 `chat_ai.js` 等文件的连续逐行审阅，故不计为已审。全仓 945 个跟踪文件仍未逐行完成；27 个浏览器失败仍需逐项归因。
 - 报告继续跟踪至 TODO-20261127-01 / LOOP-20261127-01。新增问题同步至 UvU ISSUES 索引。
+
+## 2026-11-28 · 记忆核对修复与后续源码审查
+
+- 起点：main 与 origin/main 均为 fd2a4b9a63e9112ef5cedb6ee3a29216601cdc3a；outputs/ 保留，不暂存。
+- 已修复 ISSUE-MEMORY-FACT-20261127-01：memoryFactSuggestions() 在生成关系指纹前按稳定事实 key 排序，避免从配对记忆两侧查看时顺序相反而丢失决定。原文和历史不变。tests/memory_fact_review.test.cjs 增加旧/新两侧显示与撤销断言；tests/memory_fact_browser.cjs 等待页面状态后再断言，避免保存与渲染之间的测试竞态。
+- 验证：Node 全量 1897/1897；严格 1900 对照 82/82；记忆关系专项 6/6；语法检查与 git -c core.whitespace=cr-at-eol diff --check 通过。修改后的浏览器专项能够越过关系显示断言，随后因旧 .draft-vector-more 定位器失败；这一处需区分旧测试流程和 UI 控件问题。
+- 本批继续对照审阅 js/modules/chat_ai_prompt.js 全607行、js/modules/chat_ai_call.js 全572行，并看了 video_call.js 的通话总结存档保护调用段。当前改动差异中，聊天提示词内容没有改写；call_1900_compat.test.cjs 对48组关闭新功能的请求正文、摘要与回复回调进行严格比较。没有发现本批新的已确认回复流程回归。文件 SHA-256：prompt 10654d1ceec0e5cc6818f0e85a57584b8e28422288fb00ae0a557a1df491e10a；call 4344a69d8d4bdf5e684c07691dd4792663e8608ffd18781aa4caa50739009add。
+- 新的源码/UI发现见 ISSUE-VECTOR-UI-20261128-01：当前自动总结向量页未提供 VectorMemoryTools.setupForm() 要求的 .vector-memory-fieldset，高级向量检索配置不能从界面编辑。本轮仅记录，没有更改界面或源码。
+- 2026-11-28 浏览器套件最新目录：outputs/browser-checks-2026-11-28T04-36-36-485Z；原始汇总 108/134 通过、26 项失败。新记忆关系浏览器用例本轮通过；theme_focus_compat 因整套运行没有传 UVU_1900_ROOT 失败，单独补上 1900 路径后通过，因此其余 25 项仍待逐项归因。失败测试名：approved_atlas_browser、approved_sheets_browser、audit_nov12_browser、audit_repair_browser、browser_notification_environment_optimizations、browser_notification_holiday_followup、calendar_import_browser、calendar_important_browser、calendar_life_browser、chat_edit_session_browser、chat_thinking_forward_browser、draft_layout_browser、legacy_media_group_browser、legacy_priority_repairs_browser、lenso_panels_browser、mcp_compact_layout_browser、memo_modal_browser、memo_review_priority_browser、memory_quality_browser、message_delete_rollback_browser、optimization_stickers_browser、panel_evidence_browser、panel_flow_refinement_browser、panel_help_tabs_browser、remaining_optimizations_browser。
+- 对已能解释的失败不按产品缺陷登记：chat_edit_session 复现的是测试明确标出的 1900 原有“保存后编辑窗仍开”行为；message_delete_rollback 重复 arrival 由测试 hook 多次注入造成，既有隔离复核证实产品回滚路径保留一次；calendar_import 的场景停在新版页面找不到旧“日历设置”定位器，导入断言并未执行；chat_thinking_forward 只因浏览器 computed CSS 值从期望的 flex-end 返回 flow-end，需结合视觉/规范再判，当前未定为缺陷。其他失败仍未逐项核验。
+- 当前源码版本复核：main 与 origin/main 为 fd2a4b9a63e9112ef5cedb6ee3a29216601cdc3a；当前 946 个 Git 跟踪文件，其中 JS/CSS/HTML 237 个。与1900有89个同路径文件：23个字节相同、66个不同；148个当前文件在1900中无同路径基线。不能据这些统计声称全仓逐行完成。
+- 完整逐行读完并复核 js/modules/chat_ai.js 1–1486 行，SHA-256 3304F15D9A3022E1646F286272D0F7E1A328000E8FC1539B5317D87845FB275E，并检查与1900的完整差异；通知偏移风险经控制流核实未找到可达漏掉新回复通知的路径，不新增缺陷。全量 Node 1897/1897、记忆事实专项 6/6、严格1900对照82/82；记忆事实专项浏览器通过，隐藏头像思维链浏览器通过。严格对照只说明对应自动化覆盖，不等于代码全无问题。
+- 仍确认一个独立二改界面问题：ISSUE-VECTOR-UI-20261128-01，向量记忆高级设置容器缺失，暂未修改。回复提示词、1900历史范围、上下文顺序及回复流程未改；回归测试82/82通过。
+- 下一步：修复问题已过专项回归后推送并复核远端；继续检查剩余代码与25项浏览器失败，先核验场景/定位器和触发路径，再决定是否属于产品 bug。全仓逐行回归审查仍未完成。

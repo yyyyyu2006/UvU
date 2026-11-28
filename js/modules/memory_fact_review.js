@@ -66,7 +66,7 @@ function memoryFactSuggestions(chat, journalId) {
         if (!samePeriod || a.polarity === 'unknown' || b.polarity === 'unknown') continue;
         if (normalize(a.value) === normalize(b.value) && a.polarity === b.polarity) continue;
         const key = [a.key, b.key].sort().join('|');
-        const stamp = autoMemoryFingerprint([a, b]);
+        const stamp = autoMemoryFingerprint([a, b].sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
         const decision = (chat.memoryJournals || []).flatMap(item => Array.isArray(item.memoryFactRelations) ? item.memoryFactRelations : [])
             .find(item => item.key === key && item.stamp === stamp && item.owner === memoryFactOwner(chat));
         suggestions.push({ key, stamp, a, b, decision: decision?.decision || '', reason: '同主体、同属性且时期重叠，内容可能不同；请人工判断' });

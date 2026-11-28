@@ -43,9 +43,11 @@ test('manual relationships retain both originals, can be undone and expire after
     const pair = c.memoryFactSuggestions(chat, b.id)[0], originals = [a.content, b.content];
     await c.saveMemoryFactReview(chat, b, 'relation', { ...pair, decision: 'changed' });
     assert.equal(c.memoryFactSuggestions(chat, b.id)[0].decision, 'changed');
+    assert.equal(c.memoryFactSuggestions(chat, a.id)[0].decision, 'changed', 'the same relationship is visible from the paired journal');
     assert.deepEqual([a.content, b.content], originals); assert.equal(a.vectorSupersededBy, undefined);
     await c.saveMemoryFactReview(chat, b, 'relation', { ...pair, decision: '' });
     assert.equal(c.memoryFactSuggestions(chat, b.id)[0].decision, '');
+    assert.equal(c.memoryFactSuggestions(chat, a.id)[0].decision, '', 'undo is visible from both journals');
     a.content += '后来取消了。'; assert.equal(c.memoryFactSuggestions(chat, b.id).length, 0);
     await assert.rejects(c.saveMemoryFactReview(chat, b, 'relation', { ...pair, decision: 'changed' }), /来源已变化/);
 });
